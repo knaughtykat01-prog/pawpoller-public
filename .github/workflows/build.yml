@@ -11,6 +11,16 @@ permissions:
 
 jobs:
   build-windows:
+    # Gate on the suite. Every job here ran in PARALLEL with `test` and none of
+    # them read its verdict, so a tagged tree with failing tests still built
+    # installers, published a GitHub Release and (since 4.0.1) pushed a
+    # `:latest` container image. `tests.yml` does not cover this: it triggers on
+    # branch pushes, not tags, so the tagged tree's ONLY test run is the one
+    # below — the one nothing was waiting for.
+    #
+    # Costs ~5 minutes of latency per release. Publishing a broken build
+    # faster is not a win.
+    needs: test
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -92,6 +102,7 @@ jobs:
           body_path: RELEASE_NOTES.md
 
   build-linux:
+    needs: test          # see build-windows for why
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -163,6 +174,7 @@ jobs:
           body_path: RELEASE_NOTES.md
 
   build-image:
+    needs: test          # see build-windows for why
     # A prebuilt image turns self-hosting from "clone the repo, install a
     # toolchain and wait for a build that OOMs on a 1 GB box" into one
     # `docker compose up -d`. Building from source still works and is still
