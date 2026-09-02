@@ -105,17 +105,21 @@ connecting your platforms.
 ### Option B: Run from source
 
 ```bash
-git clone https://github.com/knaughtykat01-prog/PawPoller.git
-cd PawPoller
+git clone https://github.com/knaughtykat01-prog/pawpoller-public.git
+cd pawpoller-public
 pip install -r requirements.txt
 python main.py
 ```
 
 ### Option C: Docker (headless server)
 
+**Never set up a server before?** Follow
+[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) instead — it starts from nothing
+and covers picking a host, HTTPS and backups, step by step.
+
 ```bash
-git clone https://github.com/knaughtykat01-prog/PawPoller.git
-cd PawPoller
+git clone https://github.com/knaughtykat01-prog/pawpoller-public.git
+cd pawpoller-public
 cp .env.example .env    # Edit with your credentials — set DASHBOARD_PASSWORD!
 # Optional: set PAWPOLLER_ARCHIVE_DIR in .env to your story-archive path
 docker compose up -d --build
@@ -261,8 +265,8 @@ the source of truth for what ships.
 ### Setup
 
 ```bash
-git clone https://github.com/knaughtykat01-prog/PawPoller.git
-cd PawPoller
+git clone https://github.com/knaughtykat01-prog/pawpoller-public.git
+cd pawpoller-public
 pip install -r requirements.txt
 cp .env.example .env          # Optional: for env-based credential config
 python main.py                # Desktop mode

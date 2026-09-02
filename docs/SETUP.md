@@ -103,8 +103,8 @@ cmdkey /delete:PawPoller   # if vault was enabled
 If you'd rather build the exe yourself:
 
 ```powershell
-git clone https://github.com/knaughtykat01-prog/PawPoller.git
-cd PawPoller
+git clone https://github.com/knaughtykat01-prog/pawpoller-public.git
+cd pawpoller-public
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -191,8 +191,8 @@ rm -f ~/.config/autostart/PawPoller.desktop  # autostart
 ### 1B.7 Build from source (advanced)
 
 ```bash
-git clone https://github.com/knaughtykat01-prog/PawPoller.git
-cd PawPoller
+git clone https://github.com/knaughtykat01-prog/pawpoller-public.git
+cd pawpoller-public
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt          # Pulls PyQt6 + PyQt6-WebEngine for Linux
@@ -217,6 +217,11 @@ python -m PyInstaller pawpoller.spec --noconfirm
 
 ## 2. Docker / headless (self-hosted, web-accessible)
 
+> **New to servers?** [SELF_HOSTING.md](SELF_HOSTING.md) is a dedicated
+> walkthrough that starts from nothing — choosing and creating a server,
+> installing Docker, HTTPS, backups and troubleshooting. This section is
+> the condensed version for people who already have a Docker host.
+
 Best for leaving PawPoller polling 24/7 and reaching the dashboard from any device on your LAN — or, behind a reverse proxy, from the public internet.
 
 ### 2.1 Requirements
@@ -228,8 +233,8 @@ Best for leaving PawPoller polling 24/7 and reaching the dashboard from any devi
 ### 2.2 Clone and configure
 
 ```bash
-git clone https://github.com/knaughtykat01-prog/PawPoller.git
-cd PawPoller
+git clone https://github.com/knaughtykat01-prog/pawpoller-public.git
+cd pawpoller-public
 cp .env.example .env
 ```
 
@@ -387,8 +392,8 @@ If you want to run it outside Docker — for development, custom packaging, or a
 ### 3.2 Clone and install
 
 ```bash
-git clone https://github.com/knaughtykat01-prog/PawPoller.git
-cd PawPoller
+git clone https://github.com/knaughtykat01-prog/pawpoller-public.git
+cd pawpoller-public
 python -m venv .venv
 source .venv/bin/activate               # Windows: .venv\Scripts\Activate.ps1
 
