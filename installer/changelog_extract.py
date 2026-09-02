@@ -13,7 +13,20 @@ import sys
 from pathlib import Path
 
 ver = sys.argv[1].lstrip("v") if len(sys.argv) > 1 else ""
-text = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+# The public distribution ships without CHANGELOG.md on purpose. Degrade to a
+# minimal note so a tagged build still produces a release rather than failing
+# the whole job on a missing input.
+_src = Path("CHANGELOG.md")
+if not _src.is_file():
+    Path("RELEASE_NOTES.md").write_text(
+        f"PawPoller {ver}\n\nSee the project README for what this release contains.\n",
+        encoding="utf-8",
+    )
+    print(f"CHANGELOG.md not present - wrote a minimal RELEASE_NOTES.md for {ver!r}")
+    raise SystemExit(0)
+
+text = _src.read_text(encoding="utf-8")
 
 # The section from "## [ver] …" up to the next "## [" (or EOF), minus the
 # trailing "---" separator.

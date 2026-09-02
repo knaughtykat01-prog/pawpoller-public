@@ -8,6 +8,8 @@ will use pystray._darwin. CI's runners-os matrix picks the right
 spec implicitly because PyInstaller is invoked from the relevant OS.
 """
 
+from pathlib import Path
+
 import glob
 import os
 import sys
@@ -35,6 +37,8 @@ _PLATFORM_HIDDEN_IMPORTS = {
 _platform_key = 'linux' if sys.platform.startswith('linux') else sys.platform
 _platform_hidden = _PLATFORM_HIDDEN_IMPORTS.get(_platform_key, [])
 
+_CHANGELOG = [('CHANGELOG.md', '.')] if Path('CHANGELOG.md').is_file() else []
+
 a = Analysis(
     ['main.py'],
     pathex=[],
@@ -43,7 +47,12 @@ a = Analysis(
         ('frontend', 'frontend'),
         *_DB_SCHEMAS,
         ('assets', 'assets'),
-        ('CHANGELOG.md', '.'),   # served by /api/whatsnew for the in-app "What's new" popup
+        # Served by /api/whatsnew for the in-app "What's new" popup. Optional on
+        # purpose: the public distribution excludes CHANGELOG.md (it is the
+        # internal engineering record), and a missing data file aborts the
+        # ENTIRE PyInstaller build rather than degrading. The popup copes with
+        # its absence; the build did not.
+        *_CHANGELOG,
     ],
     hiddenimports=[
         'uvicorn.logging',

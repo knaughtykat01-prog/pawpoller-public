@@ -31,7 +31,7 @@ Two formats — pick whichever:
 
 **A) Installer (recommended)**
 
-1. Open the [Releases page](https://github.com/knaughtykat01-prog/PawPoller/releases/latest).
+1. Open the [Releases page](https://github.com/knaughtykat01-prog/pawpoller-public/releases/latest).
 2. Download `PawPoller-Setup-{version}.exe`.
 3. Run it. Windows SmartScreen will warn ("Windows protected your PC") because the installer is unsigned — click **More info → Run anyway**.
 4. The installer defaults to a per-user install (no UAC prompt). Tick the boxes for **Desktop shortcut** and **Run on Windows startup** if you want them.
@@ -133,12 +133,12 @@ Single-file AppImage. No install, no root, no package manager — `chmod +x` and
 
 ```bash
 # Replace {version} with the actual release tag, e.g. 2.25.0
-wget https://github.com/knaughtykat01-prog/PawPoller/releases/latest/download/PawPoller-{version}-x86_64.AppImage
+wget https://github.com/knaughtykat01-prog/pawpoller-public/releases/latest/download/PawPoller-{version}-x86_64.AppImage
 chmod +x PawPoller-*.AppImage
 ./PawPoller-*.AppImage
 ```
 
-Or grab it from the [Releases page](https://github.com/knaughtykat01-prog/PawPoller/releases/latest) in a browser, then `chmod +x` and double-click in your file manager.
+Or grab it from the [Releases page](https://github.com/knaughtykat01-prog/pawpoller-public/releases/latest) in a browser, then `chmod +x` and double-click in your file manager.
 
 The first launch opens the setup wizard. PawPoller installs a system-tray icon via libappindicator on KDE / GNOME (with the AppIndicator extension installed) / XFCE / MATE / Cinnamon.
 
@@ -553,7 +553,7 @@ Adds a Turnstile challenge to the login form. Useful if you've exposed the dashb
 ## 7. Where to go next
 
 - The heavily-commented source — start with `dashboard.py`, then a platform under `clients/{xx}/` and its `polling/{xx}_poller.py`
-- [Releases](https://github.com/knaughtykat01-prog/PawPoller/releases) — what shipped in each version
+- [Releases](https://github.com/knaughtykat01-prog/pawpoller-public/releases) — what shipped in each version
 - [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — dev setup, adding a new platform, code style
 - [`ROADMAP_PUBLIC.md`](ROADMAP_PUBLIC.md) — what's planned
 

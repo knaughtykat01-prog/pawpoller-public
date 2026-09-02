@@ -15,8 +15,13 @@ import config
 
 logger = logging.getLogger(__name__)
 # Set to "owner/repo" (e.g. "user/PawPoller") to enable update checks.
-# Left empty to disable update checks until the repo is public/ready.
-GITHUB_REPO = "knaughtykat01-prog/PawPoller"
+# Left empty to disable update checks.
+#
+# ⚠ This must be a PUBLIC repo. The check is unauthenticated, so a private repo
+# answers 404 — and the 404 is swallowed as "no releases available", meaning
+# every user is silently told they are up to date forever. It pointed at the
+# private development repo until the public distribution existed.
+GITHUB_REPO = "knaughtykat01-prog/pawpoller-public"
 
 
 def check_for_update() -> dict:

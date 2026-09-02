@@ -3,7 +3,7 @@
 **Status:** Public beta shipped
 **Date:** 2026-05-21
 **Current version:** 2.25.0
-**Latest release:** https://github.com/knaughtykat01-prog/PawPoller/releases/tag/v2.13.8 (master is 22 versions ahead — see HANDOFF.md "CI / release pipeline state" for the tag-drift status)
+**Latest release:** https://github.com/knaughtykat01-prog/pawpoller-public/releases/tag/v2.13.8 (master is 22 versions ahead — see HANDOFF.md "CI / release pipeline state" for the tag-drift status)
 
 ---
 
