@@ -11,3 +11,16 @@ dist/
 *.spec
 .idea/
 .vscode/
+
+# Internal engineering docs. Nothing reads these at runtime (verified: no route,
+# no dashboard handler, no config path touches docs/), and every one of them is
+# excluded from the public copy BY NAME for containing personal data. `COPY . .`
+# would otherwise bake them into any image built from this tree — and a
+# container layer, once pulled, cannot be recalled.
+#
+# CHANGELOG.md is deliberately NOT here: routes/whatsnew_api.py reads it to
+# render the in-app "What's new" popup. It is excluded from the PUBLIC COPY
+# instead, so a published image never contains it either.
+docs/HANDOFF.md
+docs/BACKLOG.md
+docs/documentation_guide.md

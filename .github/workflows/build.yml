@@ -174,6 +174,22 @@ jobs:
           body_path: RELEASE_NOTES.md
 
   build-image:
+    # ⚠ NEVER publish an image built from the private development tree.
+    #
+    # `github.repository_owner` is the same account for both repositories, so
+    # this job resolves to the SAME package name — `ghcr.io/<owner>/pawpoller` —
+    # whichever repo it runs in. The Dockerfile's `COPY . .` takes the whole
+    # tree, and `.dockerignore` does not exclude docs/, so a tag on the private
+    # repo would build CHANGELOG.md, docs/HANDOFF.md, docs/BACKLOG.md and
+    # docs/documentation_guide.md — every file the public copy excludes BY NAME
+    # for containing personal data — into a package whose whole purpose is to be
+    # made public. Container layers are permanent and are cached by everyone who
+    # pulls, so there is no taking it back.
+    #
+    # Named as a negative rather than `== the public repo` so a FORK of the
+    # public repo still publishes its own image to its own namespace. Only the
+    # private development repo is excluded.
+    if: github.repository != 'knaughtykat01-prog/PawPoller'
     needs: test          # see build-windows for why
     # A prebuilt image turns self-hosting from "clone the repo, install a
     # toolchain and wait for a build that OOMs on a 1 GB box" into one
