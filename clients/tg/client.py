@@ -33,11 +33,29 @@ class TgClient:
         self.token = (bot_token or "").strip()
         # Accept "@name", "name", "https://t.me/name", or a numeric -100… id.
         ch = (channel or "").strip()
+        # A t.me/+hash (or /joinchat/) link is a PRIVATE-channel invite, not a
+        # username. Splitting on "/" turned it into "@+UwCu…", a handle that
+        # cannot exist, and bots cannot join by invite link at all — there is no
+        # Bot API method for it. Rejecting it by name beats failing obscurely.
+        if "t.me/+" in ch or "t.me/joinchat/" in ch:
+            raise ValueError(
+                "That's a private-channel invite link, which can't be used as a channel "
+                "id — a bot can't join by invite. Use the channel's numeric -100… id "
+                "instead (Settings → Telegram → Find my channel will fetch it)."
+            )
         if ch.startswith("https://t.me/"):
             ch = "@" + ch.rsplit("/", 1)[-1]
         elif ch and not ch.startswith("@") and not ch.lstrip("-").isdigit():
+            # ⚠ A bare word becomes a PUBLIC username, which may belong to
+            # someone else. A private channel's title is not a handle — it has no
+            # handle. See validate() for the case this actually caused.
             ch = "@" + ch
         self.channel = ch
+        # Telegram explains its own refusals; see _ok. Kept per-instance so the
+        # caller can report the REASON instead of guessing at it out loud.
+        self.last_error = ""
+        # Filled by validate(): WHICH chat the handle actually resolved to.
+        self.resolved_chat: dict = {}
 
     def _url(self, method: str) -> str:
         return f"{API_BASE}/bot{self.token}/{method}"
@@ -48,10 +66,26 @@ class TgClient:
             return f"https://t.me/{self.channel[1:]}/{message_id}"
         return ""
 
-    @staticmethod
-    def _ok(data) -> dict | None:
+    def _ok(self, data) -> dict | None:
+        """Unwrap a Bot API response, remembering WHY a failure happened.
+
+        Telegram always says what was wrong in ``description`` — "not enough
+        rights to send text messages to the chat", "chat not found", "bot was
+        blocked by the user". This threw that away and returned a bare None, so
+        the only thing the caller could do was guess in the user's direction
+        ("is the bot an admin with post rights?") about a question the API had
+        already answered precisely. Worse, nothing logged it either, so the
+        answer was not recoverable after the fact.
+
+        ``validate()`` below has always returned the description; only the
+        posting path discarded it.
+        """
         if isinstance(data, dict) and data.get("ok"):
+            self.last_error = ""
             return data.get("result")
+        desc = data.get("description") if isinstance(data, dict) else ""
+        self.last_error = desc or "Telegram rejected the request"
+        logger.warning("Telegram API refused: %s", self.last_error)
         return None
 
     async def create_post(self, text: str, image_paths: list[str] | None = None,
@@ -135,7 +169,21 @@ class TgClient:
 
     async def validate(self) -> str | None:
         """Confirm the token + channel work: getChat on the channel. Returns an
-        error string, or None on success. Used by the connect/test flow."""
+        error string, or None on success. Used by the connect/test flow.
+
+        On success the resolved chat is kept on ``self.resolved_chat`` so the
+        caller can say WHICH channel it reached.
+
+        ⚠ Succeeding here does NOT mean you found the user's channel. A bare
+        name typed by the user is prefixed to ``@name`` by __init__, and a public
+        channel owned by a stranger may already hold that username — getChat
+        reads any public channel, so it returns a confident success for entirely
+        the wrong chat. Observed live: a user's PRIVATE channel titled "Testing"
+        sent us to ``@testing``, an unrelated public channel, which validated
+        cleanly and then refused the post. A private channel has no username at
+        all and is reachable only by its numeric -100… id, so the title a user
+        reads off their screen is never a valid handle.
+        """
         if not self.token:
             return "No bot token"
         if not self.channel:
@@ -146,6 +194,7 @@ class TgClient:
                                       data={"chat_id": self.channel})
                 data = r.json()
                 if data.get("ok"):
+                    self.resolved_chat = data.get("result") or {}
                     return None
                 return data.get("description") or "Telegram rejected the channel"
         except httpx.HTTPError as e:

@@ -11537,7 +11537,12 @@ const App = {
                     </p>
                     <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
                         <label style="font-size:13px;color:var(--text-muted)">Channel</label>
-                        <input type="text" id="tgchan-channel" class="search-input" value="${Utils.escapeHtml(tgChannel.channel || '')}" placeholder="@yourchannel" style="max-width:300px">
+                        <input type="text" id="tgchan-channel" class="search-input" value="${Utils.escapeHtml(tgChannel.channel || '')}" placeholder="@publicchannel or -100…" style="max-width:300px">
+                        <p style="color:var(--text-muted);font-size:12px;margin:6px 0 0">
+                            A <strong>public</strong> channel uses its <code>@username</code> — the one in its public link, not its title.
+                            A <strong>private</strong> channel has no username at all: it needs its numeric <code>-100…</code> id, which Telegram never shows you.
+                            Press <strong>Find my channel</strong> and PawPoller will fetch it.
+                        </p>
                     </div>
                     <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;margin-top:8px">
                         <label style="font-size:13px;color:var(--text-muted)">Posting bot token ${tgChannel.has_own_token ? '(saved — leave blank to keep)' : '(optional — blank reuses your notification bot)'}</label>
@@ -11546,6 +11551,7 @@ const App = {
                     <div style="margin-top:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                         <button class="btn btn-primary" id="tgchan-save">Save</button>
                         <button class="btn btn-secondary" id="tgchan-test">Save &amp; send test</button>
+                        <button class="btn btn-outline" id="tgchan-detect" title="Post any message in your channel first, then press this">&#128269; Find my channel</button>
                         <span id="tgchan-msg" style="font-size:13px"></span>
                     </div>
                 </div>
@@ -13276,6 +13282,49 @@ const App = {
                     }
                     tgchanSave.disabled = false;
                 });
+                /* Find my channel — ask Telegram which channels this bot can see.
+                 *
+                 * A private channel has no username, and its numeric -100… id is
+                 * never shown in Telegram's UI. Typing the title instead sends us
+                 * to "@title", which may be a STRANGER's public channel — that
+                 * passes the getChat check and then refuses the post. Letting the
+                 * bot identify the channel removes the guess entirely. */
+                const tgchanDetect = document.getElementById('tgchan-detect');
+                if (tgchanDetect) tgchanDetect.addEventListener('click', async () => {
+                    const msg = tgMsg();
+                    tgchanDetect.disabled = true;
+                    const label = tgchanDetect.innerHTML;
+                    tgchanDetect.textContent = 'Looking…';
+                    msg.textContent = '';
+                    try {
+                        const res = await API.detectTelegramChannels();
+                        const list = res.channels || [];
+                        if (!list.length) throw new Error('No channels found');
+                        // One match fills it silently; several need a choice, and
+                        // the id alone is unreadable — show the title with it.
+                        const pick = list.length === 1 ? list[0] : (() => {
+                            const lines = list.map((c, i) =>
+                                `${i + 1}. ${c.title || '(untitled)'}${c.username ? ' @' + c.username : ''}  [${c.id}]`);
+                            const n = prompt('Which channel?\n\n' + lines.join('\n'), '1');
+                            const idx = parseInt(n, 10) - 1;
+                            return (idx >= 0 && idx < list.length) ? list[idx] : null;
+                        })();
+                        if (!pick) { msg.textContent = ''; return; }
+                        // Prefer the public @username when there is one: it stays
+                        // valid if the channel is ever recreated, and it reads.
+                        document.getElementById('tgchan-channel').value =
+                            pick.username ? '@' + pick.username : pick.id;
+                        msg.textContent = `Found “${pick.title || pick.id}” — press Save & send test to confirm.`;
+                        msg.style.color = 'var(--success)';
+                    } catch (err) {
+                        msg.textContent = 'Failed: ' + err.message.replace(/^API \d+:\s*/, '');
+                        msg.style.color = 'var(--danger)';
+                    } finally {
+                        tgchanDetect.disabled = false;
+                        tgchanDetect.innerHTML = label;
+                    }
+                });
+
                 const tgchanTest = document.getElementById('tgchan-test');
                 tgchanTest.addEventListener('click', async () => {
                     const msg = tgMsg();

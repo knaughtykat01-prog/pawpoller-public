@@ -418,6 +418,7 @@ const API = {
     getTelegramChannel() { return this.get('/api/settings/telegram/channel'); },
     saveTelegramChannel(data) { return this.post('/api/settings/telegram/channel', data); },
     testTelegramChannel(data) { return this.post('/api/settings/telegram/channel/test', data || {}); },
+    detectTelegramChannels() { return this.post('/api/settings/telegram/channel/detect', {}); },
     /* Weekly email digest (deterministic, templated — no AI). */
     getDigestStatus() { return this.get('/api/digest/status'); },
     saveDigestSettings(data) { return this.post('/api/digest/settings', data); },

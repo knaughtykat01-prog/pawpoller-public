@@ -1681,6 +1681,75 @@ def save_telegram_channel(body: dict):
     return {"status": "saved", "channel": config.get_settings().get("tg_channel", "")}
 
 
+@router.post("/settings/telegram/channel/detect")
+async def detect_telegram_channels():
+    """List the channels this bot can see, so nobody has to type an identifier.
+
+    Channel posting shipped in 2.198.0 asking the user to type the channel by
+    hand, and that is where the failures came from. A private channel has **no
+    username at all** — the title on screen is not a handle, and neither is a
+    ``t.me/+hash`` invite link — so it is reachable only by a numeric -100… id
+    that Telegram's UI never shows you.
+
+    Worse than merely hard: a bare name gets prefixed to ``@name`` upstream, and
+    a stranger's public channel may already own that username. Observed live —
+    a user's private channel titled "Testing" sent us to ``@testing``, an
+    unrelated public channel, which passed the getChat check (any public channel
+    is readable) and then refused the post. The check confirmed the wrong chat.
+
+    This is the SAME trick the notification-bot setup has always used (see the
+    flow comment above: "send /start, we call getUpdates and find the chat_id").
+    The bot is already required to be an admin of the channel, and an admin
+    receives ``channel_post`` updates — so once anything is posted there, the
+    channel identifies itself and the user never types an id.
+    """
+    settings = config.get_settings()
+    token = settings.get("tg_bot_token", "") or settings.get("telegram_bot_token", "")
+    if not token:
+        raise HTTPException(400, "No bot token — add a posting bot token first")
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(f"https://api.telegram.org/bot{token}/getUpdates")
+            data = resp.json()
+    except Exception as e:
+        raise HTTPException(502, f"Failed to contact Telegram API: {e}")
+
+    if not data.get("ok"):
+        desc = data.get("description") or "Telegram rejected the request"
+        if data.get("error_code") == 409:
+            # The notification bot long-polls getUpdates (polling/telegram_bot.py).
+            # Reusing that same token for posting puts the two in contention.
+            raise HTTPException(409, "This bot token is already being long-polled for "
+                                     "notification commands. Use a SEPARATE bot for channel "
+                                     "posting, or stop the notification bot briefly.")
+        raise HTTPException(400, f"Telegram rejected the token: {desc}")
+
+    found: dict[str, dict] = {}
+    for result in data.get("result", []):
+        for key in ("channel_post", "edited_channel_post", "my_chat_member", "message"):
+            obj = result.get(key)
+            chat = obj.get("chat") if isinstance(obj, dict) else None
+            if not chat or not chat.get("id"):
+                continue
+            if chat.get("type") not in ("channel", "supergroup", "group"):
+                continue
+            found[str(chat["id"])] = {
+                "id": str(chat["id"]),
+                "title": chat.get("title") or "",
+                "username": chat.get("username") or "",
+                "type": chat.get("type") or "",
+            }
+
+    if not found:
+        raise HTTPException(404,
+            "No channels seen yet. Add the bot to your channel as an admin with "
+            "'Post Messages', then post any message in the channel and press this "
+            "again — an admin bot receives channel posts, which is how it learns the id.")
+
+    return {"channels": list(found.values())}
+
+
 @router.post("/settings/telegram/channel/test")
 async def test_telegram_channel(body: dict | None = None):
     """Validate the channel: getChat via the resolved bot token, then send a test
@@ -1698,14 +1767,45 @@ async def test_telegram_channel(body: dict | None = None):
     err = await client.validate()
     if err:
         raise HTTPException(400, f"Channel check failed: {err}")
+
+    # Name the channel we actually reached. getChat succeeds against ANY public
+    # channel, so "the check passed" is not evidence we found the user's one:
+    # a bare name is prefixed to "@name" upstream, and a stranger's public
+    # channel may already own that username. Observed live — a private channel
+    # titled "Testing" sent us to @testing, someone else's channel, which
+    # validated cleanly and then refused the post. Reporting the resolved title
+    # and username is what turns that from a mystery into something the user can
+    # see at a glance.
+    chat = getattr(client, "resolved_chat", {}) or {}
+    who = chat.get("title") or chat.get("username") or channel
+    handle = f" (@{chat['username']})" if chat.get("username") else ""
+    reached = f"{who}{handle}"
     try:
         r = await client.create_post("✅ PawPoller is connected to this channel.")
     except Exception as e:
         raise HTTPException(400, f"Test post failed: {e}")
     if not r:
-        raise HTTPException(400, "Telegram accepted the channel but the test post didn't send "
-                                 "(is the bot an admin with post rights?)")
-    return {"status": "success", "message": "Test message posted to the channel", "url": r.get("url", "")}
+        # Report what Telegram said, not what we suspect. getChat has already
+        # succeeded by this point, so the channel resolves and the token is
+        # valid — guessing "is the bot an admin?" at a user who has just made it
+        # an admin sends them to re-check the one thing that is provably fine.
+        # The API names the cause ("not enough rights to send text messages to
+        # the chat", "have no rights to send a message", "CHAT_WRITE_FORBIDDEN").
+        reason = getattr(client, "last_error", "") or "Telegram gave no reason"
+        hint = ""
+        if "right" in reason.lower() or "forbidden" in reason.lower():
+            # Two very different causes look identical here, and the second is
+            # the one people never suspect, so both are named.
+            hint = (f" — the handle '{client.channel}' resolved to “{reached}”. "
+                    "If that is NOT your channel, that is the problem: a bare name is "
+                    "treated as a public @username, and someone else may own it. A "
+                    "private channel has no username at all — use its numeric -100… id. "
+                    "If it IS your channel, open the bot in the channel's Administrators "
+                    "list and turn on 'Post Messages'.")
+        raise HTTPException(400, f"Telegram accepted the channel but refused the post: {reason}{hint}")
+    return {"status": "success",
+            "message": f"Test message posted to “{reached}” — check it is the right channel",
+            "url": r.get("url", "")}
 
 
 @router.get("/settings/telegram/features")
