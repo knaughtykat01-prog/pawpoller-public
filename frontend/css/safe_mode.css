@@ -1,0 +1,68 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   SAFE (SFW) MODE — global adult-content blur toggle
+
+   A one-click viewing mode for when you're not alone at the screen. When
+   `html[data-sfw="1"]` is set (persisted in localStorage as `pawpoller-sfw`,
+   toggled from the sidebar-footer 🔒 button, applied pre-paint in index.html
+   so it never flashes), every cover / thumbnail whose rating is anything other
+   than **general** is visually blurred. It's a viewing-only, per-device state:
+   titles, metadata and navigation all still work, nothing is deleted or
+   changed, and toggling it off restores everything instantly.
+
+   RATING SOURCE: content surfaces carry `data-rating="<general|mature|adult>"`
+   on their cover element (bookshelf `.book-cover`, artwork `.artwork-card-cover`
+   + `.artwork-detail-img`, masterpieces `.mp-cover` + `.mp-hero-img` + `.mp-alts`).
+   We blur with `:not([data-rating="general"])`, which ALSO matches elements
+   that carry no `data-rating` at all — so anything unrated, or a surface we
+   don't tag (Collections bundle many pieces and have no single rating), is
+   blurred by default. Fail-safe: safe mode can over-blur, but never leaks.
+
+   Theme-independent — loaded LAST in index.html so the blur wins over every
+   theme's component CSS. Inert whenever safe mode is off.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── The blur ──────────────────────────────────────────────────────────────
+   Applied to the cover element (or the detail <img>). A filter also makes the
+   element a containing block, so its own overlays (ribbons, the +Collection
+   chip) blur with it — intended: the whole tile reads as hidden. */
+html[data-sfw="1"] .book-cover:not([data-rating="general"]),
+html[data-sfw="1"] .artwork-card-cover:not([data-rating="general"]),
+html[data-sfw="1"] .mp-cover:not([data-rating="general"]),
+html[data-sfw="1"] .coll-cover:not([data-rating="general"]),
+html[data-sfw="1"] .mp-alts:not([data-rating="general"]) img,
+html[data-sfw="1"] .artwork-detail-alts:not([data-rating="general"]) img,
+html[data-sfw="1"] img.artwork-detail-img:not([data-rating="general"]),
+html[data-sfw="1"] img.mp-hero-img:not([data-rating="general"]),
+html[data-sfw="1"] img.post-card-img:not([data-rating="general"]) {
+    filter: blur(22px) saturate(0.75);
+    /* Keep blurred pixels from bleeding past the frame edge. */
+    overflow: hidden;
+    /* Signals the tile is click-to-peek (the delegated handler in app.js
+       reveals it on first click and swallows that click's navigation). */
+    cursor: zoom-in;
+}
+
+/* Click-to-reveal "peek" — app.js adds .sfw-revealed to the blurred element on
+   the first click. !important because the blur selectors above are more
+   specific (an extra :not()), so a plain override would lose the cascade. The
+   next click on a revealed tile falls through to normal navigation, and the
+   peek resets on page navigation or when safe mode is re-enabled. */
+html[data-sfw="1"] .sfw-revealed {
+    filter: none !important;
+    cursor: auto;
+}
+
+/* ── Sidebar-footer toggle button ──────────────────────────────────────────
+   Base 30×30 look comes from layout.css (.btn-sfw-toggle joins .btn-logout /
+   .btn-theme-toggle). When safe mode is ON the button lights up amber so the
+   active state — and the reason covers are blurred — is unmistakable. */
+html[data-sfw="1"] .btn-sfw-toggle {
+    color: #1c1300;
+    background: #ffce6b;
+    border-color: #e0a92e;
+}
+html[data-sfw="1"] .btn-sfw-toggle:hover {
+    background: #ffd884;
+    border-color: #e0a92e;
+    color: #1c1300;
+}

@@ -1,0 +1,65 @@
+/* ── Workbench — Overview health strip + graph settings (Slice E) ─────────────
+ * "Observatory" health strip + "Bento" chart-type toggle, both living inside the
+ * existing customisable Overview widget board. Theme-aware via the Quill tokens;
+ * Brut coverage at the foot. */
+
+/* ── Platform health strip (Observatory) ── */
+.health-strip {
+    display: flex; flex-wrap: wrap; gap: .5rem .55rem; margin-top: .25rem;
+}
+.hs-summary {
+    font-family: var(--font-sans); font-size: .78rem; font-weight: 500;
+    color: var(--text-muted); margin-left: .5rem;
+}
+.hs-chip {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .32rem .6rem; border-radius: 999px;
+    border: 1px solid var(--card-border-inner); background: var(--bg-tertiary);
+    font-size: .8rem; color: var(--text-secondary); white-space: nowrap;
+    transition: border-color .15s ease, background .15s ease;
+}
+.hs-chip:hover { border-color: var(--accent); }
+.hs-label { line-height: 1; }
+.hs-dot {
+    width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+    background: var(--text-muted);
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 0%, transparent);
+}
+/* Health states — theme-aware via semantic tokens. */
+.hs-dot.pp-health-healthy     { background: var(--success); box-shadow: 0 0 6px -1px color-mix(in srgb, var(--success) 70%, transparent); }
+.hs-dot.pp-health-running     { background: var(--info); }
+.hs-dot.pp-health-stale,
+.hs-dot.pp-health-throttled   { background: var(--warning); }
+.hs-dot.pp-health-error       { background: var(--danger); box-shadow: 0 0 6px -1px color-mix(in srgb, var(--danger) 70%, transparent); }
+.hs-dot.pp-health-unconfigured,
+.hs-dot.pp-health-unknown     { background: var(--text-muted); opacity: .45; }
+
+/* Give error/attention chips a subtle tint so trouble stands out at a glance. */
+.hs-chip:has(.pp-health-error)  { border-color: color-mix(in srgb, var(--danger) 45%, var(--card-border-inner)); }
+.hs-chip:has(.pp-health-stale),
+.hs-chip:has(.pp-health-throttled) { border-color: color-mix(in srgb, var(--warning) 40%, var(--card-border-inner)); }
+
+/* ── Chart-type toggle (Bento — "adjust settings of graphs") ── */
+.wb-charttype {
+    display: inline-flex; margin-left: .7rem; vertical-align: middle;
+    border: 1px solid var(--card-border-inner); border-radius: 999px; overflow: hidden;
+}
+.wb-ct {
+    appearance: none; border: none; background: transparent; cursor: pointer;
+    font: inherit; font-size: .72rem; font-weight: 600; color: var(--text-secondary);
+    padding: .18rem .6rem; transition: background .15s ease, color .15s ease;
+}
+.wb-ct:hover { color: var(--text-primary); }
+.wb-ct.is-active { background: var(--accent); color: #fff; }
+
+/* ── Brut coverage ── */
+html[data-mode="brut"] .hs-chip { border-width: 2px; border-radius: 4px; }
+html[data-mode="brut"] .hs-dot { border-radius: 2px; }
+html[data-mode="brut"] .wb-charttype { border-width: 2px; border-radius: 3px; }
+html[data-mode="brut"] .wb-ct.is-active { font-weight: 800; }
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+    .hs-label { display: none; }               /* dots only on small screens */
+    .hs-chip { padding: .35rem; }
+}

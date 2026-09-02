@@ -1,0 +1,495 @@
+/* ── Artwork hub ─────────────────────────────────────────────
+ * Styles for the PostyBirb-style image uploader (frontend/js/artwork.js).
+ * Uses theme tokens throughout so it tracks all 8 themes.
+ */
+
+/* Filter/search bar above the grid — segments library vs discovered work
+   and title-searches across both (client-side over the loaded set). */
+.artwork-filters {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.1rem;
+}
+.art-seg-group {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--bg-card);
+}
+.art-seg {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: .88rem;
+    padding: .42rem .9rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    transition: background .15s ease, color .15s ease;
+}
+.art-seg + .art-seg { border-left: 1px solid var(--border); }
+.art-seg:hover { color: var(--text-primary); }
+.art-seg.is-active { background: var(--accent); color: #fff; }
+.art-seg-count {
+    font-size: .74rem;
+    font-weight: 600;
+    padding: .05rem .4rem;
+    border-radius: 999px;
+    background: rgba(128, 128, 128, .18);
+}
+.art-seg.is-active .art-seg-count { background: rgba(255, 255, 255, .28); }
+.art-search {
+    flex: 1 1 200px;
+    max-width: 320px;
+    padding: .45rem .8rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: .9rem;
+}
+.art-search:focus { outline: none; border-color: var(--accent); }
+
+/* Grid of artwork cards */
+.artwork-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
+}
+
+.artwork-card {
+    display: block;
+    position: relative;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.artwork-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--accent);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+/* Delete affordance on a library card — hidden until hover/focus so it never
+   competes with the artwork, but keeps "remove artwork" one click away. */
+.artwork-card-del {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 2;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity .12s ease, background .12s ease;
+}
+.artwork-card:hover .artwork-card-del,
+.artwork-card:focus-within .artwork-card-del { opacity: 1; }
+.artwork-card-del:hover { background: var(--danger, #e0484d); }
+.artwork-card-cover {
+    aspect-ratio: 1 / 1;
+    background-size: cover;
+    background-position: center;
+    background-color: var(--bg-tertiary);
+}
+.artwork-card-cover--empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+/* Variant tiles (2.190.0) — a render of a library piece, shown right after its
+   master card. Dimmed border + a corner badge distinguish them from masters. */
+.artwork-card--variant { border-style: dashed; }
+.artwork-card--variant:hover { border-style: solid; }
+.artwork-card-vbadge {
+    position: absolute; top: 6px; left: 6px; z-index: 2;
+    font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    padding: .1rem .35rem; border-radius: 999px;
+    background: rgba(0, 0, 0, .6); color: #fff;
+}
+.artwork-card-vlabel {
+    font-size: 11px; font-weight: 600;
+    color: var(--text-secondary);
+    border: 1px solid var(--card-border-inner, var(--border)); border-radius: 999px;
+    padding: 0 .4rem;
+}
+
+/* Detail variant strip (2.190.0) — thumbnails under the main image; click swaps. */
+.artwork-detail-alts {
+    display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .7rem;
+}
+.artwork-alt {
+    display: flex; flex-direction: column; align-items: center; gap: .2rem;
+    width: 72px; padding: 0; border: 0; background: none; cursor: pointer;
+    font: inherit; color: var(--text-muted);
+}
+.artwork-alt img {
+    width: 72px; height: 72px; object-fit: cover;
+    border-radius: var(--radius-sm); background: var(--bg-tertiary);
+    border: 2px solid transparent; transition: border-color .12s ease;
+}
+.artwork-alt:hover img { border-color: var(--border); }
+.artwork-alt.is-active img { border-color: var(--accent); }
+.artwork-alt-label {
+    font-size: 10.5px; line-height: 1.2; max-width: 72px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.artwork-alt.is-active .artwork-alt-label { color: var(--text-primary); }
+
+.artwork-card-body { padding: .6rem .7rem; }
+.artwork-card-title {
+    font-weight: 600;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.artwork-card-meta {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    margin-top: .35rem;
+}
+.artwork-plats { margin-left: auto; display: flex; gap: 2px; }
+.artwork-plat { font-size: 14px; }
+
+/* ── Discovered cards (art the pollers found, not yet in the library) ── */
+.artwork-card--disc { display: flex; flex-direction: column; }
+.artwork-card-coverlink {
+    position: relative;
+    display: block;
+    text-decoration: none;
+    color: inherit;
+}
+.artwork-disc-badge {
+    position: absolute;
+    top: .4rem;
+    right: .4rem;
+    font-size: 14px;
+    line-height: 1;
+    padding: 3px 6px;
+    border-radius: var(--radius-pill);
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+}
+.artwork-disc-stat { font-size: 12px; color: var(--text-muted); }
+.artwork-disc-actions {
+    display: flex;
+    gap: .4rem;
+    margin-top: .55rem;
+}
+.artwork-disc-actions .btn { flex: 1; text-align: center; }
+
+/* Rating badges */
+.artwork-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    padding: 2px 7px;
+    border-radius: var(--radius-pill);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+}
+.artwork-badge--general { background: rgba(90, 224, 160, 0.18); color: var(--success); }
+.artwork-badge--mature  { background: rgba(240, 160, 80, 0.18);  color: var(--accent-warm); }
+.artwork-badge--adult   { background: rgba(240, 112, 112, 0.18); color: var(--danger); }
+
+/* ── Upload / create layout ── */
+.artwork-upload {
+    display: grid;
+    grid-template-columns: minmax(260px, 380px) 1fr;
+    gap: 1.25rem;
+    align-items: start;
+}
+.artwork-upload-col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+
+.artwork-drop {
+    position: relative;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-secondary);
+    min-height: 320px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    transition: border-color .15s ease, background .15s ease;
+    overflow: hidden;
+}
+.artwork-drop.dragover {
+    border-color: var(--accent);
+    background: var(--bg-hover);
+}
+.artwork-drop-inner { padding: 2rem 1rem; }
+.artwork-drop-icon { font-size: 40px; opacity: .8; margin-bottom: .4rem; }
+.artwork-drop-inner p { margin: .5rem 0; color: var(--text-secondary); }
+.artwork-drop-inner .btn { margin: .3rem .25rem; }
+.artwork-drop-hint { font-size: 12px; }
+.artwork-preview {
+    width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+    display: block;
+    background: var(--bg-tertiary);
+}
+/* The class `display: block` above beats the UA `[hidden] { display: none }`,
+   so without this the empty preview <img> shows anyway — as a broken-image
+   "preview" bar that steals width in the flex drop row and squishes the
+   "Choose image" column. Respect the attribute. (2.122.0) */
+.artwork-preview[hidden] { display: none; }
+
+/* Form fields — the `.field` primitive (label above, full-width control) now
+   lives in components.css so the Details panel, Image Tool and Promo Maker all
+   share it. Only artwork-specific tweaks belong here. */
+/* The per-platform tag boxes are the one place a taller default helps. */
+.artwork-plat-adv .field textarea { min-height: 3.5rem; }
+
+/* Platform rows */
+.artwork-plat-row {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .45rem 0;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+.artwork-plat-row:last-child { border-bottom: none; }
+.artwork-plat-toggle {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    cursor: pointer;
+    min-width: 160px;
+}
+.artwork-plat-emoji { font-size: 16px; }
+.artwork-plat-name { font-weight: 600; }
+.art-acct { font-size: 12px; color: var(--text-muted); }
+.art-acct select {
+    margin-left: .25rem;
+    padding: .2rem .35rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+}
+.artwork-plat-adv { margin-left: auto; font-size: 12px; }
+.artwork-plat-adv summary { cursor: pointer; color: var(--accent); }
+.artwork-plat-adv .field { margin-top: .4rem; }
+.artwork-plat-adv input {
+    padding: .35rem .5rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    width: 260px;
+    max-width: 100%;
+}
+
+.artwork-actions {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+}
+
+/* ── Detail ── */
+.artwork-detail {
+    display: grid;
+    grid-template-columns: minmax(240px, 400px) 1fr;
+    gap: 1.25rem;
+    align-items: start;
+}
+.artwork-detail-col { display: flex; flex-direction: column; gap: .9rem; min-width: 0; }
+/* Keep the artwork itself in view while the right column is read → less scroll. */
+@media (min-width: 780px) {
+    .artwork-detail > .artwork-detail-col:first-child { position: sticky; top: 1rem; }
+}
+.artwork-detail .card { margin: 0; }
+.artwork-detail-img {
+    width: 100%;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
+}
+.artwork-detail-meta { margin-bottom: .5rem; }
+
+.artwork-status {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+}
+.artwork-status--posted  { background: rgba(90, 224, 160, 0.18); color: var(--success); }
+.artwork-status--failed  { background: rgba(240, 112, 112, 0.18); color: var(--danger); }
+.artwork-status--success { background: rgba(90, 224, 160, 0.18); color: var(--success); }
+
+/* ── Unify: masters + select-to-unify ────────────────────────
+ * A master pools the same artwork posted to several sites into one tile,
+ * reusing the cross-platform link tables. Select mode ticks discovered tiles
+ * to merge. See frontend/js/artwork.js (_foldMasters / _masterCard) and
+ * prototype/docs/ARTWORK_UNIFY.md.
+ */
+.artwork-card--selectable { position: relative; }
+
+/* Select-to-unify action bar. Hidden until select mode (a bare [hidden]
+   attribute is overridden by an author display value, so visibility is driven
+   by the .is-active class instead). Floats: fixed to the bottom-centre of the
+   viewport so it stays in reach while you scroll the gallery ticking pieces. */
+.artwork-select-bar {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    z-index: 900;
+    width: max-content;
+    max-width: min(620px, calc(100vw - 24px));
+    margin: 0;
+    padding: .6rem .9rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--accent);
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .28);
+}
+.artwork-select-bar.is-active {
+    display: flex;
+    animation: art-selbar-in .18s ease;
+}
+@keyframes art-selbar-in {
+    from { opacity: 0; transform: translate(-50%, 12px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.artwork-select-bar #art-select-count { font-weight: 600; }
+/* Hint sits on its own line above the controls (centred, muted). */
+.artwork-select-hint { font-size: 12px; flex-basis: 100%; text-align: center; order: -1; color: var(--text-muted); }
+#art-select-toggle.is-hidden { display: none; }
+/* Clear the floating bar so the last gallery row isn't hidden behind it. */
+.artwork-grid.selecting { padding-bottom: 128px; }
+
+/* Master tile */
+.artwork-card--master { position: relative; border-color: var(--accent); }
+.art-master-toggle {
+    display: block;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    position: relative;
+}
+.artwork-master-badge {
+    left: .4rem;
+    right: auto;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+}
+.artwork-master-panel { display: none; margin-top: .5rem; }
+.artwork-card--master.expanded .artwork-master-panel { display: block; }
+.artwork-master-member {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .32rem 0;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+}
+.artwork-master-member-title {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.artwork-master-member-stat { color: var(--text-muted); white-space: nowrap; }
+.artwork-master-panel-actions { margin-top: .5rem; text-align: right; }
+
+/* Checkbox overlay shown only while selecting */
+.artwork-select-check {
+    position: absolute;
+    top: .4rem;
+    left: .4rem;
+    z-index: 2;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background: rgba(0, 0, 0, .5);
+    color: transparent;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    line-height: 1;
+}
+.artwork-grid.selecting .artwork-card--selectable { cursor: pointer; }
+.artwork-grid.selecting .artwork-select-check { display: flex; }
+.artwork-grid.selecting .artwork-card--selectable .artwork-card-coverlink,
+.artwork-grid.selecting .artwork-card--selectable .artwork-disc-actions { pointer-events: none; }
+.artwork-card--selectable.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
+}
+.artwork-card--selectable.selected .artwork-select-check {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+/* "Possible matches" banner (title-similarity suggestions) */
+.artwork-suggest-banner {
+    margin: 0 0 1rem;
+    padding: .6rem .8rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius);
+}
+.artwork-suggest-head { font-weight: 600; margin-bottom: .5rem; }
+.artwork-suggest-head .muted { font-weight: 400; font-size: 12px; }
+.artwork-suggest-card {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .4rem 0;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+.artwork-suggest-plats { font-size: 15px; white-space: nowrap; }
+.artwork-suggest-text { flex: 1; min-width: 140px; font-size: 13px; }
+.artwork-suggest-card .art-suggest-dismiss { padding-left: .5rem; padding-right: .5rem; }
+
+/* Stack on narrow viewports */
+@media (max-width: 760px) {
+    .artwork-upload, .artwork-detail { grid-template-columns: 1fr; }
+}

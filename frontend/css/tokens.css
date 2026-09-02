@@ -1,0 +1,712 @@
+/* ── PawPoller Design Tokens ──────────────────────────────────
+   Eight themes — every UI surface reads from these custom properties
+   so swapping a single `data-theme="..."` attribute on <html> retones
+   the entire app without re-rendering anything.
+
+   Adding a theme = copy a block, rename, change colours. Components
+   should NEVER hardcode colours; if you need a shade these tokens
+   don't cover, add a new token and define it in EVERY theme block.
+
+   Themes:
+     dark            — default, charcoal + violet
+     light           — bright, neutral
+     ink_copper      — matches pawpoller.pages.dev (slate + copper)
+     parchment       — warm sepia paper, brown ink
+     midnight_press  — pure black OLED with cool steel accents
+     forest          — pine + sage + cream, low-stim
+     velvet          — aubergine + dusty rose + amber
+     high_contrast   — pure black/white + saturated yellow (a11y)
+   ──────────────────────────────────────────────────────────── */
+
+/* ── Default Dark (root) ─────────────────────────────────── */
+:root {
+    /* ── Backgrounds ─────────────────────────────────────── */
+    --bg-primary:    #13111a;
+    --bg-secondary:  #1c1926;
+    --bg-card:       #241f30;
+    --bg-tertiary:   #2d2840;
+    --bg-hover:      #352f48;
+    --bg-glass:      rgba(36, 31, 48, 0.65);
+
+    /* ── Borders & Dividers ──────────────────────────────── */
+    --border:             #3d3556;
+    --card-border-inner:  rgba(255, 255, 255, 0.08);   /* subtle inset edge */
+    --overlay-backdrop:   rgba(0, 0, 0, 0.5);          /* modal scrim */
+
+    /* ── Text ────────────────────────────────────────────── */
+    --text-primary:  #f0edf5;
+    --text-secondary:#a99fc0;
+    --text-muted:    #6e6488;
+
+    /* ── Accents ─────────────────────────────────────────── */
+    --accent:        #9b7dff;
+    --accent-dim:    #7c5cd6;
+    --accent-warm:   #f0a050;
+
+    /* ── Semantic ────────────────────────────────────────── */
+    --success:       #5ae0a0;
+    --warning:       #fbc050;
+    --danger:        #f07070;
+    --info:          #70a0ff;
+
+    /* ── Layout ──────────────────────────────────────────── */
+    /* Bold redesign: the sidebar is persistent + labeled by default
+       (--sidebar-w) and shrinks to an icon rail only when explicitly
+       collapsed (--sidebar-w-collapsed). --sidebar-w-expanded kept as a
+       legacy alias equal to the default width. */
+    --sidebar-w:           248px;
+    --sidebar-w-collapsed: 76px;
+    --sidebar-w-expanded:  248px;
+    --bottom-nav-h:  60px;
+
+    /* ── Radii ───────────────────────────────────────────── */
+    --radius:        12px;
+    --radius-lg:     16px;
+    --radius-sm:     8px;
+    --radius-pill:   999px;
+
+    /* ── Shadows ─────────────────────────────────────────── */
+    --shadow:         0 4px 20px rgba(0, 0, 0, 0.25);
+    --shadow-strong:  0 8px 40px rgba(0, 0, 0, 0.30);
+    --shadow-glass:   0 8px 32px rgba(0, 0, 0, 0.20);
+
+    /* ── Glass ───────────────────────────────────────────── */
+    --blur:          12px;
+
+    /* ── Motion ──────────────────────────────────────────── */
+    --transition:    0.2s ease;
+    --transition-slow: 0.3s ease;
+
+    /* ── Typography ──────────────────────────────────────── */
+    --font-serif:    'Crimson Pro', Georgia, 'Times New Roman', serif;
+    /* Bold redesign type system: Bricolage Grotesque for display (big numbers,
+       headings, brand) and Hanken Grotesk for body. Crimson Pro stays for any
+       literary/serif use; JetBrains Mono for code. */
+    --font-display:  'Bricolage Grotesque', 'Hanken Grotesk', -apple-system, 'Segoe UI', system-ui, sans-serif;
+    --font-sans:     'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-mono:     'JetBrains Mono', ui-monospace, 'Cascadia Code', Consolas, monospace;
+
+    /* ── Background glows (subtle radial wash on body) ───── */
+    /* Gives surfaces a hint of warmth/coolness without changing
+       overall brightness. Defaults are a faint copper top-left and
+       sage bottom-right. Each theme can override for tone. */
+    --bg-glow-warm:  rgba(208, 129, 54, 0.06);
+    --bg-glow-cool:  rgba(125, 154, 122, 0.04);
+
+    /* ── Platform brand colours (theme-invariant) ────────── */
+    --platform-ib:   #6c8cff;
+    --platform-fa:   #faaf3a;
+    --platform-ws:   #89c33f;
+    --platform-sf:   #5c4a9e;
+    --platform-sqw:  #a78bfa;
+    --platform-ao3:  #990000;
+    --platform-da:   #00c853;
+    --platform-wp:   #f47315;
+    --platform-ik:   #009688;
+    --platform-bsky: #0085ff;
+    --platform-tw:   #1d9bf0;
+    --platform-mast: #6364ff;
+    --platform-tum:  #36465d;
+    --platform-pix:  #0096fa;
+    --platform-thr:  #555555;  /* Threads is monochrome — mid-grey reads on light + dark themes */
+    --platform-ig:   #E1306C;  /* Instagram magenta */
+    --platform-e621: #012e57;  /* e621 navy */
+
+    /* ── Legacy token aliases ────────────────────────────── */
+    /* Older CSS (editor.css, diagnostics.css, components.css) was
+       written against names that were never defined in the token
+       set, so var() lookups silently fell through to browser
+       defaults — the visible symptom was unreadable <option> rows
+       in the editor's CSS-tab dropdowns and faint-grey card edges
+       on Diagnostics. Aliases re-resolve per active theme because
+       the right-hand side is itself a var() call. */
+    --surface-elevated: var(--bg-card);
+    --surface-primary:  var(--bg-secondary);
+    --border-primary:   var(--border);
+    --color-success:    var(--success);
+    --color-warning:    var(--warning);
+    --color-error:      var(--danger);
+    /* More legacy names found during the reskin — editor.css, loading_indicator.css,
+       components.css, diagnostics.css referenced these without ever defining them,
+       so var() fell through to hardcoded dark/violet fallbacks (the notification
+       bell rendered as a dark circle on Quill, etc.). Aliasing here makes them all
+       theme-aware in one place. (Runtime per-element vars like --pc/--page-accent
+       are intentionally left alone.) */
+    --accent-color:      var(--accent);
+    --accent-hover:      var(--accent-dim);
+    --color-accent:      var(--accent);
+    --primary:           var(--accent);
+    --bg-elevated:       var(--bg-card);
+    --border-color:      var(--border);
+    --border-secondary:  var(--card-border-inner);
+    --input-bg:          var(--bg-tertiary);
+    --surface-base:      var(--bg-primary);
+    --surface-secondary: var(--bg-secondary);
+    --surface-hover:     var(--bg-hover);
+    --text:              var(--text-primary);
+    --text-tertiary:     var(--text-muted);
+}
+
+/* ── Quill (redesign default — warm paper, sienna quill accent) ──
+   The prototype's design palette, mapped onto the real token names. This is
+   the reskin's foundation layer: retones every screen at once. Typography +
+   component treatment follow in later reskin slices. */
+[data-theme="quill"] {
+    --bg-primary:    #f4f0e8;   /* warm paper ground */
+    --bg-secondary:  #faf7f1;
+    --bg-card:       #fffdf8;
+    --bg-tertiary:   #efe9dd;
+    --bg-hover:      #e9e2d3;
+    --bg-glass:      rgba(255, 253, 248, 0.80);
+    --border:             #e6ddcd;
+    --card-border-inner:  rgba(36, 29, 23, 0.07);
+    --overlay-backdrop:   rgba(40, 24, 20, 0.30);
+    --text-primary:  #241d17;
+    --text-secondary:#8a7f70;
+    --text-muted:    #b3a996;
+    --accent:        #9a5b34;   /* quill sienna — the one brand accent */
+    --accent-dim:    #7d4827;
+    --accent-warm:   #c07d3a;
+    --success:       #2f8f5b;
+    --warning:       #b7791f;
+    --danger:        #c0453b;
+    --info:          #4d6b8a;
+    --shadow:         0 10px 26px -14px rgba(40, 24, 20, 0.20);
+    --shadow-strong:  0 16px 40px -12px rgba(40, 24, 20, 0.26);
+    --shadow-glass:   0 8px 32px rgba(120, 90, 50, 0.10);
+    --bg-glow-warm:   rgba(192, 125, 58, 0.06);
+    --bg-glow-cool:   rgba(125, 154, 122, 0.03);
+}
+
+/* ── Quill Dark (redesign — warm dark, sienna accent) ── */
+[data-theme="quill_dark"] {
+    --bg-primary:    #161310;
+    --bg-secondary:  #1c1712;
+    --bg-card:       #211b15;
+    --bg-tertiary:   #29221a;
+    --bg-hover:      #322a20;
+    --bg-glass:      rgba(33, 27, 21, 0.72);
+    --border:             #332a21;
+    --card-border-inner:  rgba(239, 230, 217, 0.07);
+    --overlay-backdrop:   rgba(0, 0, 0, 0.55);
+    --text-primary:  #efe6d9;
+    --text-secondary:#a89a88;
+    --text-muted:    #7c7061;
+    --accent:        #d99a63;
+    --accent-dim:    #b9762c;
+    --accent-warm:   #d0a35a;
+    --success:       #4ecb83;
+    --warning:       #e0a94a;
+    --danger:        #e5695e;
+    --info:          #70a0ff;
+    --shadow:         0 14px 30px -16px rgba(0, 0, 0, 0.50);
+    --shadow-strong:  0 16px 44px -12px rgba(0, 0, 0, 0.60);
+    --shadow-glass:   0 8px 32px rgba(0, 0, 0, 0.45);
+    --bg-glow-warm:   rgba(217, 154, 99, 0.05);
+    --bg-glow-cool:   rgba(125, 154, 122, 0.03);
+}
+
+/* ── Light ───────────────────────────────────────────────── */
+[data-theme="light"] {
+    --bg-primary:    #f8f6fb;
+    --bg-secondary:  #ffffff;
+    --bg-card:       #ffffff;
+    --bg-tertiary:   #f0ecf5;
+    --bg-hover:      #e8e2f0;
+    --bg-glass:      rgba(255, 255, 255, 0.70);
+    --border:             #ddd5e8;
+    --card-border-inner:  rgba(0, 0, 0, 0.06);
+    --overlay-backdrop:   rgba(40, 30, 60, 0.35);
+    --text-primary:  #1c1926;
+    --text-secondary:#5a4f70;
+    --text-muted:    #8a80a0;
+    --accent:        #7c5cd6;
+    --accent-dim:    #6a48c0;
+    --accent-warm:   #d08030;
+    --success:       #16a34a;
+    --warning:       #d97706;
+    --danger:        #dc2626;
+    --info:          #2563eb;
+    --shadow:         0 4px 20px rgba(100, 80, 150, 0.08);
+    --shadow-strong:  0 8px 40px rgba(100, 80, 150, 0.12);
+    --shadow-glass:   0 8px 32px rgba(100, 80, 150, 0.06);
+    --bg-glow-warm:   rgba(208, 129, 54, 0.04);
+    --bg-glow-cool:   rgba(125, 154, 122, 0.03);
+}
+
+/* ── Ink & Copper (matches pawpoller.pages.dev) ──────────── */
+[data-theme="ink_copper"] {
+    --bg-primary:    #13110e;
+    --bg-secondary:  #1f1c17;
+    --bg-card:       #241f1a;
+    --bg-tertiary:   #332e26;
+    --bg-hover:      #3d3730;
+    --bg-glass:      rgba(36, 31, 26, 0.65);
+    --border:             #4a4138;
+    --card-border-inner:  rgba(245, 239, 228, 0.07);
+    --overlay-backdrop:   rgba(10, 9, 7, 0.60);
+    --text-primary:  #f5efe4;
+    --text-secondary:#c4b9a3;
+    --text-muted:    #8a7e69;
+    --accent:        #d08136;
+    --accent-dim:    #a8652a;
+    --accent-warm:   #e5a05a;
+    --success:       #7d9a7a;
+    --warning:       #e5a05a;
+    --danger:        #c44b4b;
+    --info:          #6b8fa8;
+    --shadow:         0 4px 20px rgba(0, 0, 0, 0.40);
+    --shadow-strong:  0 8px 40px rgba(208, 129, 54, 0.18);
+    --shadow-glass:   0 8px 32px rgba(0, 0, 0, 0.30);
+    --bg-glow-warm:   rgba(208, 129, 54, 0.10);
+    --bg-glow-cool:   rgba(125, 154, 122, 0.05);
+}
+
+/* ── Parchment (warm sepia paper) ────────────────────────── */
+[data-theme="parchment"] {
+    --bg-primary:    #f4ead7;
+    --bg-secondary:  #faf3e3;
+    --bg-card:       #faf3e3;
+    --bg-tertiary:   #ede1c5;
+    --bg-hover:      #e6d8b8;
+    --bg-glass:      rgba(250, 243, 227, 0.78);
+    --border:             #c8b896;
+    --card-border-inner:  rgba(58, 47, 31, 0.08);
+    --overlay-backdrop:   rgba(58, 47, 31, 0.30);
+    --text-primary:  #3a2f1f;
+    --text-secondary:#6b5a3e;
+    --text-muted:    #8f7e60;
+    --accent:        #8a4a1c;
+    --accent-dim:    #6e3a14;
+    --accent-warm:   #b8742e;
+    --success:       #4d7c4d;
+    --warning:       #c47a1d;
+    --danger:        #a83838;
+    --info:          #4d6b8a;
+    --shadow:         0 4px 20px rgba(120, 90, 50, 0.10);
+    --shadow-strong:  0 8px 40px rgba(120, 90, 50, 0.16);
+    --shadow-glass:   0 8px 32px rgba(120, 90, 50, 0.08);
+    --bg-glow-warm:   rgba(138, 74, 28, 0.06);
+    --bg-glow-cool:   rgba(77, 124, 77, 0.03);
+}
+
+/* ── Midnight Press (pure black, OLED, cool steel) ──────── */
+[data-theme="midnight_press"] {
+    --bg-primary:    #000000;
+    --bg-secondary:  #0a0a0a;
+    --bg-card:       #121212;
+    --bg-tertiary:   #1a1a1a;
+    --bg-hover:      #222222;
+    --bg-glass:      rgba(18, 18, 18, 0.72);
+    --border:             #2a2a2a;
+    --card-border-inner:  rgba(240, 240, 240, 0.06);
+    --overlay-backdrop:   rgba(0, 0, 0, 0.75);
+    --text-primary:  #f0f0f0;
+    --text-secondary:#a0a0a0;
+    --text-muted:    #666666;
+    --accent:        #8aabc2;
+    --accent-dim:    #6a8aa0;
+    --accent-warm:   #d4a574;
+    --success:       #5ac88a;
+    --warning:       #f0b850;
+    --danger:        #f06868;
+    --info:          #80a0e0;
+    --shadow:         0 4px 20px rgba(0, 0, 0, 0.50);
+    --shadow-strong:  0 8px 40px rgba(0, 0, 0, 0.60);
+    --shadow-glass:   0 8px 32px rgba(0, 0, 0, 0.40);
+    /* OLED preference — keep background pure black, no glow */
+    --bg-glow-warm:   transparent;
+    --bg-glow-cool:   transparent;
+}
+
+/* ── Forest (pine + sage + cream, low-stim) ──────────────── */
+[data-theme="forest"] {
+    --bg-primary:    #1a2620;
+    --bg-secondary:  #243530;
+    --bg-card:       #2c3e37;
+    --bg-tertiary:   #364c44;
+    --bg-hover:      #405a51;
+    --bg-glass:      rgba(44, 62, 55, 0.65);
+    --border:             #4d6359;
+    --card-border-inner:  rgba(236, 240, 232, 0.07);
+    --overlay-backdrop:   rgba(13, 22, 18, 0.60);
+    --text-primary:  #ecf0e8;
+    --text-secondary:#b5c5b9;
+    --text-muted:    #7a8a7e;
+    --accent:        #8db588;
+    --accent-dim:    #6b9067;
+    --accent-warm:   #d8b67a;
+    --success:       #7fb377;
+    --warning:       #d4a060;
+    --danger:        #c47878;
+    --info:          #80b5b0;
+    --shadow:         0 4px 20px rgba(0, 0, 0, 0.30);
+    --shadow-strong:  0 8px 40px rgba(0, 0, 0, 0.35);
+    --shadow-glass:   0 8px 32px rgba(0, 0, 0, 0.25);
+    --bg-glow-warm:   rgba(216, 182, 122, 0.05);
+    --bg-glow-cool:   rgba(141, 181, 136, 0.07);
+}
+
+/* ── Velvet (aubergine + dusty rose + amber) ─────────────── */
+[data-theme="velvet"] {
+    --bg-primary:    #1a1018;
+    --bg-secondary:  #261826;
+    --bg-card:       #2e1f30;
+    --bg-tertiary:   #3c2940;
+    --bg-hover:      #4a3450;
+    --bg-glass:      rgba(46, 31, 48, 0.65);
+    --border:             #5a4060;
+    --card-border-inner:  rgba(245, 232, 238, 0.07);
+    --overlay-backdrop:   rgba(15, 8, 14, 0.65);
+    --text-primary:  #f5e8ee;
+    --text-secondary:#c5a0b3;
+    --text-muted:    #886478;
+    --accent:        #c47a9a;
+    --accent-dim:    #a05a78;
+    --accent-warm:   #e5a060;
+    --success:       #8aa078;
+    --warning:       #d4a060;
+    --danger:        #d05870;
+    --info:          #9070b0;
+    --shadow:         0 4px 20px rgba(0, 0, 0, 0.35);
+    --shadow-strong:  0 8px 40px rgba(196, 122, 154, 0.16);
+    --shadow-glass:   0 8px 32px rgba(0, 0, 0, 0.30);
+    --bg-glow-warm:   rgba(229, 160, 96, 0.06);
+    --bg-glow-cool:   rgba(196, 122, 154, 0.05);
+}
+
+/* ── High Contrast (a11y, pure black/white + yellow) ─────── */
+[data-theme="high_contrast"] {
+    --bg-primary:    #000000;
+    --bg-secondary:  #000000;
+    --bg-card:       #0a0a0a;
+    --bg-tertiary:   #1a1a1a;
+    --bg-hover:      #2a2a2a;
+    --bg-glass:      rgba(0, 0, 0, 0.95);
+    --border:             #ffffff;
+    --card-border-inner:  #ffffff;
+    --overlay-backdrop:   rgba(0, 0, 0, 0.90);
+    --text-primary:  #ffffff;
+    --text-secondary:#ffffff;
+    --text-muted:    #cccccc;
+    --accent:        #ffeb3b;
+    --accent-dim:    #ffd600;
+    --accent-warm:   #ff9800;
+    --success:       #00ff00;
+    --warning:       #ffeb3b;
+    --danger:        #ff5252;
+    --info:          #00bfff;
+    --shadow:         0 0 0 2px #ffffff;
+    --shadow-strong:  0 0 0 3px #ffeb3b;
+    --shadow-glass:   0 0 0 1px #ffffff;
+    /* a11y: no decorative gradients on body */
+    --bg-glow-warm:   transparent;
+    --bg-glow-cool:   transparent;
+}
+
+/* ── Retro 2005 (early-2000s web: silver chrome, white pages, beveled
+      buttons, gradient title bars, boxy tables, Verdana) ──────────────
+   A fun opt-in throwback. Tokens set the palette + boxy radii + Verdana;
+   the scoped component rules below add the beveled/gradient chrome that
+   made 2005 look the way it did. */
+[data-theme="retro_2005"] {
+    --bg-primary:    #d4d0c8;   /* silver window chrome */
+    --bg-secondary:  #ece9d8;   /* Luna beige panel */
+    --bg-card:       #ffffff;   /* white content, like a 2005 page body */
+    --bg-tertiary:   #e8e6de;
+    --bg-hover:      #d8e8f8;   /* XP selection blue */
+    --bg-glass:      rgba(236, 233, 216, 0.94);
+    --border:             #808080;
+    --card-border-inner:  rgba(0, 0, 0, 0.12);
+    --overlay-backdrop:   rgba(0, 0, 0, 0.45);
+    --text-primary:  #000000;
+    --text-secondary:#333333;
+    --text-muted:    #666666;
+    --accent:        #0a52c9;   /* classic web/XP blue */
+    --accent-dim:    #003d99;
+    --accent-warm:   #ff6600;   /* 2000s orange */
+    --success:       #008000;
+    --warning:       #d07000;
+    --danger:        #cc0000;
+    --info:          #0000cc;
+    /* Hard, offset shadows — no soft glow, no blur in 2005. */
+    --shadow:         2px 2px 0 rgba(0, 0, 0, 0.20);
+    --shadow-strong:  3px 3px 0 rgba(0, 0, 0, 0.28);
+    --shadow-glass:   1px 1px 0 rgba(0, 0, 0, 0.16);
+    --blur:           0px;
+    --bg-glow-warm:   transparent;
+    --bg-glow-cool:   transparent;
+    /* Boxy: kill the rounded corners + pills. */
+    --radius:        2px;
+    --radius-lg:     2px;
+    --radius-sm:     1px;
+    --radius-pill:   2px;
+    /* Verdana/Tahoma everywhere; Times for serif; Courier for mono. */
+    --font-sans:     Verdana, Tahoma, Geneva, sans-serif;
+    --font-display:  'Trebuchet MS', Verdana, Tahoma, sans-serif;
+    --font-serif:    'Times New Roman', Times, serif;
+    --font-mono:     'Courier New', Courier, monospace;
+}
+/* The full early-2000s component makeover (beveled windows, gradient title
+   bars, sunken inputs, folder tabs, chunky scrollbars) lives in retro_2005.css,
+   loaded LAST so it wins over the base component CSS. This block is only the
+   palette. */
+
+/* ── Vibe Pack: typography + brand mark ──────────────────── */
+/* Body element gets its theme-aware radial-glow background defined in
+   components.css. Here we just set the heading typography, brand mark,
+   and code font so the literary "tell" propagates everywhere headings
+   are rendered.
+
+   Crimson Pro for page heads, modal/section titles, brand wordmark.
+   Body + labels + buttons stay sans — keeps dashboard density readable
+   while giving the marketing-style "literary" tell where it shows most. */
+h1, h2, h3,
+.page-header h2,
+.modal-panel h3,
+.settings-section h3,
+.sidebar-header h1,
+.login-card h1,
+.login-card h2,
+.loading-card h2,
+.setup-step h2 {
+    font-family: var(--font-serif);
+    letter-spacing: -0.01em;
+    font-weight: 600;
+}
+
+/* Brand mark — copper diamond next to the PawPoller wordmark */
+.brand-mark {
+    color: var(--accent-warm);
+    margin-right: 2px;
+    font-size: 0.85em;
+    vertical-align: 1px;
+}
+
+code, pre, .mono, .font-mono {
+    font-family: var(--font-mono);
+}
+
+/* ── Glass Utility ───────────────────────────────────────── */
+.glass {
+    background: var(--bg-glass);
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
+    border: 1px solid var(--card-border-inner);
+    box-shadow: var(--shadow-glass);
+}
+
+/* ── Site-style chip / pill (refined) ────────────────────── */
+/* Used by: status badges, version pills, "active" tags. New `.chip`
+   class — existing badge classes throughout the app keep working
+   independently. Adopt this on new chips going forward. */
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.chip .chip-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+.chip.chip-accent {
+    border-color: var(--accent-dim);
+    color: var(--accent);
+    background: transparent;
+}
+
+.chip.chip-warm {
+    border-color: var(--accent-warm);
+    color: var(--accent-warm);
+    background: transparent;
+}
+
+.chip.chip-success { color: var(--success); border-color: var(--success); }
+.chip.chip-warning { color: var(--warning); border-color: var(--warning); }
+.chip.chip-danger  { color: var(--danger);  border-color: var(--danger); }
+
+/* ── Theme Transition Smoothing ──────────────────────────── */
+body,
+.sidebar,
+.main-content,
+.stat-card,
+.card-glass,
+.chart-container,
+.settings-section,
+.data-table,
+.bottom-nav,
+.login-card,
+.loading-card {
+    transition: background-color var(--transition-slow),
+                color var(--transition-slow),
+                border-color var(--transition-slow);
+}
+
+/* ── Theme Picker — preview swatches ─────────────────────── */
+/* Used by the Settings → Appearance card grid. Each card has the
+   actual theme's tokens applied locally so users see a real
+   miniature of what they'd be switching to. */
+.theme-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.theme-card {
+    cursor: pointer;
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--bg-card);
+    transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+}
+
+.theme-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+    box-shadow: var(--shadow);
+}
+
+.theme-card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
+.theme-card-preview {
+    height: 100px;
+    position: relative;
+    overflow: hidden;
+}
+
+.theme-card-preview .preview-bg {
+    position: absolute;
+    inset: 0;
+}
+
+.theme-card-preview .preview-card {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    right: 50%;
+    bottom: 14px;
+    border-radius: 4px;
+    border: 1px solid;
+}
+
+.theme-card-preview .preview-accent {
+    position: absolute;
+    top: 14px;
+    bottom: 14px;
+    right: 14px;
+    width: 28px;
+    border-radius: 4px;
+}
+
+.theme-card-preview .preview-warm {
+    position: absolute;
+    bottom: 14px;
+    right: 50px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+}
+
+.theme-card-meta {
+    padding: 12px 14px;
+    border-top: 1px solid var(--card-border-inner);
+}
+
+.theme-card-meta .name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.theme-card-meta .desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.theme-card-meta .active-pill {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-pill);
+}
+
+/* ── Mobile-mode picker (Settings → Appearance) ───────────
+   Same visual idiom as theme-picker but no swatch — three
+   text cards. Auto-detect / Always on / Always off. */
+.mobile-mode-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.mobile-mode-card {
+    cursor: pointer;
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    padding: 14px;
+    transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+}
+
+@media (hover: hover) {
+    .mobile-mode-card:hover {
+        transform: translateY(-2px);
+        border-color: var(--accent);
+        box-shadow: var(--shadow);
+    }
+}
+
+.mobile-mode-card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
+.mobile-mode-card .mobile-mode-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.mobile-mode-card .mobile-mode-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    line-height: 1.4;
+}
+
+.mobile-mode-card .active-pill {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-pill);
+}

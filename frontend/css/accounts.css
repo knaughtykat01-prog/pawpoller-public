@@ -1,0 +1,195 @@
+/* ── Accounts page ───────────────────────────────────────────
+   Multi-account registry + personas. Token-based so it tracks all
+   themes; per-platform brand colour comes in via --pc set inline on
+   each platform card / account row from window.platformByCode().
+   Loaded after components.css. (2.38)
+   ──────────────────────────────────────────────────────────── */
+
+.acct-page { display: flex; flex-direction: column; gap: 18px; }
+.acct-intro { max-width: 70ch; margin: -10px 0 4px; }
+
+/* Section shell — shared by Personas / Add account / platform cards */
+.acct-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px 20px;
+    box-shadow: var(--shadow);
+}
+.acct-section > h3 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+    margin: 0 0 3px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.acct-section-sub {
+    color: var(--text-muted);
+    font-size: 12.5px;
+    margin: 0 0 14px;
+    max-width: 72ch;
+}
+
+/* ── Forms (themed inputs/selects — the page had none) ──────── */
+.acct-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.acct-field { display: flex; flex-direction: column; gap: 5px; }
+.acct-field > span {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); font-weight: 600;
+}
+.acct-input, .acct-select {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    padding: 7px 10px;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    min-width: 168px;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+.acct-input::placeholder { color: var(--text-muted); }
+.acct-input:focus, .acct-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.acct-select.sm { min-width: 134px; padding: 5px 8px; font-size: 12px; }
+.acct-color {
+    width: 42px; height: 38px; padding: 2px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+/* ── Stat chips ────────────────────────────────────────────── */
+.acct-stats { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.acct-stat {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-pill);
+    padding: 2px 9px;
+    white-space: nowrap;
+}
+.acct-stat b { color: var(--text-primary); font-weight: 700; }
+.acct-stats .muted { font-size: 12px; }
+
+/* Clickable count chip — opens the account's submissions list */
+button.acct-stat { font: inherit; line-height: inherit; }
+.acct-stat-link {
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: border-color var(--transition), color var(--transition);
+}
+.acct-stat-link:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+/* ── Badge (primitive was used but never defined) ──────────── */
+.badge {
+    display: inline-block;
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.4px;
+    padding: 2px 7px;
+    border-radius: var(--radius-pill);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    vertical-align: middle;
+}
+.badge-default {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* ── Personas ──────────────────────────────────────────────── */
+.persona-list { display: flex; flex-direction: column; gap: 8px; }
+.persona-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 13px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-secondary);
+}
+.persona-dot { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+.persona-row .persona-name { font-weight: 700; color: var(--text-primary); text-decoration: none; }
+.persona-row .persona-name:hover { color: var(--accent); }
+.persona-row .persona-meta { color: var(--text-muted); font-size: 12.5px; white-space: nowrap; }
+.persona-row .spacer { margin-left: auto; }
+.persona-row .acct-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ── Platform cards + account rows ─────────────────────────── */
+.acct-plat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--pc, var(--accent));
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+    box-shadow: var(--shadow);
+}
+.acct-plat-card + .acct-plat-card { margin-top: 12px; }
+.acct-plat-head { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+.acct-plat-head .plat-emoji { font-size: 18px; line-height: 1; }
+.acct-plat-head .plat-logo {
+    width: 26px; height: 26px; border-radius: 6px;
+    background: #fff; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+.acct-plat-head .plat-logo img { width: 18px; height: 18px; object-fit: contain; }
+.acct-plat-head .plat-name {
+    font-family: var(--font-display); font-weight: 800; font-size: 14px;
+    letter-spacing: -0.01em; color: var(--text-primary);
+}
+.acct-plat-head .plat-count {
+    font-size: 11px; color: var(--text-muted);
+    background: var(--bg-tertiary); border-radius: var(--radius-pill);
+    padding: 1px 8px;
+}
+
+.acct-card {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 11px 13px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-secondary);
+    transition: border-color var(--transition);
+}
+.acct-card + .acct-card { margin-top: 8px; }
+.acct-card.disabled { opacity: 0.55; }
+.acct-card:hover { border-color: color-mix(in srgb, var(--pc, var(--accent)) 45%, var(--border)); }
+.acct-id { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
+.acct-id .acct-name { font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 7px; }
+.acct-id .acct-handle { color: var(--text-muted); font-size: 12.5px; }
+.acct-card .acct-stats { flex: 1 1 auto; }
+.acct-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.acct-actions .persona-wrap { display: flex; flex-direction: column; gap: 3px; }
+.acct-actions .persona-wrap > span { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); }
+
+/* ── FA-polling setting ────────────────────────────────────── */
+.acct-setting-row { display: flex; align-items: center; gap: 12px; }
+.acct-setting-row .toggle-switch { flex-shrink: 0; }
+
+@media (max-width: 720px) {
+    .acct-card { gap: 10px; }
+    .acct-actions { margin-left: 0; width: 100%; justify-content: space-between; }
+}
+
+/* DeviantArt posting authorisation, per account (3.9.3).
+   Posting needs an authorization-code token that only a browser approval can
+   produce, so the state is worth showing beside the button rather than making
+   the operator click to find out. */
+.acct-da-status {
+    font-size: 11px;
+    white-space: nowrap;
+}
+.acct-da-status.ok    { color: var(--success); }
+.acct-da-status.warn  { color: var(--warning, #d29922); }
+.acct-da-status.muted { color: var(--text-muted); }

@@ -1,0 +1,727 @@
+/* PawPoller loading + toast UI styles
+ *
+ * Companion to /js/loading_indicator.js. Subtle dot-ring spinner in
+ * top-right + bottom-right toast stack. Designed to inherit the
+ * dashboard's token-based colour palette where it makes sense, but
+ * uses safe fallbacks so the components stand on their own if the
+ * tokens stylesheet hasn't loaded yet.
+ */
+
+/* ── Top-right spinner ───────────────────────────────────────── */
+
+.pp-spinner-host {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 9998;          /* below modals (9999+) but above page chrome */
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 180ms ease-out, transform 180ms ease-out;
+    pointer-events: none;   /* never blocks clicks */
+}
+
+.pp-spinner-host.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.pp-spinner-ring {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-color, #b58cff);
+    border-top-color: transparent;
+    border-right-color: transparent;
+    animation: pp-spin 0.8s linear infinite;
+    box-shadow: 0 0 6px rgba(181, 140, 255, 0.35);
+}
+
+@keyframes pp-spin {
+    to { transform: rotate(360deg); }
+}
+
+.pp-spinner-badge {
+    display: none;
+    min-width: 16px;
+    padding: 1px 5px;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 8px;
+    background: var(--accent-color, #b58cff);
+    color: #1a1024;
+    text-align: center;
+    line-height: 1.4;
+    font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+/* ── Bottom-right toast stack ────────────────────────────────── */
+
+.pp-toast-stack {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    z-index: 10000;         /* on top of everything */
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: min(420px, calc(100vw - 32px));
+    pointer-events: none;   /* host transparent; children opt in */
+}
+
+.pp-toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    min-width: 240px;
+    border-radius: 8px;
+    background: var(--surface-elevated, rgba(28, 22, 38, 0.96));
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.10));
+    color: var(--text-primary, #eee);
+    font-size: 13px;
+    line-height: 1.45;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    transform: translateX(20px);
+    transition: opacity 180ms ease-out, transform 180ms ease-out;
+}
+
+.pp-toast.is-visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.pp-toast-icon {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.pp-toast-success .pp-toast-icon {
+    background: rgba(72, 184, 100, 0.20);
+    color: #6cd482;
+}
+
+.pp-toast-error .pp-toast-icon {
+    background: rgba(220, 70, 70, 0.22);
+    color: #ff7373;
+}
+
+.pp-toast-warn .pp-toast-icon {
+    background: rgba(220, 170, 50, 0.22);
+    color: var(--warning);
+}
+
+.pp-toast-info .pp-toast-icon {
+    background: rgba(120, 145, 220, 0.22);
+    color: #91a8e0;
+}
+
+.pp-toast-success {
+    border-left: 3px solid #6cd482;
+}
+
+.pp-toast-error {
+    border-left: 3px solid #ff7373;
+}
+
+.pp-toast-warn {
+    border-left: 3px solid var(--warning);
+}
+
+.pp-toast-info {
+    border-left: 3px solid #91a8e0;
+}
+
+.pp-toast-msg {
+    flex: 1 1 auto;
+    word-break: break-word;
+}
+
+.pp-toast-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary, rgba(255,255,255,0.55));
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 2px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.pp-toast-close:hover {
+    color: var(--text-primary, #eee);
+}
+
+/* ── In-button spinner (withLoading helper) ─────────────────── */
+
+.pp-btn-loading {
+    cursor: progress !important;
+    opacity: 0.85;
+}
+
+.pp-btn-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-right-color: transparent;
+    animation: pp-spin 0.7s linear infinite;
+    vertical-align: middle;
+}
+
+/* ── Generic [data-tooltip] hover tooltip ───────────────────────
+ * Companion to the auto-init code in loading_indicator.js. Any
+ * element with a non-empty data-tooltip attribute gets the hover
+ * tooltip after the standard 1.2s delay (matches the anchor
+ * toolbar's pacing from 2.13.7/8). Single shared DOM node, so
+ * positioning/styling is uniform across the app. */
+
+.pp-tooltip {
+    position: fixed;
+    z-index: 10001;
+    max-width: 320px;
+    padding: 6px 10px;
+    background: var(--bg-card, #22222e);
+    color: var(--text-primary, #e0e0e0);
+    border: 1px solid var(--border, #444);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre-line;       /* honour \n in attribute strings */
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 100ms ease-out;
+    pointer-events: none;        /* never blocks the underlying control */
+}
+
+.pp-tooltip.is-visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* ── Platform health dot ────────────────────────────────────────
+ * Small coloured circle used by the platform-grid popover (and
+ * future surfaces) to signal per-platform poll health at a glance.
+ * Driven by /js/platform_health.js. The base .platform-grid-status
+ * class handles layout (margin-left:auto pushes the dot to the
+ * right edge of the card); this layer adds the colour + state
+ * variants. */
+
+.pp-health-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted, var(--text-muted));
+    opacity: 0.6;
+    transition: background 200ms ease, opacity 200ms ease;
+    flex-shrink: 0;
+}
+
+.pp-health-healthy { background: var(--success, var(--success)); opacity: 0.95; }
+.pp-health-stale { background: var(--warning, var(--warning)); opacity: 0.95; }
+.pp-health-throttled { background: var(--accent-warm, var(--accent-warm)); opacity: 0.95; }
+.pp-health-error { background: var(--danger, var(--danger)); opacity: 1; }
+.pp-health-unconfigured { background: var(--text-muted, var(--text-muted)); opacity: 0.3; }
+.pp-health-unknown { background: var(--text-muted, var(--text-muted)); opacity: 0.5; }
+.pp-health-running {
+    background: var(--info, var(--info));
+    opacity: 0.95;
+    animation: pp-health-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pp-health-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+/* Subtitle line beneath each platform dashboard's <h2>, rendered
+ * by platform_health.js — "Last polled 47m ago · next in 13m". */
+.platform-page-subtitle {
+    grid-column: 1 / -1;     /* span full width below h2 in flex/grid layouts */
+    font-size: 12px;
+    color: var(--text-secondary, var(--text-secondary));
+    margin-top: 2px;
+    letter-spacing: 0.01em;
+}
+
+.platform-page-subtitle.has-issue {
+    color: var(--warning, var(--warning));
+    cursor: help;
+}
+
+/* Top-of-page banner injected by platform_health.js when a platform
+ * is in a known throttle window or its last poll failed. Sits
+ * directly under the .page-header so it doesn't push critical
+ * controls (Poll Now / Full Resync) out of view. */
+.platform-status-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 14px;
+    margin: 8px 0 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.10));
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.platform-status-banner .banner-icon {
+    flex-shrink: 0;
+    font-size: 18px;
+    line-height: 1;
+    margin-top: 1px;
+}
+
+.platform-status-banner .banner-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.platform-status-banner .banner-title {
+    font-weight: 600;
+    margin-bottom: 2px;
+    color: var(--text-primary, var(--text-primary));
+}
+
+.platform-status-banner .banner-body {
+    color: var(--text-secondary, var(--text-secondary));
+    word-break: break-word;
+}
+
+.platform-status-banner .banner-action {
+    flex-shrink: 0;
+    align-self: center;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: var(--accent, var(--accent));
+    color: var(--bg-primary, var(--bg-primary));
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: opacity 150ms ease;
+}
+
+.platform-status-banner .banner-action:hover {
+    opacity: 0.85;
+}
+
+.status-banner-throttled {
+    background: rgba(240, 160, 80, 0.10);
+    border-color: rgba(240, 160, 80, 0.40);
+}
+
+.status-banner-error {
+    background: rgba(240, 112, 112, 0.10);
+    border-color: rgba(240, 112, 112, 0.40);
+}
+
+/* App-wide banner (platform_health.js :: renderGlobalBanner) — pinned at the
+ * top of #main-col for CONFIRMED-expired sessions. Distinct from the per-page
+ * .platform-status-banner: it spans the full content width and persists across
+ * navigation until the session is valid again ("you must fix this"). */
+.pp-global-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 18px;
+    background: rgba(240, 112, 112, 0.14);
+    border-bottom: 1px solid rgba(240, 112, 112, 0.45);
+    color: var(--text-primary, var(--text-primary));
+    font-size: 13.5px;
+    line-height: 1.4;
+}
+
+.pp-global-banner .pp-gb-icon {
+    flex-shrink: 0;
+    font-size: 17px;
+    line-height: 1;
+    color: #ff8a8a;
+}
+
+.pp-global-banner .pp-gb-text { flex: 1 1 auto; min-width: 0; }
+.pp-global-banner .pp-gb-title { font-weight: 700; }
+
+.pp-global-banner .pp-gb-body {
+    color: var(--text-secondary, var(--text-secondary));
+    word-break: break-word;
+}
+
+.pp-global-banner .pp-gb-action {
+    flex-shrink: 0;
+    padding: 6px 13px;
+    border-radius: 6px;
+    background: #ff8a8a;
+    color: #2a0e0e;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: opacity 150ms ease;
+}
+
+.pp-global-banner .pp-gb-action:hover { opacity: 0.85; }
+
+/* ── Notification centre (notifications_center.js) ──────────────
+ * Fixed bell top-right of the viewport (reads as the header's top-right,
+ * since the sidebar is on the left) + a dropdown feed panel. */
+.pp-notif-bell {
+    position: fixed;
+    top: 12px;
+    right: 16px;
+    z-index: 1400;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+    background: var(--bg-elevated, #1c1826);
+    color: var(--text-primary, var(--text-primary));
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 17px;
+    line-height: 1;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    transition: background 150ms ease, transform 120ms ease;
+}
+.pp-notif-bell:hover { background: var(--bg-hover, #252031); transform: translateY(-1px); }
+.pp-notif-bell.is-open { background: var(--bg-hover, #252031); }
+.pp-notif-bell.has-unread { border-color: #ff8a8a; }
+
+.pp-notif-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 9px;
+    background: #ff5c5c;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 17px;
+    text-align: center;
+    box-shadow: 0 0 0 2px var(--bg-primary, var(--bg-primary));
+}
+
+.pp-notif-panel {
+    position: fixed;
+    top: 58px;
+    right: 16px;
+    z-index: 1399;
+    width: 360px;
+    max-width: calc(100vw - 32px);
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-elevated, #1c1826);
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+/* `display:flex` above beats the UA `[hidden]{display:none}`, so the panel
+ * stayed visible after close() set .hidden — nothing (✕, bell toggle,
+ * outside-click, Escape) could dismiss it. Let the attribute win. */
+.pp-notif-panel[hidden] { display: none; }
+
+.pp-notif-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    font-weight: 700;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+    color: var(--text-primary, var(--text-primary));
+    flex-shrink: 0;
+}
+.pp-notif-head .pp-notif-title { margin-right: auto; }
+.pp-notif-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.pp-notif-head .pp-notif-all {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent, var(--accent));
+    text-decoration: none;
+}
+.pp-notif-clear {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted, #a49db8);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+.pp-notif-clear:hover { color: var(--text-primary, var(--text-primary)); }
+.pp-notif-close {
+    font-size: 15px;
+    line-height: 1;
+    color: var(--text-muted, #a49db8);
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    cursor: pointer;
+    border-radius: 6px;
+}
+.pp-notif-close:hover {
+    color: var(--text-primary, var(--text-primary));
+    background: var(--border, rgba(255, 255, 255, 0.08));
+}
+
+.pp-notif-list { overflow-y: auto; }
+
+.pp-notif-item {
+    display: flex;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.05));
+    font-size: 13px;
+}
+.pp-notif-item:last-child { border-bottom: none; }
+.pp-notif-item.is-unread { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+/* Muted session alert — visible but quiet (dimmed, not nagging). */
+.pp-notif-item.is-muted { opacity: 0.55; }
+/* Session-item action stack (Reconnect + Mute), pinned to the right. */
+.pp-notif-actions-col {
+    flex-shrink: 0;
+    align-self: flex-start;
+    margin-left: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.pp-notif-mute, .pp-notif-reconnect {
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: var(--radius-sm, 5px);
+    padding: 2px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    text-align: center;
+}
+.pp-notif-mute {
+    color: var(--text-muted, #a49db8);
+    background: none;
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+}
+.pp-notif-mute:hover { color: var(--text-primary, var(--text-primary)); border-color: var(--accent); }
+.pp-notif-reconnect {
+    color: #fff;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+}
+.pp-notif-reconnect:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+.pp-notif-mute:disabled, .pp-notif-reconnect:disabled { opacity: 0.5; cursor: default; }
+
+.pp-notif-item-ico { flex-shrink: 0; width: 18px; text-align: center; line-height: 1.4; }
+.pp-notif-error   .pp-notif-item-ico { color: #ff8a8a; }
+.pp-notif-warn    .pp-notif-item-ico { color: var(--warning); }
+.pp-notif-success .pp-notif-item-ico { color: #7CFFB0; }
+.pp-notif-info    .pp-notif-item-ico { color: var(--text-muted); }
+
+.pp-notif-item-body { flex: 1 1 auto; min-width: 0; }
+.pp-notif-summary { color: var(--text-primary, var(--text-primary)); word-break: break-word; }
+.pp-notif-meta { color: var(--text-muted); font-size: 11.5px; margin-top: 1px; }
+.pp-notif-detail {
+    color: var(--text-secondary, var(--text-secondary));
+    font-size: 12px;
+    margin-top: 3px;
+    word-break: break-word;
+}
+.pp-notif-empty { padding: 26px 14px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+@media (max-width: 560px) {
+    .pp-notif-panel { right: 8px; left: 8px; width: auto; }
+    /* env() clears the iPhone status bar / Dynamic Island so the bell doesn't
+       sit under it (matches the hamburger, which uses the same inset). */
+    .pp-notif-bell { top: calc(env(safe-area-inset-top, 0px) + 8px); right: 10px; }
+}
+
+/* Error modal (loading_indicator.js :: window.errorModal) — inherits the
+ * app's .modal base (background/centering); these tune the box + parts. */
+.pp-error-modal-box { max-width: 440px; width: calc(100vw - 40px); padding: 20px 22px; }
+.pp-error-modal-box .pp-em-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary, var(--text-primary));
+    margin-bottom: 10px;
+}
+.pp-error-modal-box .pp-em-ico { color: #ff8a8a; font-size: 20px; }
+.pp-error-modal-box .pp-em-body {
+    color: var(--text-secondary, var(--text-secondary));
+    font-size: 13.5px;
+    line-height: 1.5;
+    word-break: break-word;
+    margin-bottom: 18px;
+}
+.pp-error-modal-box .pp-em-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* ── Floating logs panel ────────────────────────────────────────
+ * Backed by /js/logs_panel.js + /api/logs/stream (SSE). Toggle
+ * button sits above the toast stack; panel expands above-and-to-
+ * the-left of the toggle. */
+
+.pp-logs-toggle {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    z-index: 9997;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--bg-card, var(--bg-card));
+    color: var(--text-secondary, var(--text-secondary));
+    border: 1px solid var(--border, var(--border));
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.20);
+    transition: background 150ms ease, color 150ms ease;
+}
+
+.pp-logs-toggle:hover {
+    background: var(--bg-hover, var(--bg-hover));
+    color: var(--text-primary, var(--text-primary));
+}
+
+.pp-logs-toggle-icon {
+    font-family: var(--font-mono, monospace);
+    font-size: 14px;
+    line-height: 1;
+}
+
+.pp-logs-panel {
+    position: fixed;
+    bottom: 56px;
+    left: 16px;
+    z-index: 9998;
+    width: min(520px, calc(100vw - 32px));
+    height: min(360px, calc(100vh - 120px));
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-card, var(--bg-card));
+    border: 1px solid var(--border, var(--border));
+    border-radius: 8px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+}
+
+.pp-logs-panel[hidden] { display: none; }
+
+.pp-logs-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--bg-tertiary, var(--bg-tertiary));
+    border-bottom: 1px solid var(--border, var(--border));
+    flex-shrink: 0;
+}
+
+.pp-logs-header select {
+    flex: 0 0 auto;
+    padding: 2px 6px;
+    background: var(--bg-card, var(--bg-card));
+    color: var(--text-primary, var(--text-primary));
+    border: 1px solid var(--border, var(--border));
+    border-radius: 3px;
+    font-size: 11px;
+}
+
+.pp-logs-header button {
+    flex: 0 0 auto;
+    padding: 2px 8px;
+    background: transparent;
+    color: var(--text-secondary, var(--text-secondary));
+    border: 1px solid var(--border, var(--border));
+    border-radius: 3px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 100ms ease, color 100ms ease;
+}
+
+.pp-logs-header button:hover {
+    background: var(--bg-hover, var(--bg-hover));
+    color: var(--text-primary, var(--text-primary));
+}
+
+.pp-logs-header .pp-logs-close {
+    margin-left: auto;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 6px;
+    border: none;
+}
+
+.pp-logs-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 4px 8px;
+    background: var(--bg-primary, var(--bg-primary));
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.pp-log-line {
+    margin: 0;
+    padding: 1px 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--text-secondary, var(--text-secondary));
+}
+
+.pp-log-debug { color: var(--text-muted, var(--text-muted)); }
+.pp-log-info { color: var(--text-secondary, var(--text-secondary)); }
+.pp-log-warning { color: var(--warning, var(--warning)); }
+.pp-log-error { color: var(--danger, var(--danger)); }
+
+.pp-logs-footer {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 10px;
+    background: var(--bg-tertiary, var(--bg-tertiary));
+    border-top: 1px solid var(--border, var(--border));
+    font-size: 10px;
+    color: var(--text-muted, var(--text-muted));
+    flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+    .pp-logs-panel {
+        left: 8px;
+        right: 8px;
+        bottom: 50px;
+        width: auto;
+        height: 50vh;
+    }
+    .pp-logs-toggle {
+        left: 8px;
+        bottom: 8px;
+    }
+}

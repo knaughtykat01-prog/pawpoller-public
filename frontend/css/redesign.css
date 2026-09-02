@@ -1,0 +1,315 @@
+/* ── PawPoller redesign — bold page components ────────────────
+   Page-level components introduced by the 2.29 bold redesign that
+   are NOT part of the shell (which lives in layout.css): the
+   Platforms hub colour tiles and the configurable Home dashboard
+   widgets. Loaded after components.css so it can override, and reads
+   the 8-theme tokens + per-platform brand colours (--pc is set inline
+   on each tile to that platform's --platform-* colour).
+   ──────────────────────────────────────────────────────────── */
+
+/* ── Platforms hub ───────────────────────────────────────── */
+.hub-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(212px, 1fr));
+    gap: 16px;
+}
+.hub-tile {
+    position: relative;
+    border-radius: 24px;
+    padding: 18px;
+    min-height: 156px;
+    display: flex;
+    flex-direction: column;
+    isolation: isolate;
+    overflow: hidden;
+    color: #fff;
+    text-decoration: none;
+    cursor: pointer;
+    background: linear-gradient(155deg,
+        color-mix(in srgb, var(--pc, var(--accent)) 94%, #fff 0%),
+        color-mix(in srgb, var(--pc, var(--accent)) 58%, #000));
+    box-shadow: 0 12px 30px -14px color-mix(in srgb, var(--pc, var(--accent)) 75%, #000);
+    transition: transform 0.25s cubic-bezier(.2, .7, .2, 1), box-shadow 0.25s;
+    animation: pp-rise 0.5s cubic-bezier(.2, .7, .2, 1) both;
+}
+.hub-tile::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(220px 130px at 85% -10%, rgba(255, 255, 255, .4), transparent 55%);
+    opacity: .5;
+}
+.hub-tile:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 22px 44px -16px color-mix(in srgb, var(--pc, var(--accent)) 78%, #000);
+}
+.hub-tile-wm {
+    position: absolute;
+    right: -14px;
+    bottom: -28px;
+    font-size: 100px;
+    line-height: 1;
+    opacity: .14;
+    z-index: -1;
+    pointer-events: none;
+}
+.hub-tile-pill {
+    position: absolute;
+    top: 15px;
+    left: 18px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    background: rgba(0, 0, 0, .25);
+    padding: 2px 7px;
+    border-radius: 999px;
+}
+.hub-tile-top { display: flex; align-items: flex-start; gap: 9px; }
+.hub-tile-emoji { font-size: 28px; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .3)); }
+/* Real platform logo on a white badge so it reads on the saturated tile. */
+.hub-tile-logo {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, .28);
+    flex-shrink: 0;
+}
+.hub-tile-logo img { width: 26px; height: 26px; object-fit: contain; }
+
+/* Trademark disclaimer under the platforms grid. */
+.logo-disclaimer {
+    margin: 22px 4px 4px;
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--text-muted);
+    max-width: 86ch;
+}
+.hub-tile-name { font-weight: 700; font-size: 15px; margin-top: auto; letter-spacing: -.01em; }
+.hub-tile-num { font-family: var(--font-display); font-weight: 800; font-size: 31px; letter-spacing: -.03em; line-height: 1; }
+.hub-tile-sub { font-size: 12px; font-weight: 500; opacity: .88; margin-top: 1px; }
+
+/* Live health dot (platform_health.js sets .pp-health-{state}; colour the
+   common states explicitly so the dot reads on the saturated tile). */
+.hub-tile .pp-health-dot {
+    margin-left: auto;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, .55);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, .15);
+}
+.hub-tile .pp-health-healthy { background: #7CFFB0; box-shadow: 0 0 8px #7CFFB0, 0 0 0 3px rgba(255, 255, 255, .15); }
+.hub-tile .pp-health-running { background: #8ec5ff; box-shadow: 0 0 8px #8ec5ff, 0 0 0 3px rgba(255, 255, 255, .15); }
+.hub-tile .pp-health-stale,
+.hub-tile .pp-health-throttled { background: var(--warning); box-shadow: 0 0 8px var(--warning), 0 0 0 3px rgba(255, 255, 255, .15); }
+.hub-tile .pp-health-error { background: #FF8A8A; box-shadow: 0 0 8px #FF8A8A, 0 0 0 3px rgba(255, 255, 255, .15); }
+.hub-tile .pp-health-unconfigured,
+.hub-tile .pp-health-unknown { background: rgba(255, 255, 255, .45); box-shadow: 0 0 0 3px rgba(255, 255, 255, .12); }
+
+@keyframes pp-rise {
+    from { opacity: 0; transform: translateY(14px); }
+}
+
+/* ── Configurable Home dashboard ─────────────────────────── */
+.dash-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dash-edit-hint { font-size: 12.5px; color: var(--text-muted); margin: -14px 2px 16px; }
+
+.dash-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+.dash-w {
+    position: relative;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 18px;
+    overflow: hidden;
+    min-width: 0;
+    box-shadow: var(--shadow);
+    animation: pp-rise 0.5s both;
+}
+.dash-w[data-span="2"] { grid-column: span 2; }
+.dash-w[data-span="4"] { grid-column: span 4; }
+
+.dash-grid.editing .dash-w { border-style: dashed; border-color: var(--accent-dim); cursor: grab; }
+.dash-grid.editing .dash-w:active { cursor: grabbing; }
+/* Disable inner links/charts while customising so a drag/tap doesn't navigate. */
+.dash-grid.editing .dash-w > *:not(.dash-wctl) { pointer-events: none; }
+.dash-w.dragging { opacity: 0.35; }
+.dash-w.dragover { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* Stat cards deep-link to the works library (Overview widget click-through). */
+.dash-stat-link { display: block; height: 100%; text-decoration: none; color: inherit; cursor: pointer; }
+.dash-stat-link:hover .w-num { color: var(--accent); }
+
+.dash-wctl { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; z-index: 4; }
+.dash-wctl button {
+    width: 26px; height: 26px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-glass);
+    backdrop-filter: blur(6px);
+    color: var(--text-secondary);
+    font-size: 13px; line-height: 1;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+}
+.dash-wctl button:hover { color: var(--text-primary); border-color: var(--accent-dim); }
+.dash-wctl .dash-wrm:hover { color: var(--danger); border-color: var(--danger); }
+/* Per-widget platform filter: the paw button lights up when the widget is
+   counting a subset, so a filtered widget is obvious while customising. */
+.dash-wctl .dash-wplat.is-filtered { color: var(--accent); border-color: var(--accent); }
+
+/* "3 of 19 platforms" caption on a filtered widget — a small number should
+   never read as a failed poll. */
+.wfilter-note {
+    margin-left: 8px;
+    font-size: 10px; font-weight: 600;
+    text-transform: none; letter-spacing: 0;
+    color: var(--accent);
+    border: 1px solid var(--accent-dim);
+    border-radius: 999px;
+    padding: 1px 7px;
+    white-space: nowrap;
+}
+
+.dash-w .wtitle {
+    font-size: 12px; font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    margin-bottom: 10px;
+}
+.dash-w .w-num { font-family: var(--font-display); font-weight: 800; font-size: 34px; letter-spacing: -0.03em; line-height: 1; }
+.dash-empty { color: var(--text-muted); font-size: 13px; padding: 6px 0; }
+.dash-sub { color: var(--text-muted); font-size: 12.5px; margin-top: 8px; }
+
+/* Quick-actions widget — tap tiles into the create flows. */
+.dash-quicklinks { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.dash-ql {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 14px 8px; border-radius: 14px;
+    border: 1px solid var(--border); background: var(--bg-secondary);
+    color: var(--text-primary); text-decoration: none; font-weight: 700; font-size: 13px;
+    transition: border-color 0.16s, background 0.16s, transform 0.16s;
+}
+.dash-ql:hover { border-color: var(--accent); background: var(--bg-hover); transform: translateY(-2px); }
+.dash-ql-ico { font-size: 22px; line-height: 1; }
+
+/* Milestones widget — progress bars to the next round-number goal. */
+.dash-ms-wrap { display: flex; flex-direction: column; gap: 14px; }
+.dash-ms-head { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+.dash-ms-bar { height: 8px; border-radius: 999px; background: var(--bg-secondary); overflow: hidden; }
+.dash-ms-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.5s cubic-bezier(.2,.7,.2,1); }
+
+/* Spotlight widget — the single best-performing work. */
+.dash-spot { display: flex; flex-direction: column; gap: 6px; }
+.dash-spot-title { font-family: var(--font-display); font-weight: 800; font-size: 20px; letter-spacing: -0.02em; line-height: 1.15; }
+.dash-spot-plat { font-size: 13px; color: var(--text-muted); }
+.dash-spot-stats { display: flex; gap: 18px; margin-top: 6px; font-size: 13px; color: var(--text-secondary); }
+.dash-spot-stats b { font-family: var(--font-display); font-weight: 800; font-size: 18px; color: var(--text-primary); }
+.dash-platgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+
+/* Charts inside a widget shouldn't render their own card chrome. */
+.dash-w .chart-container { background: none; border: none; padding: 0; margin: 0 0 16px; box-shadow: none; }
+.dash-w .chart-container:last-child { margin-bottom: 0; }
+.dash-w .chart-container h3 { font-size: 13px; margin-bottom: 8px; }
+
+.dash-addw {
+    grid-column: span 2;
+    min-height: 120px;
+    border: 2px dashed var(--border);
+    border-radius: 20px;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-weight: 700; font-size: 14px;
+    cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    transition: border-color 0.18s, color 0.18s;
+}
+.dash-addw:hover { border-color: var(--accent); color: var(--accent); }
+.dash-addw-plus { font-size: 26px; line-height: 1; }
+
+/* Add-widget catalog sheet */
+.dash-catalog-ov {
+    position: fixed; inset: 0;
+    background: var(--overlay-backdrop);
+    backdrop-filter: blur(4px);
+    display: none; align-items: flex-start; justify-content: center;
+    padding-top: 12vh; z-index: 1200;
+}
+.dash-catalog-ov.open { display: flex; }
+.dash-catalog {
+    width: min(560px, 92%); max-height: 74vh; overflow: auto;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 22px; padding: 22px; box-shadow: var(--shadow-strong);
+}
+.dash-catalog h3 { font-family: var(--font-display); font-weight: 800; font-size: 19px; margin-bottom: 3px; }
+.dash-catalog p { color: var(--text-muted); font-size: 13px; margin-bottom: 16px; }
+.dash-cat { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.dash-catcard {
+    display: flex; align-items: center; gap: 11px;
+    border: 1px solid var(--border); border-radius: 14px;
+    padding: 13px; cursor: pointer;
+    background: var(--bg-secondary); color: var(--text-primary);
+    text-align: left; font-family: var(--font-sans);
+    transition: border-color 0.18s, background 0.18s;
+}
+.dash-catcard:hover { border-color: var(--accent); background: var(--bg-hover); }
+.dash-catcard.in { opacity: 0.45; cursor: default; }
+.dash-catico { font-size: 20px; flex-shrink: 0; }
+.dash-catmeta b { display: block; font-size: 13.5px; font-weight: 700; }
+.dash-catmeta span { font-size: 11.5px; color: var(--text-muted); }
+.dash-cattick { margin-left: auto; color: var(--success); font-weight: 700; }
+
+/* Per-widget platform picker (reuses the catalog sheet) */
+.dash-platpick-tools { display: flex; gap: 8px; margin-bottom: 12px; }
+.dash-platpick-tools .btn { font-size: 12px; padding: 5px 12px; }
+.dash-platpicks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dash-platpick {
+    display: flex; align-items: center; gap: 10px;
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 9px 11px; cursor: pointer;
+    background: var(--bg-secondary);
+    transition: border-color 0.18s, background 0.18s, opacity 0.18s;
+    opacity: 0.5;
+}
+.dash-platpick.on { opacity: 1; border-color: var(--accent-dim); }
+.dash-platpick:hover { background: var(--bg-hover); }
+.dash-platpick input { accent-color: var(--accent); flex-shrink: 0; }
+.dash-platpick-em { font-size: 17px; flex-shrink: 0; }
+.dash-platpick-meta { min-width: 0; }
+.dash-platpick-meta b { display: block; font-size: 13px; font-weight: 700; }
+.dash-platpick-meta span { font-size: 11px; color: var(--text-muted); }
+.dash-platpick-foot { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+@media (max-width: 768px) {
+    .dash-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .dash-w[data-span="4"] { grid-column: span 2; }
+    .dash-addw { grid-column: span 2; }
+    .dash-cat { grid-template-columns: 1fr; }
+    .dash-platpicks { grid-template-columns: 1fr; }
+}
+
+/* ── Platform detail header accent (light bold-pass) ─────────
+   route() sets data-platform + --page-accent on #main-col when the route is
+   a single platform; the per-platform dashboard pages keep their existing
+   tables/charts but the header band picks up the brand colour. */
+.main-col[data-platform] .page-header {
+    border-radius: 16px;
+    padding: 16px 18px;
+    margin-bottom: 22px;
+    background: linear-gradient(100deg,
+        color-mix(in srgb, var(--page-accent, var(--accent)) 16%, var(--bg-card)),
+        var(--bg-card) 72%);
+    border: 1px solid color-mix(in srgb, var(--page-accent, var(--accent)) 32%, var(--border));
+    border-left: 4px solid var(--page-accent, var(--accent));
+}
+.main-col[data-platform] .page-header h2 { color: var(--text-primary); }
+.main-col[data-platform] .platform-page-subtitle { color: var(--text-secondary); }

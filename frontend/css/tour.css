@@ -1,0 +1,149 @@
+/* PawPoller getting-started tour — coach-mark spotlight overlay.
+ * These elements only exist in the DOM while the tour runs (tour.js builds
+ * and removes them). All colours come from theme tokens so the overlay
+ * follows the active theme (dark / light / sepia). */
+
+.pp-tour-blocker {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    background: transparent;                 /* transparent during spotlight steps */
+}
+.pp-tour-blocker--dim { background: rgba(0, 0, 0, 0.62); }  /* centered (no-target) steps */
+
+/* The spotlight: a small box over the target whose huge spread shadow
+ * paints everything outside it dark, and whose ring highlights the target. */
+.pp-tour-spot {
+    position: fixed;
+    z-index: 9999;
+    border-radius: 10px;
+    box-shadow: 0 0 0 3px var(--accent), 0 0 0 9999px rgba(0, 0, 0, 0.62);
+    pointer-events: none;
+    transition: top .28s cubic-bezier(.4, 0, .2, 1),
+                left .28s cubic-bezier(.4, 0, .2, 1),
+                width .28s cubic-bezier(.4, 0, .2, 1),
+                height .28s cubic-bezier(.4, 0, .2, 1);
+}
+
+.pp-tour-pop {
+    position: fixed;
+    z-index: 10000;
+    width: min(340px, calc(100vw - 32px));
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 14px 44px rgba(0, 0, 0, 0.5);
+    padding: 15px 17px 14px;
+    font-size: 14px;
+    line-height: 1.5;
+    animation: pp-tour-pop-in .2s ease;
+}
+@keyframes pp-tour-pop-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; } }
+.pp-tour-pop--center { animation: pp-tour-pop-fade .2s ease; }
+@keyframes pp-tour-pop-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.pp-tour-pop-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+.pp-tour-step {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+.pp-tour-x {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+}
+.pp-tour-x:hover { color: var(--text-primary); }
+
+.pp-tour-pop-title {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 5px;
+    color: var(--text-primary);
+}
+.pp-tour-pop-body { color: var(--text-secondary); }
+.pp-tour-pop-body .pp-tour-link {
+    display: inline-block;
+    margin-top: 4px;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+}
+.pp-tour-pop-body .pp-tour-link:hover { text-decoration: underline; }
+
+.pp-tour-pop-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 14px;
+}
+.pp-tour-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+.pp-tour-pop-foot button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 8px;
+    padding: 7px 14px;
+    border: 1px solid transparent;
+}
+.pp-tour-skip {
+    background: none;
+    color: var(--text-muted);
+    padding-left: 0;
+}
+.pp-tour-skip:hover { color: var(--text-secondary); }
+.pp-tour-back {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--border);
+}
+.pp-tour-back:hover { background: var(--bg-hover); }
+.pp-tour-next {
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+}
+.pp-tour-next:hover { background: var(--accent-dim); }
+
+/* Sidebar footer "?" — starts / replays the tour. Matches the sibling
+ * theme-toggle + logout footer buttons (30px, layout.css). */
+.btn-help-tour {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 15px;
+    font-weight: 700;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.btn-help-tour:hover { background: var(--bg-hover); color: var(--text-primary); }
+.sidebar.collapsed .btn-help-tour { margin: 0 auto; }
+
+/* Keep the sidebar on-screen + expanded while the tour runs, whatever the
+ * user's collapse/mobile state (tour.js also toggles the classes; this is
+ * the belt-and-suspenders so the spotlight always lands on a visible rail). */
+html.pp-tour-active .sidebar { transform: none !important; }

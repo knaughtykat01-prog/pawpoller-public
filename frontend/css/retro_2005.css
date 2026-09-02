@@ -1,0 +1,555 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   RETRO 2005 — full early-2000s-web makeover (backlog AA)
+
+   A comprehensive component skin scoped to html[data-theme="retro_2005"],
+   loaded LAST so it wins over the base component CSS. The palette lives in
+   tokens.css; this file rebuilds the *chrome* to feel like logging into a
+   2000s website / desktop app: beveled 3D panels, blue gradient title bars on
+   every card, sunken inset inputs, folder tabs, chunky scrollbars, dialog-box
+   modals + toasts, and a Windows/portal-era sidebar. Everything is theme-
+   scoped, so no other theme is touched, and layout metrics are left alone so
+   charts don't re-measure.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+html[data-theme="retro_2005"] {
+    --r-title:     linear-gradient(180deg, #5b9bea 0%, #2b6fc9 46%, #1857b8 100%);
+    --r-title-lo:  #16386f;
+    --r-ink:       #ffffff;
+    --r-face:      linear-gradient(180deg, #fdfdfc 0%, #e4e0d5 100%);
+    --r-face-lo:   #d6d2c8;
+    --r-hi:        #ffffff;   /* bevel highlight (top-left) */
+    --r-sh:        #77747f;   /* bevel shadow    (bottom-right) */
+    --r-line:      #9d9a94;
+}
+
+/* ── Global feel: sharp text, dense small type, silver desktop ─────────── */
+html[data-theme="retro_2005"] body {
+    background: var(--bg-primary);
+    background-image:
+        linear-gradient(180deg, rgba(255,255,255,.35), rgba(0,0,0,.04));
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: auto;
+    font-size: 12.5px;
+    letter-spacing: 0;
+}
+/* The 2000s had NO rounded corners and NO glass blur — square + de-blur the
+   entire app in one universal rule, so even surfaces this file never names
+   individually still read period-correct. */
+html[data-theme="retro_2005"] * {
+    letter-spacing: 0 !important;
+    border-radius: 0 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+/* Underlined blue links, purple visited, red active — the 2000s hyperlink. */
+html[data-theme="retro_2005"] a:not(.btn):not(.nav-link):not(.settings-tab):not(.dash-ql) {
+    color: #0000ee;
+    text-decoration: underline;
+}
+html[data-theme="retro_2005"] a:not(.btn):not(.nav-link):visited { color: #551a8b; }
+html[data-theme="retro_2005"] a:not(.btn):not(.nav-link):active  { color: #e00000; }
+
+/* ── The signature move: every card/panel is a beveled "window" ────────── */
+html[data-theme="retro_2005"] .card,
+html[data-theme="retro_2005"] .card-glass,
+html[data-theme="retro_2005"] .stat-card,
+html[data-theme="retro_2005"] .settings-section,
+html[data-theme="retro_2005"] .chart-container,
+html[data-theme="retro_2005"] .dash-w,
+html[data-theme="retro_2005"] .dash-catcard,
+html[data-theme="retro_2005"] .hub-tile,
+html[data-theme="retro_2005"] .theme-card,
+html[data-theme="retro_2005"] .work-card,
+html[data-theme="retro_2005"] .empty-state,
+html[data-theme="retro_2005"] .qcal-card,
+html[data-theme="retro_2005"] .lr-hero,
+html[data-theme="retro_2005"] .lr-persona {
+    background: #ffffff;
+    border: 2px solid;
+    border-color: var(--r-hi) var(--r-sh) var(--r-sh) var(--r-hi);
+    border-radius: 0 !important;
+    box-shadow: 1px 1px 0 rgba(0,0,0,.28);
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+/* Card headings become window title bars (full-bleed over the 16px pad). */
+html[data-theme="retro_2005"] .card > h1:first-child,
+html[data-theme="retro_2005"] .card > h2:first-child,
+html[data-theme="retro_2005"] .card > h3:first-child,
+html[data-theme="retro_2005"] .settings-section > h3:first-child,
+html[data-theme="retro_2005"] .dash-w > .wtitle:first-child {
+    display: block;
+    background: var(--r-title);
+    color: var(--r-ink) !important;
+    margin: -16px -16px 12px -16px;
+    padding: 4px 10px;
+    font: 700 12px/1.6 var(--font-sans) !important;
+    border-bottom: 1px solid var(--r-title-lo);
+    text-shadow: 0 1px 0 rgba(0,0,0,.35);
+}
+
+/* ── Page header: the big app-window title bar ─────────────────────────── */
+html[data-theme="retro_2005"] .page-header {
+    background: var(--r-title);
+    border: 2px solid;
+    border-color: #6ba3ee var(--r-title-lo) var(--r-title-lo) #6ba3ee;
+    border-radius: 0;
+    padding: 8px 14px;
+    margin-bottom: 16px;
+    box-shadow: 1px 1px 0 rgba(0,0,0,.28);
+}
+html[data-theme="retro_2005"] .page-header h1,
+html[data-theme="retro_2005"] .page-header h2 {
+    color: var(--r-ink) !important;
+    font: 800 18px/1.3 var(--font-display) !important;
+    text-shadow: 0 1px 0 rgba(0,0,0,.4);
+    background: none;
+    -webkit-text-fill-color: #fff;   /* beat any gradient-text clip */
+}
+html[data-theme="retro_2005"] .page-header .page-subtitle,
+html[data-theme="retro_2005"] .page-header p { color: #dce9ff !important; }
+
+/* ── Buttons: 3D beveled, press-in on active ───────────────────────────── */
+html[data-theme="retro_2005"] .btn,
+html[data-theme="retro_2005"] .btn-sm,
+html[data-theme="retro_2005"] .btn-xs,
+html[data-theme="retro_2005"] .btn-pill,
+html[data-theme="retro_2005"] label.btn {
+    background: var(--r-face) !important;
+    color: #000 !important;
+    border: 2px solid;
+    border-color: var(--r-hi) var(--r-sh) var(--r-sh) var(--r-hi);
+    border-radius: 0 !important;
+    box-shadow: 1px 1px 0 rgba(0,0,0,.22);
+    font: 700 12px var(--font-sans);
+    text-shadow: none;
+}
+html[data-theme="retro_2005"] .btn:hover { background: linear-gradient(180deg, #ffffff 0%, #eceadf 100%) !important; }
+html[data-theme="retro_2005"] .btn:active,
+html[data-theme="retro_2005"] .btn-primary:active,
+html[data-theme="retro_2005"] .btn-danger:active,
+html[data-theme="retro_2005"] .btn-success:active {
+    border-color: var(--r-sh) var(--r-hi) var(--r-hi) var(--r-sh);
+    box-shadow: none;
+    transform: translate(1px, 1px);
+}
+html[data-theme="retro_2005"] .btn-primary {
+    background: linear-gradient(180deg, #eaf3ff 0%, #a9ccf5 100%) !important;
+    border-color: #cfe4ff #2c5aa0 #2c5aa0 #cfe4ff;
+    color: #002b6b !important;
+}
+html[data-theme="retro_2005"] .btn-danger {
+    background: linear-gradient(180deg, #ffecec 0%, #f0aeae 100%) !important;
+    border-color: #ffd7d7 #9e2a2a #9e2a2a #ffd7d7;
+    color: #6b0000 !important;
+}
+html[data-theme="retro_2005"] .btn-success {
+    background: linear-gradient(180deg, #ecffec 0%, #a9e6a9 100%) !important;
+    border-color: #d7ffd7 #2a7a2a #2a7a2a #d7ffd7;
+    color: #024d02 !important;
+}
+
+/* ── Inputs: sunken inset white fields ─────────────────────────────────── */
+html[data-theme="retro_2005"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html[data-theme="retro_2005"] select,
+html[data-theme="retro_2005"] textarea,
+html[data-theme="retro_2005"] .form-control,
+html[data-theme="retro_2005"] .settings-search-input {
+    background: #ffffff !important;
+    color: #000 !important;
+    border: 2px solid;
+    border-color: var(--r-sh) var(--r-hi) var(--r-hi) var(--r-sh);
+    border-radius: 0 !important;
+    box-shadow: inset 1px 1px 0 rgba(0,0,0,.12);
+    font-family: var(--font-sans);
+}
+html[data-theme="retro_2005"] input:focus,
+html[data-theme="retro_2005"] select:focus,
+html[data-theme="retro_2005"] textarea:focus {
+    outline: 1px dotted #1857b8;
+    outline-offset: -3px;
+}
+
+/* ── Sidebar: a Windows/portal-era task pane ───────────────────────────── */
+html[data-theme="retro_2005"] .sidebar {
+    background: var(--bg-secondary) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-right: 2px solid;
+    border-color: var(--r-hi) var(--r-sh) var(--r-sh) var(--r-hi);
+}
+html[data-theme="retro_2005"] .sidebar-header {
+    background: var(--r-title);
+    border-bottom: 1px solid var(--r-title-lo);
+}
+html[data-theme="retro_2005"] .sidebar-header h1,
+html[data-theme="retro_2005"] .sidebar-logo,
+html[data-theme="retro_2005"] .sidebar-logo * {
+    color: var(--r-ink) !important;
+    -webkit-text-fill-color: #fff;
+    text-shadow: 0 1px 0 rgba(0,0,0,.4);
+}
+html[data-theme="retro_2005"] .nav-group-label {
+    background: linear-gradient(180deg, #eef1f7 0%, #d8dde8 100%);
+    color: #16386f !important;
+    border: 1px solid #b7c0d4;
+    border-radius: 0;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 10.5px;
+    letter-spacing: .04em !important;
+}
+html[data-theme="retro_2005"] .nav-link {
+    border-radius: 0 !important;
+    color: #0000cc !important;
+    text-decoration: none;
+}
+html[data-theme="retro_2005"] .nav-link:hover {
+    background: #d8e8fb !important;
+    text-decoration: underline;
+}
+html[data-theme="retro_2005"] .nav-link.active {
+    background: var(--r-title) !important;
+    color: #fff !important;
+    box-shadow: none;
+    border-radius: 0 !important;
+    font-weight: 700;
+}
+html[data-theme="retro_2005"] .nav-link.active * { color: #fff !important; }
+html[data-theme="retro_2005"] .nav-sub {
+    background: #ffffff;
+    border: 2px solid;
+    border-color: var(--r-hi) var(--r-sh) var(--r-sh) var(--r-hi);
+    border-radius: 0;
+    box-shadow: 2px 2px 0 rgba(0,0,0,.28);
+}
+
+/* ── Tables: gridlines, blue header row, zebra rows ────────────────────── */
+html[data-theme="retro_2005"] .data-table { border: 2px solid var(--r-sh); border-collapse: collapse; }
+html[data-theme="retro_2005"] .data-table th {
+    background: var(--r-title);
+    color: #fff !important;
+    border: 1px solid var(--r-title-lo);
+    text-shadow: 0 1px 0 rgba(0,0,0,.35);
+    font-weight: 700;
+}
+html[data-theme="retro_2005"] .data-table td { border: 1px solid #cfccc4; }
+html[data-theme="retro_2005"] .data-table tbody tr:nth-child(even) { background: #eef1f6; }
+html[data-theme="retro_2005"] .data-table tbody tr:hover { background: #d8e8fb; }
+
+/* ── Tabs: folder tabs (settings / work / story detail) ────────────────── */
+html[data-theme="retro_2005"] .settings-tab,
+html[data-theme="retro_2005"] .work-tab,
+html[data-theme="retro_2005"] .det-tab {
+    background: linear-gradient(180deg, #f4f2ec 0%, #ddd9cf 100%);
+    border: 2px solid;
+    border-color: var(--r-hi) var(--r-sh) #fff var(--r-hi);
+    border-bottom: none;
+    border-radius: 0 !important;
+    margin-right: 2px;
+    color: #333 !important;
+    font-weight: 700;
+}
+html[data-theme="retro_2005"] .settings-tab.active,
+html[data-theme="retro_2005"] .work-tab.is-active,
+html[data-theme="retro_2005"] .det-tab.is-active {
+    background: #ffffff;
+    color: #16386f !important;
+    position: relative;
+    top: 1px;
+}
+
+/* ── Chips / badges / status → boxy tags ───────────────────────────────── */
+html[data-theme="retro_2005"] .chip,
+html[data-theme="retro_2005"] .status-badge,
+html[data-theme="retro_2005"] .book-ribbon,
+html[data-theme="retro_2005"] .qcal-item {
+    border-radius: 0 !important;
+    border: 1px solid var(--r-sh);
+    box-shadow: none;
+}
+html[data-theme="retro_2005"] .status-dot { border-radius: 2px !important; }
+
+/* ── Modals: a dialog box with a title bar ─────────────────────────────── */
+html[data-theme="retro_2005"] .modal-overlay { background: rgba(0,0,32,.45); }
+html[data-theme="retro_2005"] .modal-panel {
+    background: var(--bg-secondary);
+    border: 2px solid;
+    border-color: var(--r-hi) var(--r-title-lo) var(--r-title-lo) var(--r-hi);
+    border-radius: 0 !important;
+    box-shadow: 3px 3px 0 rgba(0,0,0,.35);
+    backdrop-filter: none !important;
+}
+html[data-theme="retro_2005"] .modal-panel > h2:first-child,
+html[data-theme="retro_2005"] .modal-panel > h3:first-child,
+html[data-theme="retro_2005"] .modal-header {
+    background: var(--r-title);
+    color: #fff !important;
+    margin: -1px -1px 12px -1px;
+    padding: 5px 10px;
+    font-weight: 700;
+    text-shadow: 0 1px 0 rgba(0,0,0,.4);
+}
+
+/* ── Toasts: little dialog pop-ups ─────────────────────────────────────── */
+html[data-theme="retro_2005"] .pp-toast {
+    background: var(--bg-secondary) !important;
+    color: #000 !important;
+    border: 2px solid;
+    border-color: var(--r-hi) var(--r-sh) var(--r-sh) var(--r-hi);
+    border-radius: 0 !important;
+    box-shadow: 2px 2px 0 rgba(0,0,0,.35);
+    backdrop-filter: none !important;
+    font-family: var(--font-sans);
+}
+
+/* ── Login / setup / loading: a portal sign-in dialog ──────────────────── */
+html[data-theme="retro_2005"] .login-screen {
+    background:
+        radial-gradient(1200px 400px at 50% -10%, #6fa8e6 0%, transparent 60%),
+        #7b8aa8;
+}
+html[data-theme="retro_2005"] .login-card,
+html[data-theme="retro_2005"] .loading-card,
+html[data-theme="retro_2005"] .setup-step {
+    background: var(--bg-secondary);
+    border: 2px solid;
+    border-color: var(--r-hi) var(--r-title-lo) var(--r-title-lo) var(--r-hi);
+    border-radius: 0 !important;
+    box-shadow: 3px 3px 0 rgba(0,0,0,.4);
+    backdrop-filter: none !important;
+}
+html[data-theme="retro_2005"] .login-card h1,
+html[data-theme="retro_2005"] .login-card h2 {
+    background: var(--r-title);
+    color: #fff !important;
+    -webkit-text-fill-color: #fff;
+    margin: -20px -20px 16px -20px;
+    padding: 6px 12px;
+    font: 800 16px var(--font-display) !important;
+    text-shadow: 0 1px 0 rgba(0,0,0,.4);
+}
+
+/* ── Overview quick-links / hub tiles → beveled buttons ────────────────── */
+html[data-theme="retro_2005"] .dash-ql,
+html[data-theme="retro_2005"] .hub-tile {
+    border-radius: 0 !important;
+    border: 2px solid;
+    border-color: var(--r-hi) var(--r-sh) var(--r-sh) var(--r-hi);
+    background: var(--r-face) !important;
+    color: #000 !important;
+}
+html[data-theme="retro_2005"] .dash-ql:hover { background: #d8e8fb !important; }
+
+/* ── Chunky classic scrollbars (WebKit) ────────────────────────────────── */
+html[data-theme="retro_2005"] ::-webkit-scrollbar { width: 17px; height: 17px; }
+html[data-theme="retro_2005"] ::-webkit-scrollbar-track {
+    background: #d9d6cd;
+    border-left: 1px solid #b7b3a8;
+}
+html[data-theme="retro_2005"] ::-webkit-scrollbar-thumb {
+    background: var(--r-face);
+    border: 2px solid;
+    border-color: var(--r-hi) var(--r-sh) var(--r-sh) var(--r-hi);
+}
+html[data-theme="retro_2005"] ::-webkit-scrollbar-button {
+    background: var(--r-face);
+    border: 2px solid;
+    border-color: var(--r-hi) var(--r-sh) var(--r-sh) var(--r-hi);
+    display: block;
+    height: 17px;
+}
+
+/* ── Kill soft/rounded remnants everywhere ─────────────────────────────── */
+html[data-theme="retro_2005"] .bottom-nav,
+html[data-theme="retro_2005"] .context-bar,
+html[data-theme="retro_2005"] .toolbar {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-radius: 0 !important;
+}
+html[data-theme="retro_2005"] .bottom-nav {
+    background: var(--bg-secondary) !important;
+    border-top: 2px solid;
+    border-color: var(--r-hi) transparent transparent transparent;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   FULL-APP COVERAGE — every module's own panels, so no page is left modern.
+   Backgrounds already come from the retro token palette (--bg-card = white,
+   --bg-secondary = beige), so these only add the beveled window edge + hard
+   shadow. The universal square/de-blur rule above handles corners everywhere.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Every module's content panels → beveled windows. */
+html[data-theme="retro_2005"] .work-card,
+html[data-theme="retro_2005"] .book,
+html[data-theme="retro_2005"] .acct-card,
+html[data-theme="retro_2005"] .acct-plat-card,
+html[data-theme="retro_2005"] .acct-section,
+html[data-theme="retro_2005"] .acct-section-sub,
+html[data-theme="retro_2005"] .artwork-card,
+html[data-theme="retro_2005"] .artwork-master-panel,
+html[data-theme="retro_2005"] .artwork-master-member,
+html[data-theme="retro_2005"] .artwork-suggest-card,
+html[data-theme="retro_2005"] .artwork-suggest-banner,
+html[data-theme="retro_2005"] .artwork-upload-col,
+html[data-theme="retro_2005"] .coll-card,
+html[data-theme="retro_2005"] .comment-card,
+html[data-theme="retro_2005"] .goal-card,
+html[data-theme="retro_2005"] .goals-section,
+html[data-theme="retro_2005"] .highlight-card,
+html[data-theme="retro_2005"] .ep-card,
+html[data-theme="retro_2005"] .guide-hub-card,
+html[data-theme="retro_2005"] .guide-hub-intro,
+html[data-theme="retro_2005"] .guide-modal-card,
+html[data-theme="retro_2005"] .guide-notes,
+html[data-theme="retro_2005"] .diag-summary-card,
+html[data-theme="retro_2005"] .drift-preview-panel,
+html[data-theme="retro_2005"] .detail-stats,
+html[data-theme="retro_2005"] .mp-card,
+html[data-theme="retro_2005"] .mp-hero,
+html[data-theme="retro_2005"] .mp-dup-card,
+html[data-theme="retro_2005"] .mp-dup-group,
+html[data-theme="retro_2005"] .mp-loc-table,
+html[data-theme="retro_2005"] .mp-suggest-card,
+html[data-theme="retro_2005"] .post-card,
+html[data-theme="retro_2005"] .post-compose,
+html[data-theme="retro_2005"] .post-contact,
+html[data-theme="retro_2005"] .lr-hero,
+html[data-theme="retro_2005"] .lr-persona,
+html[data-theme="retro_2005"] .lr-medal,
+html[data-theme="retro_2005"] .lr-rhythm-card,
+html[data-theme="retro_2005"] .lr-celebrate-card,
+html[data-theme="retro_2005"] .led-detail,
+html[data-theme="retro_2005"] .cmdk-panel,
+html[data-theme="retro_2005"] .create-story-dialog,
+html[data-theme="retro_2005"] .bulk-preflight-dialog,
+html[data-theme="retro_2005"] .chart-modal-wrap,
+html[data-theme="retro_2005"] .errorModal,
+html[data-theme="retro_2005"] .editor-css-panel,
+html[data-theme="retro_2005"] .editor-quad-panel,
+html[data-theme="retro_2005"] .reconnect-card,
+html[data-theme="retro_2005"] .promo-panel,
+html[data-theme="retro_2005"] .promo-preview,
+html[data-theme="retro_2005"] .it-panel,
+html[data-theme="retro_2005"] .it-canvas-wrap {
+    border: 2px solid !important;
+    border-color: var(--r-hi) var(--r-sh) var(--r-sh) var(--r-hi) !important;
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, .22);
+}
+
+/* Their first heading → a blue window title bar (works for the many module
+   cards that lead with an h2/h3/h4). */
+html[data-theme="retro_2005"] .acct-card > h3:first-child,
+html[data-theme="retro_2005"] .acct-section > h2:first-child,
+html[data-theme="retro_2005"] .acct-section > h3:first-child,
+html[data-theme="retro_2005"] .coll-card > h3:first-child,
+html[data-theme="retro_2005"] .goal-card > h3:first-child,
+html[data-theme="retro_2005"] .goals-section > h3:first-child,
+html[data-theme="retro_2005"] .guide-hub-card > h3:first-child,
+html[data-theme="retro_2005"] .diag-summary-card > h3:first-child,
+html[data-theme="retro_2005"] .lr-rhythm-card > h3:first-child,
+html[data-theme="retro_2005"] .acct-plat-head,
+html[data-theme="retro_2005"] .artwork-suggest-head,
+html[data-theme="retro_2005"] .chart-modal-header,
+html[data-theme="retro_2005"] .drift-preview-header,
+html[data-theme="retro_2005"] .guide-modal-card > h2:first-child {
+    background: var(--r-title) !important;
+    color: var(--r-ink) !important;
+    -webkit-text-fill-color: #fff;
+    margin: -16px -16px 12px -16px;
+    padding: 4px 10px;
+    font: 700 12px/1.6 var(--font-sans) !important;
+    border-bottom: 1px solid var(--r-title-lo);
+    text-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+}
+
+/* Every badge / status pill / chip → a boxy little tag. */
+html[data-theme="retro_2005"] .badge,
+html[data-theme="retro_2005"] .badge-default,
+html[data-theme="retro_2005"] .artwork-badge,
+html[data-theme="retro_2005"] .artwork-status,
+html[data-theme="retro_2005"] .artwork-disc-badge,
+html[data-theme="retro_2005"] .artwork-master-badge,
+html[data-theme="retro_2005"] .drift-badge,
+html[data-theme="retro_2005"] .format-badge,
+html[data-theme="retro_2005"] .change-badge,
+html[data-theme="retro_2005"] .guide-badge,
+html[data-theme="retro_2005"] .compare-chip,
+html[data-theme="retro_2005"] .fan-chip,
+html[data-theme="retro_2005"] .hs-chip,
+html[data-theme="retro_2005"] .active-pill,
+html[data-theme="retro_2005"] .card-type-badge,
+html[data-theme="retro_2005"] .best-badge,
+html[data-theme="retro_2005"] .cell-status,
+html[data-theme="retro_2005"] .diag-summary-badge,
+html[data-theme="retro_2005"] .book-ribbon,
+html[data-theme="retro_2005"] .book-rating,
+html[data-theme="retro_2005"] .book-draft,
+html[data-theme="retro_2005"] .book-noartist,
+html[data-theme="retro_2005"] .import-badge-ib,
+html[data-theme="retro_2005"] .compare-chip,
+html[data-theme="retro_2005"] [class^="chip-"],
+html[data-theme="retro_2005"] [class*=" chip-"] {
+    border: 1px solid var(--r-sh) !important;
+    box-shadow: none !important;
+    text-shadow: none;
+}
+
+/* Image covers / thumbnails → inset photo frames. */
+html[data-theme="retro_2005"] .book-cover,
+html[data-theme="retro_2005"] .work-cover,
+html[data-theme="retro_2005"] .mp-cover,
+html[data-theme="retro_2005"] .mp-hero-ph,
+html[data-theme="retro_2005"] .mp-alt,
+html[data-theme="retro_2005"] .mp-loc-thumb,
+html[data-theme="retro_2005"] .mp-dup-thumb,
+html[data-theme="retro_2005"] .artwork-card-cover,
+html[data-theme="retro_2005"] .artwork-detail-img,
+html[data-theme="retro_2005"] .coll-cover,
+html[data-theme="retro_2005"] .coll-loc-thumb,
+html[data-theme="retro_2005"] .detail-thumb {
+    border: 2px solid !important;
+    border-color: var(--r-sh) var(--r-hi) var(--r-hi) var(--r-sh) !important;
+}
+
+/* Module toolbars / segmented controls / grid bars → beveled bars. */
+html[data-theme="retro_2005"] .art-seg,
+html[data-theme="retro_2005"] .art-seg-group,
+html[data-theme="retro_2005"] .artwork-filters,
+html[data-theme="retro_2005"] .diag-toolbar,
+html[data-theme="retro_2005"] .diag-log-toolbar,
+html[data-theme="retro_2005"] .editor-toolbar,
+html[data-theme="retro_2005"] .led-controls,
+html[data-theme="retro_2005"] .mp-gridbar,
+html[data-theme="retro_2005"] .context-bar {
+    background: var(--bg-secondary) !important;
+    border: 2px solid !important;
+    border-color: var(--r-hi) var(--r-sh) var(--r-sh) var(--r-hi) !important;
+    box-shadow: none;
+}
+
+/* Laurels: sunken progress bar, ledger nodes squared. */
+html[data-theme="retro_2005"] .lr-hero-bar {
+    border: 2px solid;
+    border-color: var(--r-sh) var(--r-hi) var(--r-hi) var(--r-sh);
+    background: #fff;
+}
+html[data-theme="retro_2005"] .lr-hero-fill { background: var(--r-title) !important; }
+html[data-theme="retro_2005"] .led-node,
+html[data-theme="retro_2005"] .led-dot {
+    border: 2px solid;
+    border-color: var(--r-hi) var(--r-sh) var(--r-sh) var(--r-hi);
+}
+
+/* Segmented-control buttons + module toggles read like little tabs. */
+html[data-theme="retro_2005"] .art-seg button,
+html[data-theme="retro_2005"] .artwork-plat-toggle,
+html[data-theme="retro_2005"] .art-master-toggle {
+    border: 2px solid !important;
+    border-color: var(--r-hi) var(--r-sh) var(--r-sh) var(--r-hi) !important;
+    background: var(--r-face) !important;
+}

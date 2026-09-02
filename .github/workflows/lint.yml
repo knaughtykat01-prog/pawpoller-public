@@ -1,0 +1,38 @@
+name: Lint
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install linter
+        run: pip install ruff
+
+      - name: Ruff check
+        run: ruff check --select F --ignore F401,F841,F541,F811 .
+
+  js-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Check JS syntax
+        run: |
+          for f in frontend/js/*.js; do
+            node -c "$f" || exit 1
+          done
+          echo "All JS files parse OK"

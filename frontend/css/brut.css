@@ -1,0 +1,181 @@
+/* ── Display mode · BRUT (neo-brutalist) ─────────────────────────────────────
+ * Ported from the prototype's `data-mode="brut"` proof (prototype/styles.css).
+ * A CHARACTER layer, not a theme: it keeps the active theme's colours and only
+ * changes the "hand" — thick ink borders, hard offset drop-shadows, squared
+ * corners, bold-sans headings, press-down buttons. Gated on
+ * `html[data-mode="brut"]`; absent attribute = Default (soft editorial).
+ *
+ * Theme-aware trick: the hard shadow + borders are the *ink* colour
+ * (`--text-primary`), so on warm paper it's a dark shadow and on the dark
+ * themes it's a light one — both read as brutalist hard-offset. Layout is
+ * never touched, so charts don't re-measure and nothing reflows.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+html[data-mode="brut"] {
+    /* Ink line + hard shadow, derived from the active theme's text colour. */
+    --brut-line:    var(--text-primary);
+    --brut-shadow:  color-mix(in srgb, var(--text-primary) 82%, transparent);
+    --brut-shadow-sm: color-mix(in srgb, var(--text-primary) 82%, transparent);
+
+    /* Square everything that reads the radius tokens — one swap squares the
+       whole app. Pills (--radius-pill) are left round on purpose: status dots,
+       chips and the "Active" badges still want to be pills. */
+    --radius:    4px;
+    --radius-lg: 5px;
+    --radius-sm: 3px;
+
+    /* Kill the soft glass blur/shadows — brutalism is flat + hard. */
+    --shadow:        4px 4px 0 var(--brut-shadow);
+    --shadow-strong: 6px 6px 0 var(--brut-shadow);
+    --shadow-glass:  4px 4px 0 var(--brut-shadow);
+}
+
+/* ── Surfaces: cards, panels, widgets, tiles ─────────────────────────────── */
+html[data-mode="brut"] .card,
+html[data-mode="brut"] .card-glass,
+html[data-mode="brut"] .stat-card,
+html[data-mode="brut"] .settings-section,
+html[data-mode="brut"] .chart-container,
+html[data-mode="brut"] .dash-w,
+html[data-mode="brut"] .dash-catcard,
+html[data-mode="brut"] .hub-tile,
+html[data-mode="brut"] .theme-card,
+html[data-mode="brut"] .mobile-mode-card,
+html[data-mode="brut"] .work-card,
+html[data-mode="brut"] .modal-panel,
+html[data-mode="brut"] .lr-hero,
+html[data-mode="brut"] .lr-medal,
+html[data-mode="brut"] .lr-persona,
+html[data-mode="brut"] .lr-rhythm-card {
+    border: 2px solid var(--brut-line);
+    box-shadow: 4px 4px 0 var(--brut-shadow);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+/* Selected picker cards: accent-wash instead of the soft ring. */
+html[data-mode="brut"] .theme-card.active,
+html[data-mode="brut"] .mobile-mode-card.active {
+    border-color: var(--accent);
+    box-shadow: 4px 4px 0 var(--brut-shadow);
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
+}
+
+/* Covers get an ink frame + a bigger hard shadow on hover. */
+html[data-mode="brut"] .book-cover,
+html[data-mode="brut"] .work-cover {
+    border: 2px solid var(--brut-line);
+    box-shadow: 4px 4px 0 var(--brut-shadow);
+}
+html[data-mode="brut"] .book:hover .book-cover {
+    transform: translateY(-2px);
+    box-shadow: 7px 7px 0 var(--brut-shadow);
+}
+
+/* ── Buttons: hard shadow + press-down ───────────────────────────────────── */
+html[data-mode="brut"] .btn,
+html[data-mode="brut"] .btn-primary,
+html[data-mode="brut"] .btn-secondary,
+html[data-mode="brut"] .btn-danger,
+html[data-mode="brut"] .btn-success {
+    border: 2px solid var(--brut-line);
+    box-shadow: 3px 3px 0 var(--brut-shadow);
+    border-radius: 4px;
+    font-weight: 700;
+    transition: transform .05s ease, box-shadow .05s ease;
+}
+html[data-mode="brut"] .btn:active,
+html[data-mode="brut"] .btn-primary:active,
+html[data-mode="brut"] .btn-secondary:active,
+html[data-mode="brut"] .btn-danger:active,
+html[data-mode="brut"] .btn-success:active {
+    transform: translate(3px, 3px);
+    box-shadow: none;
+}
+/* .btn-pill wants squaring too under brut. */
+html[data-mode="brut"] .btn-pill { border-radius: 4px; }
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+html[data-mode="brut"] .form-control,
+html[data-mode="brut"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html[data-mode="brut"] select,
+html[data-mode="brut"] textarea {
+    border: 2px solid var(--brut-line);
+    border-radius: 4px;
+}
+html[data-mode="brut"] .form-control:focus,
+html[data-mode="brut"] input:focus,
+html[data-mode="brut"] select:focus,
+html[data-mode="brut"] textarea:focus {
+    box-shadow: 3px 3px 0 var(--brut-shadow);
+    outline: none;
+}
+
+/* ── Shell: sidebar / top bar / nav ──────────────────────────────────────── */
+/* Side rail: heavy ink edge. */
+html[data-mode="brut"][data-navmode="side"] .sidebar,
+html[data-mode="brut"] .sidebar {
+    border-right: 2px solid var(--brut-line);
+}
+/* Top bar: the sidebar is restyled into a horizontal bar in top mode; give it
+   a bottom ink edge instead (desktop only, matching the top-nav media gate). */
+@media (min-width: 769px) {
+    html[data-mode="brut"][data-navmode="top"]:not([data-mobile="1"]) .sidebar {
+        border-right: none;
+        border-bottom: 2px solid var(--brut-line);
+    }
+}
+/* Active nav item: accent block with a hard shadow, bold. */
+html[data-mode="brut"] .nav-link.active {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 2px 2px 0 var(--brut-shadow);
+    font-weight: 700;
+    border-radius: 4px;
+}
+/* Top-bar dropdown panels read brutalist too. */
+html[data-mode="brut"] .nav-sub {
+    border: 2px solid var(--brut-line);
+    box-shadow: 4px 4px 0 var(--brut-shadow);
+    border-radius: 4px;
+}
+
+/* ── Ledger (Slice D) — squared node dots + hard rail ────────────────────── */
+html[data-mode="brut"] .led-dot { border-width: 2px; border-radius: 4px; }
+html[data-mode="brut"] .led-day-nodes { border-left-width: 2px; border-left-color: var(--brut-line); }
+html[data-mode="brut"] .work-tab.is-active { border-bottom-width: 3px; }
+
+/* ── Chips / badges ──────────────────────────────────────────────────────── */
+html[data-mode="brut"] .chip {
+    border: 2px solid var(--brut-line);
+}
+
+/* ── Headings go bold sans — brutalism isn't serif ───────────────────────── */
+/* Overrides the Vibe Pack serif rule (tokens.css) under brut only. */
+html[data-mode="brut"] h1,
+html[data-mode="brut"] h2,
+html[data-mode="brut"] h3,
+html[data-mode="brut"] .page-header h2,
+html[data-mode="brut"] .modal-panel h3,
+html[data-mode="brut"] .settings-section h3,
+html[data-mode="brut"] .sidebar-header h1,
+html[data-mode="brut"] .login-card h1,
+html[data-mode="brut"] .login-card h2,
+html[data-mode="brut"] .loading-card h2,
+html[data-mode="brut"] .setup-step h2,
+/* Bookshelf (Slice A) serif titles → bold sans under brut. */
+html[data-mode="brut"] .shelf-title,
+html[data-mode="brut"] .work-title,
+html[data-mode="brut"] .book-title,
+html[data-mode="brut"] .book-initial {
+    font-family: var(--font-sans);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+/* ── Ribbons / gilt keep their punch but square off ──────────────────────── */
+html[data-mode="brut"] .book-ribbon {
+    border-radius: 3px;
+    border: 1.5px solid var(--brut-line);
+    box-shadow: 2px 2px 0 var(--brut-shadow);
+}

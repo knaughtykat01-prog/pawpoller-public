@@ -1,0 +1,46 @@
+# Build artifacts
+build/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# User data & secrets
+.env
+.env.test
+settings.json
+data/
+logs/
+.vault_key
+settings.vault.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Claude Code context router (local only)
+CLAUDE.md
+
+# Feature working-plans (ephemeral scratch — only the template is tracked)
+/.plan/*
+!/.plan/TEMPLATE.md
+
+# Maintainer TLS reverse-proxy layer (VM-only — never commit; certs/keys)
+/Caddyfile
+/docker-compose.override.yml
+/caddy/
+*.pem
+*.key
+
+# UI-redesign working files + QA result dumps. Untracked, and NOT to be
+# committed: their mock data uses real account names. v3.27.0 pulled them in
+# via `git add -A` — in the commit titled "No personal data in the repository"
+# — and they are still in that commit's history. Ignored here so the next
+# sweeping add cannot repeat it. Also listed in deploy/make_public.py.
+/prototype/
+/storyboard.html
+/ui-directions*.html
+/qa/auto_test_results_*.csv

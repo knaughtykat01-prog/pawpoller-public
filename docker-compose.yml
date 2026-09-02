@@ -1,0 +1,22 @@
+services:
+  pawpoller:
+    build: .
+    ports:
+      # Loopback by default, so a fresh `docker compose up` is NOT exposed to
+      # the network. To reach it from other devices, put it behind a reverse
+      # proxy (see docs/SETUP.md §2.5) and/or set PAWPOLLER_BIND=0.0.0.0 in
+      # .env — but ONLY with a dashboard password set.
+      - "${PAWPOLLER_BIND:-127.0.0.1}:8420:8420"
+    volumes:
+      - pawpoller-data:/app/data
+      - pawpoller-logs:/app/logs
+      # Story archive for the editor/publishing features (optional). Override the
+      # host path with PAWPOLLER_ARCHIVE_DIR in .env; defaults to ./story-archive
+      # next to this file.
+      - ${PAWPOLLER_ARCHIVE_DIR:-./story-archive}:/app/story-archive
+    restart: unless-stopped
+    env_file: .env
+
+volumes:
+  pawpoller-data:
+  pawpoller-logs:

@@ -1,0 +1,67 @@
+/* Artists — the registry as a page (3.11.0).
+   One card per artist: identity, handles per platform, the lookup's warnings,
+   and how many pieces credit them. Token-driven so it retones with the themes. */
+
+.ar-bar { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; margin: 0 0 1rem; }
+.ar-search {
+    flex: 1 1 20rem; padding: .5rem .7rem; border-radius: 8px; font-size: .9rem;
+    border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text);
+}
+.ar-chips { display: flex; gap: .35rem; flex-wrap: wrap; }
+.ar-chip {
+    padding: .35rem .65rem; border-radius: 999px; cursor: pointer; font-size: .8rem;
+    border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-secondary);
+}
+.ar-chip.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ar-chip-n { opacity: .7; font-variant-numeric: tabular-nums; }
+
+.ar-card {
+    border: 1px solid var(--card-border, var(--border)); border-radius: 12px;
+    background: var(--surface, var(--bg-secondary));
+    padding: .85rem 1rem; margin-bottom: .8rem;
+}
+.ar-head { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; }
+.ar-id { flex: 1 1 14rem; min-width: 0; }
+.ar-name { font-weight: 700; font-size: 1rem; }
+.ar-alias { display: block; font-size: .74rem; color: var(--text-muted, var(--text-secondary)); }
+.ar-meta { display: flex; gap: .35rem; flex-wrap: wrap; }
+.ar-badge {
+    font-size: .72rem; padding: .2rem .45rem; border-radius: 4px;
+    background: var(--bg-tertiary, rgba(0,0,0,.06)); color: var(--text-secondary);
+    white-space: nowrap;
+}
+/* An artist nobody credits is a candidate for tidying, not an error — muted. */
+.ar-badge-zero { opacity: .55; }
+.ar-acts { display: flex; gap: .4rem; margin-left: auto; }
+
+.ar-handles {
+    display: grid; gap: .35rem .8rem; margin-top: .7rem;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+}
+.ar-h { display: flex; flex-direction: column; gap: .15rem; font-size: .7rem; color: var(--text-secondary); }
+.ar-h > span { display: flex; align-items: center; gap: .25rem; }
+.ar-h input {
+    padding: .3rem .45rem; border-radius: 4px; font-size: .82rem; width: 100%;
+    border: 1px solid var(--border); background: var(--bg, var(--bg-secondary)); color: var(--text);
+}
+/* Only on handles the registry holds: upserts merge, so clearing the box can
+   never mean "forget this" — removal has to be its own deliberate action. */
+.ar-h-rm {
+    margin-left: auto; background: none; border: 0; cursor: pointer;
+    line-height: 1; font-size: .9rem; padding: 0 .15rem;
+    color: var(--text-muted, var(--text-secondary)); opacity: .55;
+}
+.ar-h-rm:hover { opacity: 1; color: var(--danger, #c0392b); }
+
+/* Warnings shout, context does not — 20 of the 44 artists carry a warning, so
+   alarming the context too would flatten the distinction entirely. */
+.ar-warn {
+    margin-top: .55rem; padding: .4rem .55rem; border-radius: 4px;
+    font-size: .78rem; font-weight: 600; line-height: 1.4;
+    color: var(--warning, #b4690e);
+    background: color-mix(in srgb, var(--warning, #b4690e) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warning, #b4690e) 35%, transparent);
+}
+.ar-ctx { margin-top: .4rem; font-size: .75rem; line-height: 1.4; color: var(--text-secondary); }
+.ar-msg { margin-top: .4rem; font-size: .78rem; color: var(--text-secondary); min-height: 1em; }
+.ar-msg-bad { color: var(--danger, #c0392b); }

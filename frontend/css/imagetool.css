@@ -1,0 +1,92 @@
+/* ── Image Tool (#/imagetool) ─────────────────────────────────────────────
+ * Controls on the left, canvas stage on the right. Token-driven so the chrome
+ * tracks all 8 themes; the canvas itself is real pixels and stays neutral.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.itool-layout {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) 1fr;
+    gap: 1.5rem;
+    align-items: start;
+}
+.itool-controls { display: flex; flex-direction: column; gap: 1rem; }
+.itool-controls .card { margin: 0; }
+
+.itool-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.itool-hint { font-size: 12.5px; margin-top: .5rem; }
+.itool-hr { border: none; border-top: 1px solid var(--border); margin: .9rem 0; }
+
+.itool-input {
+    padding: .45rem .7rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font: inherit; font-size: .9rem;
+    max-width: 160px;
+}
+.itool-input:focus { outline: none; border-color: var(--accent); }
+select.itool-input { max-width: 100%; width: 100%; }
+
+.itool-modes { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; margin-top: .4rem; }
+.itool-mode {
+    border: none; background: transparent; color: var(--text-secondary);
+    font: inherit; font-size: .85rem; padding: .4rem .8rem; cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+}
+.itool-mode + .itool-mode { border-left: 1px solid var(--border); }
+.itool-mode:hover { color: var(--text-primary); }
+.itool-mode.is-active { background: var(--accent); color: #fff; }
+
+.itool-stage {
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 320px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    min-width: 0;
+    /* A checkerboard so transparent PNGs read as transparent, not white. */
+    background-image:
+        linear-gradient(45deg, rgba(128,128,128,.12) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(128,128,128,.12) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(128,128,128,.12) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(128,128,128,.12) 75%);
+    background-size: 18px 18px;
+    background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+}
+.itool-canvas {
+    max-width: 100%;
+    border-radius: 6px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .35);
+    cursor: crosshair;
+    touch-action: none;   /* pointer drags must not scroll the page */
+}
+.itool-empty { position: absolute; color: var(--text-muted); font-size: .95rem; }
+
+/* Library picker grid (inside the shared .promo-ov overlay) */
+.itool-lib {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: .7rem;
+    max-height: 52vh; overflow: auto;
+    margin-top: .6rem;
+}
+.itool-libcard {
+    display: flex; flex-direction: column; gap: .35rem;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--bg-secondary); color: var(--text-primary);
+    padding: .4rem; cursor: pointer; font: inherit; text-align: left;
+    transition: border-color .15s ease;
+}
+.itool-libcard:hover { border-color: var(--accent); }
+.itool-libcard img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 6px; background: var(--bg-tertiary); }
+.itool-libcard span {
+    font-size: .75rem; line-height: 1.25;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+    .itool-layout { grid-template-columns: 1fr; }
+}

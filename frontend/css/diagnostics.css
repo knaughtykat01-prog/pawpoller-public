@@ -1,0 +1,282 @@
+/* Diagnostics tab styles.
+   Two-column grid at >=1100px, stacked on narrower. */
+
+.diag-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.diag-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+}
+
+.diag-search {
+    flex: 1;
+    max-width: 360px;
+    background: var(--surface-base, var(--bg-secondary));
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+}
+
+.diag-status-filter {
+    background: var(--surface-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 13px;
+}
+.diag-status-filter option {
+    background: var(--surface-elevated);
+    color: var(--text-primary);
+}
+
+.diag-toolbar-spacer { flex: 1; }
+
+.diag-summary-badge {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 4px 10px;
+    background: var(--surface-base, var(--bg-secondary));
+    border-radius: 12px;
+}
+
+.diag-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+}
+@media (min-width: 1100px) {
+    .diag-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+}
+
+.diag-catalog {
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    padding: 8px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.diag-stream {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    padding: 8px;
+    min-height: 320px;
+}
+
+/* Category accordion */
+.diag-category {
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    margin-bottom: 6px;
+}
+.diag-category-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    background: var(--surface-base, var(--bg-secondary));
+    list-style: none;
+}
+.diag-category-header::-webkit-details-marker { display: none; }
+.diag-category-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+}
+.diag-category-counts {
+    display: flex;
+    gap: 6px;
+    font-size: 12px;
+}
+.diag-category-body {
+    padding: 4px 6px;
+}
+
+/* Single test row */
+.diag-test {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border-secondary, transparent);
+}
+.diag-test:last-child {
+    border-bottom: none;
+}
+.diag-test:hover {
+    background: var(--surface-base, var(--bg-secondary));
+}
+.diag-test-icon {
+    width: 18px;
+    text-align: center;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+.diag-test-name {
+    flex: 1;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.diag-test-duration {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: 'Consolas', monospace;
+}
+.diag-test-message {
+    font-size: 11px;
+    color: var(--text-muted);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.diag-test-destructive {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: #c44;
+    border: 1px solid #c44;
+    border-radius: 3px;
+    padding: 0 4px;
+    letter-spacing: 0.05em;
+}
+
+/* Status colours */
+.diag-status-passed { color: #4c4; }
+.diag-status-failed { color: #f55; }
+.diag-status-error  { color: #f80; }
+.diag-status-skipped { color: var(--text-muted); }
+.diag-status-running { color: #4ae; animation: diag-pulse 1s infinite alternate; }
+.diag-status-pending { color: var(--text-muted); }
+@keyframes diag-pulse {
+    from { opacity: 0.4; }
+    to   { opacity: 1; }
+}
+
+/* Action bar */
+.diag-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px;
+    border-bottom: 1px solid var(--border-secondary, var(--border-primary));
+    flex-wrap: wrap;
+}
+.diag-actions-spacer { flex: 1; }
+.diag-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Summary card */
+.diag-summary-card {
+    padding: 8px 10px;
+    border-radius: 4px;
+    background: var(--surface-base, var(--bg-secondary));
+    border-left: 3px solid var(--text-muted);
+}
+.diag-summary-card.all-green { border-left-color: #4c4; }
+.diag-summary-card.has-failures { border-left-color: #f55; }
+.diag-summary-card.running { border-left-color: #4ae; }
+.diag-summary-card.empty { color: var(--text-muted); }
+.diag-summary-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    font-size: 13px;
+}
+.diag-summary-duration { color: var(--text-muted); font-size: 12px; }
+.diag-progress-bar {
+    width: 100%;
+    height: 4px;
+    background: var(--border-primary);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 4px;
+}
+.diag-progress-fill {
+    height: 100%;
+    background: #4ae;
+    transition: width 0.2s linear;
+}
+
+/* Log panel */
+.diag-log-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border-secondary, var(--border-primary));
+}
+.diag-log-title { font-size: 12px; text-transform: uppercase; color: var(--text-muted); }
+.diag-log-spacer { flex: 1; }
+.diag-log-filter {
+    background: var(--surface-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 3px;
+    padding: 2px 4px;
+    font-size: 12px;
+}
+.diag-log-filter option {
+    background: var(--surface-elevated);
+    color: var(--text-primary);
+}
+
+.diag-log {
+    background: #0e1116;
+    color: #ddd;
+    border-radius: 4px;
+    padding: 8px;
+    margin: 0;
+    flex: 1;
+    min-height: 240px;
+    max-height: 60vh;
+    overflow-y: auto;
+    font-family: 'Consolas', 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.diag-log-line {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.diag-log-info { color: #cdd; }
+.diag-log-warn { color: #fa3; }
+.diag-log-error { color: #f55; }
+.diag-log-debug { color: #888; }
+
+.diag-error {
+    padding: 24px;
+    color: #f55;
+}
+
+.btn-xs {
+    font-size: 11px;
+    padding: 2px 6px;
+}

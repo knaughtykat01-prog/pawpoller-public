@@ -1,0 +1,97 @@
+/* ── Ledger / timelines (concept Slice D · "Almanac") ────────────────────────
+ * A dated spine: day headers down the left, a vertical rail, typed event nodes.
+ * Theme-aware via the Quill tokens; Brut inherits the token overrides + explicit
+ * coverage below. Used both by the #/ledger Activity view and the work-detail
+ * "Timeline" tab. */
+
+.led-head { margin: 0 0 1.5rem; max-width: 62ch; }
+.led-eyebrow {
+    font-family: var(--font-sans);
+    font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: .5rem;
+}
+.led-h1 {
+    font-family: var(--font-serif); font-weight: 700; font-size: clamp(2.1rem, 4vw, 3rem);
+    line-height: 1.05; letter-spacing: -.01em; color: var(--text-primary); margin: 0 0 .5rem;
+}
+.led-sub { color: var(--text-secondary); font-size: 1rem; line-height: 1.5; margin: 0; }
+
+/* ── Controls (Activity view) ── */
+.led-controls { display: flex; gap: .7rem; flex-wrap: wrap; align-items: center; margin: 0 0 1.5rem; }
+.led-segs {
+    display: inline-flex; border: 1px solid var(--card-border-inner);
+    border-radius: var(--radius-pill, 999px); overflow: hidden; background: var(--bg-card);
+}
+.led-seg {
+    appearance: none; border: none; background: transparent; cursor: pointer;
+    font: inherit; font-weight: 600; font-size: .85rem; color: var(--text-secondary);
+    padding: .45rem .95rem; transition: var(--transition, all .15s ease);
+}
+.led-seg:hover { color: var(--text-primary); }
+.led-seg.is-active { background: var(--accent); color: #fff; }
+.led-platsel {
+    padding: .45rem .7rem; border-radius: 10px; border: 1px solid var(--card-border-inner);
+    background: var(--bg-card); color: var(--text-primary); font: inherit; font-size: .88rem;
+}
+.led-platsel:focus { outline: none; border-color: var(--accent); }
+
+/* ── The spine ── */
+.led-spine { position: relative; }
+.led-day { display: grid; grid-template-columns: 132px 1fr; gap: 1rem; }
+.led-day-label {
+    font-family: var(--font-sans); font-size: .78rem; font-weight: 700;
+    color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em;
+    padding-top: .45rem; text-align: right; position: sticky; top: 1rem; align-self: start;
+}
+.led-day-nodes {
+    position: relative; padding: 0 0 1.4rem 1.5rem;
+    border-left: 2px solid var(--card-border-inner);
+}
+.led-day:last-child .led-day-nodes { padding-bottom: .2rem; }
+
+.led-node { position: relative; display: flex; gap: .7rem; padding: .5rem 0; align-items: flex-start; }
+.led-dot {
+    position: absolute; left: calc(-1.5rem - 1px); top: .5rem; transform: translateX(-50%);
+    width: 1.7rem; height: 1.7rem; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: .85rem;
+    background: var(--bg-card); border: 2px solid var(--card-border-inner); line-height: 1;
+    box-shadow: 0 0 0 4px var(--bg-primary);
+}
+.led-node.is-ok    .led-dot { border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border-inner)); }
+.led-node.is-error .led-dot { border-color: var(--danger); }
+.led-node.is-warn  .led-dot { border-color: var(--warning); }
+.led-node.is-running .led-dot { border-color: var(--info); }
+
+.led-body { flex: 1; min-width: 0; padding-left: .35rem; }
+.led-line { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+.led-title { color: var(--text-primary); font-size: .95rem; font-weight: 500; }
+.led-node.is-error .led-title { color: var(--danger); }
+.led-plat {
+    font-size: .72rem; font-weight: 600; color: var(--text-secondary);
+    background: var(--bg-tertiary); border-radius: 999px; padding: .12rem .55rem; white-space: nowrap;
+}
+.led-time { font-size: .76rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.led-open { margin-left: auto; color: var(--accent); text-decoration: none; font-size: .8rem; font-weight: 600; }
+.led-open:hover { text-decoration: underline; }
+.led-detail { font-size: .82rem; color: var(--text-muted); margin-top: .2rem; line-height: 1.4; word-break: break-word; }
+
+.led-empty { color: var(--text-muted); padding: 2rem 0; text-align: center; }
+
+/* ── Work-detail "Timeline" tab bar (shared with Bookshelf work detail) ── */
+.work-tabs { display: inline-flex; gap: .2rem; margin: 0 0 1.4rem; border-bottom: 1px solid var(--card-border-inner); }
+.work-tab {
+    appearance: none; border: none; background: transparent; cursor: pointer; font: inherit;
+    font-weight: 600; font-size: .92rem; color: var(--text-secondary);
+    padding: .5rem .95rem; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color .15s ease, border-color .15s ease;
+}
+.work-tab:hover { color: var(--text-primary); }
+.work-tab.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+.work-pane[hidden] { display: none; }
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+    .led-day { grid-template-columns: 1fr; gap: .2rem; }
+    .led-day-label { text-align: left; position: static; padding-top: 1rem; }
+    .led-day-nodes { margin-left: .2rem; }
+}

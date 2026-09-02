@@ -1,0 +1,60 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   PERCEIVED PERFORMANCE & GPU ACCELERATION
+
+   Universal, theme-independent wins that make the app feel snappier — no
+   behaviour or layout change, only how fast it renders and responds:
+     1. quicker micro-interactions,
+     2. off-screen grid cards skip layout + paint (content-visibility) — the
+        browser GPU-composites only what's near the viewport,
+     3. transient overlays get their own GPU compositor layer,
+     4. reduced-motion honoured.
+   Loaded after the base CSS so its :root override of the transition tokens
+   wins. Complements the JS windowing (2.167) on the big grids.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* 1 · Snappier micro-interactions everywhere. The base tokens are 0.2s / 0.3s;
+   tightening the default makes every hover / press / toggle feel instant while
+   staying smooth. Deliberate motions (page/tour) can still opt into --transition-slow. */
+:root {
+    --transition: 0.12s ease;
+    --transition-slow: 0.2s ease;
+}
+
+/* 2 · (Removed) content-visibility on the big grids. It fought the covers'
+   `aspect-ratio: 3/4` and rendered them at uneven heights + mis-cropped. Those
+   grids are already virtualized by the JS windowing (2.167), so the perf win was
+   redundant — correctness wins. If revisited, it must NOT size-contain elements
+   whose children use aspect-ratio. */
+
+/* 3 · Transient overlays composite on their own GPU layer, so opening one and
+   scrolling inside it stays smooth and the page behind isn't repainted.
+   Deliberately NOT the main scroll column: a transform there would re-root any
+   position:fixed descendants and misplace them. */
+.modal-panel,
+.pp-toast,
+.cmdk-panel,
+.chart-modal-wrap,
+.guide-modal-card,
+.ep-card {
+    transform: translateZ(0);
+}
+
+/* 4 · Momentum scrolling in the scroll panes. */
+.modal-panel,
+.settings-tab-content,
+.chart-modal-wrap,
+.det-panel {
+    -webkit-overflow-scrolling: touch;
+}
+
+/* 5 · Honour "reduce motion" — instant, no transitions/animations. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        transition-duration: 0.001ms !important;
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+    }
+}

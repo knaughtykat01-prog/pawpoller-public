@@ -1,0 +1,272 @@
+/* ── Laurels (concept Slice C · "Den") ───────────────────────────────────────
+ * Motivational, editorial. Reads from the Quill tokens so it's theme-aware; the
+ * metal tiers are fixed hues (metals read on any ground). Brut mode inherits the
+ * app-wide border/shadow overrides automatically. */
+
+.lr-head { margin: 0 0 1.6rem; max-width: 62ch; }
+.lr-eyebrow {
+    font-family: var(--font-sans);
+    font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: .5rem;
+}
+.lr-title {
+    font-family: var(--font-serif);
+    font-weight: 700; font-size: clamp(2.1rem, 4vw, 3rem); line-height: 1.05;
+    letter-spacing: -.01em; color: var(--text-primary); margin: 0 0 .5rem;
+}
+.lr-sub { color: var(--text-secondary); font-size: 1rem; line-height: 1.5; margin: 0; }
+
+/* ── Hero milestone card ── */
+.lr-hero {
+    display: grid; grid-template-columns: 1.4fr 1fr; gap: 1.75rem;
+    background: var(--bg-card); border: 1px solid var(--card-border-inner);
+    border-radius: 16px; padding: 1.6rem 1.75rem; margin-bottom: 1.6rem;
+    box-shadow: var(--shadow);
+}
+.lr-hero-main { min-width: 0; }
+.lr-hero-eyebrow {
+    font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .1em;
+    color: var(--text-muted); margin-bottom: .4rem;
+}
+.lr-hero-num {
+    font-family: var(--font-serif); font-weight: 700; line-height: 1;
+    font-size: clamp(2.6rem, 6vw, 4.2rem); color: var(--text-primary);
+    display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
+}
+.lr-hero-unit { font-family: var(--font-sans); font-size: 1rem; font-weight: 500; color: var(--text-muted); }
+.lr-hero-bar {
+    position: relative; height: 12px; border-radius: 999px; margin: 1.1rem 0 .4rem;
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary));
+    overflow: visible;
+}
+.lr-hero-fill {
+    height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--accent-warm, var(--accent)), var(--accent));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+    transition: width .5s cubic-bezier(.2,.8,.2,1);
+}
+.lr-hero-prev, .lr-hero-next {
+    position: absolute; top: 15px; font-size: .72rem; color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+.lr-hero-prev { left: 0; }
+.lr-hero-next { right: 0; }
+.lr-hero-caption { color: var(--text-secondary); font-size: .92rem; margin-top: 1.1rem; }
+.lr-hero-caption strong { color: var(--accent); }
+
+.lr-hero-side { display: flex; flex-direction: column; gap: .9rem; justify-content: center; }
+.lr-mini {
+    border: 1px solid var(--card-border-inner); border-radius: 12px; padding: .7rem .85rem;
+    background: color-mix(in srgb, var(--accent) 4%, var(--bg-card));
+}
+.lr-mini-top { display: flex; align-items: baseline; gap: .45rem; }
+.lr-mini-ico { font-size: .9rem; }
+.lr-mini-val { font-family: var(--font-serif); font-weight: 700; font-size: 1.25rem; color: var(--text-primary); }
+.lr-mini-label { font-size: .78rem; color: var(--text-muted); margin-left: auto; text-transform: uppercase; letter-spacing: .06em; }
+.lr-mini-bar { height: 6px; border-radius: 999px; margin: .5rem 0 .35rem; background: var(--bg-tertiary); overflow: hidden; }
+.lr-mini-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .5s ease; }
+.lr-mini-cap { font-size: .72rem; color: var(--text-muted); }
+
+/* ── Sections ── */
+.lr-section { margin: 0 0 1.9rem; }
+.lr-h2 {
+    font-family: var(--font-serif); font-weight: 700; font-size: 1.35rem; color: var(--text-primary);
+    margin: 0 0 1rem; display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
+}
+.lr-h2-note { font-family: var(--font-sans); font-size: .8rem; font-weight: 500; color: var(--text-muted); }
+
+/* ── Medal groups + filter ── */
+.lr-mfilter { margin-left: auto; display: inline-flex; gap: .3rem; }
+.lr-filt {
+    font-family: var(--font-sans); font-size: .74rem; font-weight: 600; color: var(--text-muted);
+    background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 999px;
+    padding: .2rem .75rem; cursor: pointer; transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+.lr-filt:hover { color: var(--text-secondary); }
+.lr-filt.is-active {
+    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary));
+}
+.lr-mgroup { margin: 0 0 1.5rem; }
+.lr-mgroup:last-child { margin-bottom: 0; }
+.lr-mg-title {
+    font-family: var(--font-serif); font-weight: 700; font-size: 1.04rem; color: var(--text-secondary);
+    margin: 0 0 .7rem; display: flex; align-items: baseline; gap: .5rem;
+    padding-bottom: .35rem; border-bottom: 1px solid var(--card-border-inner);
+}
+.lr-mg-count { font-family: var(--font-sans); font-size: .74rem; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+/* "Earned" filter — hide locked medals, and any group left with none. */
+#lr-medals-section.filt-earned .lr-medal.is-locked { display: none; }
+#lr-medals-section.filt-earned .lr-mgroup[data-earned="0"] { display: none; }
+
+/* ── Medals grid ── */
+.lr-medals { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
+.lr-medal {
+    position: relative; text-align: center;
+    border: 1px solid var(--card-border-inner); border-radius: 14px;
+    padding: 1.2rem 1rem 1.1rem; background: var(--bg-card);
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+.lr-medal.is-earned {
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--card-border-inner));
+    box-shadow: 0 6px 20px -12px color-mix(in srgb, var(--accent) 60%, transparent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--bg-card)), var(--bg-card));
+}
+.lr-medal.is-earned:hover { transform: translateY(-3px); }
+.lr-medal.is-locked { opacity: .62; }
+.lr-medal-ico { font-size: 2.2rem; line-height: 1; margin-bottom: .55rem; filter: saturate(1); }
+.lr-medal.is-locked .lr-medal-ico { filter: grayscale(.9); opacity: .8; }
+.lr-medal-name { font-family: var(--font-serif); font-weight: 700; font-size: 1rem; color: var(--text-primary); margin-bottom: .25rem; }
+.lr-medal-desc { font-size: .78rem; color: var(--text-secondary); line-height: 1.35; }
+.lr-medal-sub {
+    margin-top: .5rem; display: inline-block; font-size: .72rem; font-weight: 600;
+    color: var(--text-muted); background: var(--bg-tertiary);
+    border-radius: 999px; padding: .12rem .55rem; font-variant-numeric: tabular-nums;
+}
+.lr-medal-check {
+    position: absolute; top: .55rem; right: .6rem;
+    width: 1.25rem; height: 1.25rem; border-radius: 50%;
+    background: var(--accent); color: #fff; font-size: .72rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+}
+
+/* ── Persona trophy cards ── */
+.lr-personas { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
+.lr-persona {
+    border: 1px solid var(--card-border-inner); border-radius: 14px;
+    padding: 1.1rem 1.2rem; background: var(--bg-card); box-shadow: var(--shadow);
+}
+.lr-persona-top { display: flex; align-items: center; gap: .5rem; margin-bottom: .55rem; }
+.lr-persona-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.lr-persona-name { font-weight: 700; color: var(--text-primary); font-size: 1.02rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lr-persona-tier {
+    margin-left: auto; flex-shrink: 0; font-size: .68rem; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .05em; padding: .16rem .5rem; border-radius: 999px;
+    border: 1.5px solid currentColor;
+}
+.lr-persona-tier.is-bronze  { color: #a9773f; }
+.lr-persona-tier.is-silver  { color: #9aa3ad; }
+.lr-persona-tier.is-gold    { color: #c79a2e; }
+.lr-persona-tier.is-plat    { color: #6fa0b8; }
+.lr-persona-tier.is-diamond { color: #4bbfd6; }
+.lr-persona-level { font-size: .82rem; color: var(--text-secondary); margin-bottom: .8rem; }
+.lr-persona-level span { color: var(--text-muted); }
+.lr-persona-stats { display: flex; gap: 1.1rem; }
+.lr-persona-stats > div { display: flex; flex-direction: column; line-height: 1.15; }
+.lr-ps-v { font-family: var(--font-serif); font-weight: 700; font-size: 1.15rem; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.lr-ps-l { font-size: .7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
+
+/* ── Rhythm ── */
+.lr-rhythm-wrap { display: grid; grid-template-columns: 1.6fr 1fr; gap: 1rem; }
+.lr-rhythm-card {
+    border: 1px solid var(--card-border-inner); border-radius: 14px;
+    padding: 1.1rem 1.2rem; background: var(--bg-card); box-shadow: var(--shadow);
+}
+.lr-rhythm-lead { font-size: .92rem; color: var(--text-secondary); margin-bottom: .9rem; }
+.lr-rhythm-lead strong { color: var(--accent); }
+.lr-weeks { display: flex; gap: .35rem; }
+.lr-week {
+    flex: 1; height: 26px; border-radius: 5px; background: var(--bg-tertiary);
+    border: 1px solid var(--card-border-inner);
+}
+.lr-week.is-on { background: var(--accent); border-color: var(--accent); }
+.lr-rhythm-big { font-family: var(--font-serif); font-weight: 700; font-size: 2.2rem; color: var(--text-primary); line-height: 1; }
+.lr-rhythm-small { font-size: .82rem; color: var(--text-muted); margin-top: .4rem; }
+
+.lr-foot { font-size: .8rem; color: var(--text-muted); margin: 0; max-width: 62ch; }
+.lr-foot strong { color: var(--text-secondary); }
+
+/* ── Empty state ── */
+.lr-empty { text-align: center; max-width: 46ch; margin: 3rem auto; }
+.lr-empty-emoji { font-size: 3rem; margin-bottom: 1rem; }
+.lr-empty h2 { font-family: var(--font-serif); color: var(--text-primary); margin: 0 0 .6rem; }
+.lr-empty p { color: var(--text-secondary); line-height: 1.55; margin: 0 0 1.4rem; }
+
+/* ── Per-work achievements (Bookshelf work detail) ── */
+.wm-grid { display: flex; flex-wrap: wrap; gap: .55rem; }
+.wm {
+    display: inline-flex; align-items: center; gap: .45rem;
+    padding: .4rem .7rem; border-radius: 999px;
+    border: 1px solid var(--card-border-inner); background: var(--bg-card);
+    font-size: .82rem; color: var(--text-secondary);
+}
+.wm.is-earned {
+    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--card-border-inner));
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, var(--bg-card)), var(--bg-card));
+}
+.wm.is-locked { opacity: .55; }
+.wm-ico { font-size: 1rem; line-height: 1; }
+.wm.is-locked .wm-ico { filter: grayscale(.9); }
+.wm-name { font-weight: 600; }
+.wm-sub { font-size: .72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ── Achievement-unlocked celebration popup ── */
+.lr-celebrate {
+    position: fixed; inset: 0; z-index: 9999; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--overlay-backdrop) 55%, transparent);
+    opacity: 0; transition: opacity .3s ease; pointer-events: none;
+}
+.lr-celebrate.show { opacity: 1; pointer-events: auto; }
+.lr-celebrate-card {
+    position: relative; overflow: hidden; cursor: pointer; text-align: center;
+    background: var(--bg-card); border: 1px solid var(--card-border-inner);
+    border-radius: 20px; padding: 2.1rem 2.4rem 1.6rem; max-width: min(90vw, 380px);
+    box-shadow: var(--shadow-strong);
+    transform: scale(.72) translateY(8px); opacity: 0;
+    transition: transform .4s cubic-bezier(.2, 1.35, .4, 1), opacity .3s ease;
+}
+.lr-celebrate.show .lr-celebrate-card { transform: scale(1) translateY(0); opacity: 1; }
+.lr-celebrate-rays {
+    position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 62%);
+}
+.lr-celebrate-ico {
+    position: relative; font-size: 3.6rem; line-height: 1; margin-bottom: .6rem;
+    animation: lrPop .55s cubic-bezier(.2, 1.5, .4, 1) both;
+}
+.lr-celebrate-label {
+    position: relative; font-family: var(--font-sans); font-size: .72rem; font-weight: 700;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin-bottom: .3rem;
+}
+.lr-celebrate-name {
+    position: relative; font-family: var(--font-serif); font-weight: 700; font-size: 1.5rem;
+    color: var(--text-primary); line-height: 1.1; margin-bottom: .35rem;
+}
+.lr-celebrate-desc { position: relative; font-size: .88rem; color: var(--text-secondary); line-height: 1.4; }
+.lr-celebrate-dismiss {
+    position: relative; margin-top: 1rem; font-size: .7rem; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--text-muted);
+}
+/* confetti */
+.lr-celebrate-conf { position: absolute; inset: 0; pointer-events: none; }
+.lr-conf {
+    position: absolute; top: -14px; width: 8px; height: 13px; border-radius: 2px; opacity: .9;
+    animation-name: lrConf; animation-timing-function: cubic-bezier(.3, .1, .5, 1); animation-fill-mode: forwards;
+}
+@keyframes lrPop { 0% { transform: scale(0) rotate(-12deg); } 65% { transform: scale(1.22) rotate(4deg); } 100% { transform: scale(1) rotate(0); } }
+@keyframes lrConf { 0% { transform: translateY(0) rotate(0); opacity: 1; } 100% { transform: translateY(104vh) rotate(680deg); opacity: .15; } }
+@media (prefers-reduced-motion: reduce) {
+    .lr-celebrate-card { transition: opacity .2s ease; transform: none; }
+    .lr-celebrate.show .lr-celebrate-card { transform: none; }
+    .lr-celebrate-ico { animation: none; }
+    .lr-conf { display: none; }
+}
+/* Brut: square the popup + medals */
+html[data-mode="brut"] .lr-celebrate-card { border-width: 2px; border-radius: 5px; box-shadow: 6px 6px 0 var(--brut-shadow, rgba(0,0,0,.8)); }
+html[data-mode="brut"] .wm { border-width: 2px; border-radius: 4px; }
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+    /* Clear the fixed mobile hamburger (top-left) so "Your den" + "Laurels"
+       aren't hidden under it (env() adds the iOS status-bar inset). */
+    .lr-head { padding-top: calc(env(safe-area-inset-top, 0px) + 44px); }
+    .lr-hero { grid-template-columns: 1fr; }
+    /* Medals are a compact 2-up grid on phones. The desktop auto-fill
+       (minmax 180px) + gap only fits one column at ~360px, which stacks all
+       22 medals into a very long single column. */
+    .lr-medals { grid-template-columns: repeat(2, 1fr); gap: .75rem; }
+    .lr-rhythm-wrap { grid-template-columns: 1fr; }
+}

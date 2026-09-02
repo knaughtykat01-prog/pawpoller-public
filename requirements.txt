@@ -1,0 +1,43 @@
+fastapi>=0.109.0
+python-multipart>=0.0.6
+uvicorn[standard]>=0.27.0
+httpx>=0.27.0
+apscheduler>=3.10.4
+python-dotenv>=1.0.0
+pywebview>=5.0
+pystray>=0.17
+Pillow>=9.0
+pyinstaller>=6.0
+winotify>=1.1.0 ; sys_platform == "win32"
+# Linux: pywebview's GTK backend needs WebKit2GTK + PyGObject system
+# bindings that don't bundle cleanly via PyInstaller/AppImage. Use Qt
+# (QtWebEngine) instead — pip-installable, brings its own native libs,
+# bundles cleanly. main.py:webview.start() passes gui='qt' on Linux.
+PyQt6>=6.6 ; sys_platform == "linux"
+PyQt6-WebEngine>=6.6 ; sys_platform == "linux"
+weasyprint>=68.0
+# >=48.0.1: earlier wheels bundle an OpenSSL with a June-2026 advisory
+# (GHSA-537c-gmf6-5ccf); keep the floor above it so a stale dev env can't
+# bundle a vulnerable copy into the installer.
+cryptography>=48.0.1
+# Vault key storage: with keyring available the credential vault stores its
+# key in the OS keystore (Windows Credential Manager / macOS Keychain)
+# instead of a .vault_key dotfile sitting next to the ciphertext.
+keyring>=25.0
+# gallery-dl powers the X/Twitter poll path, invoked ONLY as a separate
+# subprocess (never imported — see clients/tw/gallerydl.py), so its GPL-2.0
+# licence stays at arm's length from PawPoller's MIT code. Optional at runtime:
+# if absent, X polling falls back to the built-in GraphQL scrape. NOT bundled
+# into the frozen .exe (we never import it, so PyInstaller won't pull it in) —
+# source/dev installs get it here; packaged desktop users auto-detect a system
+# install or fall back. Loose floor so it can track X's changing API.
+gallery-dl>=1.32
+
+# Dashboard auth (login + 2FA + signed sessions). These are imported directly by
+# routes/dashboard_auth.py + config.py; they were previously only in
+# requirements-server.txt, so a source/dev `pip install -r requirements.txt`
+# would crash auth on ImportError (gap-wave-4 fix). The frozen desktop build
+# also lists them in pawpoller.spec hiddenimports (lazy imports evade static scan).
+bcrypt>=4.2.0
+pyotp>=2.9.0
+itsdangerous>=2.2.0

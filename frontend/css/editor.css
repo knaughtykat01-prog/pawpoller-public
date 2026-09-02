@@ -1,0 +1,4966 @@
+/* Story Editor — split-pane layout with live preview + WYSIWYG */
+
+/* WYSIWYG Toolbar */
+.wysiwyg-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 8px;
+    background: var(--surface-elevated);
+    border-bottom: 1px solid var(--border-primary);
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow-x: auto;
+}
+
+/* Desktop: the rich-editor panel is narrow (it's one of four quad panels), so
+   a single nowrap row crams the 13 tools into a horizontal scroll. Wrap them
+   onto a second row instead — more discoverable than scrolling. Mobile keeps
+   its swipe strip (html[data-mobile] override further down). (2.122.0) */
+html:not([data-mobile="1"]) .wysiwyg-toolbar {
+    flex-wrap: wrap;
+    white-space: normal;
+    overflow-x: visible;
+    gap: 4px;
+    row-gap: 4px;
+}
+
+.wysiwyg-toolbar button {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    padding: 3px 7px;
+    cursor: pointer;
+    line-height: 1;
+    min-width: 28px;
+    text-align: center;
+}
+
+.wysiwyg-toolbar button:hover {
+    background: var(--surface-primary);
+    border-color: var(--border-primary);
+    color: var(--text-primary);
+}
+
+.wysiwyg-toolbar button:active {
+    background: var(--color-accent);
+    color: white;
+}
+
+.toolbar-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border-primary);
+    margin: 0 4px;
+}
+
+.wysiwyg-toolbar button[data-anchor] {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    border: 1px dashed var(--border-primary);
+}
+
+/* Anchor button hover tooltip (appears after 2s hover) */
+.anchor-tooltip {
+    position: fixed;
+    z-index: 10000;
+    max-width: 440px;
+    padding: 10px 12px;
+    background: var(--bg-elevated, #22222e);
+    color: var(--text-primary, #e0e0e0);
+    border: 1px solid var(--border-primary, #444);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    font-size: 12px;
+    line-height: 1.45;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 100ms ease-out;
+    pointer-events: none;
+}
+
+.anchor-tooltip.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.anchor-tooltip .anchor-tooltip-label {
+    font-weight: 600;
+    color: var(--color-accent, var(--accent));
+    margin-bottom: 4px;
+}
+
+.anchor-tooltip .anchor-tooltip-purpose {
+    margin-bottom: 8px;
+    color: var(--text-secondary, #aaa);
+}
+
+.anchor-tooltip h6 {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted, #888);
+    margin: 6px 0 3px;
+    font-weight: 600;
+}
+
+.anchor-tooltip pre {
+    margin: 0;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 3px;
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.anchor-tooltip pre.anchor-tooltip-after {
+    border-left: 3px solid #4a9;
+}
+
+/* WYSIWYG contenteditable body */
+#editor-preview-rendered-body[contenteditable="true"] {
+    outline: none;
+    cursor: text;
+    min-height: 200px;
+}
+
+#editor-preview-rendered-body[contenteditable="true"]:focus {
+    box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+/* Front matter block — non-editable, dimmed */
+.wysiwyg-frontmatter {
+    opacity: 0.6;
+    border-bottom: 1px dashed var(--border-primary);
+    padding-bottom: 1em;
+    margin-bottom: 1em;
+    pointer-events: none;
+    user-select: none;
+}
+
+.editor-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 60px);
+    overflow: hidden;
+}
+
+/* Toolbar */
+.editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: var(--surface-elevated);
+    border-bottom: 1px solid var(--border-primary);
+    flex-shrink: 0;
+    /* Wrap so the action cluster drops to its own row instead of running off
+       the right edge of the screen. (2.122.0) */
+    flex-wrap: wrap;
+    row-gap: 8px;
+}
+
+.editor-back {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.editor-back:hover {
+    color: var(--text-primary);
+}
+
+.editor-title {
+    font-weight: 600;
+    font-size: 1.1rem;
+    flex: 1;
+}
+
+.editor-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+/* Desktop: give the actions their own full-width row, centered on screen
+   (requested), rather than pinned right where they overflowed. On mobile the
+   ⋯ collapse already keeps them compact, so leave that layout alone. (2.122.0) */
+html:not([data-mobile="1"]) .editor-actions {
+    flex-basis: 100%;
+    justify-content: center;
+}
+
+/* The secondary cluster (CSS / Regenerate / Downloads / Publish / Format /
+   status readouts / format-tabs) had NO desktop layout rule, so it fell back to
+   a plain block: its buttons and the ▾ dropdowns laid out as inline-blocks that
+   align on the text baseline, not centered — a ragged, staggered row in every
+   theme. Make it a centered flex row so everything sits on one line. The
+   mobile rules (html[data-mobile="1"] …, higher specificity) still win on
+   phones, so the ⋯-collapse behaviour is untouched. (2.177.0) */
+.editor-actions-secondary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.editor-status {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    min-width: 120px;
+    text-align: right;
+}
+
+.editor-wordcount {
+    color: var(--text-tertiary);
+    font-size: 0.8rem;
+    padding: 0 8px;
+    border-left: 1px solid var(--border-primary);
+}
+
+.editor-slop {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: help;
+}
+
+.editor-actions select {
+    background: var(--surface-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.85rem;
+}
+
+/* Format tab bar (replaces format <select>) */
+.format-tabs {
+    display: flex;
+    gap: 2px;
+}
+.format-tab {
+    font-size: 11px;
+    padding: 3px 8px;
+    border: 1px solid var(--border-primary);
+    border-radius: 3px;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+}
+.format-tab:hover { background: var(--surface-hover, var(--surface-secondary)); }
+.format-tab.active {
+    background: var(--accent, var(--info));
+    color: #fff;
+    border-color: var(--accent, var(--info));
+}
+
+/* 4-panel quad layout */
+.editor-quad {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    flex: 1;
+    overflow: hidden;
+}
+
+.editor-quad-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--border-primary);
+    overflow: hidden;
+}
+
+.editor-quad-panel:last-child {
+    border-right: none;
+}
+
+/* CodeMirror container */
+.editor-cm-container {
+    flex: 1;
+    overflow: hidden;
+}
+
+.editor-cm-container .cm-editor {
+    height: 100%;
+}
+
+/* Textarea fallback (if CM bundle fails to load) */
+#editor-textarea {
+    width: 100%;
+    flex: 1;
+    resize: none;
+    border: none;
+    outline: none;
+    padding: 12px 14px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12.5px;
+    line-height: 1.65;
+    background: var(--surface-primary);
+    color: var(--text-primary);
+    tab-size: 2;
+}
+
+/* Chapter navigation dropdown */
+#editor-chapter-nav {
+    background: var(--surface-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 0.8rem;
+    max-width: 200px;
+}
+
+/* Panel toggle button (eye icon to hide) */
+.panel-toggle {
+    float: right;
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    font-size: 0.7rem;
+    cursor: pointer;
+    padding: 0 3px;
+    line-height: 1;
+    opacity: 0.4;
+}
+
+.panel-toggle:hover {
+    opacity: 1;
+}
+
+/* Restore bar for hidden panels */
+.panel-restore-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 16px;
+    background: var(--surface-elevated);
+    border-bottom: 1px solid var(--border-primary);
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+}
+
+.restore-btn {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border: 1px dashed var(--border-primary);
+    border-radius: 3px;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.restore-btn:hover {
+    border-style: solid;
+    background: var(--surface-primary);
+    color: var(--text-primary);
+}
+
+.preview-panel-header {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-tertiary);
+    padding: 4px 12px;
+    background: var(--surface-elevated);
+    border-bottom: 1px solid var(--border-primary);
+    flex-shrink: 0;
+}
+
+.preview-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 12px;
+}
+
+/* Responsive: stack to 2x2 on narrow screens */
+@media (max-width: 1200px) {
+    .editor-quad {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr 1fr;
+    }
+}
+
+/* Preview styling — renders like a finished story */
+.preview-html {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 14px;
+    line-height: 1.85;
+    color: var(--text-primary);
+}
+
+.preview-html p {
+    margin-bottom: 0.9em;
+    text-align: justify;
+}
+
+.preview-html em {
+    font-style: italic;
+    color: var(--text-secondary);
+}
+
+.preview-html strong {
+    font-weight: 700;
+}
+
+/* Title: first <p><strong> — centred, large */
+.preview-html p:first-child {
+    text-align: center;
+    font-size: 1.6em;
+    font-variant: small-caps;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.3em;
+}
+
+/* Subtitle: second element if it's italic-only */
+.preview-html p:first-child + p > em:only-child {
+    display: block;
+    text-align: center;
+    font-size: 0.95em;
+    color: var(--text-tertiary);
+}
+
+/* Centred paragraphs — both inline style and SF class variants */
+.preview-html p[style*="text-align:center"],
+.preview-html .text-center,
+.preview-html p.text-center {
+    text-align: center;
+    margin: 1.5em 0;
+}
+
+.preview-html h2.text-center,
+.preview-html h3.text-center {
+    text-align: center;
+    margin: 1.5em 0;
+}
+
+.preview-html .text-right {
+    text-align: right;
+}
+
+.preview-html .text-left {
+    text-align: left;
+}
+
+/* Chapter separator <hr> */
+.preview-html hr {
+    border: none;
+    height: 1px;
+    background: var(--border-primary);
+    margin: 2.5em auto;
+    width: 120px;
+}
+
+/* Section break */
+.preview-html .section-break {
+    text-align: center;
+    margin: 2em 0;
+    letter-spacing: 0.5em;
+    color: var(--text-tertiary);
+    font-size: 0.9em;
+}
+
+/* End marker */
+.preview-html p:last-child:has(> strong:only-child) {
+    text-align: center;
+    font-variant: small-caps;
+    letter-spacing: 0.1em;
+    margin-top: 2.5em;
+    color: var(--text-tertiary);
+}
+
+/* Theme editor panel */
+.editor-css-panel {
+    background: var(--surface-primary);
+}
+
+.theme-editor-body {
+    padding: 8px 10px !important;
+    overflow-y: auto;
+}
+
+.theme-section {
+    margin-bottom: 12px;
+}
+
+.theme-section h4 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    margin: 0 0 6px 0;
+    padding-bottom: 3px;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.theme-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.theme-row label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    min-width: 100px;
+    flex-shrink: 0;
+}
+
+.theme-row input[type="color"] {
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--border-primary);
+    border-radius: 3px;
+    padding: 1px;
+    cursor: pointer;
+    background: none;
+}
+
+.theme-row .theme-hex {
+    width: 75px;
+    font-family: 'Consolas', monospace;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    border: 1px solid var(--border-primary);
+    border-radius: 3px;
+    background: var(--surface-elevated);
+    color: var(--text-primary);
+}
+
+.theme-row .theme-text {
+    flex: 1;
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border: 1px solid var(--border-primary);
+    border-radius: 3px;
+    background: var(--surface-elevated);
+    color: var(--text-primary);
+}
+
+.theme-row select {
+    flex: 1;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    border: 1px solid var(--border-primary);
+    border-radius: 3px;
+    background: var(--surface-elevated);
+    color: var(--text-primary);
+}
+
+/* Explicit <option> styling — the dropdown popup is a system-level
+   widget that doesn't inherit the parent select's tokens in dark
+   themes (Chromium / WebView2 default the popup to system colours,
+   which renders as faint grey-on-grey). Same fix
+   ``.filter-select option`` already uses in components.css. */
+.theme-row select option,
+.metadata-field select option {
+    background: var(--surface-elevated);
+    color: var(--text-primary);
+}
+
+.btn-tiny {
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    border: 1px solid var(--border-primary);
+    border-radius: 3px;
+    background: var(--surface-elevated);
+    color: var(--text-secondary);
+    cursor: pointer;
+    margin-left: 8px;
+}
+
+.btn-tiny:hover {
+    background: var(--color-accent);
+    color: white;
+}
+
+/* Styled HTML iframe preview */
+.preview-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 4px;
+    background: white;
+    min-height: 400px;
+}
+
+/* Raw source output view */
+.preview-source {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--surface-primary);
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-primary);
+    overflow-x: auto;
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+}
+
+/* Card grid for story list */
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+}
+
+/* =====================================================================
+   Metadata Editor Drawer (Phase 1)
+   Slide-in panel from the right edge with backdrop + accordion sections.
+   ===================================================================== */
+
+.metadata-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    z-index: 1000;
+    animation: meta-fade-in 0.18s ease forwards;
+}
+
+@keyframes meta-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.metadata-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 50vw;
+    min-width: 500px;
+    max-width: 800px;
+    background: var(--bg-card);
+    border-left: 1px solid var(--border);
+    box-shadow: -12px 0 40px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    z-index: 1001;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    color: var(--text-primary);
+}
+
+.metadata-drawer.open {
+    transform: translateX(0);
+}
+
+.metadata-drawer-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-tertiary, var(--bg-card));
+}
+
+.metadata-drawer-title {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+
+.metadata-drawer-title > span:first-child {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.metadata-drawer-subtitle {
+    font-size: 15px;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+}
+
+.metadata-drawer-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.metadata-drawer-status {
+    font-size: 12px;
+    color: var(--text-secondary);
+    min-width: 90px;
+    text-align: right;
+}
+
+.metadata-drawer-status-ok     { color: var(--success); }
+.metadata-drawer-status-error  { color: var(--danger); }
+.metadata-drawer-status-info   { color: var(--info); }
+
+.metadata-drawer-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    scrollbar-gutter: stable;
+}
+
+.metadata-loading {
+    color: var(--text-secondary);
+    font-style: italic;
+    padding: 24px 0;
+    text-align: center;
+}
+
+.metadata-error-banner {
+    background: rgba(240, 112, 112, 0.12);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    padding: 12px 14px;
+    border-radius: var(--radius-sm, 8px);
+    font-size: 13px;
+}
+
+/* Accordion sections */
+
+.metadata-section {
+    background: var(--bg-glass);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 8px);
+    margin-bottom: 12px;
+    /* No overflow:hidden — would clip the tag autocomplete dropdown.
+       The accordion collapse uses max-height on .metadata-section-body
+       which has its own overflow:hidden. */
+}
+
+.metadata-section-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--transition, 0.2s ease);
+}
+
+.metadata-section-header:hover {
+    background: var(--bg-hover);
+}
+
+.metadata-section-chevron {
+    display: inline-block;
+    font-size: 10px;
+    color: var(--text-secondary);
+    transition: transform var(--transition, 0.2s ease);
+    width: 12px;
+}
+
+.metadata-section-body {
+    max-height: 0;
+    overflow: hidden;
+    padding: 0 14px;
+    transition: max-height 0.25s ease, padding 0.25s ease;
+}
+
+.metadata-section[data-expanded="true"] > .metadata-section-body {
+    max-height: 2000px;
+    padding: 4px 14px 14px;
+}
+
+/* Field rows */
+
+.metadata-field {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 14px;
+}
+
+/* Two-up row (e.g. Series name + number-in-series). Columns stack on narrow
+   drawers via the flex-wrap. gap-wave-5 §2. */
+.metadata-field-row {
+    flex-direction: row;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.metadata-field-col {
+    display: flex;
+    flex-direction: column;
+}
+.metadata-field-col--grow { flex: 1 1 60%; min-width: 160px; }
+.metadata-field-col--narrow { flex: 0 1 90px; min-width: 80px; }
+
+.metadata-field label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.metadata-required {
+    color: var(--danger);
+    margin-left: 2px;
+}
+
+.metadata-field input[type="text"],
+.metadata-field input[type="number"],
+.metadata-field textarea,
+.metadata-field select {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
+    transition: border-color var(--transition, 0.2s ease),
+                box-shadow var(--transition, 0.2s ease);
+}
+
+.metadata-field input[type="text"]:focus,
+.metadata-field input[type="number"]:focus,
+.metadata-field textarea:focus,
+.metadata-field select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.metadata-field textarea {
+    resize: vertical;
+    min-height: 60px;
+    line-height: 1.5;
+    font-family: inherit;
+}
+
+/* Character counter */
+
+.metadata-char-counter {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.metadata-char-counter-over {
+    color: var(--warning);
+}
+
+/* Per-platform description overrides (collapsible inside Description & Summary) */
+
+.metadata-desc-details {
+    margin-top: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-secondary, var(--bg-glass));
+}
+
+.metadata-desc-toggle {
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    padding: 8px 10px;
+    user-select: none;
+    list-style: none;
+}
+
+.metadata-desc-toggle::-webkit-details-marker {
+    display: none;
+}
+
+.metadata-desc-toggle::before {
+    content: '\25B6';
+    display: inline-block;
+    font-size: 9px;
+    margin-right: 6px;
+    transition: transform 0.15s ease;
+}
+
+.metadata-desc-details[open] > .metadata-desc-toggle::before {
+    transform: rotate(90deg);
+}
+
+.metadata-desc-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px 10px 0;
+}
+
+.metadata-desc-tab {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.metadata-desc-tab:hover {
+    background: var(--bg-hover);
+}
+
+.metadata-desc-tab.active {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
+.metadata-desc-pane {
+    padding: 8px 10px 12px;
+}
+
+.metadata-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    line-height: 1.4;
+}
+
+/* Error / warning helper text */
+
+.metadata-error {
+    color: var(--danger);
+    font-size: 12px;
+    margin-top: 4px;
+    min-height: 14px;
+}
+
+.metadata-warning {
+    color: var(--warning);
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+/* Mobile: drawer takes almost full width */
+@media (max-width: 768px) {
+    .metadata-drawer {
+        width: 100vw;
+        min-width: 0;
+        max-width: 100vw;
+    }
+}
+
+/* =====================================================================
+   Metadata Editor Drawer (Phase 2)
+   Classifications, pill inputs, platform toggles.
+   ===================================================================== */
+
+/* Small helper text (e.g. "Tag autocomplete coming in Phase 3") */
+.metadata-help {
+    font-size: 11px;
+    color: var(--text-tertiary, var(--text-muted));
+    font-style: italic;
+    margin-bottom: 10px;
+}
+
+/* Checkbox groups */
+
+.metadata-checkbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+.metadata-checkbox-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 2px;
+}
+
+.metadata-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 5px;
+    text-transform: none;      /* override the field-label upper-case */
+    letter-spacing: 0;
+    font-weight: 400;
+    user-select: none;
+    transition: background var(--transition, 0.15s ease);
+}
+
+.metadata-checkbox:hover {
+    background: var(--bg-hover);
+}
+
+.metadata-checkbox input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent);
+    cursor: pointer;
+    flex-shrink: 0;
+    margin: 0;
+}
+
+.metadata-checkbox span {
+    line-height: 1.3;
+}
+
+/* Pill input (characters, relationships) */
+
+.metadata-pill-input {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    min-height: 38px;
+    transition: border-color var(--transition, 0.2s ease),
+                box-shadow var(--transition, 0.2s ease);
+}
+
+.metadata-pill-input:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.metadata-pill-list {
+    display: contents;
+}
+
+.metadata-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-glass, color-mix(in srgb, var(--accent) 12%, transparent));
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: 999px;
+    padding: 2px 4px 2px 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    max-width: 100%;
+}
+
+.metadata-pill-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 240px;
+}
+
+.metadata-pill-remove {
+    background: none;
+    border: none;
+    color: var(--text-tertiary, var(--text-secondary));
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 4px;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.55;
+    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.metadata-pill-remove:hover {
+    opacity: 1;
+    background: var(--danger);
+    color: white;
+}
+
+.metadata-pill-entry {
+    flex: 1;
+    min-width: 140px;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: inherit;
+    padding: 4px 2px;
+}
+
+.metadata-pill-entry::placeholder {
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+/* ===================================================================
+ * Per-platform tag autocomplete (Phase 3a)
+ * =================================================================== */
+
+.metadata-tag-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 10px;
+    padding-bottom: 0;
+}
+
+.metadata-tag-tab {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.metadata-tag-tab:hover {
+    color: var(--text-primary);
+}
+
+.metadata-tag-tab-active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.metadata-chapter-thumb-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+.metadata-chapter-thumb-name {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.metadata-tag-fix-spaces {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+.metadata-tag-fix-spaces:hover { color: var(--accent); border-color: var(--accent); }
+
+.metadata-tag-tab-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.metadata-tag-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 4px;
+}
+
+.metadata-tag-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 4px 3px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 12px;
+    color: var(--text-primary);
+    line-height: 1.4;
+}
+
+.metadata-tag-pill-unknown {
+    border-color: var(--accent-warm);
+    background: color-mix(in srgb, var(--accent-warm) 12%, var(--bg-tertiary));
+}
+
+.metadata-tag-pill-text {
+    font-family: inherit;
+}
+
+.metadata-tag-pill-alias {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: 2px;
+}
+
+.metadata-tag-pill-remove {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    opacity: 0.6;
+    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.metadata-tag-pill-remove:hover {
+    opacity: 1;
+    background: var(--danger);
+    color: white;
+}
+
+.metadata-tag-input-wrap {
+    position: relative;
+}
+
+.metadata-tag-populate {
+    margin: 6px 0 8px 0;
+    display: inline-block;
+}
+
+.metadata-tag-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.12s ease;
+}
+
+.metadata-tag-input:focus {
+    border-color: var(--accent);
+}
+
+.metadata-tag-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+.metadata-tag-dropdown,
+.metadata-tag-dropdown-portal {
+    position: fixed;
+    /* Position set by JS via inline top/left/width/maxHeight */
+    z-index: 1500;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.metadata-tag-dropdown-portal[hidden] {
+    display: none;
+}
+
+.metadata-tag-result {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.metadata-tag-result {
+    padding: 7px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s ease;
+}
+
+.metadata-tag-result:last-child {
+    border-bottom: none;
+}
+
+.metadata-tag-result:hover,
+.metadata-tag-result-active {
+    background: var(--bg-hover);
+}
+
+.metadata-tag-result-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.metadata-tag-result-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.metadata-tag-result-cat {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+/* Tag-category pills — theme-adaptive: each category's hue is mixed with the
+   active theme's surface/text/border, so it reads as a light tint on Quill
+   (light) and a dark tint on the dark themes, instead of fixed dark chips. */
+.metadata-tag-cat-physical { background: color-mix(in srgb, #5b7fd8 18%, var(--bg-card)); color: color-mix(in srgb, #5b7fd8 62%, var(--text-primary)); border-color: color-mix(in srgb, #5b7fd8 38%, var(--border)); }
+.metadata-tag-cat-acts     { background: color-mix(in srgb, #d85b9a 18%, var(--bg-card)); color: color-mix(in srgb, #d85b9a 62%, var(--text-primary)); border-color: color-mix(in srgb, #d85b9a 38%, var(--border)); }
+.metadata-tag-cat-kink     { background: color-mix(in srgb, #c8912e 20%, var(--bg-card)); color: color-mix(in srgb, #c8912e 66%, var(--text-primary)); border-color: color-mix(in srgb, #c8912e 40%, var(--border)); }
+.metadata-tag-cat-meta     { background: color-mix(in srgb, #3fa06b 18%, var(--bg-card)); color: color-mix(in srgb, #3fa06b 62%, var(--text-primary)); border-color: color-mix(in srgb, #3fa06b 38%, var(--border)); }
+.metadata-tag-cat-image    { background: color-mix(in srgb, #7878a0 18%, var(--bg-card)); color: color-mix(in srgb, #7878a0 62%, var(--text-primary)); border-color: color-mix(in srgb, #7878a0 38%, var(--border)); }
+.metadata-tag-cat-user     { background: color-mix(in srgb, #c0894a 18%, var(--bg-card)); color: color-mix(in srgb, #c0894a 64%, var(--text-primary)); border-color: color-mix(in srgb, #c0894a 38%, var(--border)); }
+
+.metadata-tag-result-alias {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.metadata-tag-result-desc {
+    margin-top: 3px;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.metadata-tag-result-empty {
+    padding: 10px;
+    color: var(--text-muted);
+    font-size: 12px;
+    text-align: center;
+}
+
+.metadata-tag-result-empty span {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.metadata-tag-count {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.metadata-tag-count-sep {
+    margin: 0 6px;
+    opacity: 0.5;
+}
+
+.metadata-tag-count-over {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+/* -----------------------------------------------------------------------
+   Dropdown footer — "Browse all matches in expanded view" button.
+   Sticks to the bottom of the inline autocomplete dropdown.
+   ----------------------------------------------------------------------- */
+.metadata-tag-dropdown-footer {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--border);
+    padding: 6px;
+    z-index: 1;
+}
+
+.metadata-tag-browse-btn {
+    width: 100%;
+    padding: 7px 10px;
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.metadata-tag-browse-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    border-style: solid;
+    color: var(--text-primary);
+}
+
+/* -----------------------------------------------------------------------
+   Expanded Tag Browser Modal
+   Full-screen overlay mounted on document.body with z-index above the
+   drawer (drawer sits at 1001).
+   ----------------------------------------------------------------------- */
+
+.tag-browser-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 6, 14, 0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 2000;
+    animation: tag-browser-fade 180ms ease;
+}
+
+@keyframes tag-browser-fade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.tag-browser-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 90vw;
+    max-width: 1400px;
+    height: 85vh;
+    max-height: 900px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+    z-index: 2001;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: translate(-50%, -48%) scale(0.97);
+    opacity: 0;
+    transition: transform 200ms ease, opacity 200ms ease;
+}
+
+.tag-browser-modal.open {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+}
+
+/* Header — sticky: title + search + filter chips */
+.tag-browser-header {
+    flex: 0 0 auto;
+    padding: 18px 22px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.tag-browser-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.tag-browser-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.tag-browser-close {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 28px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 10px;
+    border-radius: 4px;
+}
+
+.tag-browser-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.tag-browser-search {
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 15px;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.tag-browser-search:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.tag-browser-search::placeholder {
+    color: var(--text-muted);
+}
+
+.tag-browser-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.tag-browser-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.tag-browser-chip:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.tag-browser-chip-active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.tag-browser-chip-active .tag-browser-chip-count {
+    color: rgba(255, 255, 255, 0.82);
+}
+
+.tag-browser-chip-count {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Selected strip — shows platform's current tags as removable pills */
+.tag-browser-selected {
+    flex: 0 0 auto;
+    padding: 10px 22px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.tag-browser-selected-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.tag-browser-selected-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    white-space: nowrap;
+    padding-top: 4px;
+}
+
+.tag-browser-selected-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    flex: 1;
+    min-width: 0;
+}
+
+.tag-browser-selected-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 4px 3px 9px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.tag-browser-selected-remove {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0 4px;
+    border-radius: 50%;
+}
+
+.tag-browser-selected-remove:hover {
+    color: var(--danger, #e06060);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+/* Body — scrollable grid + load-more */
+.tag-browser-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 18px 22px;
+}
+
+.tag-browser-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+    width: 100%;
+}
+
+.tag-browser-card-platforms {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 2px;
+}
+
+.tag-browser-plat-badge {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--text-secondary);
+    letter-spacing: 0.02em;
+}
+
+.tag-browser-plat-badge-active {
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.tag-browser-e621-divider {
+    margin: 24px 0 8px;
+    padding: 8px 12px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.tag-browser-e621-loading {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 13px;
+}
+
+.tag-browser-card-e621 {
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+    background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.tag-browser-card-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 4px 0;
+}
+
+.tag-browser-card-btn-secondary {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    margin-left: 6px;
+}
+
+.tag-browser-empty {
+    grid-column: 1 / -1;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.tag-browser-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.tag-browser-card:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-dim);
+}
+
+.tag-browser-card-added {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.tag-browser-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.tag-browser-card-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    word-break: break-word;
+    line-height: 1.25;
+}
+
+.tag-browser-card-cat {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.tag-browser-card-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    flex: 1;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.tag-browser-card-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: auto;
+}
+
+.tag-browser-card-btn {
+    padding: 5px 12px;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 5px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 120ms ease;
+}
+
+.tag-browser-card-btn:hover {
+    background: var(--accent-dim);
+}
+
+.tag-browser-card-btn-added {
+    background: transparent;
+    color: var(--accent);
+}
+
+.tag-browser-card-btn-added:hover {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+}
+
+/* Load-more button sits below the grid, centered */
+.tag-browser-loadmore-wrap {
+    display: flex;
+    justify-content: center;
+    margin-top: 18px;
+}
+
+.tag-browser-loadmore {
+    min-width: 240px;
+}
+
+/* Footer — sticky bottom with count + Done */
+.tag-browser-footer {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 22px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+}
+
+.tag-browser-count {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.tag-browser-count-over {
+    color: var(--danger, #e06060);
+    font-weight: 600;
+}
+
+/* =======================================================================
+   WorkPicker — visual card grid inside the tag-browser modal chrome
+   (work_picker.js). Reuses .tag-browser-* for the frame; these style the
+   thumbnail cards that replace tag chips in the grid.
+   ======================================================================= */
+.wp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+    width: 100%;
+}
+
+.wp-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    background: var(--bg-tertiary);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.12s, transform 0.08s;
+}
+
+.wp-card:hover { border-color: var(--accent); }
+.wp-card.is-selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary)); }
+
+.wp-thumb {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    display: block;
+}
+
+.wp-thumb--none {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+
+.wp-badge {
+    align-self: flex-start;
+    padding: 2px 7px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-secondary);
+}
+
+.wp-title {
+    font-size: 12px;
+    line-height: 1.3;
+    color: var(--text-primary);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.wp-check {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    opacity: 0;
+    transform: scale(0.7);
+    transition: opacity 0.12s, transform 0.12s;
+}
+
+.wp-card.is-selected .wp-check { opacity: 1; transform: scale(1); }
+
+html[data-mobile="1"] .wp-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+
+/* =======================================================================
+   TagPicker — reusable tag-library picker (tag_picker.js). Reuses the
+   .tag-browser-* modal chrome; these style the selectable tag chips that
+   fill the body grid (a lighter, standalone alternative to the editor's
+   own tag browser cards).
+   ======================================================================= */
+.tp-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+    align-content: flex-start;
+}
+
+.tp-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    background: var(--bg-tertiary);
+    border: 2px solid var(--border);
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-primary);
+    transition: border-color 0.12s, background 0.12s;
+}
+
+.tp-chip:hover { border-color: var(--accent); }
+.tp-chip.is-selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--bg-tertiary)); }
+.tp-chip.is-selected::before { content: "✓"; font-size: 11px; color: var(--accent); font-weight: 700; }
+
+.tp-chip-name { font-weight: 500; }
+
+.tp-chip-cat {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 1px 6px;
+    background: var(--bg-secondary);
+    border-radius: 999px;
+}
+
+/* =======================================================================
+   Phase 4: Chapter editor
+   ======================================================================= */
+
+.metadata-section-count {
+    color: var(--text-secondary);
+    font-weight: 400;
+    font-size: 12px;
+    margin-left: 4px;
+}
+
+.metadata-hint {
+    color: var(--text-secondary);
+    font-weight: 400;
+    font-size: 11px;
+    font-style: italic;
+}
+
+.metadata-chapter-drift-banner {
+    background: rgba(200, 160, 40, 0.08);
+    border: 1px solid rgba(200, 160, 40, 0.35);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.metadata-chapter-drift-text {
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.metadata-chapter-drift-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.metadata-chapter-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.metadata-chapter-row {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    overflow: hidden;
+}
+
+.metadata-chapter-row-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    padding: 10px 14px;
+    text-align: left;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.metadata-chapter-row-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.metadata-chapter-row-chevron {
+    flex: 0 0 auto;
+    display: inline-block;
+    width: 14px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    line-height: 1;
+}
+
+.metadata-chapter-row-title {
+    flex: 1 1 auto;
+    font-weight: 500;
+}
+
+.metadata-chapter-row-meta {
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.metadata-chapter-row-detail {
+    display: none;
+    padding: 14px 14px 16px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-primary);
+}
+
+.metadata-chapter-row-expanded .metadata-chapter-row-detail {
+    display: block;
+}
+
+.metadata-chapter-row-removed .metadata-chapter-row-title,
+.metadata-chapter-row-removed .metadata-chapter-row-meta {
+    text-decoration: line-through;
+    color: var(--text-secondary);
+}
+
+.metadata-chapter-md-title {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+.metadata-chapter-md-title code {
+    background: var(--bg-secondary);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: var(--text-primary);
+}
+
+.metadata-chapter-removed-note {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: rgba(224, 96, 96, 0.06);
+    border: 1px solid rgba(224, 96, 96, 0.3);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.metadata-chapter-tag-tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.metadata-chapter-tag-tab {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+}
+
+.metadata-chapter-tag-tab:hover {
+    color: var(--text-primary);
+}
+
+.metadata-chapter-tag-tab-active {
+    color: var(--text-primary);
+    border-bottom-color: var(--accent, #6a9fb5);
+    font-weight: 500;
+}
+
+.metadata-chapter-tag-textarea {
+    width: 100%;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    resize: vertical;
+    min-height: 70px;
+}
+
+/* Phase 4b: pill + autocomplete UI for per-chapter tags.
+   Reuses story-level .metadata-tag-pills / .metadata-tag-input / .metadata-tag-count
+   classes; this just scopes + tightens them inside the chapter detail. */
+.metadata-chapter-detail .metadata-chapter-tag-body {
+    margin-top: 8px;
+}
+.metadata-chapter-detail .metadata-chapter-tag-body .metadata-tag-pills {
+    margin-bottom: 6px;
+}
+.metadata-chapter-detail .metadata-chapter-tag-body .metadata-tag-count {
+    font-size: 11px;
+}
+.metadata-chapter-detail .metadata-chapter-tag-body .metadata-tag-input {
+    font-size: 13px;
+}
+
+/* =======================================================================
+   Phase 5: Cover image
+   ======================================================================= */
+
+.metadata-cover-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.metadata-cover-preview {
+    width: 220px;
+    height: 220px;
+    background: var(--bg-secondary);
+    border: 2px dashed var(--border);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    transition: border-color 120ms ease, background 120ms ease;
+}
+
+.metadata-cover-dropzone-active {
+    border-color: var(--accent, #6a9fb5);
+    background: rgba(106, 159, 181, 0.08);
+}
+
+.metadata-cover-thumb {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.metadata-cover-empty {
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-align: center;
+    padding: 12px;
+}
+
+.metadata-cover-meta {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.metadata-cover-meta code {
+    background: var(--bg-secondary);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: var(--text-primary);
+}
+
+.metadata-cover-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.metadata-cover-upload-btn {
+    cursor: pointer;
+}
+
+.metadata-cover-status {
+    font-size: 12px;
+    min-height: 16px;
+    color: var(--text-secondary);
+}
+
+.metadata-cover-status-ok {
+    color: var(--success, #6abf6a);
+}
+
+.metadata-cover-status-error {
+    color: var(--danger, #e06060);
+}
+
+/* =======================================================================
+   Phase 5: Raw JSON view
+   ======================================================================= */
+
+.metadata-rawjson-warning {
+    background: rgba(200, 160, 40, 0.08);
+    border: 1px solid rgba(200, 160, 40, 0.35);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: #d8b870;
+}
+
+.metadata-rawjson-textarea {
+    width: 100%;
+    min-height: 320px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre;
+    tab-size: 2;
+    overflow: auto;
+    resize: vertical;
+}
+
+.metadata-rawjson-textarea[readonly] {
+    opacity: 0.9;
+    cursor: default;
+}
+
+.metadata-rawjson-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.metadata-rawjson-error {
+    color: var(--danger, #e06060);
+    font-size: 12px;
+    margin-top: 8px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+}
+
+/* -----------------------------------------------------------------------
+   Phase 3b: e621 lookup fallback — suggestions rendered below local
+   matches in the autocomplete dropdown with a "+ Library" button that
+   appends the tag to tag_database_{target}.txt and immediately makes
+   it available for autocomplete.
+   ----------------------------------------------------------------------- */
+
+.metadata-tag-result-divider {
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.metadata-tag-result-e621 {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(90, 70, 120, 0.08); /* subtle violet wash */
+    transition: background 0.1s ease;
+}
+
+.metadata-tag-result-e621:hover {
+    background: rgba(90, 70, 120, 0.18);
+}
+
+.metadata-tag-result-e621:last-child {
+    border-bottom: none;
+}
+
+/* Category chip for e621 suggestions — distinct from local categories. */
+.metadata-tag-cat-e621 {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-card));
+    color: color-mix(in srgb, var(--accent) 70%, var(--text-primary));
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.metadata-tag-result-count {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.metadata-tag-result-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.metadata-tag-add-library-btn {
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--accent);
+    color: #fff;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+}
+
+.metadata-tag-add-library-btn:hover {
+    background: var(--accent-hover, var(--accent));
+    filter: brightness(1.1);
+}
+
+.metadata-tag-use-once-btn {
+    padding: 2px 8px;
+    font-size: 11px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: underline;
+    transition: color 120ms ease;
+}
+
+.metadata-tag-use-once-btn:hover {
+    color: var(--text-primary);
+    text-decoration: none;
+    border-color: var(--border);
+}
+
+/* Dropdown caret + menu for choosing a non-suggested library target. */
+.metadata-tag-target-menu {
+    position: relative;
+}
+
+.metadata-tag-target-caret {
+    padding: 3px 6px;
+    font-size: 10px;
+    line-height: 1;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 120ms ease;
+}
+
+.metadata-tag-target-caret:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.metadata-tag-target-menu-list {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    z-index: 1600;
+    min-width: 120px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    padding: 4px 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.metadata-tag-target-menu-list[hidden] {
+    display: none;
+}
+
+.metadata-tag-target-menu-item {
+    padding: 5px 12px;
+    font-size: 11px;
+    background: transparent;
+    color: var(--text-primary);
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    transition: background 100ms ease;
+}
+
+.metadata-tag-target-menu-item:hover {
+    background: var(--bg-hover);
+}
+
+/* ===========================================================================
+ * Publish Check Modal (Phase 6a)
+ * Full-screen pre-flight matrix: chapters × platforms.
+ * =========================================================================== */
+
+.publish-check-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10010;
+    display: none;
+}
+
+.publish-check-modal.open {
+    display: block;
+}
+
+.publish-check-backdrop {
+    position: absolute;
+    inset: 0;
+    background: var(--overlay-backdrop);
+}
+
+.publish-check-dialog {
+    position: absolute;
+    top: 5vh;
+    left: 5vw;
+    right: 5vw;
+    bottom: 5vh;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.publish-check-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.publish-check-title { font-size: 18px; font-weight: 600; }
+
+.publish-check-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.publish-check-subtitle .stat-ready { color: var(--info); }
+.publish-check-subtitle .stat-posted { color: var(--success); }
+.publish-check-subtitle .stat-blocked { color: var(--danger); }
+.publish-check-subtitle .stat-drifted { color: var(--warning); }
+/* Live-refresh indicator — shown only while the story has queued or
+   in-flight posts, so its presence IS the signal that the grid is
+   watching itself rather than sitting stale. */
+.publish-check-subtitle .stat-inflight { color: var(--info); }
+.publish-check-subtitle .stat-deleted { color: var(--text-muted); }
+.publish-check-subtitle .stat-draft { color: var(--text-secondary); }
+
+.publish-check-stale-banner {
+    background: rgba(220, 170, 40, 0.18);
+    border: 1px solid rgba(220, 170, 40, 0.45);
+    border-radius: 6px;
+    padding: 10px 16px;
+    margin: 0 20px 4px;
+    font-size: 13px;
+    color: #d9a020;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+.publish-check-stale-banner .btn {
+    white-space: nowrap;
+    margin-left: auto;
+}
+.publish-check-stale-banner--success {
+    background: rgba(60, 180, 100, 0.15);
+    border-color: rgba(60, 180, 100, 0.40);
+    color: #4a9;
+}
+
+.publish-check-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 8px;
+}
+
+.publish-check-close:hover { color: var(--text-primary); }
+
+.publish-check-body {
+    flex: 1;
+    overflow: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.publish-check-loading,
+.publish-check-error {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-secondary);
+}
+
+.publish-check-error { color: #c66; }
+
+.publish-check-table-wrap {
+    overflow: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.publish-check-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.publish-check-table th,
+.publish-check-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+    text-align: center;
+}
+
+.publish-check-table th {
+    background: var(--bg-secondary);
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.publish-check-table .ch-col {
+    text-align: left;
+    min-width: 200px;
+    background: var(--bg-secondary);
+    position: sticky;
+    left: 0;
+    z-index: 2;
+}
+
+.publish-check-table .plat-col { min-width: 90px; }
+
+.publish-check-table tr.row-full td {
+    background: var(--bg-secondary);
+    border-bottom: 2px solid var(--border-color);
+}
+
+.publish-check-table tr.row-full .ch-col {
+    font-weight: 600;
+}
+
+.publish-check-table .row-hint {
+    color: var(--text-secondary);
+    font-weight: normal;
+    font-size: 11px;
+    margin-left: 4px;
+}
+
+.publish-check-cell {
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    user-select: none;
+    transition: opacity 0.1s;
+}
+
+.publish-check-cell:hover { opacity: 0.75; }
+
+.publish-check-cell.selected {
+    outline: 2px solid var(--accent-color, #69c);
+    outline-offset: -2px;
+}
+
+.cell-ready { background: rgba(80, 180, 120, 0.18); color: #4a9; }
+.cell-posted { background: rgba(80, 130, 200, 0.18); color: #69c; }
+.cell-posted-stale { background: rgba(220, 160, 60, 0.20); color: #d96; }
+.cell-posted-drifted { background: rgba(180, 130, 220, 0.20); color: #b8d; }
+.cell-posted-draft { background: rgba(220, 180, 90, 0.20); color: #d9a; border: 1px dashed rgba(220, 180, 90, 0.5); }
+.cell-deleted { background: rgba(160, 80, 80, 0.22); color: #d88; border: 1px dashed rgba(200, 120, 120, 0.4); }
+.cell-retry { background: rgba(220, 160, 60, 0.20); color: #d96; }
+.cell-blocked { background: rgba(200, 90, 90, 0.18); color: #c66; }
+.cell-error { background: rgba(200, 90, 90, 0.30); color: #d77; }
+.cell-na { background: rgba(120, 120, 120, 0.10); color: var(--text-secondary); cursor: default; }
+.cell-no-creds { background: rgba(120, 120, 120, 0.15); color: var(--text-secondary); cursor: default; }
+
+.cell-legend {
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    line-height: 22px;
+    text-align: center;
+    border-radius: 4px;
+    font-weight: 600;
+    margin: 0 4px;
+}
+
+.publish-check-detail {
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    font-size: 13px;
+    min-height: 80px;
+}
+
+.publish-check-detail-empty {
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 24px;
+}
+
+.publish-check-detail-header {
+    font-size: 14px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.publish-check-detail-section { margin-bottom: 10px; }
+
+.publish-check-detail-section ul { margin: 4px 0; padding-left: 20px; }
+.publish-check-detail-section li { margin-bottom: 3px; }
+
+.publish-check-detail code {
+    background: var(--bg-primary);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+    word-break: break-all;
+}
+
+.publish-check-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border-color);
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.publish-check-legend {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+/* Phase 6b — action panel */
+
+.publish-action-panel {
+    border-top: 1px solid var(--border-color);
+    padding-top: 12px;
+    margin-top: 12px;
+}
+
+.publish-action-disabled {
+    color: var(--text-secondary);
+    font-style: italic;
+    margin-top: 6px;
+}
+
+.publish-action-drift-banner {
+    background: rgba(180, 130, 220, 0.15);
+    border-left: 3px solid #b8d;
+    padding: 8px 12px;
+    border-radius: 3px;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.publish-action-deleted-banner {
+    background: rgba(200, 90, 90, 0.15);
+    border-left: 3px solid #d88;
+    padding: 8px 12px;
+    border-radius: 3px;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.publish-action-options {
+    margin: 8px 0;
+    font-size: 12px;
+}
+
+.publish-action-options label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-right: 16px;
+    cursor: pointer;
+}
+
+.publish-action-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.publish-action-result {
+    margin-top: 12px;
+    font-size: 12px;
+}
+
+.publish-action-loading {
+    color: var(--text-secondary);
+    padding: 8px;
+}
+
+.publish-action-success {
+    background: rgba(80, 180, 120, 0.15);
+    border-left: 3px solid #4a9;
+    padding: 8px 12px;
+    border-radius: 3px;
+}
+
+.publish-action-error {
+    background: rgba(200, 90, 90, 0.15);
+    border-left: 3px solid #c66;
+    padding: 8px 12px;
+    border-radius: 3px;
+}
+
+.publish-action-error-msg {
+    color: #c66;
+    margin-top: 4px;
+    font-family: monospace;
+    font-size: 11px;
+    word-break: break-all;
+}
+
+.publish-action-result-row {
+    margin-top: 6px;
+}
+
+.publish-action-result pre {
+    background: var(--bg-primary);
+    padding: 8px;
+    border-radius: 3px;
+    overflow: auto;
+    max-height: 240px;
+    font-size: 11px;
+}
+
+.publish-action-result details {
+    margin-top: 6px;
+}
+
+.publish-action-result summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+}
+
+.publish-action-meta {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+/* Phase 6f — Schedule publish */
+
+.schedule-form {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: rgba(100, 140, 200, 0.1);
+    border: 1px solid rgba(100, 140, 200, 0.25);
+    border-radius: 6px;
+}
+
+.schedule-form-inner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.schedule-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.schedule-datetime {
+    font-size: 13px;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: inherit;
+}
+
+.schedule-datetime:focus {
+    outline: none;
+    border-color: var(--accent, #69c);
+    box-shadow: 0 0 0 2px rgba(100, 150, 200, 0.2);
+}
+
+.schedule-form-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.schedule-pending {
+    margin-top: 8px;
+}
+
+.schedule-pending-header {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.schedule-cancel-all-btn {
+    margin-left: auto;
+}
+
+/* Manual URL anchoring + forget-publication controls inside the
+   "Existing publication" section of the publish-check detail panel. */
+.publish-pub-controls {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px dashed var(--border-color, rgba(255,255,255,0.12));
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.publish-pub-url-row,
+.publish-pub-forget-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.publish-pub-url-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.publish-pub-url-input {
+    flex: 1 1 auto;
+    min-width: 200px;
+    padding: 4px 8px;
+    font-size: 12px;
+    background: var(--input-bg, rgba(0,0,0,0.2));
+    color: var(--text-primary, #eee);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.15));
+    border-radius: 4px;
+}
+
+.publish-pub-forget-hint {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.btn-danger-text {
+    color: #d66 !important;
+    border-color: #d66 !important;
+}
+
+.publish-pub-controls-msg {
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.publish-pub-controls-msg.is-error {
+    background: rgba(200, 50, 50, 0.15);
+    color: #f88;
+}
+
+.publish-pub-controls-msg.is-success {
+    background: rgba(50, 160, 80, 0.15);
+    color: #7d8;
+}
+
+.schedule-pending-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    background: rgba(100, 140, 200, 0.08);
+    border-radius: 4px;
+    margin-bottom: 3px;
+}
+
+.schedule-pending-item.schedule-processing {
+    background: rgba(200, 180, 50, 0.12);
+    border-left: 2px solid #db4;
+}
+
+.schedule-pending-icon {
+    flex-shrink: 0;
+}
+
+.schedule-pending-status {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.schedule-cancel-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+/* Queue & Schedule — month calendar view (2.168.0). Read-only; lays scheduled
+   items on their local-time days. Horizontally scrolls on narrow screens. */
+.qcal-card { overflow-x: auto; }
+.qcal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .6rem;
+}
+.qcal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    min-width: 460px;
+}
+.qcal-dow {
+    text-align: center;
+    font-size: .72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: 2px 0;
+}
+.qcal-cell {
+    min-height: 76px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+}
+.qcal-cell.qcal-empty {
+    border: none;
+    background: transparent;
+}
+.qcal-cell.qcal-today {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+.qcal-daynum {
+    font-size: .72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+.qcal-item {
+    font-size: .7rem;
+    line-height: 1.35;
+    background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+    border-radius: 4px;
+    padding: 1px 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.qcal-item:hover {
+    background: color-mix(in srgb, var(--accent) 26%, var(--surface));
+}
+
+/* Phase 6d — Bulk publish */
+
+.bulk-col { width: 40px; text-align: center; }
+
+.btn-xs {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    min-width: 28px;
+}
+
+.bulk-preflight-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10020;
+    background: var(--overlay-backdrop);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.bulk-preflight-dialog {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    width: 480px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.bulk-preflight-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 14px;
+}
+
+.bulk-preflight-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.bulk-preflight-body {
+    flex: 1;
+    overflow: auto;
+    padding: 12px 18px;
+}
+
+.bulk-preflight-list {
+    max-height: 300px;
+    overflow: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px;
+}
+
+.bulk-target-row {
+    display: block;
+    padding: 4px 0;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.bulk-target-row:hover { background: var(--bg-hover); }
+
+.bulk-target-verb {
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    margin-right: 4px;
+}
+
+.bulk-preflight-options {
+    margin-top: 12px;
+    font-size: 12px;
+}
+
+.bulk-preflight-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 18px;
+    border-top: 1px solid var(--border-color);
+}
+
+.bulk-progress {
+    padding: 16px;
+}
+
+.bulk-progress-header {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.bulk-progress-list {
+    max-height: 400px;
+    overflow: auto;
+}
+
+.bulk-progress-item {
+    padding: 6px 8px;
+    font-size: 13px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.bulk-progress-item.bulk-success { color: #4a9; }
+.bulk-progress-item.bulk-fail { color: #c66; }
+
+.bulk-item-status {
+    display: inline-block;
+    width: 20px;
+    text-align: center;
+}
+
+.bulk-item-result {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.bulk-item-result a { color: #69c; }
+
+.bulk-progress-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* Phase 6e — Safety polish */
+
+.publish-action-live-banner {
+    background: rgba(220, 180, 50, 0.2);
+    border-left: 3px solid #db4;
+    padding: 8px 12px;
+    border-radius: 3px;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.time-relative {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.dry-run-summary {
+    margin-top: 8px;
+    font-size: 12px;
+}
+
+.dry-run-field {
+    display: flex;
+    gap: 8px;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border-color);
+    align-items: baseline;
+}
+
+.dry-run-label {
+    font-weight: 600;
+    min-width: 60px;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+
+.dry-run-tags {
+    word-break: break-word;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.dry-run-tags-row { align-items: flex-start; }
+
+.action-log { margin-top: 12px; }
+
+.action-log-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-color);
+    padding-top: 8px;
+    margin-bottom: 4px;
+}
+
+.action-log-list {
+    font-size: 11px;
+    max-height: 160px;
+    overflow-y: auto;
+}
+
+.action-log-entry {
+    padding: 2px 0;
+    display: flex;
+    gap: 4px;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+.action-log-entry.log-ok .log-icon { color: #4a9; }
+.action-log-entry.log-fail .log-icon { color: #c66; }
+
+.log-time {
+    color: var(--text-secondary);
+    min-width: 70px;
+}
+
+.log-icon { min-width: 16px; }
+
+.log-error {
+    color: #c66;
+    font-size: 10px;
+    font-family: monospace;
+    word-break: break-all;
+}
+
+/* Regenerate dropdown */
+.regen-dropdown { position: relative; display: inline-block; }
+.regen-dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 100;
+    min-width: 200px;
+    padding: 4px;
+}
+.regen-dropdown-menu.open { display: block; }
+.regen-dropdown-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 6px 12px;
+    border: none;
+    background: none;
+    color: var(--text-primary);
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.regen-dropdown-menu button:hover { background: var(--bg-hover); }
+
+/* Downloads dropdown — same shell as the regenerate menu but rows
+   instead of buttons (each row is a download link). Wider min-width
+   so format labels + filesize fit without wrapping. */
+.regen-dropdown-menu.downloads { min-width: 240px; }
+.regen-dropdown-menu a.downloads-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 12px;
+    color: var(--text-primary);
+    font-size: 12px;
+    text-decoration: none;
+    border-radius: 4px;
+}
+.regen-dropdown-menu a.downloads-row:hover {
+    background: var(--bg-hover);
+    text-decoration: none;
+}
+.regen-dropdown-menu .downloads-row-size {
+    color: var(--text-secondary, #888);
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.regen-dropdown-menu .downloads-zip {
+    border-top: 1px solid var(--border);
+    margin-top: 4px;
+    padding-top: 9px;
+    font-weight: 600;
+}
+/* Sub-row under a primary format (currently only EPUB → "Preview in
+   browser"). Indented label + muted size, sits flush against the row
+   above so it visually attaches to it. */
+.regen-dropdown-menu .downloads-row-sub {
+    padding-top: 2px;
+    font-size: 11px;
+    color: var(--accent);
+}
+.regen-dropdown-menu .downloads-row-sub .downloads-row-size {
+    font-size: 0.8em;
+    font-style: italic;
+}
+.regen-dropdown-menu .downloads-empty {
+    padding: 8px 12px;
+    color: var(--text-secondary, #888);
+    font-size: 12px;
+    font-style: italic;
+}
+
+/* ===========================================================================
+ * Create Story Dialog
+ * =========================================================================== */
+
+.create-story-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: var(--overlay-backdrop);
+    z-index: 10010;
+    justify-content: center;
+    align-items: center;
+}
+
+.create-story-overlay.open {
+    display: flex;
+}
+
+.create-story-dialog {
+    background: var(--bg-primary, #1a1a2e);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+    border-radius: 10px;
+    padding: 24px 28px;
+    width: 90%;
+    max-width: 440px;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+}
+
+.create-story-dialog h3 {
+    margin: 0 0 18px;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.create-story-label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 14px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.create-story-input {
+    background: var(--surface-primary, #12121e);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary, rgba(255,255,255,0.12));
+    border-radius: 5px;
+    padding: 7px 10px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.create-story-input:focus {
+    border-color: var(--accent, var(--info));
+}
+
+.create-story-hint {
+    font-size: 0.72rem;
+    color: var(--text-tertiary, #888);
+}
+
+.create-story-error {
+    background: rgba(220, 50, 50, 0.12);
+    border: 1px solid rgba(220, 50, 50, 0.3);
+    border-radius: 5px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    color: #f08080;
+    margin-bottom: 14px;
+}
+
+.create-story-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+
+/* ---------------------------------------------------------------------------
+   Import from Platform overlay
+   --------------------------------------------------------------------------- */
+
+.import-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: var(--overlay-backdrop);
+    z-index: 10010;
+    justify-content: center;
+    align-items: center;
+}
+
+.import-overlay.open {
+    display: flex;
+}
+
+.import-dialog {
+    background: var(--bg-primary, #1a1a2e);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+    border-radius: 10px;
+    padding: 24px 28px;
+    width: 94%;
+    max-width: 600px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+}
+
+.import-dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.import-dialog-header h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.import-close-btn {
+    background: none;
+    border: none;
+    color: var(--text-tertiary, #888);
+    font-size: 1.4rem;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+}
+
+.import-close-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255,255,255,0.06);
+}
+
+.import-subtitle {
+    font-size: 0.82rem;
+    color: var(--text-tertiary, #888);
+    margin: 0 0 16px;
+}
+
+#import-content {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 100px;
+}
+
+.import-empty {
+    text-align: center;
+    color: var(--text-tertiary, #888);
+    font-size: 0.88rem;
+    padding: 24px 0;
+}
+
+.import-error {
+    color: #f08080;
+    font-size: 0.88rem;
+    text-align: center;
+    padding: 16px 0;
+}
+
+.import-platform-group {
+    margin-bottom: 18px;
+}
+
+.import-platform-header {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.import-count {
+    font-weight: 400;
+    color: var(--text-tertiary, #888);
+    font-size: 0.8rem;
+}
+
+.import-platform-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.08);
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    letter-spacing: 0.04em;
+    min-width: 28px;
+    text-align: center;
+}
+
+.import-badge-ib { background: rgba(55,130,245,0.15); color: #5ea0ff; }
+.import-badge-sf { background: rgba(245,140,55,0.15); color: #f5a040; }
+
+.import-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.import-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.025);
+    border: 1px solid transparent;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.import-row:hover {
+    background: rgba(255,255,255,0.045);
+    border-color: rgba(255,255,255,0.06);
+}
+
+.import-row-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.import-title {
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.import-author {
+    font-size: 0.75rem;
+    color: var(--text-tertiary, #888);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.import-rating {
+    font-size: 0.68rem;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.06);
+    color: var(--text-tertiary, #888);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.import-btn {
+    flex-shrink: 0;
+}
+
+.import-btn.importing {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.import-btn.import-done {
+    background: rgba(70,180,100,0.15);
+    color: #6ddb8a;
+    border-color: rgba(70,180,100,0.25);
+    pointer-events: none;
+}
+
+.import-btn.import-error-btn {
+    background: rgba(220,50,50,0.12);
+    color: #f08080;
+    border-color: rgba(220,50,50,0.25);
+}
+
+.import-open-btn {
+    background: rgba(70,180,100,0.15);
+    color: #6ddb8a;
+    border: 1px solid rgba(70,180,100,0.25);
+    text-decoration: none;
+    flex-shrink: 0;
+}
+
+.import-open-btn:hover {
+    background: rgba(70,180,100,0.25);
+}
+
+.import-row-success {
+    background: rgba(70,180,100,0.05);
+    border-color: rgba(70,180,100,0.15);
+}
+
+.import-row-draft {
+    background: rgba(220,180,60,0.07);
+    border-color: rgba(220,180,60,0.2);
+}
+
+.import-manual {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    margin: 12px 0 6px;
+}
+.import-manual-label {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-secondary, #999);
+}
+.import-manual-input {
+    padding: 6px 10px;
+    border: 1px solid var(--border, #444);
+    border-radius: 4px;
+    background: var(--input-bg, #1a1a1a);
+    color: var(--text, #ddd);
+    font-size: 13px;
+    width: 100%;
+}
+.import-manual-status {
+    margin-bottom: 10px;
+    font-size: 13px;
+    min-height: 18px;
+}
+.import-manual-status.error   { color: #d66; }
+.import-manual-status.success { color: #6c6; }
+.import-manual-status.pending { color: var(--text-secondary, #999); }
+
+.import-row-error {
+    font-size: 0.75rem;
+    color: #f08080;
+    margin-top: 4px;
+    width: 100%;
+}
+
+.import-coming-soon {
+    opacity: 0.5;
+}
+
+.import-coming-soon-label {
+    font-size: 0.82rem;
+    color: var(--text-tertiary, #888);
+    margin: 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* =====================================================================
+   Mobile-mode editor enhancements (html[data-mobile="1"])
+   Keyed off the data-mobile attribute set by app.js. This fires for
+   both auto-on-phone (resolved at boot via matchMedia) and force-on
+   (Settings → Appearance). The desktop layout is untouched.
+   ===================================================================== */
+
+/* Anchor toolbar — horizontal swipe strip with 44px touch targets and
+ * scroll-snap so the user can flick through the 13 buttons without
+ * tap-targeting tiny 28px boxes. */
+html[data-mobile="1"] .wysiwyg-toolbar {
+    gap: 4px;
+    padding: 6px 10px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    /* Subtle right-edge fade so the user knows there's more to scroll
+     * to. Mask gradient — no image, no extra DOM. */
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 24px), transparent 100%);
+            mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 24px), transparent 100%);
+}
+
+html[data-mobile="1"] .wysiwyg-toolbar button {
+    min-width: 44px;
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 0.9rem;
+    scroll-snap-align: start;
+    flex-shrink: 0;
+}
+
+html[data-mobile="1"] .wysiwyg-toolbar button[data-anchor] {
+    font-size: 0.78rem;
+    padding: 8px 10px;
+}
+
+html[data-mobile="1"] .toolbar-sep {
+    height: 24px;
+    margin: 0 6px;
+    flex-shrink: 0;
+}
+
+/* Editor single-panel switcher — only visible in mobile mode. The 4
+ * (or 5 with CSS editor) tabs live above editor-quad and pick which
+ * single panel renders. Each pane stays mounted in the DOM so saved
+ * scroll positions, CodeMirror state, contenteditable selection, etc.
+ * survive panel switches. */
+.editor-mobile-tabs {
+    display: none;
+}
+
+html[data-mobile="1"] .editor-mobile-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 6px 10px;
+    background: var(--surface-elevated);
+    border-bottom: 1px solid var(--border-primary);
+    overflow-x: auto;
+    flex-shrink: 0;
+    -webkit-overflow-scrolling: touch;
+}
+
+.editor-mobile-tab {
+    background: none;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 8px 14px;
+    min-height: 40px;
+    min-width: 64px;
+    cursor: pointer;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: background var(--transition, 0.15s ease), border-color var(--transition, 0.15s ease);
+}
+
+.editor-mobile-tab.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+/* Editor quad → single column on mobile. !important is needed to
+ * defeat the inline `grid-template-columns` that _updateGridColumns()
+ * sometimes leaves behind on desktop, and the 1200px @media that
+ * stacks to 2x2. We also clear the inline `display:none` left by
+ * the per-panel hide-toggle (eye icon), since on mobile visibility
+ * is class-driven. */
+html[data-mobile="1"] .editor-quad {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 1fr !important;
+}
+
+html[data-mobile="1"] .editor-quad-panel {
+    display: none !important;
+    border-right: none;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+html[data-mobile="1"] .editor-quad-panel.mobile-active {
+    display: flex !important;
+    border-bottom: none;
+}
+
+/* The per-panel eye-icon hide-toggle is meaningless in single-panel
+ * mode — switch panels via the tab bar instead. */
+html[data-mobile="1"] .panel-toggle {
+    display: none;
+}
+
+/* Format tabs (Clean HTML / SoFurry / BBCode / Styled) — wrap so they
+ * don't push the toolbar wider than the viewport. */
+html[data-mobile="1"] .format-tabs {
+    flex-wrap: wrap;
+}
+
+/* Editor toolbar overall — let it wrap on narrow viewports rather than
+ * scrolling horizontally (toolbar already has overflow-x). 2.16.6: also
+ * pad-left for the fixed hamburger so "← Stories" link isn't hidden
+ * behind it (caught via Playwright — title rendered as "tories"). */
+html[data-mobile="1"] .editor-toolbar {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px 8px calc(env(safe-area-inset-left, 0px) + 60px);
+}
+
+html[data-mobile="1"] .editor-toolbar .btn {
+    min-height: 40px;
+}
+
+/* The wysiwyg editor (rich panel) — give the contenteditable surface
+ * enough breathing room. */
+html[data-mobile="1"] #editor-preview-rendered-body {
+    font-size: 16px; /* 16px keeps iOS from auto-zooming on focus */
+    padding: 14px;
+}
+
+/* Format Source / Format Preview — ensure the readable column is
+ * comfortable on a phone. */
+html[data-mobile="1"] .preview-panel-body {
+    padding: 14px;
+    font-size: 14.5px;
+}
+
+/* Publish-check modal — go full-screen on mobile. The 5vw insets
+ * waste 10% of the already-tiny viewport; safe-area handles the
+ * notch and home-indicator instead. */
+html[data-mobile="1"] .publish-check-dialog {
+    top: env(safe-area-inset-top, 0);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+}
+
+html[data-mobile="1"] .publish-check-header {
+    padding: 12px 14px;
+}
+
+html[data-mobile="1"] .publish-check-title { font-size: 16px; }
+html[data-mobile="1"] .publish-check-subtitle { font-size: 12px; }
+
+html[data-mobile="1"] .publish-check-footer {
+    padding: 10px 12px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0));
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+html[data-mobile="1"] .publish-check-footer .btn {
+    min-height: 40px;
+    flex: 1 1 calc(50% - 6px);
+}
+
+html[data-mobile="1"] .publish-check-legend {
+    flex-basis: 100%;
+    font-size: 10px;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+/* The desktop matrix table is hidden on mobile; the JS branch builds
+ * .publish-check-mobile-list instead. Belt-and-braces in case any
+ * future code path renders the table on mobile too. */
+html[data-mobile="1"] .publish-check-table-wrap {
+    display: none;
+}
+
+/* Mobile chapter cards — each <details> opens to reveal a vertical
+ * list of platforms with name + status label inline. */
+.publish-check-mobile-list {
+    display: none;
+}
+
+html[data-mobile="1"] .publish-check-mobile-list {
+    display: block;
+    padding: 10px 12px 0;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.publish-check-mobile-row {
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+
+.publish-check-mobile-row[open] {
+    border-color: var(--accent);
+}
+
+.publish-check-mobile-row.row-full {
+    border-style: dashed;
+}
+
+.publish-check-mobile-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 12px 14px;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    min-height: 48px;
+}
+
+.publish-check-mobile-summary::-webkit-details-marker { display: none; }
+.publish-check-mobile-summary::marker { content: ''; }
+
+.publish-check-mobile-summary .ch-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.publish-check-mobile-summary .ch-counts {
+    display: flex;
+    gap: 4px;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.publish-check-mobile-summary .ch-counts .cell-legend {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+}
+
+.publish-check-mobile-platforms {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 10px 12px;
+    border-top: 1px solid var(--border-primary);
+}
+
+.publish-check-cell-mobile {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--surface-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    min-height: 44px;
+    transition: background var(--transition, 0.15s ease), border-color var(--transition, 0.15s ease);
+}
+
+.publish-check-cell-mobile.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+
+.publish-check-cell-mobile .cell-icon {
+    font-size: 16px;
+    width: 22px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.publish-check-cell-mobile .cell-plat {
+    font-weight: 600;
+    font-size: 13px;
+    min-width: 80px;
+    flex-shrink: 0;
+}
+
+.publish-check-cell-mobile .cell-status {
+    font-size: 12px;
+    color: var(--text-secondary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.publish-check-cell-mobile .cell-err {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.publish-check-mobile-platforms .bulk-row-btn {
+    margin-top: 6px;
+    min-height: 40px;
+}
+
+/* Detail panel — full-width on mobile (was a side column on desktop) */
+html[data-mobile="1"] .publish-check-detail {
+    margin: 12px;
+    padding: 14px;
+    font-size: 13px;
+}
+
+/* iOS Safari auto-zooms when a focused input has font-size < 16px and
+ * never zooms back. Floor every form control to 16px on mobile. The
+ * `text-size-adjust` keeps page-level text honest if the OS tries
+ * its own scaling. Apply to the elements directly (not the parents)
+ * so children inherit nothing — `font-size: 1rem` would still be
+ * <16px wherever the host overrides root font-size. */
+html[data-mobile="1"] input,
+html[data-mobile="1"] select,
+html[data-mobile="1"] textarea,
+html[data-mobile="1"] .search-input,
+html[data-mobile="1"] .filter-select {
+    font-size: 16px;
+}
+html[data-mobile="1"] {
+    -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
+}
+
+/* =====================================================================
+   Phase 2 — portrait-phone polish (2.16.1)
+   ===================================================================== */
+
+/* Stat cards — switch from 2-col grid to 1-col horizontal strips on
+ * portrait phone. The card becomes a single row: label left, value
+ * right. 8 stats stack as 8 short rows instead of 4 tall card pairs,
+ * which scrolls less and reads faster on a 430px viewport.
+ * !important defeats inline `style="grid-template-columns:..."` set
+ * by some dashboards (overview's per-platform mini-stats grid does
+ * this so the rendered desktop layout can be auto-fit minmax). */
+html[data-mobile="1"] .stats-grid {
+    grid-template-columns: 1fr !important;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+html[data-mobile="1"] .stat-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    gap: 12px;
+    border-left-width: 3px;
+}
+
+html[data-mobile="1"] .stat-card .label {
+    font-size: 12px;
+    margin-bottom: 0;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+html[data-mobile="1"] .stat-card .value {
+    font-size: 20px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+html[data-mobile="1"] .stat-card .delta {
+    font-size: 11px;
+    margin-top: 0;
+    flex-shrink: 0;
+}
+
+/* Page header tighten — reduce h2 size and bottom margin so the
+ * actual page content gets more vertical real estate. The
+ * padding-left clears the fixed hamburger button (52px right edge
+ * + 8px breathing room) so the page title isn't hidden behind it.
+ * Caught via Playwright on Overview where "Overview" rendered as
+ * "rview" with the first 36px under the hamburger. */
+html[data-mobile="1"] .page-header {
+    margin-bottom: 12px;
+    gap: 8px;
+    padding-left: calc(env(safe-area-inset-left, 0px) + 60px);
+    /* 2.16.6: action-button rows (Settings has Save Settings, Poll Now,
+     * Full Resync, Clear Session = 4 buttons) live in a sibling div with
+     * inline display:flex. Without flex-wrap they force the document to
+     * 800px+ on a 440px viewport. Wrap the page-header itself so the
+     * actions div drops to row 2; rule below handles the buttons. */
+    flex-wrap: wrap;
+}
+
+/* 2.16.6: any direct DIV child of .page-header (the inline-styled action
+ * cluster) must wrap and span full width so its buttons can flow rather
+ * than overflow the viewport. Targets unstyled DIVs only — h2/p siblings
+ * are unaffected.
+ *
+ * `min-width: 0` is critical — flex items default to `min-width: auto`
+ * which means they refuse to shrink below their content's intrinsic
+ * width. Combined with `width: 100%`, that creates a circular sizing
+ * loop where actions wants 100% of parent and parent grows to fit
+ * actions' min-content. Setting min-width:0 + flex-basis:100% breaks
+ * the loop — actions takes a flex line by itself at viewport width. */
+html[data-mobile="1"] .page-header > div {
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 6px !important;
+    box-sizing: border-box;
+}
+
+html[data-mobile="1"] .page-header > div > .btn {
+    flex: 1 1 calc(50% - 3px);
+    min-width: 0;
+    min-height: 40px;
+    padding: 8px 10px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+html[data-mobile="1"] .page-header h2 {
+    font-size: 17px;
+    line-height: 1.2;
+}
+
+/* Toolbar inputs/selects — 16px font (handled above) but also the
+ * filter row should be tighter. */
+html[data-mobile="1"] .toolbar {
+    gap: 6px;
+}
+
+html[data-mobile="1"] .search-input,
+html[data-mobile="1"] .filter-select {
+    min-height: 44px;
+    padding: 10px 12px;
+}
+
+/* Submission card grid — 1 col on portrait phone with bigger thumbs.
+ * The 480px breakpoint had 2-col with 120px-tall thumbs, too small
+ * to read titles. Single column reads better on a 430px viewport. */
+html[data-mobile="1"] .submission-card-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px;
+}
+
+html[data-mobile="1"] .submission-card-thumb {
+    height: 200px;
+}
+
+/* Chart-modal full-screen on mobile. Desktop has it as a centred
+ * dialog with margin; on a phone every pixel matters and the
+ * legend was getting cropped. The modal is a flex child of an
+ * overlay, so we kill the overlay's padding and let the modal
+ * stretch edge-to-edge. */
+html[data-mobile="1"] .chart-modal-overlay {
+    padding: 0;
+    padding-top: env(safe-area-inset-top, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    align-items: stretch;
+    justify-content: stretch;
+}
+
+html[data-mobile="1"] .chart-modal {
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    height: 100%;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    padding: 14px;
+}
+
+html[data-mobile="1"] .chart-modal-wrap {
+    height: calc(100% - 60px);
+}
+
+/* Platform-grid popover — also full-screen sheet on mobile. Same
+ * pattern as chart-modal: kill the overlay's flex centring and let
+ * the panel fill. The panel uses the generic .modal-panel class so
+ * we target via the wrapping #platform-grid-overlay. */
+html[data-mobile="1"] #platform-grid-overlay.modal-overlay.open {
+    align-items: stretch;
+    justify-content: stretch;
+    padding-top: env(safe-area-inset-top, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+html[data-mobile="1"] #platform-grid-panel.modal-panel {
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    height: 100%;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    overflow-y: auto;
+}
+
+html[data-mobile="1"] .platform-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+html[data-mobile="1"] .platform-grid-item {
+    padding: 18px 12px;
+    min-height: 96px;
+}
+
+/* Editor toolbar collapse — ⋯ More button hides secondary actions on
+ * mobile. Toolbar stays one row (back / title / ⋯ / Save / Metadata)
+ * and the secondary cluster (chapter nav, slop, status, wordcount,
+ * CSS, Regenerate, Publish, Format code, format tabs) drops down on
+ * tap as a wrap row pushed below the primary row. */
+.editor-more-btn {
+    display: none;
+}
+
+html[data-mobile="1"] .editor-more-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 40px;
+    font-size: 18px;
+    padding: 0 12px;
+}
+
+html[data-mobile="1"] .editor-actions-secondary {
+    display: none;
+}
+
+html[data-mobile="1"] #editor-toolbar.actions-open .editor-actions-secondary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    flex-basis: 100%;
+    margin-top: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-primary);
+}
+
+/* Inside the open secondary cluster, give every actionable child
+ * proper touch sizing. Status spans (slop / status / wordcount) get
+ * displayed inline as tag-like pills so they fit visually with the
+ * actual buttons. */
+html[data-mobile="1"] #editor-toolbar.actions-open .editor-actions-secondary .btn,
+html[data-mobile="1"] #editor-toolbar.actions-open .editor-actions-secondary select,
+html[data-mobile="1"] #editor-toolbar.actions-open .editor-actions-secondary .format-tab {
+    min-height: 40px;
+}
+
+html[data-mobile="1"] #editor-toolbar.actions-open .editor-actions-secondary .editor-slop,
+html[data-mobile="1"] #editor-toolbar.actions-open .editor-actions-secondary .editor-status,
+html[data-mobile="1"] #editor-toolbar.actions-open .editor-actions-secondary .editor-wordcount {
+    padding: 6px 10px;
+    background: var(--surface-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1;
+}
+
+/* Chapter nav select — full-width-ish row item on mobile so the
+ * truncated title is readable. */
+html[data-mobile="1"] #editor-toolbar.actions-open #editor-chapter-nav {
+    flex: 1 1 100%;
+    max-width: none;
+    min-width: 0;
+}
+
+/* Format tabs inside the open secondary cluster — let them wrap
+ * onto their own row. */
+html[data-mobile="1"] #editor-toolbar.actions-open .format-tabs {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+}
+
+/* Title — truncate with ellipsis on mobile so it doesn't push the ⋯
+ * and Save buttons off-screen. */
+html[data-mobile="1"] .editor-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+}
+
+html[data-mobile="1"] .editor-back {
+    flex-shrink: 0;
+    font-size: 13px;
+}
+
+html[data-mobile="1"] .editor-toolbar {
+    align-items: center;
+}
+
+/* Regen dropdown menu position — the parent regen-dropdown is a
+ * flex child of the secondary cluster which is itself a wrap row;
+ * keep the menu absolutely positioned to the button. */
+html[data-mobile="1"] .regen-dropdown-menu {
+    right: auto;
+    left: 0;
+}
+
+/* =====================================================================
+   Phase 3 — vertical sweep
+   "Anything that is currently wide screen should be turned into a
+   vertical version." Force every multi-col grid to 1-col and every
+   horizontal strip to a vertical stack on mobile. The existing
+   `@media (max-width: 480px)` rules cover most of these for narrow
+   viewports; this block mirrors them under `html[data-mobile="1"]`
+   so they fire consistently in mobile mode (including forced-on
+   on a wide desktop).
+   ===================================================================== */
+
+/* All grid layouts → single column. */
+html[data-mobile="1"] .growth-grid,
+html[data-mobile="1"] .goal-grid,
+html[data-mobile="1"] .card-grid,
+html[data-mobile="1"] .story-card-grid,
+html[data-mobile="1"] .tag-browser-grid,
+html[data-mobile="1"] .chart-row,
+html[data-mobile="1"] .theme-picker,
+html[data-mobile="1"] .mobile-mode-picker,
+html[data-mobile="1"] .fa-metadata,
+html[data-mobile="1"] .setup-platforms {
+    grid-template-columns: 1fr !important;
+    gap: 8px;
+}
+
+/* Detail page header — stack the 120px thumb on top of the info
+ * column on mobile. The 480px @media rule already does this; the
+ * override here fires for forced-mobile too. */
+html[data-mobile="1"] .detail-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+}
+
+html[data-mobile="1"] .detail-thumb {
+    width: 100%;
+    max-width: 240px;
+    height: auto;
+    aspect-ratio: 1;
+    align-self: center;
+}
+
+html[data-mobile="1"] .detail-info {
+    width: 100%;
+}
+
+html[data-mobile="1"] .detail-info h2 {
+    font-size: 18px;
+    line-height: 1.25;
+}
+
+html[data-mobile="1"] .detail-stats {
+    flex-direction: column;
+    gap: 6px;
+    align-items: stretch;
+}
+
+html[data-mobile="1"] .detail-stat {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: var(--surface-elevated);
+    border-radius: 6px;
+}
+
+/* Pinned row — drop the horizontal scroll-snap and stack as
+ * vertical cards. The "pinned" concept is "things to keep an eye
+ * on"; on a phone vertical reads better than swiping. */
+html[data-mobile="1"] .pinned-row {
+    flex-direction: column;
+    overflow-x: visible;
+    scroll-snap-type: none;
+    padding-bottom: 0;
+    gap: 8px;
+}
+
+html[data-mobile="1"] .pinned-card {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+}
+
+/* Compare page — chips and select rows stack instead of side-by-
+ * side. The compare flow itself (two side-by-side panels) is
+ * intentionally hard to render vertically — for v1 the user can
+ * scroll. Future: tab between the two compare targets. */
+html[data-mobile="1"] .compare-select {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+}
+
+html[data-mobile="1"] .compare-chip {
+    width: 100%;
+    text-align: left;
+    padding: 12px 14px;
+    min-height: 44px;
+}
+
+/* Date range bar — wrap so all buttons fit without horizontal
+ * scrolling. Existing 768 rule did `flex: 1; min-width: 0` which
+ * made each button very narrow; on mobile mode let them be 60px
+ * min and wrap to multiple rows if needed. */
+html[data-mobile="1"] .date-range-bar {
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+html[data-mobile="1"] .range-btn {
+    flex: 1 1 calc(33.333% - 4px);
+    min-width: 60px;
+}
+
+/* Fave items + comment cards — already use flex; ensure the inner
+ * elements wrap rather than overflow on a 430px viewport. */
+html[data-mobile="1"] .fave-item {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 0;
+}
+
+html[data-mobile="1"] .comment-card {
+    padding: 10px 12px;
+}
+
+html[data-mobile="1"] .comment-header {
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+/* Timeline + log rows — single column, label above value. Already
+ * 1fr at 480px; mirror for mobile mode. */
+html[data-mobile="1"] .timeline-event {
+    grid-template-columns: 14px 1fr;
+    grid-row-gap: 2px;
+}
+
+html[data-mobile="1"] .timeline-event .ts {
+    grid-column: 2;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+html[data-mobile="1"] .log-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 10px 0;
+}
+
+/* Settings tabs — already scroll-x; ensure the active tab is
+ * visible and tabs are big enough to tap. 2.16.7: max-width:100%
+ * + min-width:0 so the tab strip is actually constrained to the
+ * viewport (without these, the natural tab row width 798px forces
+ * the whole main element wide and overflow-x:auto never engages). */
+html[data-mobile="1"] .settings-tabs {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+}
+
+html[data-mobile="1"] .settings-tab {
+    flex-shrink: 0;
+    scroll-snap-align: start;
+    min-height: 44px;
+    padding: 10px 16px;
+    font-size: 13px;
+}
+
+/* Scroll-aware edge fades — hint that the tab strip scrolls to reveal more
+ * tabs (there are 11; only ~4 fit at 390px). The settings render (app.js)
+ * toggles `of-end` (more tabs to the right) and `of-start` (scrolled; more to
+ * the left) so the fade only appears on the side that actually has more. */
+html[data-mobile="1"] .settings-tabs.of-end:not(.of-start) {
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+            mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
+html[data-mobile="1"] .settings-tabs.of-start:not(.of-end) {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px);
+            mask-image: linear-gradient(90deg, transparent, #000 24px);
+}
+html[data-mobile="1"] .settings-tabs.of-start.of-end {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+            mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+}
+
+/* Settings sections / accordion — tighten padding, ensure the
+ * accordion summary is comfortable to tap. */
+html[data-mobile="1"] .settings-section {
+    padding: 14px;
+    margin-bottom: 12px;
+}
+
+html[data-mobile="1"] .settings-accordion summary {
+    min-height: 48px;
+    padding: 12px 14px;
+    font-size: 14px;
+}
+
+/* Settings rows — already stack via 768 rule. Ensure consistent
+ * gap and that the toggle-switch sits aligned right. */
+html[data-mobile="1"] .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+}
+
+html[data-mobile="1"] .settings-row .toggle-switch {
+    align-self: flex-end;
+}
+
+/* Story cards (posting page) — full-width on mobile. */
+html[data-mobile="1"] .story-card {
+    width: 100%;
+}
+
+/* Highlight cards — vertical strips like stat-cards. */
+html[data-mobile="1"] .highlight-card {
+    padding: 12px 14px;
+}
+
+html[data-mobile="1"] .highlight-card .label {
+    font-size: 11px;
+}
+
+html[data-mobile="1"] .highlight-card .value {
+    font-size: 18px;
+}
+
+/* Top lists — full width, comfortable touch row */
+html[data-mobile="1"] .top-list .top-title {
+    max-width: none;
+    flex: 1;
+}
+
+html[data-mobile="1"] .top-list li {
+    padding: 10px 0;
+    font-size: 13px;
+    min-height: 44px;
+}
+
+/* Setup wizard step bar — let the line wrap on phone. */
+html[data-mobile="1"] .setup-step-line {
+    flex-wrap: wrap;
+}
+
+/* Publish-check footer — buttons stack 2-up on mobile (already in
+ * P1 block, restated here for clarity). */
+html[data-mobile="1"] .publish-check-footer .btn {
+    min-height: 44px;
+}
+
+/* Polling platforms container — child layout depends on the
+ * specific dashboard but force grid items to single column. */
+html[data-mobile="1"] #polling-platforms-container > div {
+    width: 100%;
+}
+
+/* Generic safety: any data-table that hasn't been opted into
+ * card transformation gets horizontal-scroll on mobile so it
+ * doesn't burst the viewport. */
+html[data-mobile="1"] .data-table:not([data-mobile-cards]) {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Main content padding — slightly tighter on portrait phone so the
+ * scrollable region uses every pixel. */
+html[data-mobile="1"] .main-content {
+    padding: 12px;
+    padding-bottom: calc(12px + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+}
+
+/* =====================================================================
+   Phase 4 — Pro Max calibration
+   The earlier passes optimised for "small phone, save every pixel"
+   which left a 6.9" 440×956 viewport feeling sparse and undersized.
+   This pass ups base font, primary button height, padding, and
+   line-heights to suit a generous portrait phone. Hierarchy is
+   preserved — secondary text still smaller than primary.
+   ===================================================================== */
+
+/* Base body font on mobile — 15px is the sweet spot for a 6.9"
+ * screen at arm's length. Inputs stay at the 16px floor (the iOS
+ * zoom-fix in P2.A). */
+html[data-mobile="1"] body {
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+/* Headings — bumped one step up. h2 was 17px in P2; 19px reads as
+ * a heading without dominating. */
+html[data-mobile="1"] .page-header h2 {
+    font-size: 20px;
+    line-height: 1.25;
+}
+
+html[data-mobile="1"] h3 {
+    font-size: 16px;
+}
+
+html[data-mobile="1"] h4 {
+    font-size: 14px;
+}
+
+/* Main content gets more breathing room — 16px on the sides keeps
+ * cards from kissing the screen edge. 2.16.7: also `max-width:100vw`
+ * + `overflow-x:hidden` as defense-in-depth so a single wide child
+ * (un-wrapped tab strip, un-broken word) can't expand the document
+ * past the viewport. Individual scroll regions (settings-tabs,
+ * data-table) still use overflow-x:auto inside this clamp. */
+html[data-mobile="1"] .main-content {
+    padding: 16px;
+    padding-bottom: calc(16px + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+    max-width: 100vw;
+    overflow-x: hidden;
+    box-sizing: border-box;
+}
+
+/* Primary action buttons — 48px tappable height beats the 44px
+ * iOS minimum. Secondary still 40-44px. */
+html[data-mobile="1"] .btn {
+    min-height: 44px;
+    font-size: 14px;
+    padding: 10px 16px;
+}
+
+html[data-mobile="1"] .btn-primary,
+html[data-mobile="1"] #editor-save-btn,
+html[data-mobile="1"] #metadata-save-btn,
+html[data-mobile="1"] #publish-check-recheck {
+    min-height: 48px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+html[data-mobile="1"] .btn-sm {
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+/* Stat cards — keep the 1-col strip but bump label + value. They
+ * read as section dividers so they should feel substantial. */
+html[data-mobile="1"] .stat-card {
+    padding: 14px 16px;
+    min-height: 56px;
+}
+
+html[data-mobile="1"] .stat-card .label {
+    font-size: 13px;
+}
+
+html[data-mobile="1"] .stat-card .value {
+    font-size: 24px;
+}
+
+html[data-mobile="1"] .stat-card .delta {
+    font-size: 12px;
+}
+
+/* Settings section text + accordion summary — readable + tappable */
+html[data-mobile="1"] .settings-section {
+    padding: 16px;
+}
+
+html[data-mobile="1"] .settings-label {
+    font-size: 14px;
+}
+
+html[data-mobile="1"] .settings-accordion summary {
+    min-height: 52px;
+    padding: 14px 16px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+html[data-mobile="1"] .accordion-body {
+    padding: 14px 16px;
+}
+
+/* Form rows — generous gap between label and input on a wide
+ * portrait phone. */
+html[data-mobile="1"] .settings-row {
+    gap: 12px;
+    padding: 4px 0;
+}
+
+html[data-mobile="1"] .settings-row input,
+html[data-mobile="1"] .settings-row select {
+    min-height: 48px;
+    padding: 12px 14px;
+}
+
+/* Detail page — pump up the 120px square thumb to 280px on a
+ * 6.9" screen. Title bigger too. */
+html[data-mobile="1"] .detail-thumb {
+    max-width: 280px;
+}
+
+html[data-mobile="1"] .detail-info h2 {
+    font-size: 22px;
+    line-height: 1.2;
+}
+
+html[data-mobile="1"] .detail-meta,
+html[data-mobile="1"] .detail-stat {
+    font-size: 14px;
+}
+
+/* Submission cards — they're 1-col with 200px thumbs. Bump thumbs
+ * to 240px on a Pro Max-class viewport so they fill more of the
+ * available width. */
+html[data-mobile="1"] .submission-card-thumb {
+    height: 240px;
+}
+
+html[data-mobile="1"] .submission-card .card-title {
+    font-size: 15px;
+}
+
+/* Page header toolbar inputs — already 44px, push to 48px on Pro
+ * Max for primary search visibility. */
+html[data-mobile="1"] .search-input,
+html[data-mobile="1"] .filter-select {
+    min-height: 48px;
+    padding: 12px 14px;
+}
+
+/* Bottom nav — 48px effective (was ~44px); icons + labels both
+ * bigger so they're glanceable. */
+html[data-mobile="1"] .bottom-nav {
+    height: calc(var(--bottom-nav-h) + 6px);
+}
+
+html[data-mobile="1"] .bottom-nav-item {
+    padding: 8px 0;
+    min-height: 50px;
+}
+
+html[data-mobile="1"] .bottom-nav-icon {
+    font-size: 22px;
+}
+
+html[data-mobile="1"] .bottom-nav-label {
+    font-size: 11px;
+}
+
+/* Mobile editor tabs — Edit/Rich/Format/Preview. Bump padding so
+ * they feel like real switcher tabs rather than chips. */
+html[data-mobile="1"] .editor-mobile-tab {
+    min-height: 44px;
+    padding: 10px 18px;
+    font-size: 14px;
+}
+
+/* Anchor toolbar buttons — already 44px from P1; bump font slightly
+ * so the Sub/Disc/Body labels are legible. */
+html[data-mobile="1"] .wysiwyg-toolbar button {
+    min-width: 48px;
+    min-height: 44px;
+    padding: 10px 14px;
+}
+
+html[data-mobile="1"] .wysiwyg-toolbar button[data-anchor] {
+    font-size: 0.85rem;
+}
+
+/* Publish-check chapter cards — bigger summary tap target. */
+html[data-mobile="1"] .publish-check-mobile-summary {
+    min-height: 56px;
+    padding: 14px 16px;
+}
+
+html[data-mobile="1"] .publish-check-mobile-summary .ch-title {
+    font-size: 15px;
+}
+
+html[data-mobile="1"] .publish-check-cell-mobile {
+    min-height: 52px;
+    padding: 12px 14px;
+}
+
+html[data-mobile="1"] .publish-check-cell-mobile .cell-plat {
+    font-size: 14px;
+}
+
+html[data-mobile="1"] .publish-check-cell-mobile .cell-status {
+    font-size: 13px;
+}
+
+/* Theme picker + mobile-mode picker cards — comfortable tap zone */
+html[data-mobile="1"] .theme-card,
+html[data-mobile="1"] .mobile-mode-card {
+    padding: 16px;
+}
+
+html[data-mobile="1"] .theme-card-meta .name,
+html[data-mobile="1"] .mobile-mode-card .mobile-mode-name {
+    font-size: 15px;
+}
+
+html[data-mobile="1"] .theme-card-meta .desc,
+html[data-mobile="1"] .mobile-mode-card .mobile-mode-desc {
+    font-size: 13px;
+}
+
+/* Sidebar (when slid open on mobile) — bigger touch rows so
+ * navigating to a platform dashboard isn't fiddly. */
+html[data-mobile="1"] .sidebar.open .nav-link {
+    padding: 14px 16px;
+    font-size: 15px;
+    min-height: 48px;
+}
+
+html[data-mobile="1"] .sidebar.open .nav-icon {
+    font-size: 18px;
+    width: 28px;
+}
+
+html[data-mobile="1"] .sidebar.open .nav-group-label {
+    font-size: 11px;
+    padding: 18px 14px 6px;
+}
+/* Drawer width is owned by layout.css (min(290px, 86vw)); the old 320px
+   override here was removed so the slide-out hamburger offset stays aligned. */
+
+/* ── Drift preview panel (Publish Check cell drawer) ────────
+ * Inline expansion shown when the user clicks "Preview file"
+ * on a posted/drifted cell. Backed by /api/posting/preview-file. */
+.drift-preview-panel {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-tertiary, var(--bg-tertiary));
+    border: 1px solid var(--border, var(--border));
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.drift-preview-loading,
+.drift-preview-error {
+    padding: 8px;
+    text-align: center;
+    color: var(--text-secondary, var(--text-secondary));
+}
+
+.drift-preview-error {
+    color: var(--danger, var(--danger));
+}
+
+.drift-preview-header {
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border, var(--border));
+}
+
+.drift-preview-meta div {
+    margin: 2px 0;
+    color: var(--text-secondary, var(--text-secondary));
+}
+
+.drift-preview-meta strong {
+    color: var(--text-primary, var(--text-primary));
+    font-weight: 600;
+}
+
+.drift-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 4px;
+}
+
+.drift-badge-drifted {
+    background: rgba(240, 160, 80, 0.18);
+    color: var(--accent-warm, var(--accent-warm));
+}
+
+.drift-badge-clean {
+    background: rgba(90, 224, 160, 0.16);
+    color: var(--success, var(--success));
+}
+
+.drift-badge-unposted {
+    background: rgba(110, 100, 136, 0.20);
+    color: var(--text-muted, var(--text-muted));
+}
+
+.drift-preview-excerpt {
+    margin: 0;
+    padding: 8px 10px;
+    background: var(--bg-primary, var(--bg-primary));
+    border: 1px solid var(--border, var(--border));
+    border-radius: 4px;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--text-primary, var(--text-primary));
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre;
+}
+
+.drift-preview-note {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--text-muted, var(--text-muted));
+    text-align: right;
+}

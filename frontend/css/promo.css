@@ -1,0 +1,121 @@
+/* ── Promo Maker (#/promo) ───────────────────────────────────────────────
+ * Two-column tool: controls on the left, live <canvas> preview on the right.
+ * Uses theme tokens so the chrome tracks all 8 themes; the canvas itself is
+ * self-contained (its colours come from the JS presets, not CSS).
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.promo-layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 420px) 1fr;
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.promo-controls { display: flex; flex-direction: column; gap: 1rem; }
+.promo-controls .card { margin: 0; }
+
+.promo-hint { font-size: 12.5px; margin: -.3rem 0 .6rem; }
+
+.promo-src-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .7rem; }
+.promo-src-row .muted { font-size: 12px; }
+
+/* "Pull from a story" picker overlay */
+.promo-ov {
+    position: fixed; inset: 0; z-index: 1300;
+    background: var(--overlay-backdrop, rgba(0, 0, 0, .55));
+    backdrop-filter: blur(4px);
+    display: none; align-items: flex-start; justify-content: center;
+    padding: 6vh 1rem;
+}
+.promo-ov.open { display: flex; }
+.promo-ovbox {
+    width: min(720px, 100%);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-strong, 0 20px 60px rgba(0, 0, 0, .45));
+    padding: 1.2rem;
+    max-height: 84vh; overflow: auto;
+}
+.promo-ovbox h3 { margin: 0 0 .2rem; font-size: 1.05rem; }
+.promo-ovbox > p { margin: 0 0 .9rem; font-size: 12.5px; }
+.promo-sel, .promo-src {
+    width: 100%;
+    padding: .5rem .7rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font: inherit; font-size: .9rem;
+}
+.promo-src {
+    margin-top: .8rem;
+    font-family: Georgia, 'Times New Roman', serif;
+    line-height: 1.6;
+    resize: vertical;
+}
+.promo-sel:focus, .promo-src:focus { outline: none; border-color: var(--accent); }
+.promo-ov-actions { display: flex; align-items: center; gap: .7rem; margin-top: .9rem; flex-wrap: wrap; }
+
+.promo-swatches { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.promo-swatch {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    cursor: pointer;
+    padding: 0;
+    transition: transform .12s ease, border-color .12s ease;
+}
+.promo-swatch:hover { transform: scale(1.12); }
+.promo-swatch.is-active { border-color: var(--text-primary); box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--accent); }
+/* Censor = a blackout bar over the words rather than a colour wash behind them. */
+.promo-swatch--censor {
+    background: repeating-linear-gradient(45deg, #12100f 0 6px, #2b2725 6px 12px);
+}
+
+.promo-bgs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: .4rem; }
+.promo-bg {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    border: 2px solid var(--border);
+    cursor: pointer;
+    padding: 0;
+    transition: transform .12s ease, border-color .12s ease;
+}
+.promo-bg:hover { transform: scale(1.08); }
+.promo-bg.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--accent); }
+
+.promo-check { display: flex; align-items: center; gap: .5rem; font-size: 13.5px; cursor: pointer; }
+.promo-check input { width: auto; }
+
+.promo-actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.promo-warn { color: var(--warning, #d08700); font-size: 12.5px; }
+
+.promo-preview {
+    position: sticky;
+    top: 1rem;
+    display: flex;
+    justify-content: center;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.2rem;
+    min-width: 0;
+}
+/* The canvas is exported at full resolution; scale it down to fit the column. */
+.promo-preview canvas {
+    max-width: 100%;
+    max-height: 78vh;
+    height: auto;
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+
+@media (max-width: 900px) {
+    .promo-layout { grid-template-columns: 1fr; }
+    .promo-preview { position: static; }
+}
+
+/* Story-excerpt picker row (2.162.0) — WorkPicker "Choose a story…" button. */
+.promo-story-pickrow { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-bottom: .5rem; }
+#promo-story-chosen:not(.muted) { color: var(--accent); font-weight: 600; }

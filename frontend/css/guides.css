@@ -1,0 +1,221 @@
+/* Platform "How to get started" guides — modal + hub + content (2.65.0).
+   All colours come from design tokens (tokens.css) so it retones across every
+   theme. Two surfaces share the .guide-body content styles: the modal and the
+   Getting Started hub detail. */
+
+/* ── Modal shell ─────────────────────────────────────────── */
+.guide-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+    background: var(--overlay-backdrop);
+    backdrop-filter: blur(4px);
+}
+.guide-modal[hidden] { display: none; }
+
+.guide-modal-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-strong);
+    width: min(640px, 100%);
+    max-height: min(86vh, 900px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.guide-modal-head {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.guide-modal-emoji { font-size: 1.5rem; line-height: 1; }
+.guide-modal-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.15rem;
+    color: var(--text-primary);
+    margin: 0;
+    flex: 1;
+}
+.guide-modal-close {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    width: 32px;
+    height: 32px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    line-height: 1;
+    transition: var(--transition);
+    flex-shrink: 0;
+}
+.guide-modal-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+.guide-modal-body {
+    padding: 1.1rem 1.25rem 1.4rem;
+    overflow-y: auto;
+}
+
+/* ── Shared guide content ────────────────────────────────── */
+.guide-summary {
+    color: var(--text-secondary);
+    font-size: 1rem;
+    margin: 0 0 0.75rem;
+}
+.guide-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
+.guide-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border);
+}
+.guide-badge--kind { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); border-color: transparent; }
+.guide-badge--diff { background: var(--bg-tertiary); color: var(--text-secondary); }
+
+.guide-h {
+    font-family: var(--font-display);
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin: 1.25rem 0 0.5rem;
+}
+.guide-need, .guide-notes { margin: 0; padding-left: 1.1rem; }
+.guide-need li, .guide-notes li { color: var(--text-secondary); margin-bottom: 0.3rem; line-height: 1.5; }
+
+.guide-steps { list-style: none; margin: 0; padding: 0; }
+.guide-step {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--card-border-inner);
+    align-items: flex-start;
+}
+.guide-step:last-child { border-bottom: none; }
+.guide-step-n {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0.1rem;
+}
+.guide-step b { color: var(--text-primary); }
+.guide-step-b { color: var(--text-secondary); font-size: 0.93rem; line-height: 1.5; margin-top: 0.15rem; }
+.guide-step-b code, .guide-paste code, .guide-renew code, .guide-notes code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--bg-tertiary);
+    padding: 0.05rem 0.35rem;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+}
+.guide-link { color: var(--accent); text-decoration: none; white-space: nowrap; }
+.guide-link:hover { text-decoration: underline; }
+
+.guide-paste {
+    background: var(--bg-tertiary);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 0.8rem;
+    color: var(--text-primary);
+    font-weight: 600;
+    margin: 0;
+}
+.guide-renew { color: var(--text-secondary); line-height: 1.55; margin: 0; }
+.guide-renew b { color: var(--text-primary); }
+
+/* ── "Setup guide" trigger button (on connect cards) ─────── */
+.guide-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: var(--radius-pill);
+    padding: 0.3rem 0.75rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.guide-trigger:hover { background: var(--bg-hover); color: var(--accent); border-color: var(--accent); }
+
+/* ── "Setup guide" CTA on un-set-up Platforms-hub tiles ──── */
+.hub-tile-notset { color: var(--text-muted); font-style: italic; }
+.hub-tile-guide {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.4rem;
+    align-self: flex-start;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+    border: 1px solid transparent;
+    border-radius: var(--radius-pill);
+    padding: 0.25rem 0.7rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.hub-tile-guide:hover { background: var(--accent); color: #fff; }
+.hub-tile-guide:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Getting Started hub ─────────────────────────────────── */
+.guide-hub-head { margin-bottom: 0.5rem; }
+.guide-hub-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.9rem;
+    color: var(--text-primary);
+    margin: 0;
+}
+.guide-hub-intro { color: var(--text-secondary); max-width: 60ch; margin: 0 0 1.5rem; line-height: 1.6; }
+.guide-hub-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+}
+.guide-hub-card {
+    text-align: left;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.1rem;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.guide-hub-card:hover { border-color: var(--accent); background: var(--bg-hover); transform: translateY(-2px); }
+.guide-hub-card-top { display: flex; align-items: center; gap: 0.55rem; }
+.guide-hub-card-emoji { font-size: 1.4rem; line-height: 1; }
+.guide-hub-card-name { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; color: var(--text-primary); }
+.guide-hub-card-kind { font-size: 0.78rem; color: var(--text-muted); }
+.guide-hub-card-sum { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.45; }
+.guide-hub-card-diff {
+    margin-top: auto;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--accent);
+    align-self: flex-start;
+    padding-top: 0.3rem;
+}

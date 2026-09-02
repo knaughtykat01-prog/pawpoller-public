@@ -1,0 +1,300 @@
+/* ── Bookshelf / Library (concept Slice A · "Atelier") ───────────────────────
+ * Editorial, cover-forward. Everything reads from the Quill tokens so it's
+ * theme-aware (warm paper in Quill, dark in the dark themes). Crimson Pro serif
+ * for titles/summary; the sienna --accent is the "gilt". */
+
+/* ── Library header ── */
+.shelf-topbar {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 1rem; flex-wrap: wrap; margin: 0 0 1.6rem;
+}
+.shelf-head { max-width: 62ch; }
+.shelf-topbar .shelf-head { margin: 0; }
+.shelf-laurels { flex-shrink: 0; white-space: nowrap; }
+/* Utility links folded in from the retired Artwork hub (2.155.0): Ignored +
+   History sit beside Laurels. Wraps on narrow screens rather than squashing. */
+.shelf-topbar-actions {
+    display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; flex-shrink: 0;
+}
+.shelf-eyebrow {
+    font-family: var(--font-sans);
+    font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: .5rem;
+}
+.shelf-title {
+    font-family: var(--font-serif);
+    font-weight: 700; font-size: clamp(2.1rem, 4vw, 3rem); line-height: 1.05;
+    letter-spacing: -.01em; color: var(--text-primary); margin: 0 0 .5rem;
+}
+.shelf-sub { color: var(--text-secondary); font-size: 1rem; line-height: 1.5; margin: 0; }
+
+/* ── Filter controls ── */
+.shelf-controls {
+    display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin: 0 0 1.6rem;
+}
+.shelf-segs {
+    display: inline-flex; border: 1px solid var(--card-border-inner);
+    border-radius: var(--radius-pill, 999px); overflow: hidden; background: var(--bg-card);
+}
+.shelf-seg {
+    appearance: none; border: none; background: transparent; cursor: pointer;
+    font: inherit; font-weight: 600; font-size: .85rem; color: var(--text-secondary);
+    padding: .45rem .95rem; transition: var(--transition, all .15s ease);
+}
+.shelf-seg:hover { color: var(--text-primary); }
+.shelf-seg.is-active { background: var(--accent); color: #fff; }
+/* Count badge on the Discovered segment — how many polled items await review. */
+.shelf-seg-count {
+    display: inline-block; margin-left: .3rem; padding: 0 .35rem;
+    border-radius: var(--radius-pill, 999px); font-size: .74rem; font-weight: 700;
+    background: var(--card-border-inner); color: var(--text-secondary);
+}
+.shelf-seg.is-active .shelf-seg-count { background: rgba(255, 255, 255, .25); color: #fff; }
+.shelf-input {
+    padding: .45rem .7rem; border-radius: 10px; border: 1px solid var(--card-border-inner);
+    background: var(--bg-card); color: var(--text-primary); font: inherit; font-size: .88rem;
+    max-width: 220px;
+}
+.shelf-input:focus { outline: none; border-color: var(--accent); }
+.shelf-sort { margin-left: auto; }
+
+/* ── The shelf ── */
+.shelf-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 1.5rem 1.35rem;
+}
+.book { position: relative; text-decoration: none; color: inherit; display: flex; flex-direction: column; }
+
+/* ＋ Collection affordance on a shelf card — hidden until hover/focus so it
+   never competes with the cover (2.117.0, moved from the Submissions hub). */
+.book-collect {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 2;
+    padding: 3px 8px;
+    font-size: 11px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity .12s ease, background .12s ease;
+}
+.book:hover .book-collect,
+.book:focus-within .book-collect { opacity: 1; }
+.book-collect:hover { background: var(--accent, #6c8cff); }
+
+/* Discovered-art import banner on the Library (moved from Submissions). */
+.shelf-discovered-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: .7rem .9rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent, #6c8cff) 8%, var(--bg-card));
+    font-size: 13px;
+}
+.shelf-discovered-actions { display: flex; gap: .5rem; flex-shrink: 0; }
+.book-cover {
+    position: relative; aspect-ratio: 3 / 4; border-radius: 10px;
+    background-color: var(--bg-tertiary, var(--bg-card)); background-size: cover; background-position: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,.14), 0 10px 22px -12px rgba(0,0,0,.30);
+    border: 1px solid var(--card-border-inner);
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+.book:hover .book-cover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgba(0,0,0,.18), 0 18px 34px -14px rgba(0,0,0,.42);
+}
+.book-cover--blank {
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(150deg,
+        color-mix(in srgb, var(--accent) 22%, var(--bg-card)),
+        var(--bg-card));
+}
+.book-initial {
+    font-family: var(--font-serif); font-weight: 700; font-size: 3.4rem;
+    color: color-mix(in srgb, var(--accent) 65%, var(--text-muted)); opacity: .8;
+}
+/* Variant books (2.190.1) — a render of an artwork piece, shown right after its
+   master book. Dashed cover + a corner badge distinguish them from the master. */
+.book--variant .book-cover { border-style: dashed; }
+.book--variant:hover .book-cover { border-style: solid; }
+.book-vbadge {
+    position: absolute; top: 6px; left: 6px; z-index: 2;
+    font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    padding: .1rem .35rem; border-radius: 999px;
+    background: rgba(0,0,0,.6); color: #fff;
+}
+.book-vlabel {
+    font-size: 11px; font-weight: 600; color: var(--text-secondary);
+    border: 1px solid var(--card-border-inner); border-radius: 999px; padding: 0 .4rem;
+}
+
+/* Truth-telling ribbon */
+.book-ribbon {
+    position: absolute; top: .55rem; left: .55rem;
+    font-family: var(--font-sans); font-size: .66rem; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: #fff; background: var(--accent);
+    padding: .2rem .5rem; border-radius: 999px; box-shadow: 0 1px 4px rgba(0,0,0,.25);
+}
+.book-ribbon.is-draft { background: color-mix(in srgb, var(--text-muted) 78%, transparent); }
+.book-spine { padding: .6rem .1rem 0; }
+.book-title {
+    font-family: var(--font-serif); font-weight: 600; font-size: 1.02rem; line-height: 1.2;
+    color: var(--text-primary); margin-bottom: .18rem;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.book-meta { font-size: .76rem; color: var(--text-muted); line-height: 1.3; }
+.book-rating { text-transform: capitalize; }
+/* Carried from the retired Stories hub (2.155.0). The blurb is clamped to two
+   lines so a long description can't stretch one book taller than its shelf-mates
+   — the grid reads as a shelf only while the covers stay aligned. */
+.book-category {
+    display: inline-block; font-size: .66rem; font-weight: 600;
+    text-transform: capitalize; color: var(--text-secondary);
+    border: 1px solid var(--card-border-inner); border-radius: 999px; padding: 0 .4rem;
+}
+.book-warn { color: var(--accent); cursor: help; }
+/* Series badge (gap-wave-5 §2) — its own line under the meta row so a long
+   series name never elbows the rating/category chips. */
+.book-series-line { margin-top: .18rem; }
+.book-series {
+    display: inline-block; font-size: .66rem; font-weight: 600;
+    color: var(--text-secondary);
+    border: 1px solid var(--card-border-inner); border-radius: 999px; padding: 0 .4rem;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.book-blurb {
+    font-size: .76rem; color: var(--text-secondary); line-height: 1.35; margin-top: .3rem;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.book-draft {
+    display: inline-block; font-size: .66rem; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--text-muted);
+    border: 1px solid var(--card-border-inner); border-radius: 999px; padding: 0 .4rem;
+}
+/* Missing-artist badge (3.5.2). Same pill geometry as .book-draft, but warning
+   coloured — a draft is a normal state, a piece with no artist recorded is not.
+   Uses the shared warning token so it reads correctly in every theme. */
+.book-noartist {
+    display: inline-block; font-size: .66rem; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--warning, #b4690e);
+    border: 1px solid var(--warning, #b4690e); border-radius: 999px; padding: 0 .4rem;
+}
+.book-plats { display: flex; flex-wrap: wrap; gap: .12rem; margin-top: .3rem; font-size: .82rem; }
+.book-plat { line-height: 1; }
+
+/* ── Work detail ── */
+.work-back { margin: 0 0 1rem; }
+.work-back a { color: var(--text-secondary); text-decoration: none; font-size: .9rem; }
+.work-back a:hover { color: var(--accent); }
+
+.work-hero {
+    display: grid; grid-template-columns: 180px 1fr auto; gap: 1.75rem; align-items: start;
+    margin-bottom: 1.75rem; padding-bottom: 1.75rem;
+    border-bottom: 1px solid var(--card-border-inner);
+}
+.work-cover {
+    aspect-ratio: 3 / 4; border-radius: 12px; background-size: cover; background-position: center;
+    background-color: var(--bg-tertiary, var(--bg-card)); border: 1px solid var(--card-border-inner);
+    box-shadow: 0 4px 14px rgba(0,0,0,.16), 0 20px 40px -18px rgba(0,0,0,.4);
+}
+.work-cover--blank { display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 22%, var(--bg-card)), var(--bg-card)); }
+.work-head { min-width: 0; }
+.work-title {
+    font-family: var(--font-serif); font-weight: 700; font-size: clamp(1.8rem, 3.4vw, 2.6rem);
+    line-height: 1.08; letter-spacing: -.01em; color: var(--text-primary); margin: .2rem 0 .6rem;
+}
+.work-tags { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .9rem; }
+.work-tag {
+    font-size: .74rem; font-weight: 600; text-transform: capitalize;
+    color: var(--text-secondary); background: var(--bg-card);
+    border: 1px solid var(--card-border-inner); border-radius: 999px; padding: .2rem .6rem;
+}
+.work-summary {
+    font-family: var(--font-serif); font-size: 1.05rem; line-height: 1.6;
+    color: var(--text-secondary); margin: 0; max-width: 60ch;
+}
+.work-margin {
+    display: flex; flex-direction: column; gap: .55rem; min-width: 92px;
+    padding-left: 1.5rem; border-left: 1px solid var(--card-border-inner);
+}
+.work-margin-row { display: flex; flex-direction: column; line-height: 1.1; }
+.wm-v { font-family: var(--font-serif); font-weight: 700; font-size: 1.5rem; color: var(--text-primary); }
+.wm-l { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+
+.work-card {
+    background: var(--bg-card); border: 1px solid var(--card-border-inner);
+    border-radius: 14px; padding: 1.2rem 1.35rem; margin-bottom: 1.25rem;
+}
+.work-h2 {
+    font-family: var(--font-serif); font-weight: 700; font-size: 1.25rem; color: var(--text-primary);
+    margin: 0 0 1rem; display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
+}
+.work-h2-note { font-family: var(--font-sans); font-size: .78rem; font-weight: 500; color: var(--text-muted); }
+
+/* Published-to list */
+.pub-list { display: flex; flex-direction: column; }
+.pub-row {
+    display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+    padding: .6rem 0; border-top: 1px solid var(--card-border-inner);
+}
+.pub-row:first-child { border-top: none; }
+.pub-plat { display: flex; align-items: center; gap: .45rem; font-weight: 600; color: var(--text-primary); min-width: 150px; }
+.pub-emoji { font-size: 1.05rem; }
+.pub-stat { font-size: .85rem; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.pub-stat em { color: var(--text-muted); font-style: normal; font-size: .78rem; }
+.pub-open { margin-left: auto; color: var(--accent); text-decoration: none; font-size: .82rem; font-weight: 600; }
+.pub-open:hover { text-decoration: underline; }
+.pub-notyet { margin-top: .9rem; font-size: .82rem; color: var(--text-muted); }
+
+/* Chapter reach */
+.chapter-list { display: flex; flex-direction: column; }
+.chapter-row {
+    display: flex; align-items: center; gap: .85rem;
+    padding: .55rem 0; border-top: 1px solid var(--card-border-inner);
+}
+.chapter-row:first-child { border-top: none; }
+.chapter-idx {
+    flex-shrink: 0; width: 1.7rem; height: 1.7rem; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-serif); font-weight: 700; font-size: .85rem;
+    color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.chapter-name { flex: 1; min-width: 0; color: var(--text-primary); font-size: .92rem; }
+.chapter-name em { color: var(--text-muted); font-style: normal; font-size: .8rem; }
+.chapter-reach { display: flex; gap: .2rem; flex-wrap: wrap; }
+.ch-dot { font-size: .95rem; line-height: 1; transition: opacity .15s ease; }
+.ch-dot.is-off { opacity: .22; filter: grayscale(1); }
+.ch-gap {
+    flex-shrink: 0; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--warning, #b8860b); background: color-mix(in srgb, var(--warning, #b8860b) 14%, transparent);
+    padding: .15rem .45rem; border-radius: 999px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+    .shelf-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 1.1rem .9rem; }
+    /* Clear the fixed mobile hamburger (top-left, ~54px tall) so the page header
+       and the work back-link aren't hidden under it. env() adds the iOS status-bar
+       inset so it stays aligned with the hamburger (which uses the same inset). */
+    .shelf-topbar { padding-top: calc(env(safe-area-inset-top, 0px) + 44px); }
+    .work-back { padding-top: calc(env(safe-area-inset-top, 0px) + 44px); }
+    /* Stack the work hero on mobile: a capped cover on top, the head full-width
+       below — so a long summary reads full-width instead of being crammed into a
+       narrow column beside a tall empty gap under the cover. */
+    .work-hero { grid-template-columns: 1fr; gap: 1.1rem; }
+    .work-cover { width: 128px; }
+    .work-margin {
+        grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; gap: 1.25rem;
+        padding-left: 0; padding-top: 1.1rem; border-left: none; border-top: 1px solid var(--card-border-inner);
+    }
+    .shelf-sort { margin-left: 0; }
+}

@@ -1,0 +1,15 @@
+services:
+  pawpoller-test:
+    build: .
+    container_name: pawpoller-test
+    ports:
+      - "8421:8420"
+    volumes:
+      - pawpoller-test-data:/app/data
+      - pawpoller-test-logs:/app/logs
+    restart: "no"
+    env_file: .env.test
+
+volumes:
+  pawpoller-test-data:
+  pawpoller-test-logs:

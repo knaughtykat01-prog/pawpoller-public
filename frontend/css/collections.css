@@ -1,0 +1,132 @@
+/* Collections hub + detail. Token-driven so it retones across all themes. */
+
+.coll-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1rem;
+}
+.coll-card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--card-border, var(--border));
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--surface, var(--bg-secondary));
+    text-decoration: none;
+    color: inherit;
+    transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+.coll-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+    border-color: var(--accent);
+}
+.coll-cover {
+    aspect-ratio: 16 / 9;
+    background: var(--bg-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.coll-cover-img { width: 100%; height: 100%; object-fit: cover; }
+.coll-cover-ph { font-size: 2.4rem; opacity: .5; }
+.coll-body { padding: .7rem .8rem .8rem; display: flex; flex-direction: column; gap: .35rem; }
+.coll-name { font-weight: 600; line-height: 1.25; }
+.coll-meta { font-size: .82rem; display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+.coll-plat { font-size: 1rem; }
+.coll-stats { font-size: .82rem; }
+
+/* Suggested collections (folded in from Cross-Platform Links, 2.113.0) */
+.coll-suggest-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .5rem 0;
+    border-top: 1px solid var(--border);
+}
+.coll-suggest-row:first-of-type { border-top: none; }
+.coll-suggest-info { min-width: 0; }
+.coll-suggest-title { font-weight: 600; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coll-suggest-meta { font-size: .82rem; display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; margin-top: .15rem; }
+.coll-reason {
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    padding: .1rem .4rem;
+    border-radius: 999px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+}
+.coll-reason--image { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.coll-reason--both { color: var(--success, #4caf82); border-color: color-mix(in srgb, var(--success, #4caf82) 40%, var(--border)); }
+
+/* Location thumbnails in the collection detail table (2.115.0) */
+.coll-loc-thumb {
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    display: block;
+}
+.coll-loc-thumb--none { border: 1px dashed var(--border); }
+.coll-personas { display: flex; gap: .4rem; flex-wrap: wrap; }
+.coll-persona {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    font-size: .74rem;
+    padding: .1rem .5rem;
+    border-radius: 999px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--card-border, var(--border));
+    color: var(--text);
+}
+.coll-persona-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+/* Detail */
+.coll-tags { display: flex; flex-wrap: wrap; gap: .4rem; }
+.coll-tag {
+    font-size: .78rem;
+    padding: .15rem .55rem;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--card-border, var(--border));
+    color: var(--text-muted);
+}
+.coll-mtype {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    padding: .1rem .45rem;
+    border-radius: 5px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--card-border, var(--border));
+    color: var(--text-muted);
+}
+
+/* New / edit modal (reuses the .guide-modal shell from guides.css) */
+.coll-field { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .9rem; font-size: .9rem; }
+.coll-field > span { color: var(--text-muted); }
+.coll-input {
+    width: 100%;
+    padding: .5rem .6rem;
+    border: 1px solid var(--card-border, var(--border));
+    border-radius: 8px;
+    background: var(--bg, var(--surface));
+    color: var(--text);
+    font: inherit;
+    box-sizing: border-box;
+}
+.coll-input:focus { outline: none; border-color: var(--accent); }
+.coll-msg { color: var(--danger, #c0392b); font-size: .85rem; min-height: 1.1em; margin-bottom: .5rem; }
+.coll-actions { display: flex; gap: .5rem; }
+
+/* Add-to-collection picker / member browser */
+.coll-pick-list { display: flex; flex-direction: column; gap: .4rem; max-height: 46vh; overflow-y: auto; }
+.coll-pick-row { justify-content: flex-start; text-align: left; width: 100%; }
+.coll-pick-row.is-added { opacity: .55; }
+.coll-add-btn { align-self: flex-start; }

@@ -1,0 +1,72 @@
+name: Tests
+
+# Runs the suite on every push and pull request.
+#
+# Why this exists (3.17.4): the ONLY place the tests ran was `build.yml`, which
+# triggers on `v*` tags alone. The mirror work landed in 3.6.0 — after the last
+# tag, v3.5.0 — so `test_windows_absolute_path_is_rejected` never executed in CI
+# once. It passed on the Windows dev machine and failed on Linux, and forty
+# commits elapsed with nothing to report it. Cutting v3.17.3 ran the suite for
+# the first time in that span and it went red immediately.
+#
+# A suite that runs once per release reports its findings one release late.
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+
+# Read-only by default. build.yml needs `contents: write` to attach release
+# assets; this workflow only ever reads the tree, so it says so rather than
+# inheriting whatever the repository default happens to be.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the older run. This is a private repo
+# and CI minutes are billed; two runs of a ~5-minute suite on a branch nobody is
+# looking at any more is waste. In-progress PR runs are cancelled too, since the
+# result would be stale the moment the new commit lands.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # BOTH platforms, deliberately. The failure that prompted this workflow was
+    # a guard that behaved differently on Windows and Linux (`Path.resolve()`
+    # treats `C:\...` as absolute on one and as a filename on the other), so a
+    # Linux-only matrix would have caught that specific bug while still missing
+    # its mirror image — a Windows-only failure in code the Linux server never
+    # exercises. PawPoller ships to both: a Linux server and a Windows desktop.
+    strategy:
+      fail-fast: false          # one platform failing must not hide the other
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+    # The suite is ~4-5 minutes. The GitHub default is SIX HOURS, so a hang
+    # (a test waiting on a network call that never returns) would burn the
+    # billing account rather than failing.
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements-server.txt
+
+      - name: Run tests
+        # pytest, not `unittest discover`: two pytest-style modules
+        # (test_integration_posting, test_platform_posters) are silently
+        # skipped by unittest discovery. Same invocation as build.yml's
+        # test job. `-q` comes from pytest.ini's addopts, which also pins
+        # `python_files = test_*.py` — tests/ contains live-posting operator
+        # scripts that must never be collected, least of all from CI.
+        run: python -m pytest tests/
+
+      - name: Syntax check
+        run: python -m py_compile config.py server.py main.py dashboard.py

@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>PawPoller</title>
+    <link rel="icon" type="image/x-icon" href="/img/favicon.ico">
+    <link rel="icon" type="image/png" href="/img/favicon.png?v=__APP_VERSION__">
+    <link rel="apple-touch-icon" href="/img/apple-touch-icon.png?v=__APP_VERSION__">
+    <!-- PWA: installable to the home screen (standalone). iOS uses these
+         apple-* metas + the apple-touch-icon above; Android/Chrome use the
+         manifest. theme-color tints the status bar and is re-synced to the
+         active theme by js/pwa.js. -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#f4f0e8">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="PawPoller">
+    <script defer src="/js/pwa.js?v=__APP_VERSION__"></script>
+    <!-- Apply persisted theme BEFORE CSS evaluates so the page never flashes
+         the default-dark palette before swapping. localStorage is used so
+         the theme is available synchronously without an API roundtrip.
+         Mobile-mode resolution lives here too: the `data-mobile` attribute
+         is the single source of truth read by mobile-only CSS rules
+         (selectors like `html[data-mobile="1"] .foo`). On `auto` it
+         tracks `(max-width: 768px)`; on `on` it's forced "1"; on `off`
+         it's forced "0". App.js attaches a resize listener after boot
+         to keep `auto` in sync as the viewport changes. -->
+    <script>
+      (function () {
+        var t = localStorage.getItem('pawpoller-theme') || 'quill';
+        document.documentElement.dataset.theme = t;
+        var nv = localStorage.getItem('pawpoller-nav') || 'top';
+        document.documentElement.dataset.navmode = nv;
+        var dm = localStorage.getItem('pawpoller-mode') || 'default';
+        if (dm !== 'default') document.documentElement.dataset.mode = dm;
+        var m = localStorage.getItem('pawpoller-mobile-mode') || 'auto';
+        var resolved;
+        if (m === 'on') resolved = '1';
+        else if (m === 'off') resolved = '0';
+        else resolved = window.matchMedia('(max-width: 768px)').matches ? '1' : '0';
+        document.documentElement.dataset.mobile = resolved;
+        // Safe (SFW) mode — read here too so adult covers are blurred before the
+        // first paint, never flashing un-blurred on load. '1' = safe mode on.
+        if (localStorage.getItem('pawpoller-sfw') === '1') document.documentElement.dataset.sfw = '1';
+      })();
+    </script>
+    <!-- Vibe Pack typography (matches pawpoller.pages.dev). Crimson Pro
+         for headings, Inter for body, JetBrains Mono for code. Loaded
+         once and cached; the desktop pywebview bundle has internet
+         access on first launch same as a browser. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Crimson+Pro:wght@400;600;700&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" href="/css/tokens.css?v=__APP_VERSION__">
+    <!-- Perceived-performance / GPU pass: snappier transitions, off-screen grid
+         cards skip render work, overlays get their own compositor layer. After
+         tokens so its :root transition override wins; before components. -->
+    <link rel="stylesheet" href="/css/perf.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/components.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/layout.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/redesign.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/editor.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/diagnostics.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/artwork.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/posts.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/collections.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/commissions.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/masterpieces.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/artists.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/promo.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/imagetool.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/guides.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/reconnect.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/accounts.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/bookshelf.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/laurels.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/error_popup.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/ledger.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/workbench.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/brut.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/loading_indicator.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/tour.css?v=__APP_VERSION__">
+    <!-- Retro 2005 full makeover — loaded LAST so its [data-theme] component
+         overrides win over the base component CSS. Inert unless the theme is on. -->
+    <link rel="stylesheet" href="/css/retro_2005.css?v=__APP_VERSION__">
+    <!-- Safe (SFW) mode — global adult-content blur. After everything so its
+         [data-sfw="1"] blur wins over any theme. Inert unless safe mode is on. -->
+    <link rel="stylesheet" href="/css/safe_mode.css?v=__APP_VERSION__">
+    <script src="/js/vendor/chart.umd.min.js"></script>
+    <script src="/js/vendor/chartjs-plugin-annotation.min.js"></script>
+    <script src="/js/vendor/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="/js/vendor/qrcode.min.js"></script>
+</head>
+<body>
+    <!-- ============================================================
+         SIDEBAR NAVIGATION — Icon Rail
+         60px collapsed rail on desktop, expands to 220px on hover.
+         On mobile (<=768px) slides off-screen like the old sidebar.
+         ============================================================ -->
+    <!-- Hamburger lives OUTSIDE .sidebar so its position:fixed isn't
+         bound to the sidebar's translateX transform on mobile.
+         (BUG-010 in 2.14.7 mobile QA — earlier the button slid
+         off-screen with the collapsed sidebar.) Hidden via CSS
+         on desktop; only shown ≤768px. -->
+    <button class="hamburger-btn" id="hamburger-btn" aria-label="Toggle menu">&#9776;</button>
+
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <img class="sidebar-logo" src="/img/logo-quill.png?v=__APP_VERSION__" alt="" width="26" height="26">
+            <h1>PawPoller</h1>
+            <button class="sidebar-collapse" id="sidebar-collapse" type="button" aria-label="Collapse or expand sidebar" title="Collapse / expand">&#9776;</button>
+        </div>
+
+        <!-- Surfaced command palette (⌘/Ctrl+K). Visible affordance so the
+             quick-jump isn't a hidden keyboard-only feature. -->
+        <button class="sidebar-search" id="sidebar-search" type="button" aria-label="Search (Ctrl or Cmd + K)">
+            <span class="nav-icon">&#128269;</span>
+            <span class="search-text">Search&hellip;</span>
+            <span class="kbd">Ctrl K</span>
+        </button>
+
+        <ul class="nav-links">
+            <li><a href="#/" class="nav-link active" data-page="overview">
+                <span class="nav-icon">&#9632;</span><span class="nav-label">Overview</span>
+            </a></li>
+            <li><a href="#/platforms" class="nav-link" data-page="platforms">
+                <span class="nav-icon">&#128062;</span><span class="nav-label">Platforms</span>
+            </a></li>
+            <li><a href="#/library" class="nav-link" data-page="library">
+                <span class="nav-icon">&#128366;</span><span class="nav-label">Library</span>
+            </a></li>
+            <li><a href="#/inbox" class="nav-link" data-page="inbox">
+                <span class="nav-icon">&#128172;</span><span class="nav-label">Inbox</span>
+            </a></li>
+
+            <!-- Grouped so the top-nav mode (Settings → Appearance) can turn each
+                 group into a dropdown. In the side rail the .nav-sub is always
+                 shown (flat, identical to before); in top mode it's a hover/
+                 focus/click dropdown panel. -->
+            <!-- IA (2.142.0): Publish = your catalogues (works via Library above,
+                 plus Posts view-only + Collections); every make-new action lives in
+                 Create; Queue/History moved to Insights & Tools.
+                 2.155.0 (backlog L) finishes that: the Stories and Artwork entries
+                 that used to sit here pointed at hubs showing the same records
+                 Library already holds, so both are now Library segments — reach
+                 them via Library, or deep-link #/library/type/{story,artwork}. -->
+            <li class="nav-group">
+              <button class="nav-group-label" data-nav-toggle type="button" aria-expanded="false">Publish<span class="nav-caret" aria-hidden="true">&#9662;</span></button>
+              <ul class="nav-sub">
+                <li><a href="#/posts" class="nav-link" data-page="posts">
+                    <span class="nav-icon">&#128172;</span><span class="nav-label">Posts</span>
+                </a></li>
+                <li><a href="#/collections" class="nav-link" data-page="collections">
+                    <span class="nav-icon">&#128451;</span><span class="nav-label">Collections</span>
+                </a></li>
+                <li><a href="#/commissions" class="nav-link" data-page="commissions">
+                    <span class="nav-icon">&#128188;</span><span class="nav-label">Commissions</span>
+                </a></li>
+                <li><a href="#/artists" class="nav-link" data-page="artists">
+                    <span class="nav-icon">&#127912;</span><span class="nav-label">Artists</span>
+                </a></li>
+              </ul>
+            </li>
+
+            <li class="nav-group">
+              <button class="nav-group-label" data-nav-toggle type="button" aria-expanded="false">Create<span class="nav-caret" aria-hidden="true">&#9662;</span></button>
+              <ul class="nav-sub">
+                <li><a href="#/artwork/quick" class="nav-link" data-page="artwork-quick">
+                    <span class="nav-icon">&#9889;</span><span class="nav-label">Quick Publish</span>
+                </a></li>
+                <li><a href="#/editor" class="nav-link" data-page="editor">
+                    <span class="nav-icon">&#9998;</span><span class="nav-label">New Story</span>
+                </a></li>
+                <li><a href="#/artwork/new" class="nav-link" data-page="artwork-new">
+                    <span class="nav-icon">&#128444;</span><span class="nav-label">New Artwork</span>
+                </a></li>
+                <li><a href="#/posts/new" class="nav-link" data-page="posts-new">
+                    <span class="nav-icon">&#128172;</span><span class="nav-label">New Post</span>
+                </a></li>
+                <li><a href="#/promo" class="nav-link" data-page="promo">
+                    <span class="nav-icon">&#10024;</span><span class="nav-label">Promo Maker</span>
+                </a></li>
+                <li><a href="#/imagetool" class="nav-link" data-page="imagetool">
+                    <span class="nav-icon">&#128444;</span><span class="nav-label">Image Tool</span>
+                </a></li>
+              </ul>
+            </li>
+
+            <li class="nav-group">
+              <button class="nav-group-label" data-nav-toggle type="button" aria-expanded="false">Insights &amp; Tools<span class="nav-caret" aria-hidden="true">&#9662;</span></button>
+              <ul class="nav-sub">
+                <li><a href="#/analytics" class="nav-link" data-page="analytics">
+                    <span class="nav-icon">&#128200;</span><span class="nav-label">Analytics</span>
+                </a></li>
+                <li><a href="#/repost-radar" class="nav-link" data-page="repost-radar">
+                    <span class="nav-icon">&#128260;</span><span class="nav-label">Repost Radar</span>
+                </a></li>
+                <li><a href="#/laurels" class="nav-link" data-page="laurels">
+                    <span class="nav-icon">&#127941;</span><span class="nav-label">Laurels</span>
+                </a></li>
+                <li><a href="#/ledger" class="nav-link" data-page="ledger">
+                    <span class="nav-icon">&#128197;</span><span class="nav-label">Activity</span>
+                </a></li>
+                <li><a href="#/groups" class="nav-link" data-page="groups">
+                    <span class="nav-icon">&#128193;</span><span class="nav-label">Groups</span>
+                </a></li>
+                <li><a href="#/posting/queue" class="nav-link" data-page="posting-queue">
+                    <span class="nav-icon">&#9203;</span><span class="nav-label">Queue</span>
+                </a></li>
+                <li><a href="#/posting/log" class="nav-link" data-page="posting-log">
+                    <span class="nav-icon">&#128220;</span><span class="nav-label">History</span>
+                </a></li>
+                <!-- Cross-Platform Links retired in 2.113.0 — merged into Collections
+                     (same idea: one piece across platforms + combined analytics).
+                     #/cross-platform now redirects to #/collections. -->
+              </ul>
+            </li>
+
+            <li class="nav-spacer"></li>
+
+            <li><a href="#/getting-started" class="nav-link" data-page="getting-started">
+                <span class="nav-icon">&#129517;</span><span class="nav-label">Getting Started</span>
+            </a></li>
+            <li><a href="#/accounts" class="nav-link" data-page="accounts">
+                <span class="nav-icon">&#128100;</span><span class="nav-label">Accounts</span>
+            </a></li>
+            <li><a href="#/settings" class="nav-link" data-page="settings">
+                <span class="nav-icon">&#9881;</span><span class="nav-label">Settings</span>
+            </a></li>
+        </ul>
+
+        <div class="sidebar-footer">
+            <div id="poll-status-mini" class="poll-badge">--</div>
+            <button class="btn-sfw-toggle" id="sfw-toggle-btn" type="button" aria-pressed="false" title="Safe mode: off — adult content visible. Click to hide adult content (SFW).">&#128274;</button>
+            <button class="btn-help-tour" id="help-tour-btn" type="button" title="Getting-started tour" aria-label="Getting-started tour">?</button>
+            <button class="btn-theme-toggle" id="theme-toggle-btn" title="Choose theme (opens Settings → Appearance)">&#127912;</button>
+            <button class="btn-logout" id="logout-btn" title="Sign out">&#x2190;</button>
+            <div id="sidebar-version" class="sidebar-version"></div>
+        </div>
+    </nav>
+
+    <!-- Sidebar overlay backdrop (mobile) -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- ============================================================
+         MAIN CONTENT AREA (SPA container)
+         #context-bar holds the breadcrumb + platform switcher + sub-tabs;
+         route() fills it and leaves it empty (→ CSS hides it) on
+         full-screen routes (login/loading/setup). #main-col carries the
+         left margin that clears the fixed sidebar (collapsed or full).
+         ============================================================ -->
+    <div id="poll-progress-bar" class="poll-progress-bar" style="display:none">
+        <div class="poll-progress-track">
+            <div class="poll-progress-fill" id="poll-progress-fill"></div>
+        </div>
+        <div class="poll-progress-label" id="poll-progress-label"></div>
+    </div>
+    <div class="main-col" id="main-col">
+        <div id="context-bar" class="context-bar"></div>
+        <main id="app" class="main-content">
+            <div class="loading-spinner">Loading...</div>
+        </main>
+    </div>
+
+    <!-- ============================================================
+         BOTTOM NAVIGATION BAR (mobile only, hidden on desktop)
+         Top destinations + "More" opens the full nav drawer.
+         ============================================================ -->
+    <nav class="bottom-nav" id="bottom-nav">
+        <a href="#/" class="bottom-nav-item" data-page="overview">
+            <span class="bottom-nav-icon">&#9632;</span>
+            <span class="bottom-nav-label">Overview</span>
+        </a>
+        <a href="#/platforms" class="bottom-nav-item" data-page="platforms">
+            <span class="bottom-nav-icon">&#128062;</span>
+            <span class="bottom-nav-label">Platforms</span>
+        </a>
+        <!-- Was "Stories" (#/posting) until 2.155.0 — that hub is now a Library
+             segment, and Library is the one works hub, so it takes the slot. -->
+        <a href="#/library" class="bottom-nav-item" data-page="library">
+            <span class="bottom-nav-icon">&#128366;</span>
+            <span class="bottom-nav-label">Library</span>
+        </a>
+        <a href="#/analytics" class="bottom-nav-item" data-page="analytics">
+            <span class="bottom-nav-icon">&#128200;</span>
+            <span class="bottom-nav-label">Analytics</span>
+        </a>
+        <button class="bottom-nav-item" id="bottom-nav-more" type="button">
+            <span class="bottom-nav-icon">&#8943;</span>
+            <span class="bottom-nav-label">More</span>
+        </button>
+    </nav>
+
+    <!-- ============================================================
+         APPLICATION SCRIPTS
+         ============================================================ -->
+    <!-- Canonical platform registry (window.PLATFORMS + route helpers).
+         MUST load before every other script that lists platforms (command
+         palette, shell, Platforms hub, context-bar switcher). -->
+    <script src="/js/platforms.js?v=__APP_VERSION__"></script>
+    <script src="/js/loading_indicator.js?v=__APP_VERSION__"></script>
+    <script src="/js/tour.js?v=__APP_VERSION__"></script>
+    <script src="/js/platform_health.js?v=__APP_VERSION__"></script>
+    <script src="/js/command_palette.js?v=__APP_VERSION__"></script>
+    <script src="/js/logs_panel.js?v=__APP_VERSION__"></script>
+    <script src="/js/utils.js?v=__APP_VERSION__"></script>
+    <!-- Chart expand modal -->
+    <div class="chart-modal-overlay" id="chart-modal-overlay">
+        <div class="chart-modal">
+            <div class="chart-modal-header">
+                <h3 id="chart-modal-title"></h3>
+                <button class="chart-modal-close" id="chart-modal-close">&times;</button>
+            </div>
+            <div class="chart-modal-wrap">
+                <canvas id="chart-modal-canvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/api.js?v=__APP_VERSION__"></script>
+    <script src="/js/error_popup.js?v=__APP_VERSION__"></script>
+    <script src="/js/notifications_center.js?v=__APP_VERSION__"></script>
+    <script src="/js/components.js?v=__APP_VERSION__"></script>
+    <script src="/js/charts.js?v=__APP_VERSION__"></script>
+    <script src="/js/vendor/codemirror-bundle.min.js"></script>
+    <script src="/js/vendor/turndown.min.js"></script>
+    <script src="/js/vendor/beautify.min.js"></script>
+    <script src="/js/vendor/beautify-html.min.js"></script>
+    <script src="/js/vendor/beautify-css.min.js"></script>
+    <script src="/js/posting.js?v=__APP_VERSION__"></script>
+    <script src="/js/submissions.js?v=__APP_VERSION__"></script>
+    <script src="/js/editor.js?v=__APP_VERSION__"></script>
+    <script src="/js/metadata_editor.js?v=__APP_VERSION__"></script>
+    <script src="/js/publish_check.js?v=__APP_VERSION__"></script>
+    <script src="/js/diagnostics.js?v=__APP_VERSION__"></script>
+    <script src="/js/accounts.js?v=__APP_VERSION__"></script>
+    <script src="/js/artwork.js?v=__APP_VERSION__"></script>
+    <script src="/js/posts.js?v=__APP_VERSION__"></script>
+    <script src="/js/work_picker.js?v=__APP_VERSION__"></script>
+    <script src="/js/tag_picker.js?v=__APP_VERSION__"></script>
+    <script src="/js/artist_picker.js?v=__APP_VERSION__"></script>
+    <script src="/js/artists.js?v=__APP_VERSION__"></script>
+    <script src="/js/collections.js?v=__APP_VERSION__"></script>
+    <script src="/js/commissions.js?v=__APP_VERSION__"></script>
+    <script src="/js/inbox.js?v=__APP_VERSION__"></script>
+    <script src="/js/masterpieces.js?v=__APP_VERSION__"></script>
+    <script src="/js/showcase.js?v=__APP_VERSION__"></script>
+    <script src="/js/promo.js?v=__APP_VERSION__"></script>
+    <script src="/js/imagetool.js?v=__APP_VERSION__"></script>
+    <script src="/js/platform_guides.js?v=__APP_VERSION__"></script>
+    <script src="/js/reconnect.js?v=__APP_VERSION__"></script>
+    <script src="/js/search_query.js?v=__APP_VERSION__"></script>
+    <script src="/js/bookshelf.js?v=__APP_VERSION__"></script>
+    <script src="/js/laurels.js?v=__APP_VERSION__"></script>
+    <script src="/js/ledger.js?v=__APP_VERSION__"></script>
+    <script src="/js/app.js?v=__APP_VERSION__"></script>
+</body>
+</html>
