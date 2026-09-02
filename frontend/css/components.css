@@ -1404,6 +1404,61 @@ a.stat-card:hover {
     color: var(--success);
 }
 
+/* Secondary "Open site" link under the wizard's Connect button.
+ *
+ * The card used to have ONE action: a link to the platform's own website,
+ * labelled "Connect". It captured nothing, so the card could never move off
+ * "Not connected" and pressing it again just reopened the tab — it read as a
+ * broken button rather than a link. Connect now goes to the in-app credential
+ * form; the website link survives as a clearly secondary affordance, because
+ * several platforms genuinely require a visit there to generate an API key. */
+.setup-platform-site {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-decoration: none;
+    margin-top: 2px;
+}
+
+.setup-platform-site:hover {
+    color: var(--text-secondary);
+    text-decoration: underline;
+}
+
+/* Shown on Settings → Platforms while first-run setup is unfinished, so a user
+ * sent here by the wizard's Connect button has a visible way back. Without it
+ * the deep link trades one dead end for another. */
+.setup-return-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+/* Brief highlight on the accordion a deep link just opened, so it is obvious
+ * which of nineteen the page jumped to. Purely additive: the accordion is
+ * already open and scrolled to before this runs. */
+.settings-accordion-flash {
+    animation: settings-accordion-flash 2s ease-out;
+}
+
+@keyframes settings-accordion-flash {
+    0%   { box-shadow: 0 0 0 2px var(--accent); }
+    70%  { box-shadow: 0 0 0 2px var(--accent); }
+    100% { box-shadow: 0 0 0 2px transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .settings-accordion-flash { animation: none; box-shadow: 0 0 0 2px var(--accent); }
+}
+
 /* Mode-picker cards — local-vs-server question on the desktop wizard.
  * Two cards stacked vertically with a selected state that mirrors the
  * platform-card connected look. */

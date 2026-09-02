@@ -205,9 +205,26 @@ git clone https://github.com/knaughtykat01-prog/pawpoller-public.git
 cd pawpoller-public
 ```
 
-> **Why a clone rather than a downloaded image?** PawPoller does not yet publish
-> a prebuilt Docker image, so the server builds it from source on first start.
-> That is why §7 takes a few minutes the first time.
+You still clone the repository either way — it carries the compose file, the
+`.env.example` you are about to copy, and the docs. What you choose next is
+whether the server **builds** PawPoller or simply **downloads** it.
+
+| | Build from source | Prebuilt image |
+|---|---|---|
+| Command | `docker compose up -d --build` | `docker compose -f docker-compose.image.yml up -d` |
+| First start | 3–10 minutes | under a minute |
+| Needs | ~2 GB RAM to build comfortably | any supported machine |
+| Good for | forks, air-gapped installs, running a change before it is released | everyone else |
+
+**If you are unsure, use the prebuilt image.** It is the same code, built by the
+project's own release workflow, published for **linux/amd64 and linux/arm64** —
+so it runs on a normal x86 VPS, on Oracle Cloud's free ARM tier, and on a
+Raspberry Pi without any change.
+
+> **Small servers should not build.** A 1 GB machine runs PawPoller perfectly
+> well but is often killed part-way through compiling its dependencies, which
+> looks like a hang or a `Killed` message with no explanation. The prebuilt
+> image sidesteps that entirely.
 
 ---
 
@@ -285,12 +302,24 @@ automation, not first-time setup.
 
 ## 7. Start it
 
+**Prebuilt image** (recommended — see §5):
+
+```bash
+docker compose -f docker-compose.image.yml up -d
+```
+
+**Or build from source:**
+
 ```bash
 docker compose up -d --build
 ```
 
-The first run builds the image and takes **3–10 minutes**. Later starts take
-seconds.
+The prebuilt image starts in well under a minute. Building takes **3–10
+minutes** the first time. Later starts take seconds either way.
+
+> Use the same command every time for a given server. The two files keep their
+> data in the same place, but mixing them means Docker rebuilds or re-pulls
+> unnecessarily.
 
 Check it came up:
 
@@ -383,6 +412,31 @@ loopback; the port stays closed to the world.
 
 ---
 
+### Install it on your phone or tablet
+
+Once §8 is done and PawPoller answers on an `https://` address, it installs as an app on any
+phone or tablet — no App Store, no separate build. It is a **PWA**, so the "app" is your own
+instance running full-screen without browser chrome.
+
+**iPhone / iPad:** open the address in **Safari** (this only works in Safari on iOS), press
+**Share** → **Add to Home Screen**.
+
+**Android:** open it in Chrome and take the **Install app** prompt, or **⋮ → Add to Home
+screen**.
+
+**Desktop:** Edge and Chrome show an install icon in the address bar.
+
+This is why §8 is worth doing properly rather than leaving the instance on `localhost`: a
+tunnelled or proxied address is reachable from the sofa, and the dashboard is designed to be
+usable on a small screen.
+
+> **One iOS quirk:** an installed home-screen app gets its own storage, separate from Safari's.
+> A few purely local preferences will not carry across from the browser you set it up in. Nothing
+> that matters — logins and settings live on the server — but it is why the app can feel very
+> slightly "fresh" the first time you open it from the home screen.
+
+---
+
 ## 9. Finish setup in the browser
 
 Open your `https://` address. Log in with the `DASHBOARD_USER` and
@@ -406,6 +460,17 @@ You do not have to connect all twenty. Connect what you use.
 
 ### Updating
 
+**If you used the prebuilt image:**
+
+```bash
+cd ~/pawpoller-public
+git pull
+docker compose -f docker-compose.image.yml pull
+docker compose -f docker-compose.image.yml up -d
+```
+
+**If you build from source:**
+
 ```bash
 cd ~/pawpoller-public
 git pull
@@ -413,6 +478,10 @@ docker compose up -d --build
 ```
 
 The database migrates itself on startup and your data volumes are preserved.
+
+> `git pull` matters in both cases — it refreshes the compose file and the docs.
+> The `pull` step is what actually fetches the new version of the app when you
+> are running the image; without it Docker keeps using the copy it already has.
 
 ### Backups
 

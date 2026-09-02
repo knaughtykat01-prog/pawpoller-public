@@ -3,8 +3,14 @@
 Mastodon is decentralised — every instance (mastodon.social, pawb.fun,
 meow.social, snouts.online, …) runs the same open REST API, so the client
 is pointed at the user's *instance URL* and authenticates with a personal
-**access token** (Settings → Development → New application on the instance,
-scopes ``read``). No OAuth dance, no refresh token needed.
+**access token** (Settings → Development → New application on the instance).
+No OAuth dance, no refresh token needed.
+
+⚠ **Scopes: ``read`` is enough to POLL and not enough to POST.** ``create_status``
+below writes to ``/api/v1/statuses`` and needs ``write:statuses``, plus
+``write:media`` for images. A read-only token polls perfectly, then has every
+post rejected — which reads as a broken integration rather than a missing
+permission, so it is called out here and in ``docs/SETUP.md`` §5.1.
 
 Key details:
   - Post IDs are ActivityPub URIs (https://instance/users/x/statuses/123),

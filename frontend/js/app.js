@@ -2339,9 +2339,31 @@ const App = {
         } catch { /* ignore — all default to undefined/false */ }
 
         /* Wizard state */
+        //
+        // Restored across a round trip to Settings. The platform step's Connect
+        // buttons deep-link into Settings -> Platforms, and renderSetupWizard()
+        // re-runs on the way back, so without this the user lands on "Welcome"
+        // and re-walks the whole wizard for EVERY platform they connect. With
+        // seventeen platforms on that step, that is the difference between a
+        // detour and a punishment.
+        //
+        // sessionStorage: lives exactly as long as this browser tab, so it can
+        // never outlive the setup run it belongs to. Wrapped because storage
+        // throws outright in some private-browsing modes.
+        const _WIZ_KEY = 'pp.setup.progress';
+        let _wizSaved = {};
+        try { _wizSaved = JSON.parse(sessionStorage.getItem(_WIZ_KEY) || '{}') || {}; } catch (e) { _wizSaved = {}; }
+        const _wizSave = () => {
+            try { sessionStorage.setItem(_WIZ_KEY, JSON.stringify({ step: currentStep, mode: selectedMode })); }
+            catch (e) { /* storage unavailable — the wizard still works, it just forgets */ }
+        };
+
         let currentStep = 'welcome';
         // Server runtime skips mode + pairing entirely — it's always 'server'.
         let selectedMode = runtimeMode === 'server' ? 'server' : null;
+        // Mode has to come back BEFORE stepOrder() is consulted — it decides
+        // which steps exist, so a restored step is only meaningful alongside it.
+        if (runtimeMode !== 'server' && typeof _wizSaved.mode === 'string') selectedMode = _wizSaved.mode;
         let pairingUrl = '';
         let pairingKey = '';
         let pairingError = '';
@@ -2361,6 +2383,15 @@ const App = {
             return ['welcome', 'mode', 'archive', 'platforms', 'persona', 'done'];
         };
 
+        // Validate against the CURRENT path rather than trusting what was stored:
+        // the mode picker changes which steps exist, so a step saved under one
+        // mode may not exist under another. 'done' is excluded deliberately —
+        // returning straight to the final screen would skip the setup it is
+        // claiming to have finished.
+        if (_wizSaved.step && _wizSaved.step !== 'done' && stepOrder().includes(_wizSaved.step)) {
+            currentStep = _wizSaved.step;
+        }
+
         const stepIndex = () => {
             const order = stepOrder();
             const i = order.indexOf(currentStep);
@@ -2368,6 +2399,7 @@ const App = {
         };
 
         const renderStep = () => {
+            _wizSave();
             const order = stepOrder();
             const total = order.length;
             const currentIdx = stepIndex();
@@ -2459,7 +2491,8 @@ const App = {
                             <span class="setup-platform-emoji" style="border-color:${p.color}">${p.emoji}</span>
                             <span class="setup-platform-name">${p.name}</span>
                             <span class="setup-platform-status">${connected ? 'Connected' : 'Not connected'}</span>
-                            <a href="${p.url}" target="_blank" rel="noopener" class="btn btn-sm" style="font-size:11px;padding:4px 10px;margin-top:4px;background:${connected ? 'var(--bg-hover)' : 'var(--accent-dim)'};color:#fff;text-decoration:none;border-radius:var(--radius-sm)">${connected ? 'Open site' : 'Connect'}</a>
+                            <a href="#/settings/platforms/${p.key}" class="btn btn-sm setup-platform-connect" style="font-size:11px;padding:4px 10px;margin-top:4px;background:${connected ? 'var(--bg-hover)' : 'var(--accent-dim)'};color:#fff;text-decoration:none;border-radius:var(--radius-sm)">${connected ? 'Edit' : 'Connect'}</a>
+                            <a href="${p.url}" target="_blank" rel="noopener" class="setup-platform-site" title="Open ${p.name} in your browser — some platforms need you to generate an API key there first">Open site &#8599;</a>
                         </div>`;
                 }).join('');
 
@@ -2699,6 +2732,8 @@ const App = {
                 btn.textContent = 'Saving...';
                 try {
                     await API.markSetupComplete();
+                    // The run is over; nothing should be restored into a later one.
+                    try { sessionStorage.removeItem(_WIZ_KEY); } catch (e) { /* never block completion */ }
                 } catch (err) {
                     console.warn('[Setup] Failed to mark setup complete:', err);
                 }
@@ -10266,7 +10301,38 @@ const App = {
                 this._decoratePlatformSummary(o.summary, o.p);
             });
             this._appendPlatformsFooter(pane);         // accounts link + trademark note, always last
+            this._focusPlatformFromHash(pane);         // deep link from the setup wizard
         } catch (e) { /* cosmetic — never break Settings */ }
+    },
+
+    /* Open and scroll to one platform's accordion, from #/settings/platforms/<code>.
+     *
+     * The setup wizard's Connect button links here. Without this the user lands
+     * on a wall of nineteen collapsed accordions and has to find their platform
+     * by hand, which is barely better than the old behaviour of opening the
+     * platform's website and capturing nothing.
+     *
+     * Runs at the END of _enhancePlatformSettings because that method re-appends
+     * the accordions in sorted order — scrolling before the sort would target
+     * the element's old position. */
+    _focusPlatformFromHash(pane) {
+        const code = (window.location.hash.match(/^#\/settings\/platforms\/([\w-]+)/) || [])[1];
+        if (!code) return;
+        // No escaping needed, and CSS.escape would be WRONG here: it escapes for
+        // an identifier, so a digit-leading code becomes ` abc` — valid CSS
+        // that never matches inside a quoted attribute value. The regex above
+        // already limits `code` to [\w-]+, which cannot contain a quote or
+        // backslash, so interpolating it directly is safe.
+        const target = pane.querySelector(`details.settings-accordion[data-platform="${code}"]`);
+        if (!target) return;                            // unknown code — leave the page alone
+        target.open = true;
+        // rAF so the scroll happens after the browser has laid out the now-open
+        // accordion; otherwise it scrolls to where the collapsed element was.
+        requestAnimationFrame(() => {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            target.classList.add('settings-accordion-flash');
+            setTimeout(() => target.classList.remove('settings-accordion-flash'), 2000);
+        });
     },
 
     /* Footer under the platform accordions: a pointer to the Accounts page for
@@ -11555,6 +11621,12 @@ const App = {
                 <!-- ═══ TAB: Platforms ═══ -->
                 <div class="settings-tab-content" data-tab-content="platforms" ${_settingsTab !== 'platforms' ? 'style="display:none"' : ''}>
 
+                ${setupStatus.setup_complete ? '' : `
+                <div class="setup-return-banner">
+                    <span>You're part-way through first-time setup. Connect what you need here, then head back.</span>
+                    <a class="btn btn-sm btn-primary" href="#/setup">&#8592; Back to setup</a>
+                </div>`}
+
                 <details class="settings-accordion" open>
                     <summary><span class="status-dot" id="session-health-dot"></span>Session health <span class="summary-meta">— cookie / token validity</span></summary>
                     <div class="accordion-body">
@@ -11573,7 +11645,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="ib">
                     <summary><span class="status-dot ${creds.has_password ? 'connected' : 'disconnected'}"></span>Inkbunny${creds.username ? ` <span class="summary-meta">— ${Utils.escapeHtml(creds.username)}</span>` : ''}</summary>
                     <div class="accordion-body">
                     <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">
@@ -11596,7 +11668,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="fa">
                     <summary><span class="status-dot ${faAuth.has_cookies ? 'connected' : 'disconnected'}"></span>FurAffinity${faAuth.has_cookies ? ` <span class="summary-meta">— ${Utils.escapeHtml(faAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${faAuth.has_cookies ? `
@@ -11668,7 +11740,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="ws">
                     <summary><span class="status-dot ${wsAuth.has_key ? 'connected' : 'disconnected'}"></span>Weasyl${wsAuth.has_key ? ` <span class="summary-meta">— ${Utils.escapeHtml(wsAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${wsAuth.has_key ? `
@@ -11705,7 +11777,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="sf">
                     <summary><span class="status-dot ${sfAuth.has_credentials ? 'connected' : 'disconnected'}"></span>SoFurry${sfAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(sfAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${sfAuth.has_credentials ? `
@@ -11745,7 +11817,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="sqw">
                     <summary><span class="status-dot ${sqwAuth.has_credentials ? 'connected' : 'disconnected'}"></span>SquidgeWorld${sqwAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(sqwAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${sqwAuth.has_credentials ? `
@@ -11786,7 +11858,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="ao3">
                     <summary><span class="status-dot ${ao3Auth.has_credentials ? 'connected' : 'disconnected'}"></span>AO3${ao3Auth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(ao3Auth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${ao3Auth.has_credentials ? `
@@ -11834,7 +11906,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="da">
                     <summary><span class="status-dot ${daAuth.has_credentials ? 'connected' : 'disconnected'}"></span>DeviantArt${daAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(daAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${daAuth.has_credentials ? `
@@ -11897,7 +11969,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="wp">
                     <summary><span class="status-dot ${wpAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Wattpad${wpAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(wpAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${wpAuth.has_credentials ? `
@@ -11936,7 +12008,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="ik">
                     <summary><span class="status-dot ${ikAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Itaku${ikAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(ikAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${ikAuth.has_credentials ? `
@@ -11995,7 +12067,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="bsky">
                     <summary><span class="status-dot ${bskyAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Bluesky${bskyAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(bskyAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${bskyAuth.has_credentials ? `
@@ -12035,7 +12107,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="mast">
                     <summary><span class="status-dot ${mastAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Mastodon${mastAuth.flavour && mastAuth.flavour !== 'Mastodon' ? ' <span class="summary-meta" style="color:var(--text-muted)">/ ' + Utils.escapeHtml(mastAuth.flavour) + '</span>' : ''}${mastAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(mastAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${mastAuth.has_credentials ? `
@@ -12076,7 +12148,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="tum">
                     <summary><span class="status-dot ${tumAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Tumblr${tumAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(tumAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${tumAuth.has_credentials ? `
@@ -12116,7 +12188,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="pix">
                     <summary><span class="status-dot ${pixAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Pixiv${pixAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(pixAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${pixAuth.has_credentials ? `
@@ -12156,7 +12228,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="thr">
                     <summary><span class="status-dot ${thrAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Threads${thrAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(thrAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${thrAuth.has_credentials ? `
@@ -12196,7 +12268,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="ig">
                     <summary><span class="status-dot ${igAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Instagram${igAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(igAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${igAuth.has_credentials ? `
@@ -12236,7 +12308,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="tw">
                     <summary><span class="status-dot ${twAuth.has_credentials ? 'connected' : 'disconnected'}"></span>X / Twitter${twAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(twAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     <div style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px">
@@ -12333,7 +12405,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="e621">
                     <summary><span class="status-dot ${e621Auth.has_credentials ? 'connected' : 'disconnected'}"></span>e621${e621Auth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(e621Auth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${e621Auth.has_credentials ? `
@@ -12373,7 +12445,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="fn">
                     <summary><span class="status-dot ${fnAuth.has_credentials ? 'connected' : 'disconnected'}"></span>FurryNetwork${fnAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(fnAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${fnAuth.has_credentials ? `
@@ -12426,7 +12498,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-platform="fbr">
                     <summary><span class="status-dot ${fbrAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Furbooru${fbrAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(fbrAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${fbrAuth.has_credentials ? `

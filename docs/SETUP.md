@@ -188,7 +188,7 @@ rm -f ~/.config/autostart/PawPoller.desktop  # autostart
 # Optional: secret-tool clear service PawPoller user vault_key   # vault key
 ```
 
-### 1B.7 Build from source (advanced)
+### 1B.8 Build from source (advanced)
 
 ```bash
 git clone https://github.com/knaughtykat01-prog/pawpoller-public.git
@@ -481,27 +481,63 @@ MASTER.md uses HTML-comment anchors (`<!-- @title -->`, `<!-- @body -->`, etc.) 
 
 ## 5. Platform credentials
 
-Different platforms need different auth mechanisms. A couple of the awkward ones (FA, X) need session cookies — the desktop app's **"Login via Browser"** button pops up a real browser window, you log in, and it captures the cookies for you. In headless/Docker mode you paste cookies manually (instructions are on each platform's settings card). DeviantArt uses the official API instead: register a DA app and paste its client_id/client_secret (no cookie).
+**Twenty platforms.** Nineteen can be polled for stats, seventeen can be posted to, and nine can be edited in place after posting. You only need credentials for the ones you actually use.
 
-Short version per platform:
+Add them one at a time in **Settings → Accounts**, then press that row's **🔑 Test** button before moving on. Test tells you *which account* a credential belongs to, not just that it works — worth reading if you have more than one account on a site.
 
-| Platform | Needs | Where to get it |
-|----------|-------|-----------------|
-| Inkbunny | Username + password | Your IB account — and tick "Enable API access" in IB's account settings |
-| FurAffinity | `a` and `b` cookies | Log in to FA, DevTools → Application → Cookies → copy `a` and `b` |
-| SoFurry | Personal Access Token | sofurry.com → Settings → Developer → New token ([direct link](https://sofurry.com/settings/pat-create)). Paste the token; your profile handle is read from it automatically. **No password needed** — and 2FA accounts work fine, because PawPoller never logs in |
-| Weasyl | API key | weasyl.com → Settings → API keys → generate |
-| AO3 | Username + password | Your AO3 account |
-| SquidgeWorld | Username + password | Your SqW account |
-| DeviantArt | App client_id + client_secret | deviantart.com/developers/apps → Register Application (Client type: Confidential) → copy client_id + client_secret; also enter the DA username to track |
-| Mastodon | Instance URL + access token | Your instance → Preferences → Development → New application (scope `read`) |
-| Tumblr | OAuth consumer key + blog | tumblr.com/oauth/apps → register an app → copy the "OAuth Consumer Key" |
-| Pixiv | Refresh token | One-time browser login (e.g. the `gppt` helper) |
-| Threads | Meta access token | A Meta app with `threads_basic` + `threads_manage_insights` scopes |
-| e621 | Username + API key | Account → Manage API Access on e621 (the API key, not your password) |
-| Wattpad / Itaku / Bluesky / X | Public or app-password — see the in-app settings cards | |
+**Reading and writing are not the same permission.** This is the most common setup problem by a distance: a token that polls happily can still have every post rejected. Where a platform needs more to post than to poll, the table says so explicitly.
 
-### 5.1 Credential vault (always on)
+### 5.1 What each platform needs
+
+| Platform | To poll stats | To post & edit | Where to get it |
+|---|---|---|---|
+| **Inkbunny** | Username + password | *same* | Your IB login — then tick **Enable API access** in IB's account settings, or nothing will work |
+| **FurAffinity** | Username + `a` and `b` cookies | *same* | Log in to FA, then DevTools → Application → Cookies → `furaffinity.net` → copy `a` and `b`. On the desktop app, **Login via Browser** captures them for you |
+| **SoFurry** | Personal Access Token | *same* | sofurry.com → Settings → Developer → New token ([direct link](https://sofurry.com/settings/pat-create)). **No password needed**, and 2FA accounts work fine — a token never logs in. Your handle is read from the token |
+| **Weasyl** | API key | *same* | weasyl.com → Settings → API Keys → generate. The username is discovered from the key |
+| **AO3** | Username + password | *same* | Your AO3 login. The account you log in with can differ from the one whose works you track |
+| **SquidgeWorld** | Username + password | *same* | Your SqW login. Same split as AO3 — logging in and posting can be different accounts |
+| **DeviantArt** | App `client_id` + `client_secret` | **plus** a one-time **Authorise posting** | deviantart.com/developers/apps → Register Application (Client type: **Confidential**) → copy both values, and enter the DA username to track. Then Settings → Accounts → **Authorise posting**. ⚠ See §5.2 — this step is easy to get wrong |
+| **e621** | Username + API key | *same* | e621 → Account → **Manage API Access**. This is an API key, **not** your password |
+| **Itaku** | Handle only — no login | **plus** an auth token | Polling a public gallery needs nothing at all. To post or edit, log in at itaku.ee and copy the auth token from your browser session |
+| **FurryNetwork** | Refresh token | *same* | ⚠ **Email + password no longer works** — FN put its password login behind a CAPTCHA in August 2026. Log in at furrynetwork.com, then DevTools → Application → copy the `refresh_token` out of the stored session |
+| **Bluesky** | Handle + app password | *same* | bsky.app → Settings → App Passwords → generate. Use the app password, never your real one |
+| **Mastodon** | Instance URL + access token | **token needs `write:statuses` + `write:media`** | Your instance → Preferences → Development → New application. ⚠ A read-only token polls fine and then fails every post |
+| **X / Twitter** | `auth_token` + `ct0` cookies | *same* | DevTools → Application → Cookies → `x.com` → copy both. ⚠ See §5.3 — X allows one session per browser |
+| **Tumblr** | OAuth consumer key + blog name | **plus** consumer secret, OAuth token and token secret | tumblr.com/oauth/apps → register an app. Polling needs only the "OAuth Consumer Key"; posting needs the full OAuth 1.0a set |
+| **Threads** | Token with `threads_basic` + `threads_manage_insights` | **plus `threads_content_publish`** | A Meta app at developers.facebook.com. Long-lived tokens last ~60 days, and PawPoller extends them for you |
+| **Instagram** | Token with `instagram_business_basic` + `instagram_business_manage_insights` | **plus `instagram_business_content_publish`** | The most involved of the twenty — **[full step-by-step: INSTAGRAM_SETUP.md](INSTAGRAM_SETUP.md)**. In short: a Meta app, and a **Business or Creator** account (a personal one cannot be used at all). ⚠ Do the setup in **Edge or Firefox, not Chrome** — Chrome breaks Meta's token generator silently |
+| **Telegram** | *not polled* | Bot token + channel | Create a bot with [@BotFather](https://t.me/BotFather), then **make the bot an admin of your channel**. The channel is either `@yourchannel` or a numeric `-100…` id |
+| **Pixiv** | Refresh token | *poll only* | A one-time browser login via a helper such as `gppt` |
+| **Wattpad** | Public handle | *poll only* | Nothing to set up — just the username |
+| **Furbooru** | Public handle | *poll only* | Nothing needed to read. An optional API key (furbooru.org → Account → API key) raises your rate limit |
+
+### 5.2 DeviantArt authorises whoever the browser is signed in as
+
+DeviantArt needs **two** credentials, and only the first is obvious:
+
+1. The **app** credentials (`client_id` + `client_secret`) let PawPoller read public data. Polling works with just these.
+2. A **per-account authorisation** decides which account a post lands on. Without it, posting fails.
+
+The trap: DA's consent screen authorises **whichever account that browser is currently signed in to** — not the one whose button you pressed. Approving from the wrong session stores the wrong account's permission, reports success, and every post afterwards goes to the wrong gallery.
+
+**So: open a private window, sign in as the account you want, and only then press Authorise posting.** PawPoller checks who actually approved and refuses a mismatch rather than storing it, but it is much easier to get right the first time than to unpick afterwards.
+
+### 5.3 Credentials that expire
+
+Most do not. Tokens, API keys and app passwords — SoFurry, Weasyl, e621, Bluesky, Mastodon, Tumblr — keep working until you revoke them, and Instagram and Threads refresh themselves.
+
+Three are browser sessions with no refresh path, so PawPoller warns you as they age rather than waiting for something to fail:
+
+| Platform | Typical life |
+|---|---|
+| X / Twitter | ~30 days |
+| FurAffinity | ~45 days |
+| DeviantArt cookie | ~45 days |
+
+**One session per browser** applies to FurAffinity and X. Renewing several accounts in the same browser leaves every account except the last holding a stale cookie — use a fresh private window per account, and save each one before signing in as the next.
+
+### 5.4 Credential vault (always on)
 
 Credentials are **always** stored in an encrypted vault (`settings.vault.json`) — plaintext
 credential storage does not exist. There is nothing to enable; anything that lands in
@@ -520,20 +556,20 @@ startup. What varies is **where the encryption key lives**:
   `data/.vault_key`'s contents into the env var and delete the dotfile. Generate a fresh key
   with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
   and keep it in your secrets manager. Back the key up separately from `settings.vault.json` —
-  losing one makes the other useless (credentials are re-enterable, but it's sixteen platforms
+  losing one makes the other useless (credentials are re-enterable, but it's twenty platforms
   of re-entering).
 
 Settings → Credential Security shows which key store is in use.
 
-### 5.2 Two-factor auth
+### 5.5 Two-factor auth
 
 Settings → Security → Enable 2FA. Scan the QR into any TOTP app (Aegis, 1Password, etc.). Recovery codes are shown once — write them down.
 
-### 5.3 API keys
+### 5.6 API keys
 
 For scripting (pause/resume polling, trigger regens), Settings → Security → API Keys → generate. Use as `Authorization: Bearer pp_xxx`.
 
-### 5.4 Cloudflare Turnstile (optional)
+### 5.7 Cloudflare Turnstile (optional)
 
 Adds a Turnstile challenge to the login form. Useful if you've exposed the dashboard publicly and want bot-protection in front of password auth. Set the site key + secret in Settings → Security → Turnstile.
 
@@ -544,7 +580,7 @@ Adds a Turnstile challenge to the login form. Useful if you've exposed the dashb
 - **"Port 8420 already in use"** — another PawPoller or unrelated process. `lsof -i :8420` (Linux) or `Get-NetTCPConnection -LocalPort 8420` (PowerShell) to find it.
 - **PDFs blank on Linux/Docker** — missing WeasyPrint system libs. `apt-get install libpango-1.0-0 libpangoft2-1.0-0` and rebuild.
 - **"AO3 login keeps failing from my server"** — AO3 sometimes puts Cloudflare Shields-up on datacenter IPs. Route through the Cloudflare Worker proxy (CF_WORKER_URL in `.env`) or run AO3 posting from the desktop.
-- **"FurAffinity only works on desktop"** — correct, by design. FA blocks most datacenter IPs; the server mode auto-queues FA posts for the desktop app to process when it's next online.
+- **"FurAffinity posts keep getting queued for the desktop"** — usually **expired cookies**, not a platform limit. FA posting from a server works: give the account a fresh `a`/`b` pair and press **🔑 Test** on its row, which reports *which* account the session belongs to. FA keeps one session per browser, so if you renewed several accounts at once, all but the last are stale (§5.3). Desktop hand-off is failure-recovery routing, not the normal path.
 - **"My stories disappeared after `docker compose up`"** — you probably didn't set `PAWPOLLER_ARCHIVE_DIR` (§2.3), so the container mounted the default empty `./story-archive`. Check `docker compose config` to see the resolved path.
 - **"I forgot the dashboard password"** — with Docker running, `docker compose exec pawpoller python -c "from auth import reset_admin_password; reset_admin_password('newpassword')"`.
 

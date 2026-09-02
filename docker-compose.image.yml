@@ -1,0 +1,39 @@
+# Run PawPoller from the prebuilt image instead of building it from source.
+#
+#   docker compose -f docker-compose.image.yml up -d
+#
+# The image is multi-architecture (linux/amd64 + linux/arm64), so this works on
+# a normal x86 VPS, on Oracle Cloud's free ARM tier, and on a Raspberry Pi
+# without changing anything.
+#
+# Use this when you do not want to wait for a build, or when the machine is too
+# small to run one — a 1 GB server can run PawPoller comfortably but tends to be
+# killed part-way through compiling its dependencies.
+#
+# `docker-compose.yml` is the build-from-source version and remains fully
+# supported: use it for a fork, an air-gapped install, or any change you want to
+# run before it is released. This file is kept deliberately identical to it apart
+# from `image:` in place of `build:` — tests/test_compose_parity.py fails if they
+# drift.
+services:
+  pawpoller:
+    image: ghcr.io/knaughtykat01-prog/pawpoller:latest
+    ports:
+      # Loopback by default, so a fresh `docker compose up` is NOT exposed to
+      # the network. To reach it from other devices, put it behind a reverse
+      # proxy (see docs/SELF_HOSTING.md §8) and/or set PAWPOLLER_BIND=0.0.0.0 in
+      # .env — but ONLY with a dashboard password set.
+      - "${PAWPOLLER_BIND:-127.0.0.1}:8420:8420"
+    volumes:
+      - pawpoller-data:/app/data
+      - pawpoller-logs:/app/logs
+      # Story archive for the editor/publishing features (optional). Override the
+      # host path with PAWPOLLER_ARCHIVE_DIR in .env; defaults to ./story-archive
+      # next to this file.
+      - ${PAWPOLLER_ARCHIVE_DIR:-./story-archive}:/app/story-archive
+    restart: unless-stopped
+    env_file: .env
+
+volumes:
+  pawpoller-data:
+  pawpoller-logs:
