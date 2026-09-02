@@ -85,64 +85,101 @@ does not involve Pages at all.
 
 ## 1b. Register as a Meta developer (if you never have)
 
-Step 2 assumes you already have a Meta developer account. If you do not, you register once, free,
-with an ordinary Facebook account — and this is where people get stuck, sometimes badly.
+Step 2 assumes you already have a Meta developer account. Registering is free and happens once —
+but the phone-verification step in that registration is genuinely broken for a lot of people, and
+has been for years.
 
-**The symptom:** you complete the registration and, instead of finishing, it sends you back to
-"confirm your phone with a code". You enter the code, add your email, pick **Developer** as what
-you are, press register — and it returns you to the phone step again. Repeating it changes
-nothing.
+**The symptoms**, any of which you may hit:
 
-This is Meta's, not something you are doing wrong, and it happens before PawPoller is involved at
-all.
+- You complete the registration and it sends you back to "confirm your phone with a code",
+  repeatedly, in a loop.
+- No SMS ever arrives, however many times you request one.
+- The number you have used for years is suddenly reported as wrong.
 
-### First: stop retrying
+This is Meta's, not something you are doing wrong, and it happens entirely before PawPoller is
+involved. The good news is that **the two fixes people report most often skip the SMS step
+altogether** rather than trying to make it work.
 
-**This is the one piece of advice that is actively useful, and it is counter-intuitive.** Meta
-rate-limits phone verification, and every failed attempt makes the next one *less* likely to
-work. A loop that might have cleared on its own can harden into "your number is wrong" and then
-into no codes arriving at all.
+### First: stop requesting codes
 
-If you have already tried three or four times: **stop, and leave it for several hours.** Not
-minutes. Continuing to hammer it is how a recoverable loop becomes a locked one.
+**This is counter-intuitive and it matters.** Meta rate-limits verification, and repeated
+attempts make things worse rather than better — people report accounts being restricted
+specifically for requesting too many codes, and a loop that might have cleared hardening into
+"your number is wrong" and then into silence.
 
-### Things to try, once you have waited
+If you have already tried three or four times, **stop and leave it alone.** Then work through the
+list below, which is ordered by how often each is reported to work and how little it costs you.
 
-1. **Check the number is not already attached to another Facebook account.** Meta will not tell
-   you this — it just refuses, and the refusal is indistinguishable from a wrong number. This is
-   the most likely cause when the number is definitely correct.
-2. **Use WhatsApp verification if it is offered.** It goes through a different path than SMS and
-   sometimes works when the SMS route will not.
-3. **Check the country code**, especially if the number was entered with a leading zero as well
-   as a country code.
-4. **Enable two-factor authentication on the Facebook account**, then retry. Meta expects
-   developer accounts to have it, and an account without it can be bounced back to phone
-   verification.
-5. **Some carriers filter Meta's verification shortcode.** If nothing arrives at all and the
-   number is right, this is worth ruling out with a different number.
-6. **Turn off ad-blockers and strict tracking protection for the site**, or use a clean window.
-   The registration carries state between steps and blockers can drop it, which looks exactly
-   like being bounced backwards.
+### 1. Confirm the number on Facebook itself, not in the developer flow
 
-### About switching browsers
+The most common underlying cause: your Facebook account *has* your number, but it is sitting in a
+**"confirmation pending"** state, and the developer registration will not accept an unconfirmed
+number.
 
-§0's "do not use Chrome" is a real and documented finding, but it is about the **token
-generator** at step 5, and it is worth doing anyway because it costs nothing.
+Confirm it in the ordinary Facebook settings instead:
 
-⚠ **It is not a fix for this loop.** In one observed case a tester switched from Chrome to Edge
-and the registration still failed, then degraded into phone-verification errors. Do not spend
-attempts on browser-swapping in the belief that it is the answer here — the rate limit above is
-the more important constraint.
+**Profile picture → Settings and privacy → Settings → Accounts Centre → Personal details →
+Contact info.**
+
+Confirm the number there. **The code for this arrives by email, not SMS** — which is exactly why
+it works when the SMS route will not. Then return to the developer registration; several people
+report the number is simply accepted at that point, with no further verification asked for.
+
+If the number still will not confirm, **adding a different number here first** is also reported
+to work.
+
+### 2. Turn off your ad blocker
+
+One detailed report has this as the entire problem: with an ad blocker active, Meta's flow
+silently stalls and no code is sent; in a browser without one, the code arrived immediately, on
+the same number that had been failing.
+
+This is the real mechanism behind §0's "not Chrome" advice — it is usually less about Chrome
+itself than about the extensions loaded in whichever browser you use every day. **A clean browser
+profile with no extensions is the thing to try.**
+
+### 3. Add your number to Meta Pay
+
+The most frequently reported fix in the wild: add the same phone number to **Meta Pay**, and the
+developer registration stops asking for SMS verification entirely — several people report it then
+only asks to confirm their email.
+
+⚠ **Be aware of what some versions of this advice ask for.** A number of people report that what
+actually worked for them was adding a **debit or credit card** to Meta Pay, not just a number.
+That is a real thing to weigh: handing Meta payment details to work around a broken SMS form is a
+meaningful trade, and it is not required for anything PawPoller does. **Try the number-only
+version first**, and treat the card as a last resort you may reasonably decide against.
+
+### 4. Wait a day and try again
+
+Unglamorous, and repeatedly reported to work on its own. Several people describe trying for days,
+giving up, retrying later in the week, and having it go through first time with nothing changed.
+This is also why §"stop requesting codes" matters: you want the rate limit cold when you retry.
+
+### 5. Other things worth ruling out
+
+- **Check the shortcode is not blocked.** Meta sends from **36665** on many networks; if you have
+  ever blocked it, or your carrier filters it, no amount of retrying will help.
+- **Country code**, particularly if the number was entered with both a country code and a leading
+  zero.
+- **A number tied to a WhatsApp Business account** is reported to work where a personal number
+  did not.
+- **Enable two-factor authentication** on the Facebook account, which Meta expects developer
+  accounts to have.
 
 ### If it will not budge, park Instagram
 
-**Instagram is the only one of the twenty platforms that requires a developer account at all.**
-Everything else — Bluesky, FurAffinity, Weasyl, SoFurry, Mastodon, e621, AO3 and the rest —
-connects with an ordinary login, an app password, or an API key, in a couple of minutes each.
+**Instagram is the only one of the twenty platforms that needs a developer account at all.**
+Everything else connects with an ordinary login, an app password, or an API key, in a couple of
+minutes each.
 
-There is no dependency between them. Connect everything else first and come back to Instagram
-another day, when the rate limit has reset and you are not making decisions while annoyed at a
-verification form. Nothing else in PawPoller is waiting on it.
+Nothing else depends on it. Connect the other nineteen, and come back to Instagram another day
+when the rate limit is cold — not while you are annoyed at a verification form.
+
+> **Where this comes from:** §0's Chrome warning and everything from §2 onwards is first-hand.
+> This section is assembled from many people reporting the same Meta bug publicly, so treat it as
+> a ranked list of things that have worked for others rather than a guaranteed fix. The ordering
+> reflects how often each is reported and how little it costs you.
 
 ---
 
@@ -345,9 +382,9 @@ metric.
 
 Chrome. See §0.
 
-### I cannot even register as a developer — it keeps asking for a phone code
+### I cannot even register as a developer — no SMS code, or an endless loop
 
-A registration loop on Meta's side, before any of this applies. See §1b.
+A long-standing Meta bug, before any of this applies. **The fixes that work usually skip SMS entirely** — confirming the number in ordinary Facebook settings (where the code comes by email) or adding it to Meta Pay. See §1b, and stop requesting codes while you read it.
 
 ### It will not issue a token for my account
 
