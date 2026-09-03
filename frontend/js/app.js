@@ -12644,10 +12644,10 @@ const App = {
                         <span id="thr-msg" style="font-size:13px"></span>
                     </div>
                     ` : `
-                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Connect to Threads with a <strong>long-lived access token</strong> from a Meta app that has the <code>threads_basic</code> + <code>threads_manage_insights</code> scopes. <em>Note: Meta gates this behind app review and restricts adult content — it may not work for all accounts.</em> User ID is optional (defaults to your own account).</p>
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Connect to Threads with a <strong>long-lived access token</strong> from a Meta app that has the <code>threads_basic</code> + <code>threads_manage_insights</code> scopes. <em>Note: Meta gates this behind app review and restricts adult content — it may not work for all accounts.</em> The <strong>numeric</strong> User ID is optional — leave it blank and PawPoller reads it from your token. A handle will not work there: Meta only answers to the number.</p>
                     <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
                         <input type="password" id="thr-access-token" class="search-input" placeholder="Long-lived access token">
-                        <input type="text" id="thr-user-id" class="search-input" placeholder="User ID (optional)">
+                        <input type="text" id="thr-user-id" class="search-input" placeholder="Numeric user ID (optional — leave blank)">
                     </div>
                     <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
                         <button class="btn btn-primary" id="thr-connect-btn">Connect</button>
@@ -12684,10 +12684,10 @@ const App = {
                         <span id="ig-msg" style="font-size:13px"></span>
                     </div>
                     ` : `
-                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Connect to Instagram with a <strong>long-lived Instagram user token</strong> from a Meta app that has the <code>instagram_business_basic</code> + <code>instagram_business_manage_insights</code> scopes, generated for a <strong>Business or Creator</strong> account. User ID is optional (defaults to your own account).</p>
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Connect to Instagram with a <strong>long-lived Instagram user token</strong> from a Meta app that has the <code>instagram_business_basic</code> + <code>instagram_business_manage_insights</code> scopes, generated for a <strong>Business or Creator</strong> account. The <strong>numeric</strong> User ID is optional — leave it blank and PawPoller reads it from your token. A handle will not work there: Instagram only answers to the number.</p>
                     <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
                         <input type="password" id="ig-access-token" class="search-input" placeholder="Long-lived access token">
-                        <input type="text" id="ig-user-id" class="search-input" placeholder="User ID (optional)">
+                        <input type="text" id="ig-user-id" class="search-input" placeholder="Numeric user ID (optional — leave blank)">
                     </div>
                     <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
                         <button class="btn btn-primary" id="ig-connect-btn">Connect</button>
@@ -13795,7 +13795,7 @@ const App = {
                     daBrowserLoginBtn.textContent = 'Waiting for login...';
                     if (msg) { msg.textContent = 'A login window will open. Log in to DeviantArt, then it will close automatically.'; msg.style.color = 'var(--text-muted)'; }
                     try {
-                        const result = await API.browserLogin('da', { da_username: username });
+                        const result = await API.browserLogin('da', { da_target_user: username });
                         if (result.ok) {
                             if (msg) { msg.textContent = 'Connected!'; msg.style.color = 'var(--success)'; }
                             setTimeout(() => this.renderSettings(), 1000);
@@ -13828,7 +13828,7 @@ const App = {
                     twBrowserLoginBtn.textContent = 'Waiting for login...';
                     if (msg) { msg.textContent = 'A login window will open. Log in to X, then it will close automatically.'; msg.style.color = 'var(--text-muted)'; }
                     try {
-                        const result = await API.browserLogin('tw', { tw_username: username });
+                        const result = await API.browserLogin('tw', { tw_target_user: username });
                         if (result.ok) {
                             if (msg) { msg.textContent = 'Connected!'; msg.style.color = 'var(--success)'; }
                             setTimeout(() => this.renderSettings(), 1000);

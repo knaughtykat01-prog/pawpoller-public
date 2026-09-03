@@ -51,12 +51,129 @@ _HEADERS = {
     "x-twitter-client-language": "en",
 }
 
+# Extra headers X's own web client sends on AUTHENTICATED WRITES. Reads work
+# without them — polling has never needed them — so they are applied only on
+# the write path, where a regression cannot take working polling down with it.
+#
+# `x-twitter-auth-type: OAuth2Session` is the one a cookie session is expected
+# to carry. ⚠ It is a plausible mitigation for error 226, not a proven one: X
+# also computes an `x-client-transaction-id` per request that PawPoller does
+# not reproduce, and that may be what 226 is really about (see BACKLOG TWAUTO).
+_WRITE_HEADERS = {
+    "x-twitter-auth-type": "OAuth2Session",
+    "Origin": "https://x.com",
+}
+
+# X's own error codes, which say far more than the prose that accompanies them
+# and are stable across message rewordings. Checked BEFORE any text matching:
+# code 226's message begins "Authorization: …", so a substring test for "auth"
+# reads an anti-automation block as a credentials failure — which is exactly
+# the wrong thing to tell someone whose credentials are demonstrably working
+# (4.3.5, found in a real log the day 4.3.4 shipped).
+_X_ERROR_CODES = {
+    226: ("X blocked this post as automated activity (error 226). This is NOT a login problem — "
+          "the same connection polls your timeline fine. X applies this to posts made from "
+          "outside its own apps. Posting once from x.com in a browser sometimes clears it; a new, "
+          "unverified or recently-flagged account is more likely to be blocked this way."),
+    187: ("X refused this as a duplicate (error 187) — it matches something posted recently. "
+          "Change the text and try again."),
+    88: ("X is rate-limiting this session (error 88). Polling and posting share one connection, so "
+         "a large sync can use up what a post needs. Wait and retry."),
+    326: ("This X account is temporarily locked (error 326). Open x.com and complete the check it "
+          "shows, then try again."),
+    64: ("This X account is suspended (error 64). Nothing PawPoller does can post from it."),
+    186: ("The post is too long for X (error 186)."),
+    170: ("X rejected an empty post (error 170)."),
+}
+
 # GraphQL query IDs — these may rotate when X updates their web client.
 # Last verified: 2025-03.  If requests return 404, update these IDs by
 # inspecting X's main.*.js bundle for the corresponding operation names.
 _GRAPHQL_USER_BY_SCREEN_NAME = "xmU6X_CKVnQ5lSrCbAmJsg"
 _GRAPHQL_USER_TWEETS = "E3opETHurmVJflFsUBVuUQ"
 _GRAPHQL_TWEET_RESULT_BY_REST_ID = "zXaXQgfyR4GxE3UFlgapRQ"
+def _graphql_errors(payload: dict) -> list[str]:
+    """The messages from a GraphQL ``errors`` array, if X sent one."""
+    out = []
+    for err in (payload or {}).get("errors") or []:
+        msg = (err or {}).get("message") or ""
+        if msg:
+            out.append(str(msg))
+    return out
+
+
+def _error_codes(payload: dict) -> list[int]:
+    """Every numeric error code X returned, from either place it puts them."""
+    out = []
+    for err in (payload or {}).get("errors") or []:
+        if not isinstance(err, dict):
+            continue
+        for value in (err.get("code"), (err.get("extensions") or {}).get("code")):
+            try:
+                code = int(value)
+            except (TypeError, ValueError):
+                continue
+            if code not in out:
+                out.append(code)
+    return out
+
+
+def _http_reason(op_name: str, resp) -> str:
+    """A short, true sentence about a non-200 GraphQL response."""
+    if resp.status_code == 429:
+        return ("X is rate-limiting this session (HTTP 429) — wait before trying again. "
+                "A large poll can use up the same budget posting needs.")
+    if resp.status_code in (401, 403):
+        return (f"X refused the request (HTTP {resp.status_code}) — the cookie session is "
+                "expired or not permitted to post. Reconnect X in Settings.")
+    if resp.status_code == 404:
+        return (f"X no longer serves this {op_name} endpoint (HTTP 404) — its GraphQL query id "
+                "has rotated and PawPoller needs updating.")
+    try:
+        errs = _graphql_errors(resp.json() or {})
+    except Exception:
+        errs = []
+    detail = f": {'; '.join(errs)}" if errs else ""
+    return f"X returned HTTP {resp.status_code} for {op_name}{detail}"
+
+
+def _create_tweet_reason(payload: dict, result: dict) -> str:
+    """Why CreateTweet produced no tweet, in X's words where it gave any.
+
+    ⚠ The three cases below are NOT interchangeable, and until 4.3.4 they were
+    all reported as "the cookie session may be expired, or the CreateTweet
+    query id/features need refreshing" — which is a guess, is usually wrong,
+    and points the user at the credentials rather than at the post.
+    """
+    # X's numeric code first: it is unambiguous, and the accompanying prose is
+    # not. Error 226 reads "Authorization: This request looks like it might be
+    # automated…", which any substring test for "auth" misfiles as a
+    # credentials failure — sending the user to replace cookies that work.
+    for code in _error_codes(payload):
+        if code in _X_ERROR_CODES:
+            return _X_ERROR_CODES[code]
+    errs = _graphql_errors(payload)
+    if errs:
+        joined = "; ".join(errs)
+        low = joined.lower()
+        if "feature" in low:
+            return (f"X rejected the request's feature flags — PawPoller needs updating for "
+                    f"X's current CreateTweet payload ({joined})")
+        if "unauthorized" in low or "unauthenticated" in low or "bad token" in low:
+            return f"X rejected the credentials for this post: {joined}"
+        return f"X rejected the post: {joined}"
+    reason = (result or {}).get("reason") or ""
+    if reason:
+        return f"X blocked this post ({reason})"
+    # HTTP 200, no errors array, empty tweet_results.
+    return ("X accepted the request and created nothing, without saying why. That is what X "
+            "returns for a DUPLICATE of something recently posted, for a session it is "
+            "temporarily limiting (often after a 429 from a big poll), and sometimes for a post "
+            "it has silently blocked as automated. Try different text, or wait and retry; if a "
+            "manual tweet from x.com also fails, the account is limited rather than the "
+            "connection being broken.")
+
+
 # Posting mutation. Query IDs rotate; if CreateTweet 404s, refresh this from
 # x.com's main.*.js bundle (search for "CreateTweet").
 _GRAPHQL_CREATE_TWEET = "a1p9RWpkYKBjWv_I3WzS-A"
@@ -194,6 +311,11 @@ class TWClient:
         self.ct0 = ct0                  # ct0 CSRF cookie from browser
         self.target_user = target_user  # Username to track (without @)
         self._user_rest_id: str = ""    # Cached user ID
+        # What X said about the last failed write, for the caller to show the
+        # user (4.3.4). Same pattern as TgClient.last_error: the poster has no
+        # other way to tell a duplicate from an expired cookie, and guessing
+        # sent a tester to re-copy working credentials for a week.
+        self.last_error: str = ""
         self.throttled = False          # set True on a 429; read + reset by the poller each cycle
 
         if proxy_url and proxy_key:
@@ -391,13 +513,15 @@ class TWClient:
         url = f"{_BASE}/i/api/graphql/{query_id}/{op_name}"
         body = {"variables": variables, "features": features, "queryId": query_id}
         try:
-            resp = await self._http.post(url, json=body)
+            resp = await self._http.post(url, json=body, headers=_WRITE_HEADERS)
             if resp.status_code != 200:
                 logger.error("TW: %s failed (%s): %s", op_name, resp.status_code, resp.text[:300])
+                self.last_error = _http_reason(op_name, resp)
                 return None
             return resp.json()
         except Exception as e:
             logger.error("TW: %s error: %s", op_name, e)
+            self.last_error = f"{op_name} could not reach X: {e}"
             return None
 
     # -- Posting --------------------------------------------------------------
@@ -423,11 +547,12 @@ class TWClient:
                 files = {"media": (os.path.basename(image_path), f, mime)}
                 resp = await self._http.post(
                     "https://upload.x.com/1.1/media/upload.json",
-                    files=files, timeout=120.0,
+                    files=files, timeout=120.0, headers=_WRITE_HEADERS,
                 )
             if resp.status_code != 200:
                 logger.error("TW: media upload failed (%s): %s",
                              resp.status_code, resp.text[:200])
+                self.last_error = _http_reason("the image upload", resp)
                 return None
             return str((resp.json() or {}).get("media_id_string") or "") or None
         except Exception as e:
@@ -453,6 +578,7 @@ class TWClient:
             "media": {"media_entities": media_entities, "possibly_sensitive": False},
             "semantic_annotation_ids": [],
         }
+        self.last_error = ""
         data = await self._post_graphql(
             _GRAPHQL_CREATE_TWEET, "CreateTweet", variables, _CREATE_TWEET_FEATURES)
         if not data:
@@ -461,7 +587,22 @@ class TWClient:
                   .get("tweet_results", {}).get("result", {}))
         rest_id = result.get("rest_id", "")
         if not rest_id:
-            logger.error("TW: CreateTweet returned no rest_id: %s", str(data)[:300])
+            # ⚠ Three different failures used to arrive here and leave as one
+            # message blaming the query id and the cookies. They are
+            # distinguishable in the response, and only one of them is ours:
+            #
+            #   errors[]           — X said why (stale queryId, missing feature
+            #                        flag, unauthorised). Ours to fix.
+            #   result.reason      — X blocked this specific write.
+            #   tweet_results: {}  — HTTP 200, no errors, nothing created. This
+            #                        is what X returns for a duplicate of a
+            #                        recent tweet, and for a session it is
+            #                        soft-limiting (often after a 429).
+            #
+            # Log the WHOLE payload: it is small, and truncating it at 300 was
+            # why the first report could not be diagnosed from the log alone.
+            logger.error("TW: CreateTweet created nothing: %s", data)
+            self.last_error = _create_tweet_reason(data, result)
             return None
         handle = self.target_user or "i"
         return {"id": str(rest_id), "url": f"https://x.com/{handle}/status/{rest_id}"}

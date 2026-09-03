@@ -1138,7 +1138,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.3.2"
+APP_VERSION = "4.3.6"
 
 # ── Inkbunny API settings ──
 INKBUNNY_API_BASE = "https://inkbunny.net"     # Inkbunny API root URL
@@ -1369,6 +1369,102 @@ def migrate_dashboard_auth() -> None:
 # (see account_setting_key).
 _SF_LEGACY_CRED_KEYS = ("sf_username", "sf_password", "sf_totp_code",
                         "sf_session_cookies")
+
+
+# Browser-login form fields that were saved under a key nothing reads, and
+# the canonical credential field each should have written (4.3.3).
+_BROWSER_LOGIN_KEY_FIXES = {"tw_username": "tw_target_user", "da_username": "da_target_user"}
+
+
+# The Meta Graph settings keys that must hold a NUMERIC user id, and the
+# handle field each one's contents belong in when it does not (4.3.6).
+_META_ID_KEYS = {"ig_user_id": "ig_username", "thr_user_id": "thr_username"}
+
+
+def migrate_meta_user_ids() -> int:
+    """Take a handle out of ``ig_user_id`` / ``thr_user_id`` (4.3.6).
+
+    Instagram's and Threads' Graph APIs want the NUMERIC user id, and PawPoller
+    drops that value into the URL path (``/{user_id}/media``). Both Settings
+    boxes were labelled "User ID (optional)", so a handle typed there was
+    accepted, stored, and then 400d every poll and every post with ``Object
+    with ID '<handle>' does not exist`` — logged as an auth error against a
+    working token.
+
+    Anything non-numeric in those fields is therefore not an id. It IS the
+    user's handle, so it moves to the matching ``*_username`` key when that is
+    empty (nothing is thrown away) and the id field is cleared, which makes the
+    client resolve the real numeric id from ``/me`` on the next connect or
+    poll. Per-account copies (``acct_3_ig_user_id``) too. Never invents an id.
+
+    Called on startup from server.py (headless) and dashboard.py (desktop).
+    Idempotent — a numeric id, or an empty field, is left alone.
+    """
+    settings = get_settings()
+    fixed = {}
+    for key, value in settings.items():
+        if not value:
+            continue
+        base = next((b for b in _META_ID_KEYS
+                     if key == b or (key.startswith("acct_") and key.endswith("_" + b))), None)
+        if base is None:
+            continue
+        text = str(value).strip().lstrip("@")
+        if text.isdigit():
+            continue
+        name_key = key[: -len(base)] + _META_ID_KEYS[base]
+        if not settings.get(name_key):
+            fixed[name_key] = text
+        fixed[key] = ""
+    if not fixed:
+        return 0
+    save_settings(fixed)
+    cleared = sum(1 for k in fixed if k.endswith("_user_id") or k in _META_ID_KEYS)
+    logger.info("Meta Graph: cleared %d user-id field(s) holding a handle rather than a "
+                "numeric id — the id will be read from the access token instead", cleared)
+    return cleared
+
+
+def migrate_browser_login_usernames() -> int:
+    """Move a browser-login username onto the key the app actually reads (4.3.3).
+
+    The X and DeviantArt browser-login forms declared their username field as
+    ``tw_username`` / ``da_username``. The id doubles as the settings key, and
+    the canonical fields are ``tw_target_user`` / ``da_target_user`` — so the
+    username the user typed was saved somewhere nothing has ever read. Cookies
+    landed correctly, the username did not, and polling then validated against
+    an empty screen name and reported the cookies as invalid.
+
+    Anyone who used browser login before 4.3.3 has the value sitting in the
+    stale key; this moves it rather than making them type it again. Per-account
+    copies (``acct_3_tw_username``) are migrated too. Never overwrites a
+    canonical value that is already set, and leaves the stale key in place —
+    it holds nothing secret and a later downgrade should not lose it.
+
+    Called on startup from both server.py (headless) and dashboard.py (desktop).
+    Safe to call repeatedly — no-ops once every value has a home.
+    """
+    settings = get_settings()
+    moved = {}
+    for key, value in settings.items():
+        if not value:
+            continue
+        for stale, canonical in _BROWSER_LOGIN_KEY_FIXES.items():
+            if key == stale:
+                target = canonical
+            elif key.endswith("_" + stale) and key.startswith("acct_"):
+                target = key[: -len(stale)] + canonical
+            else:
+                continue
+            if not settings.get(target):
+                moved[target] = value
+    if not moved:
+        return 0
+    save_settings(moved)
+    logger.info("Browser login: moved %d stranded username(s) onto the field the "
+                "app reads (%s) — X/DeviantArt polling could not have worked without it",
+                len(moved), ", ".join(sorted(moved)))
+    return len(moved)
 
 
 def migrate_sofurry_credentials() -> None:

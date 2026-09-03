@@ -40,8 +40,30 @@ async def test_unknown_platform_raises():
 
 
 @pytest.mark.asyncio
-async def test_no_accounts_falls_back_to_default(monkeypatch):
-    # Fresh DB has no enabled accounts for a bare platform → single default poll.
+async def test_no_accounts_and_no_credentials_polls_nothing(monkeypatch):
+    """⚠ Changed in 4.3.6. This used to assert ``called == [None]``: a bare
+    platform with no accounts fell back to one default poll. That fallback
+    predates account rows being seeded FROM credentials — once they were, "no
+    rows" meant "not configured", and the fallback started sending real
+    requests to sites the user had never connected (a tester collected an AO3
+    403 "Shields are up!" every cycle). See tests/test_poll_gating.py.
+    """
+    called = []
+
+    async def fake_cycle(account_id=None):
+        called.append(account_id)
+
+    await poll_platform_accounts("tw", None, run_cycle=fake_cycle)
+    assert called == []
+
+
+@pytest.mark.asyncio
+async def test_credentials_but_no_account_rows_still_falls_back(monkeypatch):
+    """The fallback's original purpose survives: an install that has X
+    configured but no account row yet must not go quiet."""
+    from database import accounts as accounts_db
+    monkeypatch.setitem(accounts_db.DEFAULT_CRED_CHECKS, "tw", lambda s: True)
+    monkeypatch.setattr(accounts_db, "seed_default_accounts", lambda conn, s: 0)
     called = []
 
     async def fake_cycle(account_id=None):

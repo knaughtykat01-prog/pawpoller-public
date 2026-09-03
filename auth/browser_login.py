@@ -100,7 +100,7 @@ PLATFORM_LOGIN: dict[str, dict] = {
             "da_cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
         },
         "fields": [
-            {"id": "da_username", "label": "DA username to track", "placeholder": "DeviantArt username", "required": True},
+            {"id": "da_target_user", "label": "DA username to track", "placeholder": "DeviantArt username", "required": True},
         ],
     },
     # SoFurry was removed here in 3.4.0. It authenticates with an official-API
@@ -118,7 +118,14 @@ PLATFORM_LOGIN: dict[str, dict] = {
             "tw_ct0": cookies.get("ct0", ""),
         },
         "fields": [
-            {"id": "tw_username", "label": "X username to track", "placeholder": "Username (without @)", "required": True},
+            # ⚠ The id IS the settings key this is saved under, so it must be the
+            # CANONICAL credential field. It was `tw_username`, which nothing in
+            # the codebase reads — the poller, the auth-status endpoint and the
+            # poster all want `tw_target_user` — so a successful browser login
+            # saved working cookies and an unreachable username, and every poll
+            # then failed validation against an EMPTY screen name while blaming
+            # the cookies (4.3.3).
+            {"id": "tw_target_user", "label": "X username to track", "placeholder": "Username (without @)", "required": True},
         ],
     },
     "ws": {

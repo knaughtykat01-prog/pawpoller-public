@@ -571,6 +571,8 @@ def main():
 
     # Step 2b-i: Scrub the dead SoFurry login credentials (3.4.0 — PAT migration)
     config.migrate_sofurry_credentials()
+    config.migrate_browser_login_usernames()
+    config.migrate_meta_user_ids()
 
     # Step 2b-ii: Vault is always-on — sweep any plaintext credentials into
     # the vault BEFORE pollers/threads read settings (idempotent, cheap).

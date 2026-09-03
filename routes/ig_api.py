@@ -79,7 +79,12 @@ async def ig_connect(body: dict):
         "ig_notifications_enabled": True,
     })
 
-    return {"status": "success", "message": f"Connected — tracking {name}"}
+    note = ""
+    if client.ignored_user_id:
+        # Never silently do something other than what was asked for.
+        note = (" — the User ID box held a handle, not a numeric id, so the id "
+                "was read from your access token instead")
+    return {"status": "success", "message": f"Connected — tracking {name}{note}"}
 
 
 @ig_router.post("/auth/disconnect")

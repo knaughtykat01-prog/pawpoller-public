@@ -164,6 +164,13 @@ async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         if not _official_active and (not client.auth_token or not client.ct0):
             raise ValueError("X/Twitter credentials missing — set auth_token and ct0 cookies, "
                              "or an X API Bearer token, in Settings")
+        # Say which thing is actually missing. Both cookie backends look the
+        # account up BY SCREEN NAME, so an empty target_user fails validation
+        # exactly like a dead cookie — and until 4.3.3 browser login left it
+        # empty every time, sending users to re-copy cookies that were fine.
+        if not _official_active and not client.target_user:
+            raise ValueError("X/Twitter username is not set — the cookies are saved, but there is "
+                             "no account to look up. Set the X username to track in Settings.")
         valid = await client.validate_cookies()
         if not valid:
             raise ValueError("X/Twitter credential validation failed -- update the auth_token/ct0 "

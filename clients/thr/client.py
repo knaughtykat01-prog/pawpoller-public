@@ -27,6 +27,7 @@ from typing import Any
 import httpx
 
 import config
+from clients.meta_graph import graph_4xx_message, numeric_id
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,10 @@ class ThrClient:
     def __init__(self, access_token: str = "", user_id: str = "",
                  proxy_url: str = "", proxy_key: str = ""):
         self.access_token = access_token
-        self.user_id = str(user_id or "")     # numeric id; "" → resolve "me"
+        # Numeric ids only — see clients/meta_graph.py. The Instagram sibling
+        # had a tester's handle stored here and 400d every call (4.3.6).
+        self.user_id = numeric_id(user_id)
+        self.ignored_user_id: str = "" if self.user_id else str(user_id or "").strip()
         self._username: str = ""
         self._logged_in = False
 
@@ -109,7 +113,8 @@ class ThrClient:
         await self._http.aclose()
 
     def update_credentials(self, access_token: str, user_id: str = "") -> None:
-        new_uid = str(user_id or "")
+        new_uid = numeric_id(user_id)
+        self.ignored_user_id = "" if new_uid else str(user_id or "").strip()
         changed = (self.access_token != access_token or self.user_id != new_uid)
         self.access_token = access_token
         self.user_id = new_uid
@@ -204,7 +209,7 @@ class ThrClient:
                 await asyncio.sleep(30)
                 resp = await self._http.get(url, params=params)
             if resp.status_code in (400, 401):
-                logger.error("THR: auth error (%s): %s", resp.status_code, resp.text[:200])
+                logger.error("THR: %s", graph_4xx_message("Threads", resp))
                 return None
             if resp.status_code == 404:
                 logger.warning("THR: Not found (404) for %s", url)

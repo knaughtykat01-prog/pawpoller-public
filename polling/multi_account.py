@@ -91,10 +91,18 @@ def get_poll_cycles() -> dict:
 async def poll_platform_accounts(platform, account_id=None, *, run_cycle=None):
     """Poll one account (``account_id`` given) or every enabled account (None).
 
-    A specific ``account_id`` polls just that account. When ``account_id`` is
-    None the platform's enabled accounts are enumerated and each is polled in
-    sequence; if the accounts table can't be read or has no rows, it falls back
-    to a single default-account poll (the cycle self-skips if uncredentialed).
+    A specific ``account_id`` polls just that account — an explicit "Poll Now"
+    is honoured whatever the settings say. When ``account_id`` is None the
+    platform's enabled accounts are enumerated and each is polled in sequence.
+
+    ⚠ A platform with no credentials is not polled at all. This paragraph used
+    to claim "the cycle self-skips if uncredentialed", which is not true of
+    every cycle — the AO3 one authenticates with an empty cookie and lets the
+    site answer, so an install that had never entered an AO3 credential
+    collected a 403 "Shields are up!" every cycle. The gate is now here, where
+    it can be relied on, and it asks ``DEFAULT_CRED_CHECKS`` — the same question
+    ``seed_default_accounts`` asks when deciding whether the platform gets an
+    account row at all.
 
     ``run_cycle`` is looked up from ``get_poll_cycles()`` when omitted; callers
     that already hold the coroutine (or tests) may pass it directly.
@@ -114,25 +122,49 @@ async def poll_platform_accounts(platform, account_id=None, *, run_cycle=None):
     from database import accounts as accounts_db
 
     settings = config.get_settings()
+    check = accounts_db.DEFAULT_CRED_CHECKS.get(platform, lambda s: True)
+    configured = bool(check(settings))
+    rows = []
     try:
         conn = get_connection()
         try:
             accounts_db.seed_default_accounts(conn, settings)
-            accts = [a for a in accounts_db.list_accounts(conn, enabled_only=True)
-                     if a["platform"] == platform]
+            rows = [a for a in accounts_db.list_accounts(conn)
+                    if a["platform"] == platform]
         finally:
             conn.close()
     except Exception as e:  # noqa: BLE001
+        if not configured:
+            logger.debug("%s: enumeration failed (%s) and no credentials — nothing to poll",
+                         platform, e)
+            return
         logger.warning("%s: account enumeration failed (%s) — polling default account only",
                        platform, e)
         await run_cycle()
         return
 
+    accts = [a for a in rows if a["enabled"]]
+
     if not accts:
+        # ⚠ This used to be a bare `await run_cycle()`. Zero enabled accounts
+        # meant "poll the default anyway" — a fallback from before account rows
+        # were seeded FROM credentials. They are now (seed_default_accounts
+        # skips any platform whose DEFAULT_CRED_CHECKS says it has none), so
+        # zero rows means the platform is NOT CONFIGURED, and polling it
+        # regardless sends a real request to a site the user never connected.
+        # A tester who has never entered an AO3 credential collected an AO3 403
+        # "Shields are up!" every cycle from this line — and AO3 throttles per
+        # IP, so the app was spending goodwill on a platform nobody uses.
+        if not configured:
+            logger.debug("%s: not configured — skipping poll", platform)
+            return
+        if rows:
+            # Rows exist and every one is switched off. That is a decision the
+            # user made on the Accounts page, not an install to fall back for.
+            logger.info("%s: all accounts disabled — skipping poll", platform)
+            return
         await run_cycle()
         return
-
-    check = accounts_db.DEFAULT_CRED_CHECKS.get(platform, lambda s: True)
     try:
         from polling.notifications import current_alert_account
     except Exception:  # noqa: BLE001

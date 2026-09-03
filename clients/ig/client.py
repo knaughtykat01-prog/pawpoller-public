@@ -33,6 +33,7 @@ from typing import Any
 import httpx
 
 import config
+from clients.meta_graph import graph_4xx_message, numeric_id
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,12 @@ class IgClient:
     def __init__(self, access_token: str = "", user_id: str = "",
                  proxy_url: str = "", proxy_key: str = ""):
         self.access_token = access_token
-        self.user_id = str(user_id or "")     # numeric IG user id; "" → resolve "me"
+        # Numeric ids only: a handle here goes into the URL path and 400s every
+        # call (4.3.6). "" → validate_session() resolves it from /me.
+        self.user_id = numeric_id(user_id)
+        # What was discarded, so the connect route can say so rather than
+        # silently doing something other than what the user typed.
+        self.ignored_user_id: str = "" if self.user_id else str(user_id or "").strip()
         self._username: str = ""
         self._logged_in = False
 
@@ -125,7 +131,8 @@ class IgClient:
         await self._http.aclose()
 
     def update_credentials(self, access_token: str, user_id: str = "") -> None:
-        new_uid = str(user_id or "")
+        new_uid = numeric_id(user_id)
+        self.ignored_user_id = "" if new_uid else str(user_id or "").strip()
         changed = (self.access_token != access_token or self.user_id != new_uid)
         self.access_token = access_token
         self.user_id = new_uid
@@ -177,6 +184,11 @@ class IgClient:
             if isinstance(data, dict):
                 uid = data.get("user_id") or data.get("id")
                 if uid:
+                    # Meta's answer for this token is the authority, and it is
+                    # taken whenever the stored id is absent OR was not a number
+                    # — numeric_id() has already blanked a handle by this point,
+                    # which is what makes this fall through instead of keeping a
+                    # value that cannot work.
                     if not self.user_id:
                         self.user_id = str(uid)
                     self._username = data.get("username", "") or self._username
@@ -222,7 +234,7 @@ class IgClient:
                 await asyncio.sleep(30)
                 resp = await self._http.get(url, params=params)
             if resp.status_code in (400, 401):
-                logger.error("IG: auth error (%s): %s", resp.status_code, resp.text[:200])
+                logger.error("IG: %s", graph_4xx_message("Instagram", resp))
                 return None
             if resp.status_code == 404:
                 logger.warning("IG: Not found (404) for %s", url)

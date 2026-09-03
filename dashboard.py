@@ -91,6 +91,8 @@ async def lifespan(app: FastAPI):
     init_db()
     config.migrate_dashboard_auth()
     config.migrate_sofurry_credentials()
+    config.migrate_browser_login_usernames()
+    config.migrate_meta_user_ids()
     # Vault is always-on: sweep any plaintext credentials (pre-2.101.0
     # settings.json, hand edits, old-backup restores) into the vault.
     _migrated = config.ensure_vault()

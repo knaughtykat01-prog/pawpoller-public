@@ -231,9 +231,10 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
                 for pth in image_paths:
                     mid = await client.upload_media(pth)
                     if not mid:
-                        result["error"] = ("X rejected the image upload — the media endpoint may "
-                                            "have moved or the cookie session lacks upload rights "
-                                            "(check logs)")
+                        result["error"] = client.last_error or (
+                            "X rejected the image upload — the media endpoint may "
+                            "have moved or the cookie session lacks upload rights "
+                            "(check logs)")
                         return result
                     media_ids.append(mid)
                 r = await client.create_tweet(text, media_ids=media_ids or None)
@@ -242,8 +243,10 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
             if r and r.get("id"):
                 result.update(success=True, external_id=r["id"], external_url=r.get("url", ""))
             else:
-                result["error"] = ("X rejected the post — the cookie session may be expired, or "
-                                    "the CreateTweet query id/features need refreshing (check logs)")
+                # What X actually said, not what we guess it means (4.3.4). The
+                # old text named two causes and neither was the common one.
+                result["error"] = client.last_error or (
+                    "X rejected the post and gave no reason (check logs)")
 
         elif platform == "tum":
             from clients.tum.client import TumClient
