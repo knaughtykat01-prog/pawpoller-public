@@ -26,6 +26,7 @@ import httpx
 import config
 from database.db import get_connection
 from database import posting_queries
+from database import platform_metrics
 from posting import artwork_reader
 from posting.sync import PLATFORM_TABLES
 
@@ -285,7 +286,7 @@ def import_artwork(platform: str, submission_id: str) -> dict:
                     # fallback chain the Discovered tab uses (Inkbunny: create_datetime).
                     # Without this the record's created_at was the import moment, and
                     # "Most recent" sorted a bulk import by walk order (4.0.12).
-                    original_posted_at=str(d.get("posted_at") or d.get("create_datetime")
+                    original_posted_at=platform_metrics.normalize_posted(d.get("posted_at") or d.get("create_datetime")
                                             or d.get("created_at") or ""),
                     source={"platform": platform, "submission_id": str(submission_id),
                             "url": external_url, "image_index": i},

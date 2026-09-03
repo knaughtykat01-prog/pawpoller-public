@@ -53,8 +53,10 @@ the platform's raw column names, so consumers written against the old shape
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +326,53 @@ def metric_triple(code: str) -> tuple[str | None, str | None, str | None]:
 # `posted_at` lookup cannot silently drop Inkbunny the way the FA-seconds bug
 # once dropped FA from every date-based view.
 _DATE_COLS = ("posted_at", "create_datetime", "created_at")
+
+# Every platform stores its post date in its OWN string form — FurAffinity
+# "August 7, 2019 11:57:56 PM", Inkbunny "2026-01-30 03:09:28.559557+00",
+# SoFurry "2026-02-19T01:10:53.000000Z", e621 "2020-07-02T02:08:10.164-04:00",
+# X "2026-06-12 23:43:59", SquidgeWorld "2026-03-06". 4.0.12 compared those
+# strings, so "September" sorted after "July" and any month name after any
+# "2026-…": a real library put six-year-old pieces above last week's. Hand-
+# rolled ISO parsing rather than fromisoformat: 3.10 rejects a 5-digit
+# fraction and a bare "+00", both of which Inkbunny writes.
+_ISO_RE = re.compile(
+    r"^(\d{4})-(\d{2})-(\d{2})"
+    r"(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?)?"
+    r"\s*(Z|z|[+-]\d{2}(?::?\d{2})?)?$")
+_HUMAN_FORMATS = (
+    "%B %d, %Y %I:%M:%S %p", "%b %d, %Y %I:%M:%S %p",
+    "%B %d, %Y, %I:%M:%S %p", "%b %d, %Y, %I:%M:%S %p",
+    "%B %d, %Y %I:%M %p", "%b %d, %Y %I:%M %p", "%b %d, %Y, %I:%M %p",
+    "%d %b %Y %H:%M",
+)
+
+
+def normalize_posted(raw) -> str:
+    """Any platform's post-date string → ``YYYY-MM-DD HH:MM:SS`` (UTC where the
+    source carried a zone), or ``""`` when it cannot be read. Never guessed: an
+    unparseable value is dropped rather than mis-dated, the same rule
+    analytics_queries._parse_posted follows. The output form sorts as time."""
+    if raw in (None, ""):
+        return ""
+    s = str(raw).strip()
+    m = _ISO_RE.match(s)
+    if m:
+        y, mo, d, hh, mi, ss, _frac, tz = m.groups()
+        try:
+            dt = datetime(int(y), int(mo), int(d), int(hh or 0), int(mi or 0), int(ss or 0))
+        except ValueError:
+            return ""
+        if tz and tz not in ("Z", "z"):
+            digits = tz[1:].replace(":", "")
+            off = timedelta(hours=int(digits[:2]), minutes=int(digits[2:4] or 0))
+            dt = dt - off if tz[0] == "+" else dt + off
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    for fmt in _HUMAN_FORMATS:
+        try:
+            return datetime.strptime(s, fmt).strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+    return ""
 _date_col_cache: dict[str, str | None] = {}
 
 
@@ -364,8 +413,9 @@ def read_posted_at(conn: sqlite3.Connection, code: str, ids) -> dict[str, str]:
                            code, spec.table, col, e)
             return out
         for r in rows:
-            if r[1]:
-                out[str(r[0])] = str(r[1])
+            norm = normalize_posted(r[1])   # one form, so "earliest" and the sort are real (4.3.1)
+            if norm:
+                out[str(r[0])] = norm
     return out
 
 

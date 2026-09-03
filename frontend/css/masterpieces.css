@@ -494,3 +494,6 @@ html[data-mobile="1"] #shelf-view-btn { display: none; }
     .mp-tb-row { grid-template-columns: 1fr auto; }
     .mp-tb-lim { display: none; }
 }
+
+/* First-posted line under the artist (4.3.1) — the Library's sort key, visible. */
+.mp-firstposted { font-size: 12.5px; margin: 2px 0 6px; }

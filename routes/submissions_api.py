@@ -14,6 +14,8 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import sqlite3
+import re
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -102,6 +104,111 @@ def _posted_dates(conn, pubs: list[dict], artworks: list[dict]) -> dict[tuple, s
     return out
 
 
+_ANNOUNCERS = ("tg",)   # posting.manager._ANNOUNCES_LAST — announce a work, never host it
+
+
+def _norm_title(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+
+
+def _title_dates(conn, artworks: list[dict], have: set) -> dict[tuple, str]:
+    """Dates for artworks that have NO link to any upload, by title (4.3.1).
+
+    A bulk-imported library is mostly unlinked: no ``import_source``, no
+    publication row — 117 of 164 pieces in the library this was found on — so
+    ``_posted_dates`` has nothing to look up and they all fall back to their
+    import day. The title is the one thing the record and the submission rows
+    share. Deterministic and cautious:
+
+    * the normalised title (lower-case, alphanumerics) must be at least four
+      characters — "Hi" matches nothing;
+    * a title that appears MORE THAN ONCE on any one site is ambiguous and is
+      not used at all — two "Commission" uploads, which is this? neither;
+    * across sites, the earliest unique match wins, as in ``_posted_dates``.
+
+    Callers mark these as estimates (``posted_date_source == "title"``) and the
+    shelf shows ``≈``. Linking the upload (the pHash pass) makes it exact.
+    """
+    todo = [a for a in artworks if ("artwork", a["name"]) not in have]
+    if not todo:
+        return {}
+    wanted = {}
+    for a in todo:
+        t = _norm_title(a.get("title") or a["name"].replace("_", " "))
+        if len(t) >= 4:
+            wanted.setdefault(t, []).append(a["name"])
+    if not wanted:
+        return {}
+    # per site: title → (count, earliest date)
+    per_site: list[dict[str, tuple[int, str]]] = []
+    for code in platform_metrics.ALL_CODES:
+        # Announcers carry the piece's title but are not where it lives: the
+        # only title matches on the first real library were two Telegram
+        # channel posts from that same day, which would have dated two old
+        # pieces "today". A LINKED Telegram publication still counts above.
+        if code in _ANNOUNCERS:
+            continue
+        spec = platform_metrics.BY_CODE.get(code)
+        col = platform_metrics._date_col(conn, spec.table) if spec and spec.table else None
+        if not col:
+            continue
+        try:
+            rows = conn.execute(
+                f"SELECT title, {col} FROM {spec.table} WHERE title IS NOT NULL AND title != ''").fetchall()
+        except sqlite3.Error:
+            continue
+        seen: dict[str, tuple[int, str]] = {}
+        for title, raw in rows:
+            t = _norm_title(title)
+            if t not in wanted:
+                continue
+            d = platform_metrics.normalize_posted(raw)
+            n, best = seen.get(t, (0, ""))
+            seen[t] = (n + 1, min([x for x in (best, d) if x], default=""))
+        if seen:
+            per_site.append(seen)
+    out: dict[tuple, str] = {}
+    for t, names in wanted.items():
+        hits = [site[t] for site in per_site if t in site]
+        if not hits or any(n > 1 for n, _ in hits):
+            continue
+        dates = [d for _, d in hits if d]
+        if dates:
+            for name in names:
+                out[("artwork", name)] = min(dates)
+    return out
+
+
+def first_posted_for(content_type: str, name: str, pubs: list[dict],
+                     artwork: dict | None = None) -> tuple[str, str]:
+    """``(date, source)`` for ONE work — what the detail pages' hero shows.
+
+    Same resolution as the Library, in the same order: the record's own value
+    (``record``), a linked upload (``link``), a unique title match (``title``),
+    else ``("", "")``. A sort key nobody can see cannot be checked; this is the
+    line that makes it visible.
+    """
+    key = (content_type, name)
+    if artwork:
+        rec = platform_metrics.normalize_posted(artwork.get("original_posted_at"))
+        if rec:
+            return rec, "record"
+    mine = [{**p, "content_type": p.get("content_type") or content_type}
+            for p in pubs if p.get("story_name") == name]
+    conn = get_connection()
+    try:
+        d = _posted_dates(conn, mine, [artwork] if artwork else [])
+        if key in d:
+            return d[key], "link"
+        if artwork:
+            t = _title_dates(conn, [artwork], have=set())
+            if key in t:
+                return t[key], "title"
+    finally:
+        conn.close()
+    return "", ""
+
+
 def assemble_works(
     *,
     stories: list[dict],
@@ -115,6 +222,7 @@ def assemble_works(
     posted_dates: dict | None = None,
     sort: str = "recent",
     junk: dict[str, str] | None = None,
+    estimated: set | None = None,   # keys whose date came from a title match (4.3.1)
 ) -> dict:
     """Pure grouping/filter/sort over already-fetched data (unit-testable).
 
@@ -193,6 +301,7 @@ def assemble_works(
                 # was the only value, and "" sorts LAST — so every story sank
                 # below every artwork in "Most recent", permanently.
                 "original_posted_at": (posted_dates or {}).get(("story", s["name"]), ""),
+                "posted_date_source": "link" if (posted_dates or {}).get(("story", s["name"])) else "",
                 # Always False: junk is a Masterpiece concept and stories have no
                 # such status. Present anyway so a consumer can read `is_junk`
                 # without first checking content_type.
@@ -223,6 +332,8 @@ def assemble_works(
                 for v in (a.get("variants") or [])
                 if v.get("key") and v.get("image")
             ]
+            _rec = platform_metrics.normalize_posted(a.get("original_posted_at"))
+            _resolved = (posted_dates or {}).get(("artwork", a["name"]), "")
             works.append({
                 "content_type": "artwork",
                 "name": a["name"],
@@ -243,8 +354,12 @@ def assemble_works(
                 "created_at": a.get("created_at", ""),
                 # Persisted by the importer since 4.0.12; resolved from the
                 # submission rows for anything imported before that.
-                "original_posted_at": (a.get("original_posted_at")
-                                       or (posted_dates or {}).get(("artwork", a["name"]), "")),
+                "original_posted_at": _rec or _resolved,
+                # record → the importer wrote it; link → an upload's row; title →
+                # a unique title match, shown as ≈ (4.3.1); "" → never posted.
+                "posted_date_source": ("record" if _rec else
+                                       "title" if ("artwork", a["name"]) in (estimated or set()) else
+                                       "link" if _resolved else ""),
                 # Attribution (3.5.2). `artist_name` is what the card shows;
                 # `needs_artist` is the flag the Library filters and badges on.
                 # Stories are never flagged — the author wrote them.
@@ -400,6 +515,10 @@ def list_works(
             # the whole catalogue costs at most ~20 queries, not one per work.
             artworks = artwork_reader.list_artworks()
             posted_dates = _posted_dates(conn, pubs, artworks)
+            # Unlinked pieces: a unique title match, marked as an estimate.
+            title_dates = _title_dates(conn, artworks, have=set(posted_dates))
+            posted_dates.update(title_dates)
+            estimated = set(title_dates)
         finally:
             conn.close()
         return assemble_works(
@@ -407,6 +526,7 @@ def list_works(
             artworks=artworks,
             pubs=pubs,
             posted_dates=posted_dates,
+            estimated=estimated,
             junk=junk,
             acct_to_persona=acct_to_persona,
             personas=personas,

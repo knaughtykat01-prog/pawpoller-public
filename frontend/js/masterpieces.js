@@ -911,6 +911,11 @@ window.Masterpieces = {
                         ? ` <span class="muted mp-selvariant" style="font-weight:400;font-size:.75em">— ${this.esc(selLabel)}</span>`
                         : ''}</div>
                     ${artistLine}
+                    ${m.first_posted
+                        ? `<div class="mp-firstposted muted" title="${m.first_posted_source === 'title'
+                            ? 'Matched to a site upload by its title — link the upload to confirm'
+                            : 'The date the Library sorts this piece by'}">First posted ${m.first_posted_source === 'title' ? '≈ ' : ''}${Utils.formatDate(m.first_posted)}</div>`
+                        : `<div class="mp-firstposted muted" title="No site upload linked, so no post date — the Library sorts it by when it was added">Not posted anywhere PawPoller knows of</div>`}
                     <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">${rating}${junkBadge}
                         ${personas ? `<span class="mp-personas">${personas}</span>` : ''}
                         <button class="btn btn-sm" data-add-collection data-mtype="masterpiece"

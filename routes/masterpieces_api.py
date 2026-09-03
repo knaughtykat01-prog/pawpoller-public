@@ -1031,6 +1031,13 @@ def get_masterpiece(name: str):
         from database import posting_queries as _pq
         pubs = _pq.get_publications_with_stats(
             conn, story_name=name, content_type="artwork")
+        # The date the Library sorts this piece by, resolved the same way (4.3.1).
+        from routes.submissions_api import first_posted_for
+        first_posted, first_posted_source = first_posted_for(
+            "artwork", name, pubs,
+            {"name": name, "title": art.title,
+             "import_source": getattr(art, "import_source", None) or {},
+             "original_posted_at": getattr(art, "original_posted_at", "") or ""})
         return {
             "name": art.name,
             "status": mq.get_status(conn, name),
@@ -1052,6 +1059,8 @@ def get_masterpiece(name: str):
             "created_at": art.created_at,
             "canonical_tags": art.tags_by_platform,
             "members": roll["members"],
+            "first_posted": first_posted,
+            "first_posted_source": first_posted_source,
             "locations": roll["locations"],
             "totals": roll["totals"],
             "tags": roll["tags"],

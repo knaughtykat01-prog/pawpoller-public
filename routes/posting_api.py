@@ -222,6 +222,8 @@ def get_story_detail(story_name: str):
         all_platform_ids = [plat_map.get(p, p) for p in all_platforms]
         unpublished = [p for p in all_platform_ids if p not in published_platforms]
 
+        from routes.submissions_api import first_posted_for
+        first_posted, first_posted_source = first_posted_for("story", story.name, pubs)
         return {
             "name": story.name,
             "title": story_json_data.get("title", story.name.replace("_", " ")),
@@ -256,6 +258,8 @@ def get_story_detail(story_name: str):
             "publications": pubs,
             "recent_log": recent_log,
             "pending_queue": pending_queue,
+            "first_posted": first_posted,               # what the Library sorts by (4.3.1)
+            "first_posted_source": first_posted_source,
         }
     except FileNotFoundError:
         raise HTTPException(404, detail=f"Story not found: {story_name}")

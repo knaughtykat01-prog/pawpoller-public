@@ -514,6 +514,16 @@ window.Bookshelf = {
             ? `<div class="book-cover"${rAttr} style="background-image:url('${this.esc(w.thumb_url)}')">${ribbon}</div>`
             : `<div class="book-cover book-cover--blank"${rAttr}><span class="book-initial">${initials}</span>${ribbon}</div>`;
         const rating = w.rating ? `<span class="book-rating">${this.esc(w.rating)}</span>` : '';
+        // The date "Recently posted" sorts by, on the card — a sort key nobody
+        // can see cannot be checked (4.3.1). ≈ = matched to an upload by title;
+        // linking the upload makes it exact. No date → the import date, muted.
+        const postedLine = w.original_posted_at
+            ? `<div class="book-posted" title="${w.posted_date_source === 'title'
+                ? 'Matched to a site upload by its title — link the upload to confirm the date'
+                : 'First posted'}">${w.posted_date_source === 'title' ? '≈ ' : ''}Posted ${Utils.formatDate(w.original_posted_at)}</div>`
+            : (w.created_at
+                ? `<div class="book-posted muted" title="No site upload linked, so no post date — sorts by when it was added">Added ${Utils.formatDate(w.created_at)}</div>`
+                : '');
         const plats = (w.platforms || []).slice(0, 8).map(c =>
             `<span class="book-plat" title="${this.esc(this._plat(c).label)}">${this._plat(c).emoji || c}</span>`).join('');
         // Carried over from the retired Stories hub (2.155.0) so folding it in
@@ -541,6 +551,7 @@ window.Bookshelf = {
                 <div class="book-spine">
                     <div class="book-title">${this.esc(w.title || w.name)}${warns}</div>
                     <div class="book-meta">${w.meta ? this.esc(w.meta) : (isStory ? 'Story' : 'Artwork')}${rating ? ' · ' : ''}${rating}${category ? ' ' : ''}${category}${draftTag ? ' ' + draftTag : ''}${noArtist ? ' ' + noArtist : ''}</div>
+                    ${postedLine}
                     ${series ? `<div class="book-series-line">${series}</div>` : ''}
                     ${blurb}
                     <div class="book-plats">${plats}</div>
@@ -645,6 +656,9 @@ window.Bookshelf = {
             ? `<span class="work-tag work-tag--series" title="Part of the series “${this.esc(d.series)}”">📚 ${this.esc(d.series)}${d.series_index ? ' #' + d.series_index : ''}</span>`
             : '';
         const summary = d.summary || d.description || '';
+        const postedPill = d.first_posted
+            ? `<span class="work-tag" title="${d.first_posted_source === 'title' ? 'Matched by title' : 'First posted'}">${d.first_posted_source === 'title' ? '≈ ' : ''}Posted ${Utils.formatDate(d.first_posted)}</span>`
+            : '';
 
         // "Published to" — one row per platform with live counts + a link.
         const pubRows = published.map(code => {
@@ -730,7 +744,7 @@ window.Bookshelf = {
                 <div class="work-head">
                     <div class="shelf-eyebrow">${this.esc(d.author ? 'by ' + d.author : 'A work')}</div>
                     <h1 class="work-title">${this.esc(d.title || name)}</h1>
-                    <div class="work-tags">${ratingPill}${chapPill}${wordsPill}${seriesPill}</div>
+                    <div class="work-tags">${ratingPill}${chapPill}${wordsPill}${seriesPill}${postedPill}</div>
                     ${summary ? `<p class="work-summary">${this.esc(summary)}</p>` : ''}
                 </div>
                 ${margin}
