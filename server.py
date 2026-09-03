@@ -231,48 +231,21 @@ def _start_poll_orchestrator():
         Returns a list of result dicts, each with 'platform' and either
         'stats' (success) or 'error' (failure).
         """
-        from polling.poller import run_poll_cycle
-        from polling.fa_poller import run_fa_poll_cycle
-        from polling.ws_poller import run_ws_poll_cycle
-        from polling.sf_poller import run_sf_poll_cycle
-        from polling.sqw_poller import run_sqw_poll_cycle
-        from polling.ao3_poller import run_ao3_poll_cycle
-        from polling.da_poller import run_da_poll_cycle
-        from polling.wp_poller import run_wp_poll_cycle
-        from polling.ik_poller import run_ik_poll_cycle
-        from polling.bsky_poller import run_bsky_poll_cycle
-        from polling.tw_poller import run_tw_poll_cycle
-        from polling.mast_poller import run_mast_poll_cycle
-        from polling.tum_poller import run_tum_poll_cycle
-        from polling.pix_poller import run_pix_poll_cycle
-        from polling.thr_poller import run_thr_poll_cycle
-        from polling.ig_poller import run_ig_poll_cycle
-        from polling.e621_poller import run_e621_poll_cycle
-        from polling.fn_poller import run_fn_poll_cycle
-        from polling.fbr_poller import run_fbr_poll_cycle
-        from polling.tg_poller import run_tg_poll_cycle
+        from polling.multi_account import get_poll_cycles
 
         settings = config.get_settings()
         from polling.notifications import describe_error
         from database.db import get_connection
         from database import accounts as accounts_db
 
-        # Account-aware platforms enumerate their ENABLED accounts (polled
-        # sequentially within a platform to respect per-IP rate limits). Other
-        # platforms still poll once via their legacy single-account path until
-        # their pollers learn account_id.
-        account_aware = {"ib": run_poll_cycle, "fa": run_fa_poll_cycle,
-                         "ws": run_ws_poll_cycle, "da": run_da_poll_cycle,
-                         "wp": run_wp_poll_cycle, "ik": run_ik_poll_cycle,
-                         "bsky": run_bsky_poll_cycle, "tw": run_tw_poll_cycle,
-                         "sf": run_sf_poll_cycle, "sqw": run_sqw_poll_cycle,
-                         "ao3": run_ao3_poll_cycle, "mast": run_mast_poll_cycle,
-                         "tum": run_tum_poll_cycle, "pix": run_pix_poll_cycle,
-                         "thr": run_thr_poll_cycle, "ig": run_ig_poll_cycle,
-                         "e621": run_e621_poll_cycle, "fn": run_fn_poll_cycle,
-                         "fbr": run_fbr_poll_cycle,
-                         # Subscriber counts only — see polling/tg_poller.py
-                         "tg": run_tg_poll_cycle}
+        # Every platform enumerates its ENABLED accounts (polled sequentially
+        # within a platform to respect per-IP rate limits).
+        #
+        # 4.3.2: this was a hand-written twenty-entry copy of get_poll_cycles(),
+        # with a comment in multi_account.py obliging whoever added a platform
+        # to keep the two in sync. The desktop's copy of the same fact drifted
+        # by four platforms before anyone noticed, so there is now one list.
+        account_aware = get_poll_cycles()
 
         # Ensure every configured platform has its default account row (covers
         # creds added since the last startup migration), then read enabled ones.

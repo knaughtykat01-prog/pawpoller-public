@@ -21,11 +21,41 @@ import config
 logger = logging.getLogger(__name__)
 
 
+def get_poll_progress() -> dict:
+    """Registry: platform code → its live progress dict (4.3.2).
+
+    The twin of :func:`get_poll_cycles` for the other thing every poller
+    exports. ``/api/poll/all-progress`` hand-listed seventeen of these and
+    stopped at ``e621``, so FurryNetwork, Furbooru and Telegram could not
+    report progress even on the server — the same shape as the four other
+    lists that stopped in the same place.
+
+    Names follow one convention with two originals: ``poll_progress`` in
+    ``polling.poller`` for Inkbunny (it came first) and ``progress`` in
+    ``polling.tg_poller``; everything else is ``<code>_poll_progress``.
+    """
+    from polling.poller import poll_progress
+    from polling.tg_poller import progress as tg_progress
+    out = {"ib": poll_progress, "tg": tg_progress}
+    for code in get_poll_cycles():
+        if code in out:
+            continue
+        mod = __import__(f"polling.{code}_poller", fromlist=[f"{code}_poll_progress"])
+        out[code] = getattr(mod, f"{code}_poll_progress")
+    return out
+
+
 def get_poll_cycles() -> dict:
     """Registry: platform code → its ``run_<code>_poll_cycle`` coroutine fn.
 
     Imported lazily so importing this module doesn't pull every poller in at
-    import time. Kept in sync with ``server.py``'s ``account_aware`` map.
+    import time.
+
+    ⚠ This is the ONE list. ``server.py`` used to keep a second copy of it as
+    ``account_aware``, and ``main.py`` a third as sixteen hand-written thread
+    functions that stopped at ``ig`` — which is how e621, FurryNetwork,
+    Furbooru and Telegram ended up polled on the server and never on the
+    desktop (4.3.2). Both now read this.
     """
     from polling.poller import run_poll_cycle
     from polling.fa_poller import run_fa_poll_cycle

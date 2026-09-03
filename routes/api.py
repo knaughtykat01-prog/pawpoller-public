@@ -237,6 +237,19 @@ def get_poll_progress():
     return dict(poll_progress)
 
 
+def _normalize_progress(prog) -> dict:
+    """One shape for the UI ticker: ``{active, phase, current, total, message}``.
+
+    Telegram's poller exports ``{"running": …, "platform": "tg"}`` instead —
+    it counts subscribers rather than walking a gallery. Normalising here
+    keeps that difference out of the poller, which is where it belongs.
+    """
+    d = dict(prog)
+    if "active" not in d:
+        d["active"] = bool(d.get("running"))
+    return d
+
+
 @router.get("/poll/all-progress")
 def get_all_poll_progress():
     """Return progress state for every platform in one call.
@@ -252,34 +265,26 @@ def get_all_poll_progress():
     can't take the whole endpoint down — that platform's slot just
     becomes None. Per-platform endpoints stay alive for direct callers
     and backwards compatibility.
+
+    4.3.2: derived from ``multi_account.get_poll_progress()`` rather than
+    hand-listed. The old list stopped at ``e621``, so FurryNetwork, Furbooru
+    and Telegram had no slot at all and the UI's progress strip could not show
+    them — the same stopping point as four other hand-written lists.
     """
+    from polling.multi_account import get_poll_progress
+
     progress = {}
-
-    def _safe(key, importer):
+    try:
+        registry = get_poll_progress()
+    except Exception as e:                    # a partial deploy, as before
+        logger.debug("all-progress: registry unavailable: %s", e)
+        return {"ib": _normalize_progress(poll_progress)}
+    for code, prog in registry.items():
         try:
-            progress[key] = dict(importer())
+            progress[code] = _normalize_progress(prog)
         except Exception as e:
-            logger.debug("all-progress: %s import failed: %s", key, e)
-            progress[key] = None
-
-    _safe("ib", lambda: poll_progress)
-    _safe("fa", lambda: __import__("polling.fa_poller", fromlist=["fa_poll_progress"]).fa_poll_progress)
-    _safe("ws", lambda: __import__("polling.ws_poller", fromlist=["ws_poll_progress"]).ws_poll_progress)
-    _safe("sf", lambda: __import__("polling.sf_poller", fromlist=["sf_poll_progress"]).sf_poll_progress)
-    _safe("sqw", lambda: __import__("polling.sqw_poller", fromlist=["sqw_poll_progress"]).sqw_poll_progress)
-    _safe("ao3", lambda: __import__("polling.ao3_poller", fromlist=["ao3_poll_progress"]).ao3_poll_progress)
-    _safe("da", lambda: __import__("polling.da_poller", fromlist=["da_poll_progress"]).da_poll_progress)
-    _safe("wp", lambda: __import__("polling.wp_poller", fromlist=["wp_poll_progress"]).wp_poll_progress)
-    _safe("ik", lambda: __import__("polling.ik_poller", fromlist=["ik_poll_progress"]).ik_poll_progress)
-    _safe("bsky", lambda: __import__("polling.bsky_poller", fromlist=["bsky_poll_progress"]).bsky_poll_progress)
-    _safe("tw", lambda: __import__("polling.tw_poller", fromlist=["tw_poll_progress"]).tw_poll_progress)
-    _safe("mast", lambda: __import__("polling.mast_poller", fromlist=["mast_poll_progress"]).mast_poll_progress)
-    _safe("tum", lambda: __import__("polling.tum_poller", fromlist=["tum_poll_progress"]).tum_poll_progress)
-    _safe("pix", lambda: __import__("polling.pix_poller", fromlist=["pix_poll_progress"]).pix_poll_progress)
-    _safe("thr", lambda: __import__("polling.thr_poller", fromlist=["thr_poll_progress"]).thr_poll_progress)
-    _safe("ig", lambda: __import__("polling.ig_poller", fromlist=["ig_poll_progress"]).ig_poll_progress)
-    _safe("e621", lambda: __import__("polling.e621_poller", fromlist=["e621_poll_progress"]).e621_poll_progress)
-
+            logger.debug("all-progress: %s unreadable: %s", code, e)
+            progress[code] = None
     return progress
 
 

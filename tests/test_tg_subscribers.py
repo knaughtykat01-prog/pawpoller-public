@@ -29,14 +29,22 @@ class TestRegistration:
         from database.followers import FOLLOWER_PLATFORMS
         assert "tg" in FOLLOWER_PLATFORMS
 
-    def test_the_cycle_is_registered_in_both_dispatchers(self):
-        """Two maps drive polling — the server orchestrator and the manual
-        trigger path. A cycle in one and not the other polls on a schedule but
-        cannot be triggered by hand, or vice versa."""
-        from polling.multi_account import get_poll_cycles
+    def test_the_cycle_is_registered_for_every_dispatcher(self):
+        """Three things dispatch polling — the server orchestrator, the desktop
+        threads, and the manual trigger path. A cycle missing from one polls on
+        a schedule but cannot be triggered by hand, or vice versa.
+
+        Until 4.3.2 each kept its OWN copy of the map and this test read the
+        server's by grepping for the literal `run_tg_poll_cycle` — which is
+        exactly how the desktop's copy drifted by four platforms without
+        anything failing. All three now read `get_poll_cycles()`, so membership
+        of that one registry is the whole assertion."""
+        from polling.multi_account import get_poll_cycles, get_poll_progress
+        from polling.desktop_pollers import codes
         assert "tg" in get_poll_cycles()
-        server_src = open("server.py", encoding="utf-8").read()
-        assert "run_tg_poll_cycle" in server_src
+        assert "tg" in codes(), "the desktop polled sixteen of twenty until 4.3.2"
+        assert "tg" in get_poll_progress(), "and could not report progress even on the server"
+        assert "get_poll_cycles()" in open("server.py", encoding="utf-8").read()
 
 
 class TestFailureModes:
