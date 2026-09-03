@@ -1763,6 +1763,21 @@ a.stat-card:hover {
     border: 1px solid rgba(240, 112, 112, 0.3);
 }
 
+/* Two states the credential rows could not express before 4.0.11: a check
+   that failed to run (amber, transient) and a platform nothing validates
+   (grey, honest). Colours match the session-health card's warn/muted dots. */
+.telegram-status.warn {
+    background: rgba(251, 192, 80, 0.15);
+    color: var(--warning);
+    border: 1px solid rgba(251, 192, 80, 0.3);
+}
+
+.telegram-status.muted {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
 .telegram-instructions {
     font-size: 13px;
     color: var(--text-muted);
@@ -2018,6 +2033,71 @@ a.stat-card:hover {
 [data-theme="light"] .modal-panel {
     border-color: rgba(0, 0, 0, 0.08);
 }
+
+/* ── Publish confirmation + results (4.1.0) ─────────────────── */
+.pub-confirm { max-width: 560px; }
+.pub-confirm h3 { margin: 0 0 14px; font-size: 18px; }
+.pub-confirm-what { display: flex; gap: 14px; align-items: center; margin-bottom: 14px; }
+.pub-confirm-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border); flex: 0 0 auto; }
+.pub-confirm-title { font-weight: 600; font-size: 15px; }
+.pub-confirm-persona { font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; }
+.pub-confirm-list { list-style: none; margin: 0 0 12px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.pub-confirm-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+.pub-confirm-row:last-child { border-bottom: 0; }
+.pub-confirm-row.is-disabled { opacity: .5; }
+.pub-confirm-row.is-disabled .pub-confirm-plat { text-decoration: line-through; }
+.pub-confirm-warn { color: var(--warning); font-size: 13px; margin: 0 0 8px; }
+.pub-confirm-note { font-size: 12px; margin: 0 0 16px; }
+.pub-confirm-tgdesc { display: block; margin: 0 0 12px; font-size: 13px; }
+.pub-confirm-tgdesc > span { display: block; margin-bottom: 4px; }
+.pub-confirm-tgdesc textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; }
+
+/* ── Telegram panel: description + link picker (4.3.0) ──────── */
+.art-tg-desc-label { display: block; margin: 10px 0 6px; font-size: 13px; }
+.art-tg-desc-label > span { display: block; margin-bottom: 4px; }
+.art-tg-desc { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; }
+.art-tg-count { font-size: 11.5px; }
+.art-tg-links { margin: 10px 0 4px; font-size: 13px; }
+.art-tg-links-modes { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 4px 0 6px; }
+.art-tg-links-modes label { display: inline-flex; align-items: center; gap: 4px; }
+.art-tg-linklist { list-style: none; margin: 4px 0 0; padding: 0; }
+.art-tg-link { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+.art-tg-linkup { font: inherit; font-size: 11px; padding: 0 6px; line-height: 1.5; cursor: pointer; }
+/* The Override section styles every <label>/<input> in it as a stacked form
+ * field (labels become flex columns, inputs stretch). The picker's radios and
+ * checkboxes are inline controls, so win on specificity and put them back. */
+.artwork-plat-adv .art-tg-links label, .art-tg-links label {
+    display: inline-flex; flex-direction: row; align-items: center; gap: 4px; width: auto; margin: 0; }
+.artwork-plat-adv .art-tg-links input[type="radio"], .artwork-plat-adv .art-tg-links input[type="checkbox"],
+.art-tg-links input[type="radio"], .art-tg-links input[type="checkbox"] {
+    width: auto; min-width: 0; flex: 0 0 auto; margin: 0 2px 0 0; }
+.artwork-plat-adv .art-tg-link, .art-tg-link { display: flex; align-items: center; gap: 6px; }
+.artwork-plat-adv .art-tg-desc-label { display: block; width: auto; }
+.pub-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+.pub-results { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pub-result { display: grid; grid-template-columns: 18px auto 1fr; gap: 8px; align-items: center; font-size: 13px; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--bg-secondary); border: 1px solid var(--border); }
+.pub-result.is-ok .pub-result-mark { color: var(--success); }
+.pub-result.is-fail { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.pub-result.is-fail .pub-result-mark { color: var(--danger); }
+.pub-result-plat { font-weight: 600; white-space: nowrap; }
+.pub-result-what { color: var(--text-secondary); overflow-wrap: anywhere; }
+.pub-result.is-skip { opacity: .7; }
+.pub-result.is-skip .pub-result-mark { color: var(--text-secondary); }
+
+/* ── Persona picker (4.2.0) ─────────────────────────────────── */
+.persona-picker { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: 0 0 .6rem; }
+.persona-picker[hidden] { display: none; }
+.persona-picker--inline { display: inline-flex; margin: 0 .5rem 0 0; vertical-align: middle; }
+.persona-picker-label { font-size: 12.5px; margin-right: .2rem; }
+.persona-chip { display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .7rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font: inherit; font-size: 13px; color: inherit; }
+.persona-chip.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); font-weight: 600; }
+.persona-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.acct-as { font-size: 12.5px; color: var(--text-secondary); }
+.acct-as select { font: inherit; }
+.acct-choice-mark { margin-left: .35rem; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--warning) 22%, var(--surface)); color: var(--warning); white-space: nowrap; }
+.acct-missing { font-style: italic; }
+.artwork-plat-row.is-unavailable, .post-plat.is-unavailable { opacity: .55; }
 
 /* ── Platform Grid (popover) ─────────────────────────────── */
 .platform-grid {

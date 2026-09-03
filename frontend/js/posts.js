@@ -169,7 +169,7 @@ window.Posts = {
     },
 
     _renderPlatformRows(el) {
-        el.innerHTML = this._PLATFORMS.map(code => {
+        el.innerHTML = '<div class="persona-picker" data-persona-picker hidden></div>' + this._PLATFORMS.map(code => {
             const p = this._plat(code);
             const on = this._DEFAULT_CHECKED.includes(code) ? ' checked' : '';
             let note = '';
@@ -189,19 +189,26 @@ window.Posts = {
     },
 
     async _populateAccountSelectors() {
-        for (const code of this._PLATFORMS) {
-            const slot = document.querySelector(`.post-acct-slot[data-platform="${code}"]`);
-            if (!slot) continue;
-            try {
-                const data = await API.getAccounts(code);
-                const accts = (data.accounts || []).filter(a => a.enabled);
-                if (accts.length < 2) continue;   // single account → no picker
-                const opts = accts.map(a =>
-                    `<option value="${a.account_id}"${a.is_default ? ' selected' : ''}>` +
-                    `${this.esc(a.label || a.handle || ('account ' + a.account_id))}</option>`).join('');
-                slot.innerHTML = `<select class="post-acct-select" data-platform="${code}">${opts}</select>`;
-            } catch (e) { /* default account on any failure */ }
-        }
+        // 4.2.0: persona-first, via the shared picker (see artwork.js).
+        const host = document.querySelector('[data-persona-picker]');
+        const scope = host ? host.parentElement : document;
+        await Components.personaPicker({
+            host: host || document.createElement('div'),
+            platforms: this._PLATFORMS,
+            slot: code => scope.querySelector(`.post-acct-slot[data-platform="${code}"]`),
+            row: code => scope.querySelector(`.post-plat[data-platform="${code}"]`),
+            selectClass: 'post-acct-select',
+            storageKey: 'pp-persona-posts',
+        });
+    },
+
+    _personaId() {
+        const h = document.querySelector('[data-persona-picker]');
+        return h && h.dataset.personaId ? parseInt(h.dataset.personaId, 10) : null;
+    },
+    _personaLabel() {
+        const h = document.querySelector('[data-persona-picker]');
+        return h ? (h.dataset.personaLabel || '') : '';
     },
 
     _wireCompose() {
@@ -503,12 +510,26 @@ window.Posts = {
                 .map(t => t.value.trim()).filter(Boolean);
             if (partTexts.length) fd.append('parts', JSON.stringify(partTexts));
             this._pendingFiles.forEach(f => fd.append('files', f));
+            // Before createPost: that writes a post row, and a cancel after it
+            // would leave a stray draft in the feed. Schedules skip the dialog.
+            if (!scheduledIso && !(await Components.confirmPublish({
+                title: body.slice(0, 90) || '(image only)',
+                subtitle: this._pendingFiles.length ? `Post · ${this._pendingFiles.length} image${this._pendingFiles.length === 1 ? '' : 's'}` : 'Post',
+                persona: this._personaLabel(),
+                targets: platforms.map(code => {
+                    const p = this._plat(code);
+                    const sel = document.querySelector(`.post-acct-select[data-platform="${code}"]`);
+                    return { code, label: p.label, emoji: p.emoji,
+                             account: sel ? (sel.dataset.accountLabel || ((sel.options && sel.options[sel.selectedIndex]) || {}).text || '') : '' };
+                }),
+            }))) { msg.textContent = 'Not posted.'; return; }   // finally{} re-enables the button
             const { post_id } = await API.createPost(fd);
 
             let fail = 0;
             if (scheduledIso) {
                 await API.schedulePost(post_id, {
                     platforms, account_ids: this._accountIds(platforms), scheduled_at: scheduledIso,
+                    persona_id: this._personaId(),
                 });
                 const when = new Date(scheduledIso);
                 this._toast('success', `Scheduled for ${when.toLocaleString()}`);
@@ -518,6 +539,8 @@ window.Posts = {
             } else {
                 const res = await API.publishPost(post_id, {
                     platforms, account_ids: this._accountIds(platforms),
+                    persona_id: this._personaId(),
+                    confirm_live: true,
                 });
                 const ok = res.successes || 0; fail = res.failures || 0;
                 this._toast(fail ? 'error' : 'success', `Posted: ${ok} ok, ${fail} failed`);

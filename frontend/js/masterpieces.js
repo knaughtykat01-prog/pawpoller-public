@@ -67,7 +67,12 @@ window.Masterpieces = {
         try {
             const d = await API.getPersonas();
             const arr = Array.isArray(d) ? d : ((d && d.personas) || []);
-            arr.forEach(p => { this._personas[p.id] = { name: p.name, color: p.color || 'var(--accent)' }; });
+            // Keyed on persona_id, NOT id: /api/personas returns rows straight from
+            // the table (PK persona_id). `p.id` was undefined, so every persona
+            // landed under the key "undefined" and the chips never rendered.
+            // bookshelf.js legitimately uses p.id — it reads /api/works, which
+            // re-keys to {id, name, color}. Two endpoints, two shapes.
+            arr.forEach(p => { this._personas[p.persona_id] = { name: p.name, color: p.color || 'var(--accent)' }; });
         } catch { /* personas are decorative here — never block the view */ }
         this._personasLoaded = true;
     },
@@ -1065,7 +1070,18 @@ window.Masterpieces = {
         const host = document.getElementById('mp-detail-platforms');
         if (!host || !window.Artwork) return;
 
-        window.Artwork._renderPlatformRows(host);
+        // Same shared rows as the artwork form, seeded with this piece's
+        // saved Telegram options so they show what is actually stored.
+        const _live = [...new Set([
+            ...(m.publications || []).filter(p => p.status === 'posted' && p.external_url).map(p => p.platform),
+            ...(m.locations || []).filter(l => l.url).map(l => l.platform),
+        ])].filter(c => c && c !== 'tg');
+        window.Artwork._renderPlatformRows(
+            host, ((this._detail || {}).categories || {}).tg || {},
+            // Telegram text + link picker (4.3.0); the box only where the record
+            // exposes descriptions, so a save can never clobber the others.
+            { desc: (m.descriptions && typeof m.descriptions === 'object') ? (m.descriptions.tg || '') : undefined,
+              live: _live });
 
         // Dim + disable platforms this piece is already posted to. Both the
         // publications list and the resolved member locations count as "posted",
@@ -1152,25 +1168,76 @@ window.Masterpieces = {
      * durable and visible on the record instead of a one-shot. */
     async _applyOverrides(name, overrides) {
         const keys = Object.keys(overrides || {});
-        if (!keys.length) return;
-        const tags = { ...((this._detail || {}).canonical_tags || {}) };
-        keys.forEach(p => { tags[p] = overrides[p]; });
-        await API.updateArtwork(name, { tags });
+        const tgOpts = (window.Artwork && window.Artwork._collectTgOpts)
+            ? window.Artwork._collectTgOpts() : {};
+        const hadTg = !!(((this._detail || {}).categories || {}).tg);
+        // Stored Telegram text (4.3.0) — merged into descriptions, never replacing
+        // the map, and only when the record exposed it (else the box was not shown).
+        const tgDesc = (window.Artwork && window.Artwork._collectTgDesc)
+            ? window.Artwork._collectTgDesc() : null;
+        const oldDescs = (this._detail && this._detail.descriptions && typeof this._detail.descriptions === 'object')
+            ? this._detail.descriptions : null;
+        let descriptions = null;
+        if (tgDesc !== null && oldDescs) {
+            const next = { ...oldDescs };
+            if (tgDesc) next.tg = tgDesc; else delete next.tg;
+            if (JSON.stringify(next) !== JSON.stringify(oldDescs)) descriptions = next;
+        }
+        if (!keys.length && !Object.keys(tgOpts).length && !hadTg && !descriptions) return;
+
+        const payload = {};
+        if (descriptions) payload.descriptions = descriptions;
+        if (keys.length) {
+            const tags = { ...((this._detail || {}).canonical_tags || {}) };
+            keys.forEach(p => { tags[p] = overrides[p]; });
+            payload.tags = tags;
+        }
+        // Telegram's per-piece options travel the same route as tag overrides:
+        // written to the record before publishing, so the poster reads them from
+        // masterpiece.json rather than needing a request field the backend has
+        // no parameter for. Merge, so other platforms' params survive.
+        if (Object.keys(tgOpts).length || hadTg) {
+            const categories = { ...((this._detail || {}).categories || {}) };
+            if (Object.keys(tgOpts).length) categories.tg = tgOpts;
+            else delete categories.tg;
+            payload.categories = categories;
+        }
+        if (Object.keys(payload).length) await API.updateArtwork(name, payload);
     },
 
     async _publishNow(name) {
         const msg = document.getElementById('mp-pub-msg');
         const { platforms, accountIds, overrides } = this._publishSelection();
         if (!platforms.length) { if (msg) msg.textContent = 'Tick at least one site.'; return; }
+        // Before _applyOverrides: that WRITES tag overrides into the record,
+        // and a cancel after it would have silently changed the piece.
+        const title = ((this._detail || {}).title) || name.replace(/_/g, ' ');
+        const thumb = (document.getElementById('mp-hero-img') || {}).src || '';
+        const personaId = window.Artwork ? window.Artwork._personaId('#mp-detail-platforms') : null;
+        const conf = await Components.confirmPublish({
+            title, thumb, subtitle: 'Masterpiece',
+            persona: window.Artwork ? window.Artwork._personaLabel('#mp-detail-platforms') : '',
+            targets: window.Artwork
+                ? window.Artwork._confirmTargets('#mp-detail-platforms', platforms, accountIds)
+                : platforms.map(code => ({ code, label: code })),
+            tgDesc: platforms.includes('tg') ? {} : null,
+        });
+        if (!conf) { if (msg) msg.textContent = ''; return; }
         if (msg) msg.textContent = 'Publishing…';
         try {
             await this._applyOverrides(name, overrides);
             const res = await API.publishArtwork({
                 artwork_name: name, platforms, account_ids: accountIds,
+                persona_id: personaId,
+                description_overrides: conf.tgDescription ? { tg: conf.tgDescription } : undefined,
+                confirm_live: true,
             });
-            const ok = res.successes || 0, fail = res.failures || 0;
-            this._toast(fail ? 'error' : 'success', `Published: ${ok} ok, ${fail} failed`);
-            this.renderDetail(name);
+            const ok = res.successes || 0;
+            const fail = Components.showPublishResults(msg, res.results);
+            this._toast(fail ? 'error' : 'success',
+                fail ? `${fail} of ${ok + fail} sites failed — see below` : `Published to ${ok} site${ok === 1 ? '' : 's'}`);
+            if (!fail) this.renderDetail(name);
+            else if (msg) msg.textContent = 'Some sites failed:';
         } catch (err) {
             if (msg) msg.textContent = 'Publish failed: ' + err.message;
         }
@@ -1733,19 +1800,36 @@ window.Masterpieces = {
 
     async _syncAll(btn) {
         if (!this._current) return;
-        if (!window.confirm('Push this canonical record (title, description, tags, rating) to every editable site? '
-            + 'It overwrites those fields on the live uploads. Bluesky / e621 / Itaku are skipped (post-only).')) return;
+        // 4.2.0 (spec §10 Q4): sync gets the shared dialog. It creates nothing
+        // but OVERWRITES title/description/tags/rating on every live upload,
+        // so it lists the sites it will rewrite; post-only ones show struck.
+        const m = this._detail || {};
+        const seen = new Set();
+        const targets = (m.locations || [])
+            .filter(l => l.platform && !seen.has(l.platform) && seen.add(l.platform))
+            .map(l => {
+                const p = this._plat(l.platform);
+                return { code: l.platform, label: p.label, emoji: p.emoji,
+                         disabled: this._POST_ONLY.has(l.platform), reason: 'post-only — can\'t be edited in place' };
+            });
+        if (!(await Components.confirmPublish({
+            title: m.title || this._current.replace(/_/g, ' '),
+            thumb: (document.getElementById('mp-hero-img') || {}).src || '',
+            subtitle: 'Sync canonical record', verb: 'Sync', noun: 'sites', targets,
+            warning: 'Overwrites the title, description, tags and rating on each live upload. Nothing is re-uploaded.',
+        }))) return;
         btn.disabled = true;
+        const msg = document.getElementById('mp-edit-msg');
         try {
             await API.patchMasterpiece(this._current, this._readCanonical());   // save first, then push
             this._msg('Syncing…', false);
-            const res = await API.syncMasterpiece(this._current);
+            const res = await API.syncMasterpiece(this._current, { confirm_live: true });
+            const fail = Components.showPublishResults(msg, res.results, { okText: 'Synced' });
             const parts = [`synced ${res.synced}`];
             if (res.skipped) parts.push(`${res.skipped} post-only`);
-            if (res.failed) parts.push(`${res.failed} failed`);
-            const fails = (res.results || []).filter(r => r.error).map(r => `${r.platform}: ${r.error}`);
-            this._toast(res.failed ? 'warn' : 'success', 'Sync: ' + parts.join(' · '));
-            this._msg('Sync: ' + parts.join(' · ') + (fails.length ? ' — ' + fails.join('; ') : ''), !!res.failed);
+            if (fail) parts.push(`${fail} failed`);
+            this._toast(fail ? 'warn' : 'success', 'Sync: ' + parts.join(' · '));
+            this._msg('Sync: ' + parts.join(' · '), !!fail);
         } catch (err) {
             this._msg('Sync failed: ' + (err.message || err), true);
         } finally {

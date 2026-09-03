@@ -33,14 +33,27 @@ _session_health: dict[str, dict] = {}
 _lock = asyncio.Lock()
 
 # Platforms with a real validate_session() network check. Order = check order.
-CHECKABLE: tuple[str, ...] = ("ao3", "sf", "sqw", "bsky", "mast", "tum", "pix", "thr", "ig", "e621", "fn", "fbr")
+CHECKABLE: tuple[str, ...] = ("ao3", "sf", "sqw", "bsky", "mast", "tum", "pix",
+                              "thr", "ig", "e621", "fn", "fbr", "tg")
 
 # Human labels for log/UI fallback (the frontend has its own map too).
 LABELS = {
     "ao3": "AO3", "sf": "SoFurry", "sqw": "SquidgeWorld", "bsky": "Bluesky",
     "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads",
     "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru",
+    "tg": "Telegram",
 }
+
+# What to tell the user when a check comes back CONFIRMED-failed. The default
+# is about an expired credential, which is right for a cookie or a token and
+# wrong for Telegram: a bot token does not expire, so the realistic cause is
+# that the bot was removed from the channel or lost its admin rights. Sending
+# someone to re-enter a token that was never the problem is worse than saying
+# nothing.
+_EXPIRED_DETAIL = {
+    "tg": "Telegram refused the channel — check the bot is still an admin of it.",
+}
+_DEFAULT_EXPIRED_DETAIL = "Session/cookie is no longer valid — re-enter credentials."
 
 
 def _configured(code: str, s: dict) -> bool:
@@ -70,7 +83,48 @@ def _configured(code: str, s: dict) -> bool:
         return bool(s.get("fn_username") and (s.get("fn_password") or s.get("fn_refresh_token")))
     if code == "fbr":
         return bool(s.get("fbr_username"))   # public read API — username is enough
+    if code == "tg":
+        # Either bot counts (reusing the notification bot is the documented
+        # setup); a channel is mandatory because there is nothing to check
+        # without one.
+        return bool((s.get("tg_bot_token") or s.get("telegram_bot_token"))
+                    and s.get("tg_channel"))
     return False
+
+
+class _TgSessionProbe:
+    """Adapter giving Telegram the ``validate_session()`` shape this module
+    expects. Telegram has no session at all — a bot token is a permanent
+    credential — so what is being checked is the RELATIONSHIP: is this bot
+    still an admin of that channel?
+
+    It deliberately calls ``getChatMemberCount`` rather than ``getChat``.
+    ``getChat`` succeeds for any public channel including a stranger's, so it
+    returns a confident yes for entirely the wrong chat (documentation_guide
+    §55, observed live). ``getChatMemberCount`` is the call that fails with
+    "bot is not a member of the channel chat" once the bot is removed — which
+    is the failure this check exists to surface, and it is otherwise invisible
+    until the next post fails.
+
+    Reads flat settings, so it checks the DEFAULT channel only. Every other
+    platform's probe has the same limitation; a per-account session check is a
+    separate piece of work.
+    """
+
+    def __init__(self, settings: dict):
+        self._settings = settings
+
+    async def validate_session(self):
+        from clients.tg.client import TgClient
+        s = self._settings
+        token = s.get("tg_bot_token") or s.get("telegram_bot_token", "")
+        try:
+            client = TgClient(bot_token=token, channel=s.get("tg_channel", ""))
+        except ValueError as e:      # an invite link, not a channel
+            raise RuntimeError(str(e)) from e
+        # None on refusal, an int on success — never 0 for a failure, which
+        # matters because a channel really can have very few members.
+        return (await client.get_follower_count()) is not None
 
 
 async def _validate(code: str, s: dict):
@@ -121,6 +175,8 @@ async def _validate(code: str, s: dict):
     elif code == "fbr":
         from polling.fbr_poller import _get_or_create_client
         c = _get_or_create_client(s, s.get("fbr_username", ""), s.get("fbr_api_key", ""))
+    elif code == "tg":
+        c = _TgSessionProbe(s)
     else:
         raise ValueError(f"unknown platform {code}")
     return await c.validate_session()
@@ -139,7 +195,7 @@ async def check_platform(code: str, s: dict | None = None) -> dict:
         ok = bool(result)
         entry = {
             "status": "valid" if ok else "expired",
-            "detail": None if ok else "Session/cookie is no longer valid — re-enter credentials.",
+            "detail": None if ok else _EXPIRED_DETAIL.get(code, _DEFAULT_EXPIRED_DETAIL),
             "checked_at": now,
         }
     except Exception as e:

@@ -30,6 +30,7 @@ bsky_router = APIRouter(prefix="/api/bsky")
 
 # -- BSKY Auth ----------------------------------------------------------------
 
+
 @bsky_router.get("/auth/status")
 def bsky_auth_status():
     """Check whether Bluesky credentials are configured and whether there is any BSKY data."""
@@ -105,6 +106,7 @@ def bsky_disconnect():
 
 # -- BSKY Polling -------------------------------------------------------------
 
+
 @bsky_router.get("/poll/progress")
 def get_bsky_poll_progress():
     return dict(bsky_poll_progress)
@@ -143,6 +145,7 @@ async def bsky_full_resync():
 
 
 # -- BSKY Data ----------------------------------------------------------------
+
 
 @bsky_router.get("/status")
 def get_bsky_status():
@@ -213,6 +216,31 @@ def get_bsky_submissions(
         conn.close()
 
 
+# Registered BEFORE the bare /submissions/{id} route below. The `:path`
+# converter is greedy and Starlette matches in registration order, so with
+# the bare route first this URL resolved to a submission id of
+# "<id>/snapshots" and returned 404 for every post that exists.
+@bsky_router.get("/submissions/{submission_id:path}/snapshots")
+def get_bsky_submission_snapshots(
+    submission_id: str,
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+):
+    conn = get_connection()
+    try:
+        # Resolve rkey if needed
+        sub = bsky_queries.get_bsky_submission(conn, submission_id)
+        if not sub:
+            sub = bsky_queries.get_bsky_submission_by_rkey(conn, submission_id)
+        full_id = sub["submission_id"] if sub else submission_id
+        return {"snapshots": bsky_queries.get_bsky_snapshots(conn, full_id, start, end)}
+    except Exception as e:
+        logger.error("Error in /api/bsky/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
+        raise HTTPException(500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @bsky_router.get("/submissions/{submission_id:path}")
 def get_bsky_submission(submission_id: str):
     conn = get_connection()
@@ -245,27 +273,6 @@ def get_bsky_submission(submission_id: str):
         raise
     except Exception as e:
         logger.error("Error in /api/bsky/submissions/%s: %s", submission_id[:50], e, exc_info=True)
-        raise HTTPException(500, detail=str(e))
-    finally:
-        conn.close()
-
-
-@bsky_router.get("/submissions/{submission_id:path}/snapshots")
-def get_bsky_submission_snapshots(
-    submission_id: str,
-    start: Optional[str] = Query(None),
-    end: Optional[str] = Query(None),
-):
-    conn = get_connection()
-    try:
-        # Resolve rkey if needed
-        sub = bsky_queries.get_bsky_submission(conn, submission_id)
-        if not sub:
-            sub = bsky_queries.get_bsky_submission_by_rkey(conn, submission_id)
-        full_id = sub["submission_id"] if sub else submission_id
-        return {"snapshots": bsky_queries.get_bsky_snapshots(conn, full_id, start, end)}
-    except Exception as e:
-        logger.error("Error in /api/bsky/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
         raise HTTPException(500, detail=str(e))
     finally:
         conn.close()

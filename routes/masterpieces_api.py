@@ -1496,6 +1496,13 @@ async def sync_masterpiece(name: str, body: dict | None = None):
     except FileNotFoundError:
         raise HTTPException(404, detail="Masterpiece not found")
     platforms = (body or {}).get("platforms") or None
+    # Same live guard as the publish endpoints. Sync creates nothing new but
+    # OVERWRITES title/description/tags/rating on every live upload, which is
+    # destructive to existing posts rather than additive — a stray call here
+    # rewrites work that is already public.
+    if not (body or {}).get("confirm_live"):
+        raise HTTPException(
+            400, detail="sync requires confirm_live=true (live-publish safety guard)")
     try:
         results = await manager.update_artwork(name, platforms=platforms)
     except Exception as e:

@@ -135,6 +135,10 @@ async def _process_queue_item(item: dict) -> None:
     # posts reuse it with content_type='post' (story_name = the post_id).
     # Older rows predate the column and are stories.
     content_type = item["content_type"] if "content_type" in item.keys() else "story"
+    # posting_queries has persisted this column all along; nothing forwarded it
+    # (publish_flow spec §10 Q6). A scheduled "this post only" Telegram text.
+    _desc_override = item["description_override"] if "description_override" in item.keys() else None
+    description_overrides = {platform: _desc_override} if _desc_override else None
 
     # For posts the story_name is a bare post_id — use the snippet stashed in
     # title_override as the human label in Telegram notifications.
@@ -179,11 +183,13 @@ async def _process_queue_item(item: dict) -> None:
             results = await manager.post_artwork(
                 story_name, [platform],
                 account_ids={platform: account_id} if account_id else None,
+                description_overrides=description_overrides,
             )
         elif action == "post":
             results = await manager.post_story(
                 story_name, [platform], [chapter_index],
                 account_ids={platform: account_id} if account_id else None,
+                description_overrides=description_overrides,
             )
         elif action == "update":
             results = await manager.update_story(

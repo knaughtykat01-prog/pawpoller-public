@@ -144,27 +144,15 @@ def get_trending_submissions(conn: sqlite3.Connection, hours: int = 24, z_thresh
     """
     trending = []
 
-    # Process each platform using its specific table names.
-    # Each platform is wrapped in try/except to handle missing tables gracefully.
-    for platform, sub_table, snap_table in [
-        ("ib", "submissions", "snapshots"),
-        ("fa", "fa_submissions", "fa_snapshots"),
-        ("ws", "ws_submissions", "ws_snapshots"),
-        ("sf", "sf_submissions", "sf_snapshots"),
-        ("sqw", "sqw_submissions", "sqw_snapshots"),
-        ("ao3", "ao3_submissions", "ao3_snapshots"),
-        ("da", "da_submissions", "da_snapshots"),
-        ("wp", "wp_submissions", "wp_snapshots"),
-        ("ik", "ik_submissions", "ik_snapshots"),
-        ("bsky", "bsky_submissions", "bsky_snapshots"),
-        ("tw", "tw_submissions", "tw_snapshots"),
-        ("mast", "mast_submissions", "mast_snapshots"),
-        ("tum", "tum_submissions", "tum_snapshots"),
-        ("pix", "pix_submissions", "pix_snapshots"),
-        ("thr", "thr_submissions", "thr_snapshots"),
-        ("ig", "ig_submissions", "ig_snapshots"),
-        ("e621", "e621_submissions", "e621_snapshots"),
-    ]:
+    # Table names come from the canonical registry rather than a literal list.
+    # `_find_spikes` already read its metric COLUMNS from there, so the list was
+    # the last hand-written half — and it stopped at e621, meaning FurryNetwork,
+    # Furbooru and Telegram could never appear in Trending however hard they
+    # spiked. Each platform is wrapped in try/except so a table that does not
+    # exist yet is skipped rather than killing the whole sweep.
+    for platform in platform_metrics.ALL_CODES:
+        sub_table = platform_metrics.table_for(platform)
+        snap_table = platform_metrics.snapshots_for(platform)
         try:
             _find_spikes(conn, platform, sub_table, snap_table, hours, z_threshold, trending)
         except Exception:

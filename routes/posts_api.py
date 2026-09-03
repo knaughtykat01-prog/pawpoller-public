@@ -287,8 +287,16 @@ async def publish_post(post_id: int, payload: dict):
     account_ids = payload.get("account_ids") or {}
     if not platforms:
         raise HTTPException(400, "Pick at least one platform")
+    # Live-publish safety guard — mirrors posting_api.post_story so a UI
+    # regression can't fire a real, publicly-visible post without an explicit
+    # acknowledgement. The story endpoints have carried this since they were
+    # written; the artwork/posts/sync ones never did (4.0.11).
+    if not payload.get("confirm_live"):
+        raise HTTPException(
+            400, "publish requires confirm_live=true (live-publish safety guard)")
     try:
-        results = await post_publisher.publish_post(post_id, platforms, account_ids)
+        results = await post_publisher.publish_post(
+            post_id, platforms, account_ids, persona_id=payload.get("persona_id"))
     except ValueError as e:
         raise HTTPException(404, str(e))
     except Exception as e:
@@ -316,10 +324,25 @@ async def schedule_post(post_id: int, payload: dict):
     platforms = payload.get("platforms") or []
     account_ids = payload.get("account_ids") or {}
     scheduled_at = payload.get("scheduled_at")
+    persona_id = payload.get("persona_id")
     if not platforms:
         raise HTTPException(400, "Pick at least one platform")
     if not scheduled_at:
         raise HTTPException(400, "scheduled_at is required")
+    if persona_id is not None:
+        # Persona-first schedules are checked now, not when the queue fires
+        # (a refusal then would be a silent non-post). Nothing is queued if
+        # any platform fails the check.
+        from database import personas as personas_db
+        conn = get_connection()
+        try:
+            errs = [personas_db.persona_account_error(conn, p, account_ids.get(p), persona_id)
+                    for p in platforms]
+        finally:
+            conn.close()
+        errs = [e for e in errs if e]
+        if errs:
+            raise HTTPException(400, "; ".join(errs))
 
     conn = get_connection()
     try:

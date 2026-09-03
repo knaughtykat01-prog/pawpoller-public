@@ -190,6 +190,12 @@ class ArtworkInfo:
     platforms: list[str] = field(default_factory=list)   # target platforms
     characters: list[str] = field(default_factory=list)  # canonical characters (parity with story.json)
     created_at: str = ""
+    # When the piece was published on its ORIGINAL platform, as that platform
+    # reports it — distinct from created_at, which is when PawPoller first saw
+    # it. For a bulk import those differ by years, and sorting on the wrong
+    # one made "Most recent" mean "most recently imported" (4.0.12). Written by
+    # the importer; empty for a hand-made piece, whose created_at is honest.
+    original_posted_at: str = ""
     # Image description for screen readers (gap G6). Used by platforms that
     # support per-image alt (Bluesky today); falls back to the title at post
     # time so alt is never regressed to empty.
@@ -262,6 +268,7 @@ def list_artworks() -> list[dict]:
             "variants": data.get("variants", []),
             "import_source": data.get("import_source", {}),
             "created_at": data.get("created_at", ""),
+            "original_posted_at": data.get("original_posted_at", ""),
             # Who drew it (3.5.2). Carried into the list so the Library can flag
             # a piece with no attribution — posting one uncredited is the thing
             # the credit machinery exists to prevent, and 26 works in the
@@ -347,6 +354,7 @@ def load_artwork(name: str) -> ArtworkInfo:
         platforms=data.get("platforms", []),
         characters=list(data.get("characters", []) or []),
         created_at=data.get("created_at", ""),
+        original_posted_at=data.get("original_posted_at", ""),
         alt_text=data.get("alt_text", ""),
         variants=list(data.get("variants", []) or []),
         artist=_clean_artist(data.get("artist")),
@@ -523,8 +531,43 @@ def build_artwork_package(
         # Categories are the platform's submission params; alt_text rides along
         # for posters that support per-image alt (bluesky.py reads it, G6).
         extra={**dict(artwork.categories_by_platform.get(platform, {})),
-               **({"alt_text": artwork.alt_text} if artwork.alt_text else {})},
+               **({"alt_text": artwork.alt_text} if artwork.alt_text else {}),
+               # Where this piece is already live, for the announcement to link
+               # to (4.3.0). Only the announcing platform pays the query.
+               **(_artwork_links(artwork.name, exclude=platform) if platform == "tg" else {})},
     )
+
+
+def _artwork_links(artwork_name: str, exclude: str) -> dict:
+    """``links`` / ``links_by_platform`` for an artwork's posted publications.
+
+    The artwork twin of ``story_reader._story_extra``'s link block — which was
+    the ONLY producer of ``extra['links']`` in the repo, so a Telegram artwork
+    post never had anything to link to (publish_flow spec §6). Never fatal: an
+    announcement with no links is still a valid "this exists" post.
+    """
+    try:
+        from database.db import get_connection
+        from database import posting_queries
+        conn = get_connection()
+        try:
+            pubs = posting_queries.get_publications(
+                conn, story_name=artwork_name, status="posted", content_type="artwork")
+        finally:
+            conn.close()
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Could not resolve publication links for %s: %s", artwork_name, e)
+        return {}
+    seen: set[str] = set()
+    pairs: list[tuple[str, str]] = []
+    for pub in pubs:
+        url = (pub.get("external_url") or "").strip()
+        # Don't tell the channel to go read the channel.
+        if not url or pub.get("platform") == exclude or url in seen:
+            continue
+        seen.add(url)
+        pairs.append((str(pub.get("platform") or ""), url))
+    return {"links": [u for _, u in pairs], "links_by_platform": pairs} if pairs else {}
 
 
 # ── Creation (used by the upload + create-from-local-path endpoints) ──────
@@ -581,6 +624,7 @@ def create_artwork(
     source: dict | None = None,
     alt_text: str = "",
     artist: dict | None = None,
+    original_posted_at: str = "",
 ) -> str:
     """Create a new artwork folder (image + masterpiece.json). Returns its name.
 
@@ -617,6 +661,9 @@ def create_artwork(
         "alt_text": alt_text,
         "import_source": source or {},
         "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        # Only written when known — an absent key reads back as "never posted
+        # anywhere we know of", which is different from a recorded empty one.
+        **({"original_posted_at": original_posted_at} if original_posted_at else {}),
     }
     # Only written when supplied — an absent key reads back as "no artist
     # recorded", which is different from a recorded-but-empty one.

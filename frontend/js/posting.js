@@ -350,15 +350,18 @@ const Posting = {
                 }).join('');
             }
 
-            // Upload buttons for unpublished platforms
+            // Sites the story is not on yet: named, but with no publish buttons
+            // here (4.2.0, spec §7.6 / §10 Q5). Those buttons posted as the
+            // platform DEFAULT account with no picker and no confirmation —
+            // on a multi-persona install, possibly the wrong persona. Publishing
+            // lives in the editor's Publish Check, which has the persona picker,
+            // the dialog and per-site results.
             let uploadHtml = '';
             if (unpublished.length > 0) {
-                const uploadBtns = unpublished.map(p => {
-                    const emoji = PLATFORM_EMOJI[p] || '📦';
-                    const label = (PLATFORM_LABELS[p] || p).replace(/^.+\s/, '');
-                    return `<button class="btn btn-sm btn-primary" data-post-action="upload-to" data-post-story="${Utils.escapeHtml(storyName)}" data-post-platform="${p}">${emoji} Upload to ${label}</button>`;
-                }).join('');
-                uploadHtml = `<div class="upload-actions">${uploadBtns}</div>`;
+                const names = unpublished.map(p =>
+                    `${PLATFORM_EMOJI[p] || '📦'} ${Utils.escapeHtml((PLATFORM_LABELS[p] || p).replace(/^.+\s/, ''))}`).join(' · ');
+                uploadHtml = `<div class="upload-actions muted" style="font-size:.85rem">Not yet on ${names} —
+                    <a href="#/editor/${Utils.escapeHtml(storyName)}">publish from the editor ↗</a></div>`;
             }
 
             // Smarter "Update All" label: when change detection knows some
@@ -700,19 +703,6 @@ const Posting = {
                 },
             },
         });
-    },
-
-    async _uploadTo(storyName, platform) {
-        const label = PLATFORM_LABELS[platform] || platform;
-        if (!confirm(`⚠ LIVE PUBLISH\n\nPost "${storyName.replace(/_/g, ' ')}" to ${label} — it will be immediately visible to the public.\n\nContinue?`)) return;
-        try {
-            const data = await API.postStory({ story_name: storyName, platforms: [platform], confirm_live: true });
-            const successes = data.successes || 0;
-            alert(successes > 0 ? 'Upload complete!' : 'Upload failed — check the log.');
-            this.renderStoryDetail(storyName);
-        } catch (err) {
-            alert('Upload failed: ' + err.message);
-        }
     },
 
     async _updateSingle(storyName, platform, chapterIndex) {

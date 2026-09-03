@@ -709,6 +709,28 @@ const API = {
     triggerFBRPoll() { return this.post('/api/fbr/poll/trigger'); },
     fullFBRResync() { return this.post('/api/fbr/poll/full-resync'); },
     getFBRPollProgress() { return this.get('/api/fbr/poll/progress'); },
+    /* ── Telegram convenience methods ─────────────────────────────
+     * Channel analytics. There are deliberately no auth methods here — the
+     * bot token and channel are set through /api/settings/telegram/*, which
+     * predates this router and is what the first-run wizard drives.
+     * ONE metric: reactions. No views (not in the Bot API at all) and no
+     * comments (channel discussion lives in a separate linked group).
+     * Submission ids are "<chat_id>:<message_id>", so every path-embedded id
+     * MUST be encodeURIComponent'd — a raw ':' is legal in a path segment but
+     * a private channel's id also begins with '-', and the CSV writer quotes
+     * it for the same reason.
+     */
+    getTGStatus() { return this.get('/api/tg/status'); },
+    getTGSummary(params) { return this.get('/api/tg/summary', params); },
+    getTGSubmissions(params) { return this.get('/api/tg/submissions', params); },
+    getTGSubmission(id) { return this.get(`/api/tg/submissions/${encodeURIComponent(id)}`); },
+    getTGSnapshots(id, params) { return this.get(`/api/tg/submissions/${encodeURIComponent(id)}/snapshots`, params); },
+    getTGAggregate(params) { return this.get('/api/tg/aggregate', params); },
+    getTGComparison(ids, params) { return this.get('/api/tg/comparison', { ids: ids.join(','), ...params }); },
+    getTGPollLog(limit) { return this.get('/api/tg/poll_log', { limit }); },
+    triggerTGPoll() { return this.post('/api/tg/poll/trigger'); },
+    fullTGResync() { return this.post('/api/tg/poll/full-resync'); },
+    getTGPollProgress() { return this.get('/api/tg/poll/progress'); },
     /* ── THR (Threads) convenience methods ────────────────────────
      * Official Graph API (OAuth long-lived token). Posts identified by media ids.
      * Metrics: views, likes, reposts, replies, quotes.
@@ -771,13 +793,22 @@ const API = {
      * They do NOT use get()/post() because the response is a file
      * download, not JSON to be parsed in-page.
      */
+    // Inkbunny's routes are unprefixed — the app began as an Inkbunny
+    // analytics tool and they kept their original paths.
+    _exportBase(platform) {
+        return platform === 'ib' ? '/api' : `/api/${platform}`;
+    },
     exportSubmissions(platform) {
-        const urls = { ib: '/api/export/submissions', fa: '/api/fa/export/submissions', ws: '/api/ws/export/submissions', sf: '/api/sf/export/submissions', sqw: '/api/sqw/export/submissions', ao3: '/api/ao3/export/submissions', da: '/api/da/export/submissions', wp: '/api/wp/export/submissions', ik: '/api/ik/export/submissions', bsky: '/api/bsky/export/submissions', tw: '/api/tw/export/submissions', mast: '/api/mast/export/submissions', tum: '/api/tum/export/submissions', pix: '/api/pix/export/submissions', thr: '/api/thr/export/submissions', e621: '/api/e621/export/submissions', fn: '/api/fn/export/submissions', fbr: '/api/fbr/export/submissions' };
-        window.open(urls[platform] || urls.ib, '_blank');
+        // Derived, not a literal map. The old map was hand-maintained and had
+        // silently fallen behind: Instagram and Telegram were both missing, and
+        // because the lookup fell back to Inkbunny's URL, asking for either
+        // one downloaded INKBUNNY's CSV — wrong data under the right filename,
+        // with no error to notice.
+        window.open(`${this._exportBase(platform)}/export/submissions`, '_blank');
     },
     exportSnapshots(platform, id) {
-        const bases = { ib: '/api/export/snapshots', fa: '/api/fa/export/snapshots', ws: '/api/ws/export/snapshots', sf: '/api/sf/export/snapshots', sqw: '/api/sqw/export/snapshots', ao3: '/api/ao3/export/snapshots', da: '/api/da/export/snapshots', wp: '/api/wp/export/snapshots', ik: '/api/ik/export/snapshots', bsky: '/api/bsky/export/snapshots', tw: '/api/tw/export/snapshots', mast: '/api/mast/export/snapshots', tum: '/api/tum/export/snapshots', pix: '/api/pix/export/snapshots', thr: '/api/thr/export/snapshots', e621: '/api/e621/export/snapshots', fn: '/api/fn/export/snapshots', fbr: '/api/fbr/export/snapshots' };
-        const url = (bases[platform] || bases.ib) + (id ? `?id=${id}` : '');
+        const url = `${this._exportBase(platform)}/export/snapshots`
+            + (id ? `?id=${encodeURIComponent(id)}` : '');
         window.open(url, '_blank');
     },
     /* ── Groups methods ──────────────────────────────────────────

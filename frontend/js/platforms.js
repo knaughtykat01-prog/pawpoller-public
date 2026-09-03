@@ -28,6 +28,11 @@
         { code: 'e621', label: 'e621',         emoji: '\u{1F43E}', color: 'var(--platform-e621)', pollOnly: false },
         { code: 'fn',   label: 'FurryNetwork', emoji: '\u{1F310}', color: '#3b8ed0',               pollOnly: false },
         { code: 'fbr',  label: 'Furbooru',     emoji: '\u{1F5BC}', color: '#3d7b3d',               pollOnly: true  },
+        // Reactions and subscriber counts make Telegram pollable as of 4.0.10,
+        // so it is no longer postOnly and DOES appear in analytics. It has no
+        // view counter and never will (not in the Bot API at all), which the
+        // "engagement" metric family already handles — same as Bluesky/Tumblr.
+        { code: 'tg',   label: 'Telegram',     emoji: '\u{1F4E3}', color: '#2AABEE',               pollOnly: false },
     ];
 
     /* ── Metric metadata ──────────────────────────────────────────────────
@@ -94,6 +99,12 @@
                 'views', 'views', { faves: 'Likes' }),
         e621: M('score', null, 'total_favorites', 'total_comments', 'score', 'score'),
         fbr:  M('score', null, 'total_favorites', 'total_comments', 'score', 'score'),
+        // Reactions are the engagement metric; there is no view counter and
+        // never will be, so views stays null the way it does for Bluesky and
+        // Tumblr. Without an entry here tg fell through to the 'views' default
+        // and claimed a total_views column that does not exist.
+        tg:   M('engagement', null, 'total_reactions', null,
+                'reactions', 'faves', { faves: 'Reactions' }),
     };
     PLATFORMS.forEach(p => { p.metrics = METRICS[p.code] || V(); });
 
@@ -108,7 +119,7 @@
     // Each platform's official logo, bundled under /img/platforms/. Itaku and
     // Weasyl ship SVGs (scalable); the rest are PNGs. Trademarks of their owners
     // — see the disclaimer on the Platforms hub.
-    const _svgLogos = ['ik', 'ws', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621'];
+    const _svgLogos = ['ik', 'ws', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'tg'];
     // Platforms with no bundled logo asset fall back to their emoji (the tile
     // renderer treats a null logo that way). Keeps a broken <img> off the hub.
     const _noLogo = ['fn', 'fbr'];
@@ -175,6 +186,26 @@
     }
 
     window.PLATFORMS = PLATFORMS;
+    /* Everything that can actually produce numbers.
+     *
+     * A post-only platform has no stats to poll, so it must not appear in
+     * analytics rollups, charts, or "top viewed" lists, where it would render
+     * as a permanent row of zeros. It DOES belong in window.PLATFORMS, because
+     * pickers, labels and logos all read from there; without an entry it
+     * renders as a bare code with no icon.
+     *
+     * ⚠ The test is `metrics`, not a flag. The original filtered on
+     * `p.postOnly` — a property no entry has ever defined, since the entries
+     * carry `pollOnly` — so `!p.postOnly` was true for all twenty and the
+     * filter returned the whole list. It gave the right answer only because
+     * the post-only set happened to be empty; the next broadcast-only platform
+     * would have been silently folded into every chart as a row of zeros.
+     * Keying off the metric definition matches what the server does
+     * (database/platform_metrics.py): a platform is pollable exactly when it
+     * has somewhere to read numbers from.
+     *
+     * Analytics surfaces iterate this; pickers keep iterating PLATFORMS. */
+    window.POLLABLE_PLATFORMS = PLATFORMS.filter(p => !!p.metrics);
     window.platformByCode = function (code) { return byCode[code] || null; };
     window.platformRoute = platformRoute;
     window.platformStat = platformStat;

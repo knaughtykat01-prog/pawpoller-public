@@ -35,6 +35,17 @@ from database.analytics_queries import get_top_fans, get_trending_submissions
 
 logger = logging.getLogger(__name__)
 
+# Update types this bot asks Telegram for.
+#
+# ⚠ Telegram's default is "everything EXCEPT chat_member, message_reaction and
+# message_reaction_count", so a channel's reaction counts are excluded unless
+# they are named explicitly. Declaring the list means also naming the types the
+# notification commands rely on, or they stop arriving.
+#
+# Serialised as JSON because httpx would otherwise encode a Python list as
+# repeated query parameters, which Telegram rejects.
+_ALLOWED_UPDATES = '["message", "channel_post", "message_reaction_count"]'
+
 # Track the last processed update_id to avoid processing duplicates.
 _last_update_id = 0
 
@@ -54,6 +65,43 @@ async def _send(token: str, chat_id: str, text: str) -> None:
 _CONFLICT_BACKOFF = 0  # seconds to sleep before next poll (0 = normal)
 
 
+def _record_reaction_update(payload: dict) -> None:
+    """Store a pushed reaction count against the post it belongs to.
+
+    Reactions cannot be polled — there is no query-by-message endpoint — so
+    this is the ONLY way the numbers ever arrive. They are also not buffered
+    while unsubscribed, which is why `allowed_updates` matters so much and why
+    counting can only ever start from the day it is switched on.
+
+    Telegram sends the FULL current set each time, not a delta, so removing a
+    reaction arrives as a shorter list rather than a negative number.
+
+    A message PawPoller did not send is ignored without complaint: someone may
+    react to a post made by hand in the channel, and we only track our own.
+    """
+    try:
+        chat = (payload.get("chat") or {}).get("id")
+        message_id = payload.get("message_id")
+        if chat is None or message_id is None:
+            return
+        from database.db import get_connection
+        from database import tg_queries
+        conn = get_connection()
+        try:
+            hit = tg_queries.apply_reaction_count(
+                conn, chat_id=chat, message_id=message_id,
+                reactions=payload.get("reactions") or [])
+            if hit:
+                conn.commit()
+                logger.info("TG: reactions updated for %s:%s", chat, message_id)
+        finally:
+            conn.close()
+    except Exception as e:
+        # A reaction we fail to store is a lost data point, never a reason to
+        # kill the bot loop that also delivers notification commands.
+        logger.warning("TG: could not record reaction update: %s", e)
+
+
 async def _poll_updates(token: str) -> list[dict]:
     """Fetch new messages from Telegram using long polling.
 
@@ -66,7 +114,14 @@ async def _poll_updates(token: str) -> list[dict]:
         async with httpx.AsyncClient(timeout=35.0) as client:
             resp = await client.get(
                 f"https://api.telegram.org/bot{token}/getUpdates",
-                params={"offset": _last_update_id + 1, "timeout": 30},
+                params={"offset": _last_update_id + 1, "timeout": 30,
+                        # ⚠ Telegram's DEFAULT allowed_updates excludes
+                        # message_reaction_count, so reactions were being
+                        # dropped by omission. It must be re-sent on EVERY call
+                        # — it is not sticky, and one call without it silently
+                        # reverts to the default. Reactions are not buffered
+                        # while unsubscribed: they are gone, with no backfill.
+                        "allowed_updates": _ALLOWED_UPDATES},
             )
             # 409 Conflict = another bot instance is polling the same token.
             # Back off exponentially (30s → 60s → 120s, cap 300s) to avoid
@@ -1078,7 +1133,10 @@ async def run_bot() -> None:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
                 f"https://api.telegram.org/bot{token}/getUpdates",
-                params={"offset": -1},
+                # The flush needs allowed_updates too — without it this call
+                # resets the subscription to the default, and the first reactions
+                # after startup are lost.
+                params={"offset": -1, "allowed_updates": _ALLOWED_UPDATES},
             )
             data = resp.json()
             results = data.get("result", [])
@@ -1100,6 +1158,24 @@ async def run_bot() -> None:
             await asyncio.sleep(30)
             continue
 
+        # ⚠ Telegram permits exactly ONE getUpdates consumer per bot token; a
+        # second gets 409. main.py and server.py BOTH start this loop, so a
+        # paired desktop and its server already contend — that is what
+        # _CONFLICT_BACKOFF was written for.
+        #
+        # Contention was merely noisy while this loop only handled commands
+        # (whoever won answered them). It is a correctness problem now that it
+        # also ingests reactions: each consumer takes updates the other never
+        # sees, so the reaction counts split unpredictably between two machines
+        # and neither has the full picture.
+        #
+        # Polling already arbitrates this with get_polling_owner(). Reusing it
+        # means the same machine owns both, and no new setting is invented.
+        from posting.scheduler import detect_runtime_mode
+        if config.get_polling_owner(detect_runtime_mode()) != "local":
+            await asyncio.sleep(60)
+            continue
+
         # If another bot instance is contending for this token, back off
         # instead of hammering the API.  _CONFLICT_BACKOFF is set by
         # _poll_updates() on 409 responses and reset on success.
@@ -1108,6 +1184,14 @@ async def run_bot() -> None:
 
         updates = await _poll_updates(token)
         for update in updates:
+            # ⚠ A reaction update carries `chat` at the UPDATE ROOT, not inside
+            # `message`. The command allow-list below reads msg["chat"]["id"],
+            # which is "" for a reaction — so without its own branch every
+            # reaction is silently dropped by the security filter.
+            if "message_reaction_count" in update:
+                _record_reaction_update(update["message_reaction_count"])
+                continue
+
             msg = update.get("message", {})
             text = msg.get("text", "")
             msg_chat_id = str(msg.get("chat", {}).get("id", ""))

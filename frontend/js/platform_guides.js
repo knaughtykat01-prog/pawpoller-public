@@ -318,6 +318,32 @@
       ],
     },
 
+    // ── Telegram ─────────────────────────────────────────────
+    tg: {
+      kind: 'Analytics + posting', difficulty: 'Easy',
+      summary: 'Broadcast art and story announcements to a Telegram channel you run, and track the reactions and subscribers they earn.',
+      need: ['A Telegram channel you own', 'A bot, made in 30 seconds', 'The bot added to the channel as an admin'],
+      steps: [
+        { t: 'Create a bot', b: 'Message <b>@BotFather</b> on Telegram and send <code>/newbot</code>. Give it a name and a username ending in <code>bot</code>. He replies with a <b>token</b> — a long string like <code>123456789:AAHk…</code>. That whole string is the token.',
+          link: { label: '@BotFather', url: 'https://t.me/BotFather' } },
+        { t: 'Create your channel', b: 'In Telegram: <b>New Channel</b>. Public or private both work — a public channel gets a <code>@username</code>, a private one does not.' },
+        { t: 'Add the bot as an admin', b: 'Channel &rarr; <b>Administrators</b> &rarr; <b>Add Admin</b> &rarr; your bot. ⚠ <b>Tick "Post Messages"</b> — admin rights are individual toggles, and a bot can be an admin and still not be allowed to post. This is the step people miss.' },
+        { t: 'Post one message in the channel', b: 'Anything at all. An admin bot receives channel posts, which is how PawPoller can find the channel’s id for you.' },
+        { t: 'Connect in PawPoller', b: 'Settings &rarr; Telegram &rarr; paste the bot token, then press <b>🔍 Find my channel</b>. It fills the channel in. Then <b>Save &amp; send test</b> — a real message lands in the channel, and PawPoller tells you <i>which</i> channel it reached.' },
+      ],
+      paste: 'Settings → Telegram → Channel posting',
+      renew: { when: 'Bot tokens don’t expire', how: 'Only if you revoke one with /revoke in BotFather — then paste the new token back in.' },
+      notes: [
+        '⚠ <b>A private channel has no <code>@username</code>.</b> Its title is not a handle. It can only be reached by a numeric <code>-100…</code> id, which Telegram never shows you — that is what <b>Find my channel</b> fetches. A <code>t.me/+…</code> invite link is not a handle either, and a bot cannot join by invite link at all.',
+        '⚠ <b>Typing a bare name is risky.</b> A bare word is treated as a public <code>@username</code>, and someone else may already own it. PawPoller now tells you which channel it actually reached, so check that name is yours.',
+        '<b>Reactions are counted from the day you switch tracking on.</b> Telegram <i>pushes</i> reactions and offers no way to ask for them, so anything posted before then shows as <i>not counted</i> rather than as zero — a real absence of measurement, not an absence of interest.',
+        '<b>No view counts, ever.</b> The eye-count you see on a channel post is not in the bot API at all. It is not a gap PawPoller can close later.',
+        '<b>Posts are never edited.</b> Telegram’s API refuses to edit anything older than 48 hours, so PawPoller leaves a Telegram post alone and skips it when syncing corrections elsewhere.',
+        '<b>Stories are announced, not posted.</b> A Telegram message caps at ~700 words, so a story goes out as a cover, a blurb, and links to where it is actually published.',
+        '<b>Full control per piece.</b> Blur, hashtags, caption, forwarding, full quality, silent and pin can be set channel-wide in Settings and overridden on any single artwork or story.',
+      ],
+    },
+
     // ── e621 ─────────────────────────────────────────────────
     e621: {
       kind: 'Analytics', difficulty: 'Easy',

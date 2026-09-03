@@ -221,7 +221,8 @@ window.Bookshelf = {
                 ${personaSel}
                 <input id="shelf-search" class="shelf-input" type="search" placeholder="Search — try tag:white_tiger -tag:cum artist:…" title="Bare words match title/name. Fields: tag: platform: artist: persona: rating: type: series: status:  —  prefix with - (or use tag_exclude:) to exclude, comma for or, * for wildcard, quotes for spaces. e.g. tag:white_tiger -tag:cum status:draft" value="${this.esc(this._search)}">
                 <select id="shelf-sort" class="shelf-input shelf-sort">
-                    <option value="recent">Most recent</option>
+                    <option value="recent">Recently posted</option>
+                    <option value="added">Recently added</option>
                     <option value="title">Title A–Z</option>
                     <option value="platforms">Most platforms</option>
                     <option value="views">Most viewed</option>
@@ -339,7 +340,14 @@ window.Bookshelf = {
         else if (['views', 'favorites', 'comments'].includes(this._sort)) {
             const k = this._sort;
             list.sort((a, b) => ((b.stats || {})[k] || 0) - ((a.stats || {})[k] || 0));
-        } else list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+        }
+        // "Recently added" is when PawPoller met the piece (created_at). "Recently
+        // posted" is when it was actually published, which is what "most recent"
+        // always meant to the user — but until 4.0.12 both were created_at, so a
+        // bulk import of old work sorted to the top in walk order. A piece with
+        // no known post date falls back to created_at rather than off the end.
+        else if (this._sort === 'added') list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+        else list.sort((a, b) => (b.original_posted_at || b.created_at || '').localeCompare(a.original_posted_at || a.created_at || ''));
         return list;
     },
 

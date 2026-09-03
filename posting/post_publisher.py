@@ -410,7 +410,8 @@ async def _publish_thread_parts(parts: list[dict], platform: str,
 
 async def publish_post(post_id: int, platforms: list[str],
                        account_ids: dict[str, int] | None = None,
-                       settings: dict | None = None) -> list[dict[str, Any]]:
+                       settings: dict | None = None,
+                       persona_id: int | None = None) -> list[dict[str, Any]]:
     """Publish a composed post to each platform, recording every outcome.
 
     Returns one result dict per platform. Each publication row is upserted so a
@@ -427,6 +428,22 @@ async def publish_post(post_id: int, platforms: list[str],
 
     results: list[dict[str, Any]] = []
     for platform in platforms:
+        if persona_id is not None:
+            # Persona-first: the same refusal manager._resolve_account_id makes,
+            # and for the same reason — the platform default may be another
+            # persona's account. No publication row is written for a refusal.
+            from database import personas as personas_db
+            conn = get_connection()
+            try:
+                err = personas_db.persona_account_error(
+                    conn, platform, account_ids.get(platform), persona_id)
+            finally:
+                conn.close()
+            if err:
+                results.append({"platform": platform, "account_id": account_ids.get(platform) or 0,
+                                "success": False, "external_id": "", "external_url": "",
+                                "error": err, "refused": True})
+                continue
         res = await _publish_one(post, platform, account_ids.get(platform), settings)
         results.append(res)
         conn = get_connection()

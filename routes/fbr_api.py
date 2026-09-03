@@ -29,6 +29,7 @@ fbr_router = APIRouter(prefix="/api/fbr")
 
 # -- Furbooru Auth ----------------------------------------------------------------
 
+
 @fbr_router.get("/auth/status")
 def fbr_auth_status():
     settings = config.get_settings()
@@ -95,6 +96,7 @@ def fbr_disconnect():
 
 # -- Furbooru Polling -------------------------------------------------------------
 
+
 @fbr_router.get("/poll/progress")
 def get_fbr_poll_progress():
     return dict(fbr_poll_progress)
@@ -131,6 +133,7 @@ async def fbr_full_resync():
 
 
 # -- Furbooru Data ----------------------------------------------------------------
+
 
 @fbr_router.get("/status")
 def get_fbr_status():
@@ -195,6 +198,26 @@ def get_fbr_submissions(
         conn.close()
 
 
+# Registered BEFORE the bare /submissions/{id} route below. The `:path`
+# converter is greedy and Starlette matches in registration order, so with
+# the bare route first this URL resolved to a submission id of
+# "<id>/snapshots" and returned 404 for every post that exists.
+@fbr_router.get("/submissions/{submission_id:path}/snapshots")
+def get_fbr_submission_snapshots(
+    submission_id: str,
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+):
+    conn = get_connection()
+    try:
+        return {"snapshots": fbr_queries.get_fbr_snapshots(conn, submission_id, start, end)}
+    except Exception as e:
+        logger.error("Error in /api/fbr/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
+        raise HTTPException(500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @fbr_router.get("/submissions/{submission_id:path}")
 def get_fbr_submission(submission_id: str):
     conn = get_connection()
@@ -224,22 +247,6 @@ def get_fbr_submission(submission_id: str):
         raise
     except Exception as e:
         logger.error("Error in /api/fbr/submissions/%s: %s", submission_id[:50], e, exc_info=True)
-        raise HTTPException(500, detail=str(e))
-    finally:
-        conn.close()
-
-
-@fbr_router.get("/submissions/{submission_id:path}/snapshots")
-def get_fbr_submission_snapshots(
-    submission_id: str,
-    start: Optional[str] = Query(None),
-    end: Optional[str] = Query(None),
-):
-    conn = get_connection()
-    try:
-        return {"snapshots": fbr_queries.get_fbr_snapshots(conn, submission_id, start, end)}
-    except Exception as e:
-        logger.error("Error in /api/fbr/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
         raise HTTPException(500, detail=str(e))
     finally:
         conn.close()

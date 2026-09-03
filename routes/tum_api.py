@@ -28,6 +28,7 @@ tum_router = APIRouter(prefix="/api/tum")
 
 # -- TUM Auth -----------------------------------------------------------------
 
+
 @tum_router.get("/auth/status")
 def tum_auth_status():
     settings = config.get_settings()
@@ -92,6 +93,7 @@ def tum_disconnect():
 
 # -- TUM Polling --------------------------------------------------------------
 
+
 @tum_router.get("/poll/progress")
 def get_tum_poll_progress():
     return dict(tum_poll_progress)
@@ -128,6 +130,7 @@ async def tum_full_resync():
 
 
 # -- TUM Data -----------------------------------------------------------------
+
 
 @tum_router.get("/status")
 def get_tum_status():
@@ -190,6 +193,26 @@ def get_tum_submissions(
         conn.close()
 
 
+# Registered BEFORE the bare /submissions/{id} route below. The `:path`
+# converter is greedy and Starlette matches in registration order, so with
+# the bare route first this URL resolved to a submission id of
+# "<id>/snapshots" and returned 404 for every post that exists.
+@tum_router.get("/submissions/{submission_id:path}/snapshots")
+def get_tum_submission_snapshots(
+    submission_id: str,
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+):
+    conn = get_connection()
+    try:
+        return {"snapshots": tum_queries.get_tum_snapshots(conn, submission_id, start, end)}
+    except Exception as e:
+        logger.error("Error in /api/tum/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
+        raise HTTPException(500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @tum_router.get("/submissions/{submission_id:path}")
 def get_tum_submission(submission_id: str):
     conn = get_connection()
@@ -219,22 +242,6 @@ def get_tum_submission(submission_id: str):
         raise
     except Exception as e:
         logger.error("Error in /api/tum/submissions/%s: %s", submission_id[:50], e, exc_info=True)
-        raise HTTPException(500, detail=str(e))
-    finally:
-        conn.close()
-
-
-@tum_router.get("/submissions/{submission_id:path}/snapshots")
-def get_tum_submission_snapshots(
-    submission_id: str,
-    start: Optional[str] = Query(None),
-    end: Optional[str] = Query(None),
-):
-    conn = get_connection()
-    try:
-        return {"snapshots": tum_queries.get_tum_snapshots(conn, submission_id, start, end)}
-    except Exception as e:
-        logger.error("Error in /api/tum/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
         raise HTTPException(500, detail=str(e))
     finally:
         conn.close()

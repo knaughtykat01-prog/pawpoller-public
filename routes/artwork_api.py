@@ -379,7 +379,10 @@ async def publish_artwork(body: dict):
     Body: {
         "artwork_name": "Autumn_Study",
         "platforms": ["ib", "fa", "bsky"],
-        "account_ids": {"fa": 5}   // optional, {platform: account_id}
+        "account_ids": {"fa": 5},  // optional, {platform: account_id}
+        "persona_id": 2,           // optional: persona-first — a platform with no
+                                   // account of this persona's is refused, not defaulted
+        "description_overrides": {"tg": "…"}   // optional: this post only (4.3.0)
     }
     """
     from posting import manager
@@ -387,15 +390,25 @@ async def publish_artwork(body: dict):
     artwork_name = body.get("artwork_name")
     platforms = body.get("platforms", [])
     account_ids = body.get("account_ids")
+    persona_id = body.get("persona_id")
+    description_overrides = body.get("description_overrides") or None
 
     if not artwork_name:
         raise HTTPException(400, detail="artwork_name is required")
     if not platforms:
         raise HTTPException(400, detail="platforms list is required")
+    # Live-publish safety guard — mirrors posting_api.post_story so a UI
+    # regression can't fire a real, publicly-visible post without an explicit
+    # acknowledgement. The story endpoints have carried this since they were
+    # written; the artwork/posts/sync ones never did (4.0.11).
+    if not body.get("confirm_live"):
+        raise HTTPException(
+            400, detail="publish requires confirm_live=true (live-publish safety guard)")
 
     try:
         results = await manager.post_artwork(
-            artwork_name, platforms, account_ids=account_ids)
+            artwork_name, platforms, account_ids=account_ids, persona_id=persona_id,
+            description_overrides=description_overrides)
         successes = sum(1 for r in results if r.get("success"))
         return {
             "status": "completed",
@@ -456,12 +469,27 @@ async def schedule_artwork(body: dict):
     platform = body.get("platform")
     scheduled_at = body.get("scheduled_at")
     account_id = body.get("account_id")
+    persona_id = body.get("persona_id")
+    # This post only; the queue row carries it and the scheduler forwards it (4.3.0).
+    description_override = (body.get("description_override") or "").strip() or None
     if not name:
         raise HTTPException(400, detail="artwork_name is required")
     if not platform:
         raise HTTPException(400, detail="platform is required")
     if not scheduled_at:
         raise HTTPException(400, detail="scheduled_at is required")
+    if persona_id is not None:
+        # Persona-first schedules are checked NOW, not when the queue fires:
+        # a refusal at 3am with nobody watching is a silent non-post.
+        from database import personas as personas_db
+        from database.db import get_connection
+        conn = get_connection()
+        try:
+            err = personas_db.persona_account_error(conn, platform, account_id, persona_id)
+        finally:
+            conn.close()
+        if err:
+            raise HTTPException(400, detail=err)
 
     # Artwork must exist (load_artwork raises if it doesn't).
     try:
@@ -478,6 +506,7 @@ async def schedule_artwork(body: dict):
             account_id=account_id,
             content_type="artwork",
             scheduled_at=scheduled_str,
+            description_override=description_override,
             requires=get_platform_requires(platform),
         )
     finally:

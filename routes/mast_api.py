@@ -31,6 +31,7 @@ mast_router = APIRouter(prefix="/api/mast")
 
 # -- MAST Auth ----------------------------------------------------------------
 
+
 @mast_router.get("/auth/status")
 def mast_auth_status():
     """Check whether Mastodon credentials are configured and whether there is any MAST data."""
@@ -119,6 +120,7 @@ def mast_disconnect():
 
 # -- MAST Polling -------------------------------------------------------------
 
+
 @mast_router.get("/poll/progress")
 def get_mast_poll_progress():
     return dict(mast_poll_progress)
@@ -157,6 +159,7 @@ async def mast_full_resync():
 
 
 # -- MAST Data ----------------------------------------------------------------
+
 
 @mast_router.get("/status")
 def get_mast_status():
@@ -223,6 +226,31 @@ def get_mast_submissions(
         conn.close()
 
 
+# Registered BEFORE the bare /submissions/{id} route below. The `:path`
+# converter is greedy and Starlette matches in registration order, so with
+# the bare route first this URL resolved to a submission id of
+# "<id>/snapshots" and returned 404 for every post that exists.
+@mast_router.get("/submissions/{submission_id:path}/snapshots")
+def get_mast_submission_snapshots(
+    submission_id: str,
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+):
+    conn = get_connection()
+    try:
+        # Resolve rkey if needed
+        sub = mast_queries.get_mast_submission(conn, submission_id)
+        if not sub:
+            sub = mast_queries.get_mast_submission_by_rkey(conn, submission_id)
+        full_id = sub["submission_id"] if sub else submission_id
+        return {"snapshots": mast_queries.get_mast_snapshots(conn, full_id, start, end)}
+    except Exception as e:
+        logger.error("Error in /api/mast/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
+        raise HTTPException(500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @mast_router.get("/submissions/{submission_id:path}")
 def get_mast_submission(submission_id: str):
     conn = get_connection()
@@ -255,27 +283,6 @@ def get_mast_submission(submission_id: str):
         raise
     except Exception as e:
         logger.error("Error in /api/mast/submissions/%s: %s", submission_id[:50], e, exc_info=True)
-        raise HTTPException(500, detail=str(e))
-    finally:
-        conn.close()
-
-
-@mast_router.get("/submissions/{submission_id:path}/snapshots")
-def get_mast_submission_snapshots(
-    submission_id: str,
-    start: Optional[str] = Query(None),
-    end: Optional[str] = Query(None),
-):
-    conn = get_connection()
-    try:
-        # Resolve rkey if needed
-        sub = mast_queries.get_mast_submission(conn, submission_id)
-        if not sub:
-            sub = mast_queries.get_mast_submission_by_rkey(conn, submission_id)
-        full_id = sub["submission_id"] if sub else submission_id
-        return {"snapshots": mast_queries.get_mast_snapshots(conn, full_id, start, end)}
-    except Exception as e:
-        logger.error("Error in /api/mast/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
         raise HTTPException(500, detail=str(e))
     finally:
         conn.close()

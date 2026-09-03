@@ -4964,3 +4964,31 @@ html[data-mobile="1"] .sidebar.open .nav-group-label {
     color: var(--text-muted, var(--text-muted));
     text-align: right;
 }
+
+/* Telegram announcement options in the story metadata drawer.
+ *
+ * Matches the artwork edit form's tri-state controls (see artwork.css).
+ * "Default" is a real state — follow the channel setting — and the most common
+ * one, which is why these are selects rather than checkboxes. */
+.metadata-tg-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 7px 0;
+    border-top: 1px solid var(--border);
+}
+
+.metadata-tg-row:first-of-type { border-top: none; }
+
+.metadata-tg-row select {
+    flex: 0 0 auto;
+    min-width: 92px;
+}
+
+.metadata-tg-label {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.metadata-tg-label strong { color: var(--text-primary); }

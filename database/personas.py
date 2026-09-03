@@ -120,6 +120,60 @@ def list_accounts_by_persona(conn: sqlite3.Connection,
     return groups
 
 
+def accounts_for_persona(conn: sqlite3.Connection, persona_id: int,
+                         platforms=None) -> dict[str, list[int]]:
+    """``{platform: [account_id, ...]}`` for one persona, enabled accounts only,
+    default account first.
+
+    Returns a LIST per platform, not a single id, on purpose: a persona may
+    hold two accounts on the same platform, and the caller must be able to
+    see that and offer the choice rather than have one silently picked (the
+    Quick Publish ``_qpBuildMap`` bug, publish_flow spec §2). The wire format
+    still carries one id per platform; this is what lets the UI say "two
+    accounts here — pick one" before it builds that.
+    """
+    wanted = set(platforms) if platforms is not None else None
+    out: dict[str, list[int]] = {}
+    for a in accounts_db.list_accounts(conn, enabled_only=True):   # default-first order
+        if a.get("persona_id") != persona_id:
+            continue
+        if wanted is not None and a["platform"] not in wanted:
+            continue
+        out.setdefault(a["platform"], []).append(a["account_id"])
+    return out
+
+
+def persona_account_error(conn: sqlite3.Connection, platform: str,
+                          account_id: int | None, persona_id: int) -> str | None:
+    """Why a persona-first publish must NOT go ahead on ``platform`` — or None.
+
+    A persona-first publish never falls back to the platform's default
+    account: that default may belong to a different persona, and the whole
+    point of posting-by-persona is that nobody's work lands on somebody else's
+    account (publish_flow spec §3, §10 Q2 — decided "refuse, say why"). So:
+
+    * no account chosen for this platform  → refused, with the persona named;
+    * an account chosen that is not on this platform, belongs to another
+      persona (or to none), or is disabled → refused.
+
+    Shared by ``manager._resolve_account_id``, ``post_publisher.publish_post``
+    and the schedule routes, so every path that can post says the same thing.
+    """
+    p = get_persona(conn, persona_id)
+    pname = p["name"] if p else f"persona {persona_id}"
+    if account_id is None:
+        return (f"{pname} has no account on {platform} — not posted "
+                f"(a persona publish never falls back to the platform default)")
+    a = accounts_db.get_account(conn, account_id)
+    if not a or a.get("platform") != platform:
+        return f"account {account_id} is not a {platform} account"
+    if a.get("persona_id") != persona_id:
+        return f"account {account_id} on {platform} does not belong to {pname} — not posted"
+    if not a.get("enabled", 1):
+        return f"account {account_id} on {platform} is disabled"
+    return None
+
+
 def persona_stats(conn: sqlite3.Connection, persona_id: int) -> dict:
     """Combined {submissions, views, favorites, comments} for a persona, summed
     across its accounts, plus a per-platform breakdown. Reuses

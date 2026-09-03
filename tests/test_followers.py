@@ -136,8 +136,10 @@ class TestClientContract:
 
     def test_platform_set_matches_clients(self):
         # The DB-side platform set and the client roster must agree.
+        # `tg` is a channel's SUBSCRIBER count — the only per-channel number the
+        # Bot API exposes, and the only stat Telegram can be polled for at all.
         assert followers.FOLLOWER_PLATFORMS == {
-            "ws", "da", "wp", "ik", "bsky", "tw", "mast", "pix", "fn"}
+            "ws", "da", "wp", "ik", "bsky", "tw", "mast", "pix", "fn", "tg"}
 
 
 # ── API endpoint ──────────────────────────────────────────────

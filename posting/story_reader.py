@@ -22,6 +22,14 @@ from posting.platforms.base import StoryUploadPackage
 
 logger = logging.getLogger(__name__)
 
+# Longest description a Telegram STORY announcement will fall back to when no
+# short blurb is set. Deliberately well under the poster's 1,024-char caption
+# cap (posting/platforms/telegram.py CAPTION_LIMIT): the cap applies to the
+# whole caption — chapter title, blurb, every link and the hashtags — so the
+# blurb alone has to leave room for the rest. Not imported from the poster
+# module to keep story_reader free of platform imports.
+_TG_BLURB_LIMIT = 900
+
 # Platform → preferred format file patterns.
 # Each entry is (subdirectory, glob pattern, file_type label).
 # Checked in order; first match wins.
@@ -88,6 +96,11 @@ class StoryInfo:
     fandom: str = ""                                  # e.g. "Original Work", "Kung Fu Panda"
     category: str = ""                                # legacy single category (e.g. "M/M")
     categories: list[str] = None                      # list of categories
+    # Per-platform switches (Telegram's spoiler/tags/protect/…). The
+    # story-side counterpart of an artwork's categories_by_platform,
+    # which had no equivalent here because no story target had
+    # per-platform options until Telegram.
+    platform_options: dict = None
     warnings: list[str] = None                        # list of canonical archive warnings
     characters: list[str] = None                      # list of character tags
     relationships: list[str] = None                   # list of relationship tags
@@ -102,6 +115,8 @@ class StoryInfo:
             self.chapter_thumbnails = {}
         if self.categories is None:
             self.categories = [self.category] if self.category else []
+        if self.platform_options is None:
+            self.platform_options = {}
         if self.warnings is None:
             self.warnings = []
         if self.characters is None:
@@ -522,6 +537,8 @@ def _load_from_story_json(story_name: str, story_path: Path, json_path: Path) ->
         fandom=data.get("fandom", "Original Work"),
         category=data.get("category", ""),
         categories=raw_categories,
+        # Per-platform switches, e.g. {"tg": {"spoiler": true, "tags": false}}.
+        platform_options=data.get("platform_options") or {},
         warnings=raw_warnings,
         characters=raw_characters,
         relationships=raw_relationships,
@@ -649,6 +666,23 @@ def build_package(
             description = announcement
         else:
             description = (story.description or "")[:300]
+    elif platform == "tg":
+        # Telegram is the other broadcast surface and wants the short blurb,
+        # exactly as bsky does. This branch was missing: Telegram fell to the
+        # final `else` and received the FULL description, which on any story
+        # over ~1,000 characters made the poster refuse the announcement
+        # (CAPTION_LIMIT is 1,024 for the WHOLE caption — title, blurb, links
+        # and hashtags together). The artwork cascade already read
+        # descriptions for ("bsky", "tg"); the story one never did, so
+        # 4.0.5's "one blurb serves both" was true of artwork only.
+        #
+        # `descriptions['tg']` first so a per-post override is possible, then
+        # the shared announcement slot, then a truncated description as a
+        # floor. The floor is a fallback, not the intent: the poster still
+        # reports an over-long caption rather than silently cutting one.
+        description = (descs.get("tg", "").strip()
+                       or descs.get("announcement", "").strip()
+                       or (story.description or "")[:_TG_BLURB_LIMIT])
     elif platform in ("ib", "sf", "fa", "ws"):
         short = descs.get("short", "").strip()
         description = short if short else story.description
@@ -727,7 +761,63 @@ def build_package(
         file_type=file_type,
         word_count=word_count,
         thumbnail_path=thumbnail,
+        extra=_story_extra(story, platform, chapter_index),
     )
+
+
+def _story_extra(story, platform: str, chapter_index: int) -> dict:
+    """Per-platform submission params, plus where this work is already live.
+
+    Two things ride here:
+
+    * **Per-platform options** from story.json's ``platform_options`` — the
+      story-side equivalent of an artwork's ``categories_by_platform``, which
+      did not exist because no story target had per-platform switches until
+      Telegram.
+    * **``links``** — the URLs of this work's existing publications. An
+      announcement to a broadcast channel is only useful if it says where to
+      read the thing, and until now nothing populated this: the Telegram poster
+      read ``extra['links']`` and always found it empty, so its announcements
+      silently went out with no links at all.
+
+    Failing to read publications is not fatal — an announcement with no links is
+    still a valid "this exists" post, and a DB hiccup should not block a publish.
+    """
+    extra: dict = {}
+    opts = (getattr(story, "platform_options", None) or {}).get(platform)
+    if isinstance(opts, dict):
+        extra.update(opts)
+
+    try:
+        from database.db import get_connection
+        from database import posting_queries
+        conn = get_connection()
+        try:
+            pubs = posting_queries.get_publications(
+                conn, story_name=story.name, status="posted")
+        finally:
+            conn.close()
+        seen: set[str] = set()
+        links: list[str] = []
+        pairs: list[tuple[str, str]] = []   # (platform, url) — the picker needs the code (4.3.0)
+        for pub in pubs:
+            url = (pub.get("external_url") or "").strip()
+            # Don't tell the channel to go read the channel.
+            if not url or pub.get("platform") == platform or url in seen:
+                continue
+            # A chapter announcement links that chapter; a whole-story post
+            # links whatever the platform holds.
+            if chapter_index and pub.get("chapter_index") not in (0, chapter_index):
+                continue
+            seen.add(url)
+            links.append(url)
+            pairs.append((str(pub.get("platform") or ""), url))
+        if links:
+            extra["links"] = links
+            extra["links_by_platform"] = pairs
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Could not resolve publication links for %s: %s", story.name, e)
+    return extra
 
 
 def _resolve_format_file(

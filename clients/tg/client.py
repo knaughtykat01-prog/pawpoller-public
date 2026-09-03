@@ -88,6 +88,32 @@ class TgClient:
         logger.warning("Telegram API refused: %s", self.last_error)
         return None
 
+    async def get_follower_count(self) -> int | None:
+        """The channel's subscriber count.
+
+        Duck-typed: ``polling/followers.capture_followers`` looks for this
+        method by name and skips any client without it, so adding it here plus
+        ``tg`` to ``FOLLOWER_PLATFORMS`` is the whole integration.
+
+        This is the ONLY per-channel number the Bot API will give us. There is
+        no view count (client-API only) and no forward count; reactions arrive
+        as pushed updates rather than a query. See docs/specs/telegram_platform.md.
+        """
+        if not self.token or not self.channel:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                r = await client.post(self._url("getChatMemberCount"),
+                                      data={"chat_id": self.channel})
+                res = self._ok(r.json())
+        except httpx.HTTPError as e:
+            logger.warning("Telegram subscriber count failed (%s)", e)
+            return None
+        # _ok() returns the `result` field, which here is a bare int. A channel
+        # with one subscriber is a legitimate 0-adjacent value, so only None
+        # means "could not fetch".
+        return res if isinstance(res, int) else None
+
     async def create_post(self, text: str, image_paths: list[str] | None = None,
                           spoiler: bool = False, *,
                           silent: bool = False, protect: bool = False,

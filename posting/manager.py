@@ -173,8 +173,31 @@ def _get_poster(platform: str, account_id: int | None = None) -> PlatformPoster:
     return _posters[key]
 
 
-def _resolve_account_id(platform: str, account_id: int | None) -> int:
-    """Return a concrete account_id for a platform, defaulting to its default account."""
+def _resolve_account_id(platform: str, account_id: int | None,
+                        persona_id: int | None = None) -> int:
+    """Return a concrete account_id for a platform.
+
+    Two regimes, and the difference is the whole of publish_flow spec §3:
+
+    * ``persona_id`` given — a persona-first publish. The account must be one
+      of that persona's on this platform, or the platform is REFUSED
+      (``ValueError``). Never the platform default (it may be another
+      persona's), never a freshly invented one.
+    * no persona — the pre-4.2.0 behaviour, unchanged: an explicit id wins,
+      else the platform's default account, created if missing. ``create=True``
+      stays here deliberately; changing it is a behaviour change for every
+      existing caller and belongs in its own release.
+    """
+    if persona_id is not None:
+        from database import personas as personas_db
+        conn = get_connection()
+        try:
+            err = personas_db.persona_account_error(conn, platform, account_id, persona_id)
+        finally:
+            conn.close()
+        if err:
+            raise ValueError(err)
+        return account_id
     if account_id is not None:
         return account_id
     from database import accounts as accounts_db
@@ -183,6 +206,42 @@ def _resolve_account_id(platform: str, account_id: int | None) -> int:
         return accounts_db.get_default_account_id(conn, platform, create=True)
     finally:
         conn.close()
+
+
+# Platforms that ANNOUNCE a work rather than host it. They post LAST so the
+# links they carry can include what this same publish just created — "wherever
+# it lands first" (publish_flow spec §10 Q3). Everything else keeps the
+# caller's order.
+_ANNOUNCES_LAST = ("tg",)
+
+
+def _announcers_last(platforms: list[str]) -> list[str]:
+    return ([p for p in platforms if p not in _ANNOUNCES_LAST]
+            + [p for p in platforms if p in _ANNOUNCES_LAST])
+
+
+def _run_links(results: list[dict[str, Any]], chapter_index: int | None = None) -> list[tuple[str, str]]:
+    """``(platform, url)`` of this publish's successes so far, for the announcer.
+
+    A chapter announcement links that chapter (or a whole-story post); an
+    artwork has no chapters and takes everything.
+    """
+    out: list[tuple[str, str]] = []
+    for r in results:
+        url = r.get("external_url") or r.get("url") or ""
+        if not r.get("success") or not url:
+            continue
+        if chapter_index and r.get("chapter_index") not in (None, 0, chapter_index):
+            continue
+        out.append((str(r.get("platform") or ""), str(url)))
+    return out
+
+
+def _refused(platform: str, err: Exception, **extra) -> dict[str, Any]:
+    """A result row for a platform the persona guard refused — same shape as a
+    poster failure so the results panel renders it beside the others."""
+    return {"platform": platform, "success": False, "url": "", "error": str(err),
+            "refused": True, **extra}
 
 
 def get_platform_requires(platform: str) -> str:
@@ -328,6 +387,8 @@ async def post_story(
     chapters: list[int] | None = None,
     extras: dict[str, Any] | None = None,
     account_ids: dict[str, int] | None = None,
+    persona_id: int | None = None,
+    description_overrides: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Post a story to multiple platforms.
 
@@ -340,7 +401,13 @@ async def post_story(
             platforms that support it).
         account_ids: Optional ``{platform: account_id}`` selecting which account
             to post AS per platform. Platforms not listed use their default
-            account.
+            account — unless ``persona_id`` is given.
+        persona_id: When set this is a persona-first publish: every platform
+            must have one of that persona's accounts in ``account_ids`` or it
+            is refused (a result row with ``refused=True``), never defaulted.
+        description_overrides: ``{platform: text}`` for THIS post only —
+            ``build_package``'s first cascade branch (4.3.0). The stored
+            per-platform description is untouched.
 
     Returns:
         List of result dicts with platform, chapter, success, url, error.
@@ -358,13 +425,21 @@ async def post_story(
     else:
         chapter_list = chapters
 
-    for platform in platforms:
-        account_id = _resolve_account_id(platform, account_ids.get(platform))
+    for platform in _announcers_last(platforms):
+        try:
+            account_id = _resolve_account_id(platform, account_ids.get(platform), persona_id)
+        except ValueError as e:
+            results.append(_refused(platform, e, chapter=None))
+            continue
         poster = _get_poster(platform, account_id)
         for ch_idx in chapter_list:
-            package = story_reader.build_package(story, ch_idx, platform)
+            package = story_reader.build_package(
+                story, ch_idx, platform,
+                description_override=(description_overrides or {}).get(platform))
             if extras:
                 package.extra.update(extras)
+            if platform in _ANNOUNCES_LAST:
+                package.extra["run_links"] = _run_links(results, ch_idx)
 
             # Validate
             errors = poster.validate(package)
@@ -474,6 +549,8 @@ async def post_artwork(
     platforms: list[str],
     extras: dict[str, Any] | None = None,
     account_ids: dict[str, int] | None = None,
+    persona_id: int | None = None,
+    description_overrides: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Post one artwork (a single image) to multiple platforms.
 
@@ -487,7 +564,11 @@ async def post_artwork(
         platforms: Platform IDs (e.g. ["ib", "fa", "bsky"]).
         extras: Per-package overrides merged into ``package.extra`` before posting.
         account_ids: Optional ``{platform: account_id}`` selecting which account
-            to post AS per platform. Platforms not listed use their default.
+            to post AS per platform. Platforms not listed use their default —
+            unless ``persona_id`` is given.
+        persona_id: Persona-first publish: a platform without one of this
+            persona's accounts in ``account_ids`` is refused, never defaulted.
+        description_overrides: ``{platform: text}`` for THIS post only (4.3.0).
 
     Returns:
         List of result dicts with platform, success, url, error.
@@ -498,12 +579,20 @@ async def post_artwork(
     results: list[dict[str, Any]] = []
 
     _wm_temps: list[str] = []   # watermark temp files, cleaned after the loop
-    for platform in platforms:
-        account_id = _resolve_account_id(platform, account_ids.get(platform))
+    for platform in _announcers_last(platforms):
+        try:
+            account_id = _resolve_account_id(platform, account_ids.get(platform), persona_id)
+        except ValueError as e:
+            results.append(_refused(platform, e))
+            continue
         poster = _get_poster(platform, account_id)
-        package = artwork_reader.build_artwork_package(artwork, platform)
+        package = artwork_reader.build_artwork_package(
+            artwork, platform,
+            description_override=(description_overrides or {}).get(platform))
         if extras:
             package.extra.update(extras)
+        if platform in _ANNOUNCES_LAST:
+            package.extra["run_links"] = _run_links(results)
 
         # Watermark (gap-wave-5 §1): swap in a stamped temp copy before
         # validation (so the size check sees the real bytes) and post that.

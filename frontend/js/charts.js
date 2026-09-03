@@ -145,7 +145,7 @@ const Charts = {
      */
     _milestoneAnnotations(snapshots, metrics) {
         const prefixes = { views: 'V', favorites_count: 'F', comments_count: 'C', reads: 'R', votes: 'Vo', num_lists: 'L', likes: 'Lk', reshares: 'Rs', kudos_count: 'K', hits: 'H', bookmarks_count: 'B' };
-        const colors = { views: Charts._accent(), favorites_count: '#f0a050', comments_count: '#5ae0a0', reads: Charts._accent(), votes: '#f0a050', num_lists: '#fbc050', likes: Charts._accent(), reshares: '#fbc050', kudos_count: '#f0a050', hits: Charts._accent(), bookmarks_count: '#fbc050' };
+        const colors = { views: Charts._accent(), favorites_count: '#f0a050', comments_count: '#5ae0a0', reads: Charts._accent(), votes: '#f0a050', num_lists: '#fbc050', likes: Charts._accent(), reshares: '#fbc050', kudos_count: '#f0a050', hits: Charts._accent(), bookmarks_count: '#fbc050', reactions_count: '#2AABEE' };
         const annotations = {};
         let idx = 0;
         for (const metric of metrics) {
@@ -302,6 +302,7 @@ const Charts = {
             favorites_count: '#f0a050',  // red
             comments_count: '#5ae0a0',   // green
             followers: '#e0679a',        // magenta (follower growth)
+            reactions_count: '#2AABEE',  // Telegram blue — its only metric
         };
         // Human-readable legend labels
         const labels = {
@@ -309,6 +310,7 @@ const Charts = {
             favorites_count: 'Favorites',
             comments_count: 'Comments',
             followers: 'Followers',
+            reactions_count: 'Reactions',
         };
 
         // Build one dataset per requested metric, plus a trendline for each
@@ -392,6 +394,7 @@ const Charts = {
             kudos_count:     { label: 'Kudos',      color: '#f0a050' },
             hits:            { label: 'Hits',       color: Charts._accent() },
             bookmarks_count: { label: 'Bookmarks',  color: '#fbc050' },
+            reactions_count: { label: 'Reactions', color: '#2AABEE' },
         };
 
         const leftMetric = metrics[0];

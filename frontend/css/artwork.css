@@ -493,3 +493,44 @@
 @media (max-width: 760px) {
     .artwork-upload, .artwork-detail { grid-template-columns: 1fr; }
 }
+
+/* Per-piece Telegram options in the artwork edit form.
+ *
+ * Tri-state selects rather than checkboxes: "Default" (follow the channel
+ * setting) is a distinct, and the most common, state. A checkbox would collapse
+ * it into whichever bool the default happened to be when the piece was saved. */
+.art-tg-opts {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin: 12px 0;
+    background: var(--bg-tertiary);
+}
+
+.art-tg-opts > summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.art-tg-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 6px 0;
+    border-top: 1px solid var(--border);
+}
+
+.art-tg-row:first-of-type { border-top: none; }
+
+.art-tg-row select {
+    flex: 0 0 auto;
+    min-width: 88px;
+}
+
+.art-tg-label {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}

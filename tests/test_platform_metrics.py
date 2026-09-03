@@ -54,8 +54,35 @@ def test_registry_covers_every_known_platform():
     same platform codes. Drift here is how the Overview ended up with no
     FurryNetwork or Furbooru tiles."""
     src = Path(__file__).resolve().parents[1] / "frontend" / "js" / "platforms.js"
-    js_codes = set(re.findall(r"\{\s*code:\s*'([a-z0-9]+)'", src.read_text(encoding="utf-8")))
-    assert js_codes, "could not parse any platform codes out of platforms.js"
+    text = src.read_text(encoding="utf-8")
+    # Match per LINE, not with a [^}]* class: every entry's emoji is a
+    # unicode brace escape whose closing brace ends a naive match early, so
+    # a postOnly flag sitting after it was never seen.
+    entry_lines = [l for l in text.splitlines()
+                   if re.search(r"\{\s*code:\s*'[a-z0-9]+'", l)]
+    assert entry_lines, "could not parse any platform codes out of platforms.js"
+
+    # POST-ONLY platforms are deliberately absent from THIS registry. It maps a
+    # platform to the table holding its stats and the columns they live in, and
+    # a post-only target has neither — Telegram is a broadcast channel, and the
+    # Bot API exposes no per-post stats at all (view counts are MTProto-only).
+    # Declaring a table it does not have would be fiction, and every aggregate
+    # reading this registry would then query a table that does not exist.
+    #
+    # They still belong in the JS registry, which drives labels, logos and
+    # pickers — without an entry there a platform renders as a bare code.
+    def _code(line):
+        return re.search(r"\{\s*code:\s*'([a-z0-9]+)'", line).group(1)
+
+    post_only = {_code(l) for l in entry_lines
+                 if re.search(r"postOnly:\s*true", l)}
+    js_codes = {_code(l) for l in entry_lines} - post_only
+    # No assertion that a post-only platform EXISTS. There was one, guarding
+    # Telegram's absence from the metrics registry; Telegram graduated in 4.0.10
+    # once its reactions were captured into a real stats table, so the set is
+    # legitimately empty. The exclusion logic stays for the next broadcast-only
+    # target.
+
     assert js_codes == set(pm.ALL_CODES), (
         f"registry drift — only in JS: {sorted(js_codes - set(pm.ALL_CODES))}; "
         f"only in Python: {sorted(set(pm.ALL_CODES) - js_codes)}"
@@ -63,10 +90,30 @@ def test_registry_covers_every_known_platform():
 
 
 def test_accounts_platform_list_is_a_subset():
-    """Anything the accounts layer knows about must have metric metadata."""
+    """Anything the accounts layer POLLS must have metric metadata.
+
+    Post-only platforms are exempt. An account is simply how you hold more than
+    one of something — Telegram needs accounts so it can have several channels —
+    but this registry maps a platform to the TABLE holding its stats, and a
+    broadcast channel has none. Declaring one would be fiction, and every
+    aggregate reading the registry would query a table that does not exist.
+    """
     from database import accounts as accounts_db
-    missing = [p for p in accounts_db.PLATFORMS if not pm.get(p)]
+    pollable = [p for p in accounts_db.PLATFORMS
+                if p not in accounts_db.POST_ONLY_PLATFORMS]
+    missing = [p for p in pollable if not pm.get(p)]
     assert not missing, f"platforms with accounts but no registry entry: {missing}"
+
+
+def test_post_only_platforms_have_no_metrics_entry():
+    """The other direction: a post-only platform must NOT gain a metrics entry
+    without also gaining the stats tables it would then claim to have."""
+    from database import accounts as accounts_db
+    wrong = [p for p in accounts_db.POST_ONLY_PLATFORMS if pm.get(p)]
+    assert not wrong, (
+        f"{wrong} is declared post-only but has a metrics entry — either it now "
+        f"has real stats tables (remove it from POST_ONLY_PLATFORMS) or the entry "
+        f"is fiction (remove the entry)")
 
 
 def test_score_platforms_declare_no_view_column():
@@ -148,3 +195,13 @@ def test_labels_carry_site_vocabulary_without_touching_sql():
     assert "hits" not in ao3.columns and "kudos" not in ao3.columns
     assert pm.get("e621").label_for("score") == "Score"
     assert pm.get("fa").label_for("faves") == "Favourites"
+    assert pm.get("tg").label_for("faves") == "Reactions"
+
+
+def test_every_label_is_title_case():
+    """`label_for` only title-cases the FALLBACK, so an explicitly supplied
+    label is rendered verbatim — a lowercase one reads as a typo next to
+    "Hits" and "Notes" in the same table header row."""
+    for spec in (pm.get(c) for c in pm.ALL_CODES):
+        for key, text in spec.labels.items():
+            assert text[:1].isupper(), f"{spec.code}.{key} label is {text!r}"

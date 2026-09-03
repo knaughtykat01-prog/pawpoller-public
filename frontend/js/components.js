@@ -1738,6 +1738,368 @@ const Components = {
         `;
     },
 
+    /* ── Publish confirmation + results (4.1.0) ────────────────────
+     *
+     * The first reusable modal in the codebase. app.js:15838 says outright
+     * "there's no shared confirm helper", and ~85 sites use native confirm()
+     * instead — which cannot show a LIST, and the one thing a publish
+     * confirmation most needs to show is a list: what, where, as whom.
+     *
+     * Every artwork and post publish trigger was unconfirmed at both ends until
+     * 4.0.11 added the server guard; this is the client half. Quick Publish is
+     * the sharpest case: it uploads AND publishes in one click to every
+     * platform in a preset restored from localStorage, so the ticks may be from
+     * last time and unread. The count in the confirm button's own label is the
+     * last defence against that.
+     *
+     * Deliberately NO typed-phrase gate. One exists (publish_check.js) but
+     * guards a local delete. Publishing is frequent and deliberate; a phrase
+     * you type every time is a phrase you stop reading. The list is the safety
+     * feature, not the friction. docs/specs/publish_flow.md §8.1.
+     */
+
+    /**
+     * Show a publish confirmation. Resolves `{ ok: true, tgDescription }` on
+     * confirm (truthy — callers may test it as a boolean), false on cancel,
+     * Escape, or a click on the backdrop.
+     *
+     * @param {Object} o
+     * @param {string} o.title       What is being published (piece / story title).
+     * @param {string} [o.subtitle]  e.g. "Chapter 3", "3 chapters × 2 sites".
+     * @param {string} [o.thumb]     Optional image URL.
+     * @param {Array}  o.targets     [{ code, label, account?, disabled?, reason? }]
+     * @param {string} [o.persona]   "Posting as <persona>", when one is chosen.
+     * @param {string} [o.verb]      Button verb, default "Publish".
+     * @param {string} [o.noun]      Plural noun for the count, default "sites".
+     * @param {string} [o.warning]   Extra line, e.g. drip schedules a month of posts.
+     * @param {Object} [o.tgDesc]    When given, a "Telegram text for this post" box
+     *                               (4.3.0); its value comes back as tgDescription.
+     */
+    confirmPublish(o) {
+        const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
+        const targets = (o.targets || []);
+        const live = targets.filter(t => !t.disabled);
+        const verb = o.verb || 'Publish';
+        const noun = o.noun || 'sites';
+        const n = live.length;
+        const rows = targets.map(t => `
+            <li class="pub-confirm-row${t.disabled ? ' is-disabled' : ''}">
+                <span class="pub-confirm-plat">${esc(t.emoji || '')} ${esc(t.label || t.code)}</span>
+                <span class="pub-confirm-acct muted">${t.disabled
+                    ? esc(t.reason || 'skipped')
+                    : (t.account ? 'as ' + esc(t.account) : '')}</span>
+            </li>`).join('');
+        return new Promise(resolve => {
+            const ov = document.createElement('div');
+            ov.className = 'modal-overlay open';
+            ov.setAttribute('role', 'dialog');
+            ov.setAttribute('aria-modal', 'true');
+            ov.setAttribute('aria-labelledby', 'pub-confirm-title');
+            ov.innerHTML = `
+                <div class="modal-panel pub-confirm">
+                    <h3 id="pub-confirm-title">${esc(verb)} to ${n} ${n === 1 ? noun.replace(/s$/, '') : noun}?</h3>
+                    <div class="pub-confirm-what">
+                        ${o.thumb ? `<img class="pub-confirm-thumb" src="${esc(o.thumb)}" alt="">` : ''}
+                        <div>
+                            <div class="pub-confirm-title">${esc(o.title || '')}</div>
+                            ${o.subtitle ? `<div class="muted" style="font-size:12.5px">${esc(o.subtitle)}</div>` : ''}
+                            ${o.persona ? `<div class="pub-confirm-persona">Posting as <strong>${esc(o.persona)}</strong></div>` : ''}
+                        </div>
+                    </div>
+                    <ul class="pub-confirm-list">${rows}</ul>
+                    ${o.warning ? `<p class="pub-confirm-warn">${esc(o.warning)}</p>` : ''}
+                    ${o.tgDesc ? `<label class="pub-confirm-tgdesc">
+                        <span>Telegram text for this post <span class="muted">— optional, this post only. Blank uses the piece's saved Telegram text, then its description.</span></span>
+                        <textarea data-pub-tgdesc rows="2" maxlength="900">${esc(o.tgDesc.value || '')}</textarea>
+                    </label>` : ''}
+                    <p class="pub-confirm-note muted">This goes out live. Taking it down afterwards means doing it on each site by hand.</p>
+                    <div class="pub-confirm-actions">
+                        <button type="button" class="btn btn-secondary" data-pub-cancel>Cancel</button>
+                        <button type="button" class="btn btn-primary" data-pub-ok ${n ? '' : 'disabled'}>${esc(verb)} to ${n} ${n === 1 ? noun.replace(/s$/, '') : noun}</button>
+                    </div>
+                </div>`;
+            const done = (v) => {
+                document.removeEventListener('keydown', onKey);
+                ov.remove();
+                resolve(v);
+            };
+            const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); done(false); } };
+            ov.addEventListener('click', (e) => { if (e.target === ov) done(false); });
+            ov.querySelector('[data-pub-cancel]').addEventListener('click', () => done(false));
+            ov.querySelector('[data-pub-ok]').addEventListener('click', () => done({
+                ok: true,
+                tgDescription: ((ov.querySelector('[data-pub-tgdesc]') || {}).value || '').trim(),
+            }));
+            document.addEventListener('keydown', onKey);
+            document.body.appendChild(ov);
+            // Focus lands on Cancel: Enter from a stale keypress must not publish.
+            ov.querySelector('[data-pub-cancel]').focus();
+        });
+    },
+
+    /**
+     * Per-platform publish outcomes, one row each: ✓ with a link to the new
+     * post, or ✗ with the platform's own error. Replaces the transient
+     * "2 ok, 3 failed" toast that discarded results[] — which three, and why,
+     * was never shown (artwork.js:1243, masterpieces.js:1192 before 4.1.0).
+     * posts.js:524 had half of this; publish_check.js:1541 had all of it.
+     */
+    publishResults(results, opts) {
+        const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
+        const okText = (opts && opts.okText) || 'Posted';
+        const plat = (c) => (window.platformByCode && window.platformByCode(c)) || { label: c, emoji: '' };
+        const rows = (results || []).map(r => {
+            const p = plat(r.platform);
+            const ok = !!r.success;
+            const skipped = !ok && !!r.skipped;   // sync: post-only sites (4.2.0)
+            const url = r.external_url || r.url || '';
+            const what = ok
+                ? (r.queued_desktop ? 'Queued for desktop'
+                    : url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(okText)} ↗</a>` : esc(okText))
+                : skipped ? esc(r.reason || 'skipped')
+                : esc(r.error || 'Failed');
+            return `<li class="pub-result ${ok ? 'is-ok' : skipped ? 'is-skip' : 'is-fail'}">
+                <span class="pub-result-mark">${ok ? '✓' : skipped ? '–' : '✗'}</span>
+                <span class="pub-result-plat">${esc(p.emoji || '')} ${esc(p.label)}</span>
+                <span class="pub-result-what">${what}</span>
+            </li>`;
+        }).join('');
+        return `<ul class="pub-results">${rows}</ul>`;
+    },
+
+    /**
+     * Render publishResults just after `anchor` (usually the surface's message
+     * element), replacing any earlier panel. Returns the failure count so the
+     * caller can decide whether to navigate away — on partial failure it must
+     * NOT, or the panel is wiped before it can be read (the §7.4 re-render bug).
+     */
+    showPublishResults(anchor, results, opts) {
+        const fails = (results || []).filter(r => !r.success && !r.skipped).length;
+        if (!anchor) return fails;
+        const prev = anchor.parentElement && anchor.parentElement.querySelector('.pub-results');
+        if (prev) prev.remove();
+        anchor.insertAdjacentHTML('afterend', this.publishResults(results, opts));
+        return fails;
+    },
+
+    /* ── Persona picker (4.2.0) ──────────────────────────────────────
+     *
+     * Persona-first account selection, shared by the artwork form, the
+     * artwork and masterpiece detail pages, the post composer and Publish
+     * Check. Promoted from Quick Publish's _qpBuildMap, which was already the
+     * right idea on one page, with one bug: two accounts on one platform
+     * collapsed silently to whichever was default or first.
+     *
+     * Three rules (docs/specs/publish_flow.md §3, §8.2, §10 Q1/Q2):
+     *  - a persona with ONE account on a platform shows a label, not a
+     *    dropdown — but the id still travels, as a hidden input, because the
+     *    platform default may belong to a different persona;
+     *  - TWO or more accounts on a platform is a real choice: a dropdown with
+     *    a visible marker, never a silent pick;
+     *  - a platform the persona has NO account on is shown disabled with the
+     *    reason, and its checkbox is cleared — the server refuses it anyway.
+     * "All accounts" keeps the pre-4.2.0 behaviour exactly: a dropdown only
+     * where there is a real choice, else the platform default.
+     */
+
+    /**
+     * @param {Object}   o
+     * @param {Element}  o.host         Where the chips render; gets data-persona-id / -label.
+     * @param {string[]} o.platforms    Codes this surface offers.
+     * @param {Function} o.slot         code → element for the account control (or null).
+     * @param {Function} [o.row]        code → the platform row (toggles .is-unavailable).
+     * @param {string}   o.selectClass  The class the surface's collector reads.
+     * @param {string}   o.storageKey   localStorage key remembering the last persona.
+     * @param {Function} [o.onChange]
+     * @returns {Promise<{personaId: number|null, personaLabel: string}>}
+     */
+    async personaPicker(o) {
+        const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
+        let personas = [], accounts = [];
+        try {
+            const [pRes, aRes] = await Promise.all([API.getPersonas(), API.getAccounts()]);
+            personas = (pRes && pRes.personas) || [];
+            accounts = (aRes && aRes.accounts) || [];
+        } catch (e) { /* no chips; rows fall back to the per-platform picker */ }
+
+        const offered = new Set(o.platforms || []);
+        const enabled = accounts.filter(a => a.enabled && offered.has(a.platform));
+        const byPersona = {};   // persona_id → {code: [accounts]}
+        const all = {};         // code → [accounts]
+        for (const a of enabled) {
+            (all[a.platform] = all[a.platform] || []).push(a);
+            if (a.persona_id) {
+                const b = byPersona[a.persona_id] = byPersona[a.persona_id] || {};
+                (b[a.platform] = b[a.platform] || []).push(a);
+            }
+        }
+        const options = personas.filter(p => byPersona[p.persona_id]).map(p => ({
+            id: p.persona_id, label: p.name, color: p.color || '#6c8cff', map: byPersona[p.persona_id],
+        }));
+        const state = { personaId: null, personaLabel: '' };
+        const name = (a) => a.label || a.handle || ('account ' + a.account_id);
+        const opts = (accts) => accts.map(a =>
+            `<option value="${a.account_id}"${a.is_default ? ' selected' : ''}>${esc(name(a))}</option>`).join('');
+
+        const control = (code, accts, persona) => {
+            if (!persona) {
+                // All accounts: unchanged behaviour — no control unless there is a real choice.
+                if (accts.length < 2) return '';
+                return `<label class="acct-as">as <select class="${o.selectClass}" data-platform="${code}">${opts(accts)}</select></label>`;
+            }
+            if (accts.length === 1) {
+                const a = accts[0];
+                return `<span class="acct-as">as <strong>${esc(name(a))}</strong></span>` +
+                    `<input type="hidden" class="${o.selectClass}" data-platform="${code}" value="${a.account_id}" data-account-label="${esc(name(a))}">`;
+            }
+            return `<label class="acct-as acct-as--choice" title="${esc(persona.label)} has ${accts.length} accounts here — pick one">` +
+                `as <select class="${o.selectClass}" data-platform="${code}">${opts(accts)}</select>` +
+                `<span class="acct-choice-mark">${accts.length} accounts</span></label>`;
+        };
+
+        const apply = (pid) => {
+            const persona = options.find(p => p.id === pid) || null;
+            state.personaId = persona ? persona.id : null;
+            state.personaLabel = persona ? persona.label : '';
+            o.host.dataset.personaId = persona ? String(persona.id) : '';
+            o.host.dataset.personaLabel = state.personaLabel;
+            const key = persona ? String(persona.id) : 'all';
+            o.host.querySelectorAll('[data-persona]').forEach(c => c.classList.toggle('is-on', c.dataset.persona === key));
+            for (const code of (o.platforms || [])) {
+                const slot = o.slot(code);
+                const row = o.row ? o.row(code) : null;
+                const accts = persona ? (persona.map[code] || []) : (all[code] || []);
+                const missing = !!persona && !accts.length;
+                if (slot) {
+                    slot.innerHTML = missing
+                        ? `<span class="acct-as acct-missing" title="A persona publish never falls back to the platform default">no ${esc(persona.label)} account</span>`
+                        : control(code, accts, persona);
+                }
+                if (row) {
+                    row.classList.toggle('is-unavailable', missing);
+                    const cb = row.querySelector('input[type=checkbox]');
+                    if (cb) {
+                        if (missing) { cb.checked = false; cb.disabled = true; cb.dataset.personaDisabled = '1'; }
+                        else if (cb.dataset.personaDisabled) { cb.disabled = false; delete cb.dataset.personaDisabled; }
+                    }
+                }
+            }
+            try { localStorage.setItem(o.storageKey, key); } catch (e) { /* ignore */ }
+            if (o.onChange) o.onChange({ ...state });
+        };
+
+        if (!options.length) {
+            // No persona holds an account on these platforms — nothing to pick
+            // between. The pre-4.2.0 per-platform pickers, unchanged.
+            o.host.innerHTML = '';
+            o.host.hidden = true;
+            apply(null);
+            return state;
+        }
+        o.host.hidden = false;
+        o.host.innerHTML = `<span class="persona-picker-label muted">Post as</span>` +
+            options.map(p => `<button type="button" class="persona-chip" data-persona="${p.id}">` +
+                `<span class="persona-dot" style="background:${esc(p.color)}"></span>${esc(p.label)}</button>`).join('') +
+            `<button type="button" class="persona-chip persona-chip--all" data-persona="all">All accounts</button>`;
+        o.host.querySelectorAll('[data-persona]').forEach(btn =>
+            btn.addEventListener('click', () => apply(btn.dataset.persona === 'all' ? null : parseInt(btn.dataset.persona, 10))));
+
+        let last = null;
+        try { last = localStorage.getItem(o.storageKey); } catch (e) { /* ignore */ }
+        const start = last === 'all' ? null : (options.find(p => String(p.id) === last) || options[0]).id;
+        apply(start);
+        return state;
+    },
+
+    /* ── Telegram ─────────────────────────────────────────────
+     *
+     * One metric, and one thing these renderers must never do: show a bare 0
+     * for a post whose reactions were never observed. Reactions arrive only as
+     * pushed updates and cannot be backfilled, so anything published before
+     * tracking was switched on has no count and never will. `reactions_counted`
+     * (from the API) separates the two, and every surface below renders the
+     * unobserved case as "not counted" rather than a number.
+     */
+
+    tgReactions(sub) {
+        // The single most misleading thing this platform's UI could do is let
+        // "we were not listening" look like "nobody reacted".
+        if (sub && sub.reactions_counted === false) {
+            return '<span class="muted" title="Published before reaction tracking was switched on — Telegram cannot backfill it">not counted</span>';
+        }
+        return `${Utils.formatNumber((sub && sub.reactions_count) || 0)} ${Utils.formatDelta(sub && sub.reactions_delta)}`;
+    },
+
+    tgTopList(items, valueKey, labelKey = 'title', idKey = 'submission_id') {
+        if (!items || items.length === 0) {
+            return '<p style="color:var(--text-muted);font-size:13px">No data yet</p>';
+        }
+        const lis = items.map(item => `
+            <li>
+                <span class="top-title" data-nav="/tg/submission/${encodeURIComponent(item[idKey])}">${Utils.escapeHtml(Utils.truncate(item[labelKey] || '(no title)', 30))}</span>
+                <span class="top-value">${Utils.formatCompact(item[valueKey])}</span>
+            </li>
+        `).join('');
+        return `<ul class="top-list">${lis}</ul>`;
+    },
+
+    /**
+     * Telegram posts table. Columns: Title, Type, Reactions, Posted, Link.
+     * No views or comments columns — a channel exposes neither to a bot, so
+     * an empty column would imply a measurement that does not exist.
+     */
+    tgSubmissionsTable(submissions) {
+        if (!submissions || submissions.length === 0) {
+            return `<div class="empty-state"><h3>No posts</h3><p>Posts PawPoller sends to your channel appear here.</p></div>`;
+        }
+        const rows = submissions.map(s => `
+            <tr>
+                <td data-label="Title"><a href="#/tg/submission/${encodeURIComponent(s.submission_id)}">${Utils.escapeHtml(Utils.truncate(s.title || '(no title)', 45))}</a></td>
+                <td data-label="Type">${Utils.escapeHtml(s.content_type || 'artwork')}</td>
+                <td data-label="Reactions">${Components.tgReactions(s)}</td>
+                <td data-label="Posted">${Utils.formatDate(s.posted_at)}</td>
+                <td data-label="Link">${s.link ? `<a href="${Utils.escapeHtml(s.link)}" target="_blank" rel="noopener">open ↗</a>` : '<span class="muted" title="A private channel has no public permalink">private</span>'}</td>
+            </tr>
+        `).join('');
+
+        return `
+            <table class="data-table" id="tg-submissions-table" data-mobile-cards>
+                <thead>
+                    <tr>
+                        <th data-sort="title">Title</th>
+                        <th data-sort="content_type">Type</th>
+                        <th data-sort="reactions_count">Reactions</th>
+                        <th data-sort="posted_at">Posted</th>
+                        <th>Link</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    },
+
+    tgPollLogTable(polls) {
+        if (!polls || polls.length === 0) {
+            return '<p style="color:var(--text-muted)">No Telegram polls recorded yet.</p>';
+        }
+        // "Subs" is omitted deliberately: a Telegram poll fetches a subscriber
+        // count, not a submission list, so the column would read 0 forever.
+        const rows = polls.map(p => `
+            <tr>
+                <td>${Utils.formatDateTime(p.started_at)}</td>
+                <td><span style="color:${p.status === 'success' ? 'var(--success)' : p.status === 'error' ? 'var(--danger)' : 'var(--warning)'}">${p.status}</span></td>
+                <td>${p.duration_seconds ? p.duration_seconds.toFixed(1) + 's' : '--'}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(p.error_message || '')}</td>
+            </tr>
+        `).join('');
+        return `
+            <table class="data-table">
+                <thead><tr><th>Time</th><th>Status</th><th>Duration</th><th>Error</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    },
+
     fbrPollLogTable(polls) {
         if (!polls || polls.length === 0) {
             return '<p style="color:var(--text-muted)">No Furbooru polls recorded yet.</p>';

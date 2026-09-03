@@ -28,6 +28,7 @@ e621_router = APIRouter(prefix="/api/e621")
 
 # -- E621 Auth ----------------------------------------------------------------
 
+
 @e621_router.get("/auth/status")
 def e621_auth_status():
     settings = config.get_settings()
@@ -90,6 +91,7 @@ def e621_disconnect():
 
 # -- E621 Polling -------------------------------------------------------------
 
+
 @e621_router.get("/poll/progress")
 def get_e621_poll_progress():
     return dict(e621_poll_progress)
@@ -126,6 +128,7 @@ async def e621_full_resync():
 
 
 # -- E621 Data ----------------------------------------------------------------
+
 
 @e621_router.get("/status")
 def get_e621_status():
@@ -190,6 +193,26 @@ def get_e621_submissions(
         conn.close()
 
 
+# Registered BEFORE the bare /submissions/{id} route below. The `:path`
+# converter is greedy and Starlette matches in registration order, so with
+# the bare route first this URL resolved to a submission id of
+# "<id>/snapshots" and returned 404 for every post that exists.
+@e621_router.get("/submissions/{submission_id:path}/snapshots")
+def get_e621_submission_snapshots(
+    submission_id: str,
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+):
+    conn = get_connection()
+    try:
+        return {"snapshots": e621_queries.get_e621_snapshots(conn, submission_id, start, end)}
+    except Exception as e:
+        logger.error("Error in /api/e621/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
+        raise HTTPException(500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @e621_router.get("/submissions/{submission_id:path}")
 def get_e621_submission(submission_id: str):
     conn = get_connection()
@@ -219,22 +242,6 @@ def get_e621_submission(submission_id: str):
         raise
     except Exception as e:
         logger.error("Error in /api/e621/submissions/%s: %s", submission_id[:50], e, exc_info=True)
-        raise HTTPException(500, detail=str(e))
-    finally:
-        conn.close()
-
-
-@e621_router.get("/submissions/{submission_id:path}/snapshots")
-def get_e621_submission_snapshots(
-    submission_id: str,
-    start: Optional[str] = Query(None),
-    end: Optional[str] = Query(None),
-):
-    conn = get_connection()
-    try:
-        return {"snapshots": e621_queries.get_e621_snapshots(conn, submission_id, start, end)}
-    except Exception as e:
-        logger.error("Error in /api/e621/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
         raise HTTPException(500, detail=str(e))
     finally:
         conn.close()

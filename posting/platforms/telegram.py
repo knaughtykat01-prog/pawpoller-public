@@ -84,8 +84,17 @@ class TelegramPoster(PlatformPoster):
             settings = config.get_settings()
             # The posting bot falls back to the notification bot, matching
             # post_publisher's tg branch so both paths resolve identically.
+            # ⚠ The bot token MAY fall back to the notification bot — that is the
+            # documented "reuse your existing bot" convenience.
+            #
+            # The CHANNEL must not. A `or settings.get("tg_channel")` fallback
+            # here means a second account whose channel is unset silently
+            # inherits the DEFAULT account's channel and broadcasts to the wrong
+            # one, with no error. post_publisher's tg branch never had that
+            # fallback, so the two paths disagreed despite a comment claiming
+            # they resolved identically.
             token = creds.get("tg_bot_token", "") or settings.get("telegram_bot_token", "")
-            channel = creds.get("tg_channel", "") or settings.get("tg_channel", "")
+            channel = creds.get("tg_channel", "")
             if not token:
                 return PostResult(success=False, duration_seconds=self._elapsed(_t),
                                   error="Telegram bot token isn't set (Settings → Telegram)")
@@ -125,6 +134,32 @@ class TelegramPoster(PlatformPoster):
                 return PostResult(success=False, error=reason,
                                   duration_seconds=self._elapsed(_t))
 
+            # Record the post so a pushed reaction count has something to
+            # attach to. This is why Telegram's submission list is exact: we
+            # are the only writer, unlike a polled platform where the list is
+            # whatever the site chooses to return.
+            #
+            # Never fatal — a post that succeeded must not be reported as
+            # failed because bookkeeping did.
+            try:
+                from database.db import get_connection
+                from database import tg_queries
+                _conn = get_connection()
+                try:
+                    tg_queries.record_submission(
+                        _conn, account_id=self.account_id or 0,
+                        chat_id=client.channel,
+                        message_id=result.get("id", 0),
+                        title=(package.title or package.story_name or ""),
+                        posted_at=__import__("datetime").datetime.now().isoformat(timespec="seconds"),
+                        link=result.get("url", ""),
+                        content_type="artwork" if is_art else "story")
+                    _conn.commit()
+                finally:
+                    _conn.close()
+            except Exception as e:
+                logger.warning("Telegram: posted but could not record submission: %s", e)
+
             return PostResult(success=True,
                               external_id=str(result.get("id", "")),
                               external_url=result.get("url", ""),
@@ -147,9 +182,21 @@ class TelegramPoster(PlatformPoster):
         """Fail (and warn) before anything is broadcast to real subscribers."""
         errors: list[str] = []
         s = config.get_settings()
-        if not (s.get("tg_bot_token", "") or s.get("telegram_bot_token", "")):
+        # Resolve THIS poster's account, not the flat keys. Reading flat
+        # settings validated account 2's post against account 1's token and
+        # channel — passing when it should fail, and failing when it should
+        # pass. _resolve_creds falls back to the default account itself, so the
+        # single-channel case is unchanged.
+        try:
+            creds = self._resolve_creds("tg", s)
+        except Exception:          # no DB (fresh install) — fall back to flat
+            creds = {}
+        token = creds.get("tg_bot_token", "") or s.get("telegram_bot_token", "")
+        channel = creds.get("tg_channel", "") or (
+            s.get("tg_channel", "") if not creds else "")
+        if not token:
             errors.append("Telegram bot token isn't set (Settings → Telegram)")
-        if not s.get("tg_channel", ""):
+        if not channel:
             errors.append("No Telegram channel set (Settings → Telegram)")
 
         is_art = bool(package.file_path and package.file_type.lower() in _IMAGE_TYPES)
@@ -224,6 +271,78 @@ def _resolve_options(package: StoryUploadPackage, settings: dict) -> dict:
 
 
 
+_LINK_MODES = ("auto", "first", "all", "pick", "none")
+
+
+def _resolve_links(package: StoryUploadPackage) -> list[str]:
+    """Which of the work's URLs the caption carries, and in what order (4.3.0).
+
+    Inputs ride in ``package.extra`` (all optional):
+
+    * ``links_by_platform`` — ``[(platform, url), …]`` of EXISTING posted
+      publications (story_reader._story_extra / artwork_reader._artwork_links).
+      ``links`` is the older bare-URL list, used when the pairs are absent.
+    * ``run_links`` — ``[(platform, url), …]`` posted SO FAR IN THIS PUBLISH.
+      The manager sets it, and sorts announcing platforms last so it exists.
+    * ``link_mode`` (one of _LINK_MODES) and ``link_platforms`` (an ordered
+      list of codes) — per-piece options from ``categories.tg`` (artwork) or
+      ``platform_options.tg`` (story). ⚠ Read RAW, never through _flag(): a
+      list coerced to True was exactly the bug publish_flow spec §6 named.
+
+    Modes:
+      auto  — the existing links, ordered by link_platforms where given; and
+              when there are none yet, the first link THIS publish produced.
+              That is "wherever it lands first" (spec §10 Q3), and it is the
+              default so a never-posted piece sent to FA + Telegram in one go
+              links to FA without anyone configuring anything.
+      first — only the first successful link of this publish, else the first
+              existing one.
+      all   — every existing link plus this publish's, ordered.
+      pick  — only the platforms in link_platforms, in that order.
+      none  — no links.
+
+    The first link matters most: it is the one Telegram previews.
+    """
+    x = package.extra or {}
+    mode = str(x.get("link_mode") or "auto").strip().lower()
+    if mode not in _LINK_MODES:
+        mode = "auto"
+    if mode == "none":
+        return []
+    raw_order = x.get("link_platforms")
+    order = [str(c) for c in raw_order] if isinstance(raw_order, (list, tuple)) else []
+
+    def pairs(key: str) -> list[tuple[str, str]]:
+        out: list[tuple[str, str]] = []
+        for item in x.get(key) or []:
+            if isinstance(item, (list, tuple)) and len(item) == 2 and item[1]:
+                out.append((str(item[0]), str(item[1])))
+        return out
+
+    existing = pairs("links_by_platform") or [("", str(u)) for u in (x.get("links") or []) if u]
+    run = pairs("run_links")
+
+    if mode == "first":
+        pool = run or existing
+        return [pool[0][1]] if pool else []
+    if mode == "auto" and not existing:
+        return [run[0][1]] if run else []
+
+    seen: set[str] = set()
+    pool: list[tuple[str, str]] = []
+    for p, u in existing + run:
+        if u not in seen:
+            seen.add(u)
+            pool.append((p, u))
+    if mode == "pick":
+        pool = [(p, u) for p, u in pool if p in order]
+    if order:
+        rank = {c: i for i, c in enumerate(order)}
+        # Stable: listed platforms in the user's order, unlisted after them.
+        pool.sort(key=lambda pu: rank.get(pu[0], len(order)))
+    return [u for _, u in pool]
+
+
 def _build_caption(package: StoryUploadPackage, *, has_image: bool, is_art: bool,
                    with_tags: bool = True) -> str:
     """Artwork caption, or a story announcement.
@@ -250,9 +369,12 @@ def _build_caption(package: StoryUploadPackage, *, has_image: bool, is_art: bool
         blurb = (package.description or "").strip()
         if blurb:
             parts.append(blurb)
-        links = (package.extra or {}).get("links") or []
-        if links:
-            parts.append("\n".join(str(u) for u in links if u))
+    # Links, for BOTH kinds since 4.3.0 — artwork never had any, because nothing
+    # in the repo produced extra['links'] for it (publish_flow spec §6). Which
+    # links and in what order is the piece's link_mode / link_platforms.
+    links = _resolve_links(package)
+    if links:
+        parts.append("\n".join(links))
 
     if with_tags:
         tags = _hashtags(package.tags)

@@ -53,6 +53,7 @@ async def proxy_pix_thumbnail(url: str = Query(..., description="Pixiv pximg URL
 
 # -- PIX Auth -----------------------------------------------------------------
 
+
 @pix_router.get("/auth/status")
 def pix_auth_status():
     settings = config.get_settings()
@@ -116,6 +117,7 @@ def pix_disconnect():
 
 # -- PIX Polling --------------------------------------------------------------
 
+
 @pix_router.get("/poll/progress")
 def get_pix_poll_progress():
     return dict(pix_poll_progress)
@@ -152,6 +154,7 @@ async def pix_full_resync():
 
 
 # -- PIX Data -----------------------------------------------------------------
+
 
 @pix_router.get("/status")
 def get_pix_status():
@@ -216,6 +219,26 @@ def get_pix_submissions(
         conn.close()
 
 
+# Registered BEFORE the bare /submissions/{id} route below. The `:path`
+# converter is greedy and Starlette matches in registration order, so with
+# the bare route first this URL resolved to a submission id of
+# "<id>/snapshots" and returned 404 for every post that exists.
+@pix_router.get("/submissions/{submission_id:path}/snapshots")
+def get_pix_submission_snapshots(
+    submission_id: str,
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+):
+    conn = get_connection()
+    try:
+        return {"snapshots": pix_queries.get_pix_snapshots(conn, submission_id, start, end)}
+    except Exception as e:
+        logger.error("Error in /api/pix/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
+        raise HTTPException(500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @pix_router.get("/submissions/{submission_id:path}")
 def get_pix_submission(submission_id: str):
     conn = get_connection()
@@ -245,22 +268,6 @@ def get_pix_submission(submission_id: str):
         raise
     except Exception as e:
         logger.error("Error in /api/pix/submissions/%s: %s", submission_id[:50], e, exc_info=True)
-        raise HTTPException(500, detail=str(e))
-    finally:
-        conn.close()
-
-
-@pix_router.get("/submissions/{submission_id:path}/snapshots")
-def get_pix_submission_snapshots(
-    submission_id: str,
-    start: Optional[str] = Query(None),
-    end: Optional[str] = Query(None),
-):
-    conn = get_connection()
-    try:
-        return {"snapshots": pix_queries.get_pix_snapshots(conn, submission_id, start, end)}
-    except Exception as e:
-        logger.error("Error in /api/pix/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
         raise HTTPException(500, detail=str(e))
     finally:
         conn.close()

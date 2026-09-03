@@ -149,6 +149,10 @@ const MetaEditor = {
     DESC_MAX: 500,
     SUMMARY_MAX: 2000,
     ANNOUNCEMENT_MAX: 300,
+    TG_DESC_MAX: 900,   // Telegram's caption cap is 1,024 for the WHOLE post (4.3.0)
+    // story.json platform keys → the short codes publications and the Telegram
+    // link picker use.
+    TG_LINK_CODES: { sofurry: 'sf', inkbunny: 'ib', squidgeworld: 'sqw', ao3: 'ao3', furaffinity: 'fa', wattpad: 'wp' },
 
     // ---------------------------------------------------------------------
     // Public entry point
@@ -371,6 +375,7 @@ const MetaEditor = {
             ${this._renderClassificationsSection()}
             ${this._renderPlatformTagsSection()}
             ${this._renderPlatformTogglesSection()}
+            ${this._renderTelegramSection()}
             ${this._renderChaptersSection()}
             ${this._renderCoverSection()}
             ${this._renderRawJsonSection()}
@@ -380,6 +385,7 @@ const MetaEditor = {
         this._updateCharCounter('meta-summary', 'meta-summary-counter', this.SUMMARY_MAX);
         this._updateCharCounter('meta-desc-short', 'meta-desc-short-counter', this.DESC_MAX);
         this._updateCharCounter('meta-desc-announcement', 'meta-desc-announcement-counter', this.ANNOUNCEMENT_MAX);
+        this._updateCharCounter('meta-desc-tg', 'meta-desc-tg-counter', this.TG_DESC_MAX);
     },
 
     /**
@@ -442,12 +448,14 @@ const MetaEditor = {
         const descs = (this.metadata && this.metadata.descriptions) || {};
         const shortVal = descs.short || '';
         const announcementVal = descs.announcement || '';
+        const tgVal = descs.tg || '';
         return `
             <details class="metadata-desc-details">
                 <summary class="metadata-desc-toggle">Per-platform descriptions (optional overrides)</summary>
                 <div class="metadata-desc-tabs">
                     <button type="button" data-desc-tab="short" class="metadata-desc-tab active">Short (IB/SF)</button>
-                    <button type="button" data-desc-tab="announcement" class="metadata-desc-tab">Announcement (Bsky)</button>
+                    <button type="button" data-desc-tab="announcement" class="metadata-desc-tab">Announcement (Bsky/Telegram)</button>
+                    <button type="button" data-desc-tab="tg" class="metadata-desc-tab">Telegram</button>
                 </div>
                 <div class="metadata-desc-pane" data-desc-pane="short">
                     <div class="metadata-field">
@@ -460,7 +468,14 @@ const MetaEditor = {
                     <div class="metadata-field">
                         <label for="meta-desc-announcement">Announcement <span class="metadata-char-counter" id="meta-desc-announcement-counter"></span></label>
                         <textarea id="meta-desc-announcement" rows="2" placeholder="Quick announcement, 300 chars max..." maxlength="300">${this._escape(announcementVal)}</textarea>
-                        <div class="metadata-hint">Short text for Bluesky posts. Falls back to truncated description if empty.</div>
+                        <div class="metadata-hint">Short text for Bluesky and Telegram announcements. Falls back to truncated description if empty.</div>
+                    </div>
+                </div>
+                <div class="metadata-desc-pane" data-desc-pane="tg" style="display:none">
+                    <div class="metadata-field">
+                        <label for="meta-desc-tg">Telegram text <span class="metadata-char-counter" id="meta-desc-tg-counter"></span></label>
+                        <textarea id="meta-desc-tg" rows="3" placeholder="What the channel announcement says (optional)..." maxlength="${this.TG_DESC_MAX}">${this._escape(tgVal)}</textarea>
+                        <div class="metadata-hint">Used only on Telegram. Blank falls back to the announcement, then a cut of the description. The whole post (text, tags, links) is capped at 1,024 characters.</div>
                     </div>
                 </div>
             </details>`;
@@ -2283,6 +2298,108 @@ const MetaEditor = {
     // Section 5: Platform Toggles
     // ---------------------------------------------------------------------
 
+    /* Telegram options for this story's announcements.
+     *
+     * Mirrors the artwork edit form (see frontend/js/artwork.js). Tri-state
+     * rather than checkboxes: "Default" means follow the channel setting in
+     * Settings → Telegram, and it is the common case. A checkbox would collapse
+     * that into whichever bool the default happened to be at save time, and
+     * later changes to the channel default would stop reaching this story.
+     *
+     * Stored in story.json under `platform_options.tg`, which story_reader
+     * merges into the package's `extra`. */
+    _TG_STORY_OPTS: [
+        ['spoiler',  'Blur the cover (tap to reveal)',
+         'Follows the rating unless set here.'],
+        ['tags',     'Include hashtags',
+         'Off sends the announcement with no tags appended.'],
+        ['caption',  'Include text',
+         'Off sends the cover image alone.'],
+        ['protect',  'Stop forwarding &amp; saving',
+         "Telegram's own anti-repost control."],
+        ['document', 'Send the cover at full quality',
+         'As a file rather than a photo. Telegram re-compresses photos.'],
+        ['silent',   'Post silently',
+         'Delivered with no notification ping.'],
+        ['pin',      'Pin in the channel',
+         'Needs the bot to hold the Pin Messages admin right.'],
+        ['preview',  'Show link previews',
+         'Off suppresses the preview card for the first link. An announcement is mostly links, so the card can dwarf the post.'],
+    ],
+
+    _renderTelegramSection() {
+        const opts = ((this.metadata && this.metadata.platform_options) || {}).tg || {};
+        const rows = this._TG_STORY_OPTS.map(([key, label, help]) => {
+            const v = opts[key];
+            const sel = (v === undefined || v === null) ? '' : (v ? 'on' : 'off');
+            return `
+                <div class="metadata-tg-row">
+                    <select class="metadata-tg-opt" data-tgopt="${key}">
+                        <option value=""${sel === '' ? ' selected' : ''}>Default</option>
+                        <option value="on"${sel === 'on' ? ' selected' : ''}>On</option>
+                        <option value="off"${sel === 'off' ? ' selected' : ''}>Off</option>
+                    </select>
+                    <span class="metadata-tg-label"><strong>${label}</strong><br><span class="metadata-hint">${help}</span></span>
+                </div>`;
+        }).join('');
+        return `
+            <section class="metadata-section" data-section="telegram" data-expanded="false">
+                <button type="button" class="metadata-section-header" data-section-toggle="telegram">
+                    <span class="metadata-section-chevron">&#9654;</span>
+                    <span>&#128227; Telegram announcement</span>
+                </button>
+                <div class="metadata-section-body">
+                    <p class="metadata-hint" style="margin:0 0 10px">
+                        How this story is announced to your Telegram channel. Each falls back to your
+                        channel default in Settings &rarr; Telegram. A story is announced, never posted
+                        in full &mdash; Telegram caps a message at about 700 words &mdash; so the
+                        announcement carries the cover, a blurb, and links to where the story is live.
+                    </p>
+                    ${rows}
+                    ${this._renderTgLinkPicker(opts)}
+                </div>
+            </section>
+        `;
+    },
+
+    /* Which of the story's sites the announcement links to, and in what order
+     * (4.3.0, spec §8.4 / §10 Q3). Stored as platform_options.tg.link_mode +
+     * link_platforms — an ordered list of short codes, which the poster reads
+     * raw. The list offers the sites the story is set to publish to; whether
+     * each is live is settled at post time. */
+    _renderTgLinkPicker(opts) {
+        const mode = ['auto', 'first', 'all', 'pick', 'none'].includes(opts.link_mode) ? opts.link_mode : 'auto';
+        const order = Array.isArray(opts.link_platforms) ? opts.link_platforms.map(String) : [];
+        const enabled = this.PLATFORMS.filter(p => (this.metadata.platforms || {})[p]).map(p => this.TG_LINK_CODES[p] || p);
+        const listed = [...order, ...enabled.filter(c => !order.includes(c))];
+        const labelFor = (code) => {
+            const key = Object.keys(this.TG_LINK_CODES).find(k => this.TG_LINK_CODES[k] === code) || code;
+            return this.PLATFORM_LABELS[key] || code;
+        };
+        const modes = [
+            ['auto', 'Automatic', 'links where it is already live; on a fresh story, wherever it lands first'],
+            ['first', 'Wherever it lands first', ''],
+            ['all', 'All links', 'every site, in the order below'],
+            ['pick', 'Pick…', 'only the ticked sites, in that order'],
+            ['none', 'No links', ''],
+        ].map(([v, l, h]) => `<label title="${this._escape(h)}"><input type="radio" class="metadata-tg-linkmode" name="meta-tg-linkmode" value="${v}"${mode === v ? ' checked' : ''}> ${l}</label>`).join('');
+        const list = listed.map(code => `
+            <li class="art-tg-link" data-code="${this._escape(code)}">
+                <input type="checkbox" class="metadata-tg-linkpick" value="${this._escape(code)}"${order.includes(code) || mode !== 'pick' ? ' checked' : ''}>
+                <span>${this._escape(labelFor(code))}</span>
+                <button type="button" class="art-tg-linkup metadata-tg-linkup" title="Move up — the first link is the one Telegram previews">▲</button>
+            </li>`).join('');
+        return `
+            <div class="art-tg-links metadata-tg-links">
+                <strong>Links in the announcement</strong>
+                <div class="art-tg-links-modes">${modes}</div>
+                ${listed.length
+                    ? `<ul class="art-tg-linklist" id="meta-tg-linklist"${mode === 'pick' || mode === 'all' ? '' : ' hidden'}>${list}</ul>
+                       <span class="metadata-hint">The first link is the one Telegram previews.</span>`
+                    : `<span class="metadata-hint">Turn on a platform below to have somewhere to link.</span>`}
+            </div>`;
+    },
+
     _renderPlatformTogglesSection() {
         const md = this.metadata;
 
@@ -2442,6 +2559,14 @@ const MetaEditor = {
                 this._updateCharCounter('meta-desc-announcement', 'meta-desc-announcement-counter', this.ANNOUNCEMENT_MAX);
             });
         }
+        const descTgEl = document.getElementById('meta-desc-tg');
+        if (descTgEl) {
+            descTgEl.addEventListener('input', () => {
+                this.metadata.descriptions.tg = descTgEl.value;
+                this._clearStatus();
+                this._updateCharCounter('meta-desc-tg', 'meta-desc-tg-counter', this.TG_DESC_MAX);
+            });
+        }
 
         // Field inputs — live-update this.metadata + counters
         document.querySelectorAll('[data-field]').forEach(el => {
@@ -2542,7 +2667,59 @@ const MetaEditor = {
             this._sortTagsAlphabetically();
         });
 
+        // Telegram link picker (4.3.0) — writes platform_options.tg.link_mode /
+        // link_platforms; 'auto' is stored as absence like the tri-states.
+        const _tgOpts = () => {
+            if (!this.metadata.platform_options) this.metadata.platform_options = {};
+            return { ...(this.metadata.platform_options.tg || {}) };
+        };
+        const _storeTg = (tg) => {
+            if (Object.keys(tg).length) this.metadata.platform_options.tg = tg;
+            else delete this.metadata.platform_options.tg;
+            this._clearStatus();
+        };
+        const _writeLinkPicks = () => {
+            const tg = _tgOpts();
+            const picks = Array.from(document.querySelectorAll('.metadata-tg-linkpick:checked')).map(c => c.value);
+            if (picks.length) tg.link_platforms = picks; else delete tg.link_platforms;
+            _storeTg(tg);
+        };
+        document.querySelectorAll('.metadata-tg-linkmode').forEach(r => {
+            r.addEventListener('change', () => {
+                const tg = _tgOpts();
+                if (r.value === 'auto') delete tg.link_mode; else tg.link_mode = r.value;
+                _storeTg(tg);
+                const list = document.getElementById('meta-tg-linklist');
+                if (list) list.hidden = !(r.value === 'pick' || r.value === 'all');
+            });
+        });
+        document.querySelectorAll('.metadata-tg-linkpick').forEach(c => c.addEventListener('change', _writeLinkPicks));
+        document.querySelectorAll('.metadata-tg-linkup').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const li = btn.closest('.art-tg-link');
+                if (li && li.previousElementSibling) li.parentElement.insertBefore(li, li.previousElementSibling);
+                _writeLinkPicks();
+            });
+        });
+
         // Platform toggle checkboxes
+        document.querySelectorAll('[data-tgopt]').forEach(sel => {
+            sel.addEventListener('change', () => {
+                if (!this.metadata.platform_options) this.metadata.platform_options = {};
+                const tg = { ...(this.metadata.platform_options.tg || {}) };
+                const key = sel.getAttribute('data-tgopt');
+                // Only explicit on/off is stored. "Default" REMOVES the key so
+                // the story keeps following the channel setting rather than
+                // being frozen at whatever it is today.
+                if (sel.value === 'on') tg[key] = true;
+                else if (sel.value === 'off') tg[key] = false;
+                else delete tg[key];
+                if (Object.keys(tg).length) this.metadata.platform_options.tg = tg;
+                else delete this.metadata.platform_options.tg;
+                this._clearStatus();
+            });
+        });
+
         document.querySelectorAll('[data-platform-toggle]').forEach(cb => {
             cb.addEventListener('change', () => {
                 const p = cb.getAttribute('data-platform-toggle');

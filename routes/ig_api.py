@@ -26,6 +26,7 @@ ig_router = APIRouter(prefix="/api/ig")
 
 # -- IG Auth ------------------------------------------------------------------
 
+
 @ig_router.get("/auth/status")
 def ig_auth_status():
     settings = config.get_settings()
@@ -94,6 +95,7 @@ def ig_disconnect():
 # seconds of an active publish. This path is auth-exempt (dashboard.py) and the
 # token is an unguessable uuid4 hex with a strict format check + short TTL.
 
+
 @ig_router.get("/pubmedia/{token}")
 def ig_pubmedia(token: str):
     from posting import ig_media
@@ -132,6 +134,7 @@ async def ig_stash_pubmedia(file: UploadFile = File(...)):
 
 # -- IG Polling ---------------------------------------------------------------
 
+
 @ig_router.get("/poll/progress")
 def get_ig_poll_progress():
     return dict(ig_poll_progress)
@@ -168,6 +171,7 @@ async def ig_full_resync():
 
 
 # -- IG Data ------------------------------------------------------------------
+
 
 @ig_router.get("/status")
 def get_ig_status():
@@ -235,6 +239,26 @@ def get_ig_submissions(
         conn.close()
 
 
+# Registered BEFORE the bare /submissions/{id} route below. The `:path`
+# converter is greedy and Starlette matches in registration order, so with
+# the bare route first this URL resolved to a submission id of
+# "<id>/snapshots" and returned 404 for every post that exists.
+@ig_router.get("/submissions/{submission_id:path}/snapshots")
+def get_ig_submission_snapshots(
+    submission_id: str,
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+):
+    conn = get_connection()
+    try:
+        return {"snapshots": ig_queries.get_ig_snapshots(conn, submission_id, start, end)}
+    except Exception as e:
+        logger.error("Error in /api/ig/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
+        raise HTTPException(500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @ig_router.get("/submissions/{submission_id:path}")
 def get_ig_submission(submission_id: str):
     conn = get_connection()
@@ -264,22 +288,6 @@ def get_ig_submission(submission_id: str):
         raise
     except Exception as e:
         logger.error("Error in /api/ig/submissions/%s: %s", submission_id[:50], e, exc_info=True)
-        raise HTTPException(500, detail=str(e))
-    finally:
-        conn.close()
-
-
-@ig_router.get("/submissions/{submission_id:path}/snapshots")
-def get_ig_submission_snapshots(
-    submission_id: str,
-    start: Optional[str] = Query(None),
-    end: Optional[str] = Query(None),
-):
-    conn = get_connection()
-    try:
-        return {"snapshots": ig_queries.get_ig_snapshots(conn, submission_id, start, end)}
-    except Exception as e:
-        logger.error("Error in /api/ig/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
         raise HTTPException(500, detail=str(e))
     finally:
         conn.close()

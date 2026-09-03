@@ -613,3 +613,98 @@ def test_the_receivers_own_outbox_does_not_fill_up_from_applying(desktop, server
     _push(desktop, server)
 
     assert tombstones.count(server) == 0
+
+
+# ── Telegram submissions (4.0.10) ─────────────────────────────
+#
+# The one *_submissions table that crosses the channel. Every other one is
+# SERVER-OWNED, because a polled site is the authority on what it holds and the
+# desktop only ever has a copy. Telegram inverts that: PawPoller SENT each post
+# and recorded the message id itself, so a post sent from the desktop exists
+# nowhere else until it travels — and Telegram's own (chat_id, message_id) is a
+# natural key that means the same thing on both machines.
+
+
+def _tg_account(conn, handle, *, default=True):
+    return _account(conn, "tg", handle, default=default)
+
+
+def _tg_post(conn, account_id, chat_id, message_id, **kw):
+    from database import tg_queries
+    tg_queries.record_submission(
+        conn, account_id=account_id, chat_id=chat_id, message_id=message_id,
+        title=kw.get("title", ""), posted_at=kw.get("posted_at", "2026-09-01 10:00:00"),
+        link=kw.get("link", ""), content_type=kw.get("content_type", "artwork"))
+    conn.commit()
+
+
+def test_a_telegram_post_sent_from_the_desktop_reaches_the_server(desktop, server):
+    """Without this the desktop's channel posts are invisible to the dashboard
+    that draws the analytics — the numbers would only ever cover what the
+    server itself sent."""
+    _tg_account(server, "@thechannel")
+    _tg_post(desktop, _tg_account(desktop, "@thechannel"), "-1001", 42,
+             title="Sample Piece", link="https://t.me/thechannel/42")
+
+    _push(desktop, server)
+
+    row = server.execute(
+        "SELECT * FROM tg_submissions WHERE submission_id = '-1001:42'").fetchone()
+    assert row is not None, "the post never crossed"
+    assert row["title"] == "Sample Piece"
+    assert row["chat_id"] == "-1001" and row["message_id"] == 42
+
+
+def test_the_telegram_post_attaches_to_the_receivers_own_account_id(desktop, server):
+    """account_ids are offset between machines (that offset corrupted four
+    accounts once already). The row must resolve through (platform, handle)."""
+    _account(server, "fa", "spacer", default=True)      # pushes tg's id along
+    srv_tg = _tg_account(server, "@thechannel", default=False)
+    _tg_post(desktop, _tg_account(desktop, "@thechannel"), "-1001", 7)
+
+    _push(desktop, server)
+
+    row = server.execute(
+        "SELECT account_id FROM tg_submissions WHERE submission_id = '-1001:7'").fetchone()
+    assert row["account_id"] == srv_tg
+
+
+def test_reaction_counts_are_never_overwritten_from_below(desktop, server):
+    """THE reason this rule is INSERT_ONLY. Reactions arrive as pushed updates
+    to whichever machine holds the update stream — there is one consumer per bot
+    token, so the other machine's copy is stale by construction. An upward
+    update would replace a real count with an older one, and the snapshot series
+    would record the drop as lost engagement."""
+    from database import tg_queries
+    _tg_post(server, _tg_account(server, "@thechannel"), "-1001", 9)
+    tg_queries.apply_reaction_count(
+        server, chat_id="-1001", message_id=9,
+        reactions=[{"type": {"emoji": "\N{HEAVY BLACK HEART}"}, "total_count": 12}])
+    server.commit()
+
+    # The desktop holds the same post but has never seen a reaction update.
+    _tg_post(desktop, _tg_account(desktop, "@thechannel"), "-1001", 9)
+
+    # Negative control: without it this test would still pass if the row were
+    # dropped from the bundle entirely — a different bug wearing the same tick.
+    assert any(r["chat_id"] == "-1001" and r["message_id"] == 9
+               for r in shr.export_bundle(desktop)["tables"]["tg_submissions"]), (
+        "the row never reached the bundle, so the rest proves nothing")
+
+    _push(desktop, server)
+
+    row = server.execute(
+        "SELECT reactions_count, reactions_at FROM tg_submissions "
+        "WHERE submission_id = '-1001:9'").fetchone()
+    assert row["reactions_count"] == 12, "a stale zero landed on a real count"
+    assert row["reactions_at"] is not None
+
+
+def test_pushing_telegram_posts_twice_changes_nothing(desktop, server):
+    _tg_account(server, "@thechannel")
+    _tg_post(desktop, _tg_account(desktop, "@thechannel"), "-1001", 3)
+
+    _push(desktop, server)
+    _push(desktop, server)
+
+    assert server.execute("SELECT COUNT(*) FROM tg_submissions").fetchone()[0] == 1

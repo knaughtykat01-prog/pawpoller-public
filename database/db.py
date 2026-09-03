@@ -48,6 +48,7 @@ _IG_SCHEMA_PATH = config.resource_path("database/ig_schema.sql")      # Instagra
 _E621_SCHEMA_PATH = config.resource_path("database/e621_schema.sql")  # e621 tables
 _FN_SCHEMA_PATH = config.resource_path("database/fn_schema.sql")      # FurryNetwork tables
 _FBR_SCHEMA_PATH = config.resource_path("database/fbr_schema.sql")    # Furbooru tables
+_TG_SCHEMA_PATH = config.resource_path("database/tg_schema.sql")      # Telegram tables
 _POSTING_SCHEMA_PATH = config.resource_path("database/posting_schema.sql")  # Posting module tables
 _POSTS_SCHEMA_PATH = config.resource_path("database/posts_schema.sql")      # Posts (microblog) module tables
 _COLLECTIONS_SCHEMA_PATH = config.resource_path("database/collections_schema.sql")  # Collections (master container) tables
@@ -158,6 +159,8 @@ def init_db() -> None:
         conn.executescript(fn_schema_sql)
         fbr_schema_sql = _FBR_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(fbr_schema_sql)
+        tg_schema_sql = _TG_SCHEMA_PATH.read_text(encoding="utf-8")
+        conn.executescript(tg_schema_sql)
         posting_schema_sql = _POSTING_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(posting_schema_sql)
         posts_schema_sql = _POSTS_SCHEMA_PATH.read_text(encoding="utf-8")
@@ -1042,6 +1045,66 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         if "duplicate column" not in str(e).lower():
             raise
     conn.execute("CREATE INDEX IF NOT EXISTS idx_accounts_persona ON accounts(persona_id)")
+
+    # Migration: adopt Telegram accounts created before it was a real platform.
+    #
+    # Publishing to Telegram calls get_default_account_id(..., create=True),
+    # which INSERTS and self-commits. So any install that posted to a channel
+    # already has a `tg` row — labelled "tg (default)" because PLATFORM_NAMES
+    # had no entry, and with an EMPTY handle because _HANDLE_KEYS had none.
+    #
+    # ⚠ This must ADOPT that row, not seed beside it. `idx_accounts_one_default`
+    # is a partial unique index on (platform) WHERE is_default = 1, and
+    # create_account silently downgrades is_default to 0 on conflict — so
+    # seeding would produce a non-default account nobody asked for, while the
+    # real one kept the useless label.
+    #
+    # ⚠ The empty handle is the more serious half. (platform, handle) is the
+    # natural key for desktop↔server mirroring; with no handle a `tg` row can
+    # only be matched by is_default, so a second channel added on one machine
+    # inserts as a NEW row on the other and the two drift apart. Backfilling it
+    # from the flat tg_channel setting is what makes multi-channel safe to sync.
+    try:
+        _tg = conn.execute(
+            "SELECT account_id, label, handle, is_default FROM accounts"
+            " WHERE platform = 'tg'"
+        ).fetchall()
+        if _tg:
+            import config as _config
+            _settings = _config.get_settings()
+            for _row in _tg:
+                _aid, _label, _handle = _row[0], _row[1] or "", _row[2] or ""
+                _updates, _params = [], []
+                if _label in ("", "tg (default)", "tg"):
+                    _updates.append("label = ?")
+                    _params.append("Telegram (default)")
+                if not _handle:
+                    # Only the DEFAULT account maps to the flat key; a non-default
+                    # one stores its channel under acct_<id>_tg_channel.
+                    # Signature is (account_id, field, is_default) — the default
+                    # account's key is the bare field, others are namespaced.
+                    _key = _config.account_setting_key(_aid, "tg_channel",
+                                                       bool(_row[3]))
+                    _ch = (_settings.get(_key) or "").strip()
+                    if not _ch:
+                        # Belt and braces: try both forms, since a row's
+                        # is_default may not match where its channel was written.
+                        _ch = ((_settings.get("tg_channel") or "").strip()
+                               if _row[3] else
+                               (_settings.get(f"acct_{_aid}_tg_channel") or "").strip())
+                    if _ch:
+                        _updates.append("handle = ?")
+                        _params.append(_ch)
+                if _updates:
+                    _params.append(_aid)
+                    conn.execute(
+                        f"UPDATE accounts SET {', '.join(_updates)} WHERE account_id = ?",
+                        _params)
+            conn.commit()
+    except sqlite3.OperationalError:
+        # A fresh DB may not have the accounts table yet at this point; the
+        # normal seeding path creates it correctly and needs no adoption.
+        pass
 
     # Migration: per-persona posting defaults (gap-wave-3 §1) — plain additive
     # columns; also in ensure_personas_table for fresh installs.

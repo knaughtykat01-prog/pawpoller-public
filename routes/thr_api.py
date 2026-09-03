@@ -26,6 +26,7 @@ thr_router = APIRouter(prefix="/api/thr")
 
 # -- THR Auth -----------------------------------------------------------------
 
+
 @thr_router.get("/auth/status")
 def thr_auth_status():
     settings = config.get_settings()
@@ -90,6 +91,7 @@ def thr_disconnect():
 
 # -- THR Polling --------------------------------------------------------------
 
+
 @thr_router.get("/poll/progress")
 def get_thr_poll_progress():
     return dict(thr_poll_progress)
@@ -126,6 +128,7 @@ async def thr_full_resync():
 
 
 # -- THR Data -----------------------------------------------------------------
+
 
 @thr_router.get("/status")
 def get_thr_status():
@@ -192,6 +195,26 @@ def get_thr_submissions(
         conn.close()
 
 
+# Registered BEFORE the bare /submissions/{id} route below. The `:path`
+# converter is greedy and Starlette matches in registration order, so with
+# the bare route first this URL resolved to a submission id of
+# "<id>/snapshots" and returned 404 for every post that exists.
+@thr_router.get("/submissions/{submission_id:path}/snapshots")
+def get_thr_submission_snapshots(
+    submission_id: str,
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+):
+    conn = get_connection()
+    try:
+        return {"snapshots": thr_queries.get_thr_snapshots(conn, submission_id, start, end)}
+    except Exception as e:
+        logger.error("Error in /api/thr/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
+        raise HTTPException(500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @thr_router.get("/submissions/{submission_id:path}")
 def get_thr_submission(submission_id: str):
     conn = get_connection()
@@ -221,22 +244,6 @@ def get_thr_submission(submission_id: str):
         raise
     except Exception as e:
         logger.error("Error in /api/thr/submissions/%s: %s", submission_id[:50], e, exc_info=True)
-        raise HTTPException(500, detail=str(e))
-    finally:
-        conn.close()
-
-
-@thr_router.get("/submissions/{submission_id:path}/snapshots")
-def get_thr_submission_snapshots(
-    submission_id: str,
-    start: Optional[str] = Query(None),
-    end: Optional[str] = Query(None),
-):
-    conn = get_connection()
-    try:
-        return {"snapshots": thr_queries.get_thr_snapshots(conn, submission_id, start, end)}
-    except Exception as e:
-        logger.error("Error in /api/thr/submissions/%s/snapshots: %s", submission_id[:50], e, exc_info=True)
         raise HTTPException(500, detail=str(e))
     finally:
         conn.close()

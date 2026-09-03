@@ -309,6 +309,31 @@ def _export_publications(conn):
     } for r in _rows(conn, "SELECT * FROM publications ORDER BY pub_id")]
 
 
+def _export_tg_submissions(conn):
+    """Telegram posts this install sent.
+
+    The natural key is Telegram's own — a chat id plus a message id — so unlike
+    every other *_submissions table this travels safely between installs
+    without carrying a surrogate.
+
+    Reaction columns are exported but applied insert-only on the far side: they
+    are owned by whichever machine holds the update stream, so an upward update
+    could only ever replace fresher counts with staler ones.
+    """
+    return [{
+        "chat_id": str(_get(r, "chat_id", "")),
+        "message_id": int(_get(r, "message_id", 0) or 0),
+        "account": _handle_for(conn, _get(r, "account_id")),
+        "title": _get(r, "title", ""),
+        "posted_at": _get(r, "posted_at", ""),
+        "link": _get(r, "link", ""),
+        "content_type": _get(r, "content_type", "artwork"),
+        "reactions_count": int(_get(r, "reactions_count", 0) or 0),
+        "reactions_json": _get(r, "reactions_json", ""),
+        "reactions_at": _get(r, "reactions_at"),
+    } for r in _rows(conn, "SELECT * FROM tg_submissions ORDER BY chat_id, message_id")]
+
+
 def _export_collections(conn):
     return [{
         "name": r["name"], "cover_kind": _get(r, "cover_kind", ""),
@@ -458,6 +483,7 @@ _EXPORTERS = {
     "masterpiece_not_duplicate": lambda c: _export_pairs(c, "masterpiece_not_duplicate"),
     "masterpiece_not_variant": lambda c: _export_pairs(c, "masterpiece_not_variant"),
     "publications": _export_publications,
+    "tg_submissions": _export_tg_submissions,
     "collections": _export_collections,
     "collection_members": _export_collection_members,
     "submission_groups": _export_submission_groups,
@@ -843,6 +869,31 @@ def _apply_pairs(table):
     return apply
 
 
+def _apply_tg_submissions(conn, rows, ctx):
+    """Insert-only, keyed on Telegram's own (chat_id, message_id).
+
+    A row that already exists is left alone rather than updated: its reaction
+    counts belong to whichever machine ingests the update stream, and an
+    upward update would overwrite fresher counts with staler ones.
+    """
+    n = 0
+    for r in rows:
+        chat_id, message_id = r.get("chat_id"), r.get("message_id")
+        if not chat_id or not message_id:
+            continue
+        account_id = _resolve_account(conn, "tg", r.get("account")) or 0
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO tg_submissions (submission_id, account_id, chat_id, "
+            "message_id, title, posted_at, link, content_type, reactions_count, "
+            "reactions_json, reactions_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (f"{chat_id}:{message_id}", account_id, str(chat_id), int(message_id),
+             r.get("title", ""), r.get("posted_at", ""), r.get("link", ""),
+             r.get("content_type", "artwork"), int(r.get("reactions_count") or 0),
+             r.get("reactions_json", ""), r.get("reactions_at")))
+        n += cur.rowcount or 0
+    return n
+
+
 def _apply_publications(conn, rows, ctx):
     """Insert-only. See the module docstring: upward, an update can only be a
     stale copy landing on fresher analytics, and the rows the desktop truly
@@ -1158,6 +1209,7 @@ _APPLIERS = {
     "masterpiece_not_duplicate": _apply_pairs("masterpiece_not_duplicate"),
     "masterpiece_not_variant": _apply_pairs("masterpiece_not_variant"),
     "publications": _apply_publications,
+    "tg_submissions": _apply_tg_submissions,
     "collections": _apply_collections,
     "collection_members": _apply_collection_members,
     "submission_groups": _apply_submission_groups,

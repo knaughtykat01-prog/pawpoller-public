@@ -1783,6 +1783,8 @@ class PublishRequest(BaseModel):
     draft: bool = True            # SF/SQW/AO3 etc. — post as draft if supported
     confirm_live: bool = False    # Must be True for non-dry-run actions
     account_id: int | None = None  # which account to post AS (None = platform default)
+    persona_id: int | None = None  # persona-first: account must be this persona's, else refused (4.2.0)
+    description_override: str | None = None  # this post only — Publish Check's Telegram box (4.3.0)
 
 
 @editor_router.post("/stories/{story_name:path}/publish")
@@ -1899,6 +1901,10 @@ async def publish(story_name: str, req: PublishRequest):
             chapters=[req.chapter],
             extras=extras,
             account_ids={req.platform: req.account_id} if req.account_id else None,
+            persona_id=req.persona_id,
+            description_overrides=(
+                {req.platform: req.description_override.strip()}
+                if req.description_override and req.description_override.strip() else None),
         )
     else:  # update / update_metadata — both route through update_story
         results = await manager.update_story(

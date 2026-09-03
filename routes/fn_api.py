@@ -26,6 +26,7 @@ fn_router = APIRouter(prefix="/api/fn")
 
 # -- Auth --------------------------------------------------------------------
 
+
 @fn_router.get("/auth/status")
 def fn_auth_status():
     settings = config.get_settings()
@@ -121,6 +122,7 @@ def fn_disconnect():
 
 # -- Polling -----------------------------------------------------------------
 
+
 @fn_router.get("/poll/progress")
 def get_fn_poll_progress():
     return dict(fn_poll_progress)
@@ -157,6 +159,7 @@ async def fn_full_resync():
 
 
 # -- Data --------------------------------------------------------------------
+
 
 @fn_router.get("/status")
 def get_fn_status():
@@ -215,6 +218,23 @@ def get_fn_submissions(
         conn.close()
 
 
+# Registered BEFORE the bare /submissions/{id} route below. The `:path`
+# converter is greedy and Starlette matches in registration order, so with
+# the bare route first this URL resolved to a submission id of
+# "<id>/snapshots" and returned 404 for every post that exists.
+@fn_router.get("/submissions/{submission_id:path}/snapshots")
+def get_fn_submission_snapshots(submission_id: str, start: Optional[str] = Query(None),
+                                end: Optional[str] = Query(None)):
+    conn = get_connection()
+    try:
+        return {"snapshots": fn_queries.get_fn_snapshots(conn, submission_id, start, end)}
+    except Exception as e:
+        logger.error("Error in /api/fn/.../snapshots: %s", e, exc_info=True)
+        raise HTTPException(500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @fn_router.get("/submissions/{submission_id:path}")
 def get_fn_submission(submission_id: str):
     conn = get_connection()
@@ -241,19 +261,6 @@ def get_fn_submission(submission_id: str):
         raise
     except Exception as e:
         logger.error("Error in /api/fn/submissions/%s: %s", submission_id[:50], e, exc_info=True)
-        raise HTTPException(500, detail=str(e))
-    finally:
-        conn.close()
-
-
-@fn_router.get("/submissions/{submission_id:path}/snapshots")
-def get_fn_submission_snapshots(submission_id: str, start: Optional[str] = Query(None),
-                                end: Optional[str] = Query(None)):
-    conn = get_connection()
-    try:
-        return {"snapshots": fn_queries.get_fn_snapshots(conn, submission_id, start, end)}
-    except Exception as e:
-        logger.error("Error in /api/fn/.../snapshots: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))
     finally:
         conn.close()

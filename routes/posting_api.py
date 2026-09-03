@@ -489,6 +489,8 @@ async def post_story(body: dict):
     platforms = body.get("platforms", [])
     chapters = body.get("chapters")
     account_ids = body.get("account_ids")
+    persona_id = body.get("persona_id")   # persona-first: refuse, never default (4.2.0)
+    description_overrides = body.get("description_overrides") or None   # this post only (4.3.0)
 
     if not story_name:
         raise HTTPException(400, detail="story_name is required")
@@ -503,7 +505,8 @@ async def post_story(body: dict):
 
     try:
         results = await manager.post_story(story_name, platforms, chapters,
-                                           account_ids=account_ids)
+                                           account_ids=account_ids, persona_id=persona_id,
+                                           description_overrides=description_overrides)
         successes = sum(1 for r in results if r.get("success"))
         return {
             "status": "completed",

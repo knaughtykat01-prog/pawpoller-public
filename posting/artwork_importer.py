@@ -281,6 +281,12 @@ def import_artwork(platform: str, submission_id: str) -> dict:
                     rating=rating,
                     tags={"default": tags} if tags else {},
                     platforms=[platform],
+                    # The real post date, straight off the submission row — the same
+                    # fallback chain the Discovered tab uses (Inkbunny: create_datetime).
+                    # Without this the record's created_at was the import moment, and
+                    # "Most recent" sorted a bulk import by walk order (4.0.12).
+                    original_posted_at=str(d.get("posted_at") or d.get("create_datetime")
+                                            or d.get("created_at") or ""),
                     source={"platform": platform, "submission_id": str(submission_id),
                             "url": external_url, "image_index": i},
                 )

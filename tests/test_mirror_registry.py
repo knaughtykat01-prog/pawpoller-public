@@ -40,13 +40,21 @@ def test_class_counts_match_the_spec(conn):
     counts = registry.audit(conn)["counts"]
     # 19 platforms x (submissions, snapshots, poll_log) = 57, plus the 11
     # cross-platform telemetry tables the spec enumerates.
-    assert counts["SRV"] == 68
+    # +2 in 4.0.10: tg_snapshots and tg_poll_log. Telegram cannot join the
+    # PLATFORM_PREFIXES loop that generates the other trios, because its
+    # submissions table is SHR rather than SRV - PawPoller sends every
+    # Telegram post itself, so unlike a polled platform the DESKTOP can
+    # originate one. See the registry entries for the full reasoning.
+    assert counts["SRV"] == 70
     # The spec's §1 says 25 but enumerates 26; two of those (posting_queue,
     # posting_log) are reclassified HANDOFF here for the reasons in the module
     # docstring, leaving 24 that actually travel as shared rows.
     # +2 in 3.10.0: the artist registry (`artists`, `artist_handles`) is shared
     # reference data the user maintains, and both are already naturally keyed.
-    assert counts["SHR"] == 26
+    # +1 in 4.0.10: tg_submissions — the only *_submissions table the DESKTOP
+    # can originate, because PawPoller writes it when it posts rather than
+    # learning it from a poll.
+    assert counts["SHR"] == 27
     assert counts["HANDOFF"] == 2
     assert counts["DER"] == 1
     assert counts["LOC"] == 5  # + this stage's own outbox

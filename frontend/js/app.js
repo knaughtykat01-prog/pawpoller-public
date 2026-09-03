@@ -94,6 +94,10 @@ const App = {
     _fbrSortState: { field: 'score', order: 'desc' },
     _fbrCompareIds: new Set(),
     _fbrCompareMetric: 'score',
+    // Telegram has a single metric, so there is no _tgCompareMetric — its
+    // compare page charts reactions and offers no picker.
+    _tgSortState: { field: 'posted_at', order: 'desc' },
+    _tgCompareIds: new Set(),
     _twSortState: { field: 'views', order: 'desc' },
     _twCompareIds: new Set(),
     _twCompareMetric: 'views',
@@ -159,7 +163,6 @@ const App = {
             if (d.postAction !== undefined && typeof Posting !== 'undefined') {
                 switch (d.postAction) {
                     case 'update-single': Posting._updateSingle(d.postStory, d.postPlatform, Number(d.postChapter)); break;
-                    case 'upload-to':     Posting._uploadTo(d.postStory, d.postPlatform); break;
                     case 'update-all':    Posting._updateAll(d.postStory); break;
                     case 'cancel-queue':  Posting._cancelQueue(Number(d.postQueue)); break;
                 }
@@ -1140,6 +1143,16 @@ const App = {
             this.renderFBRDetail(parts[2]);
         } else if (parts[0] === 'fbr' && parts[1] === 'compare') {
             this.renderFBRCompare();
+        } else if (parts[0] === 'tg' && (!parts[1] || parts[1] === '')) {
+            this.renderTGDashboard();
+        } else if (parts[0] === 'tg' && parts[1] === 'submissions' && !parts[2]) {
+            this.renderTGSubmissions();
+        } else if (parts[0] === 'tg' && parts[1] === 'submission' && parts[2]) {
+            // A Telegram id is "<chat_id>:<message_id>", so it survives the
+            // hash split intact only because neither half contains a '/'.
+            this.renderTGDetail(decodeURIComponent(parts[2]));
+        } else if (parts[0] === 'tg' && parts[1] === 'compare') {
+            this.renderTGCompare();
         } else if (parts[0] === 'tw' && (!parts[1] || parts[1] === '')) {
             this.renderTWDashboard();
         } else if (parts[0] === 'tw' && parts[1] === 'submissions' && !parts[2]) {
@@ -1576,6 +1589,10 @@ const App = {
                 { key: 'e621', auth: auth.e621Auth?.has_credentials, name: 'e621', statusFn: 'getE621Status', logFn: 'getE621PollLog', tableFn: 'e621PollLogTable' },
                 { key: 'fn', auth: auth.fnAuth?.has_credentials, name: 'FurryNetwork', statusFn: 'getFNStatus', logFn: 'getFNPollLog', tableFn: 'fnPollLogTable' },
                 { key: 'fbr', auth: auth.fbrAuth?.has_credentials, name: 'Furbooru', statusFn: 'getFBRStatus', logFn: 'getFBRPollLog', tableFn: 'fbrPollLogTable' },
+                // Telegram's auth lives in the channel settings, not an
+                // /auth/status route, so its gate reads the health endpoint's
+                // `configured` flag via PlatformHealth instead of _pollingAuth.
+                { key: 'tg', auth: !!(window.PlatformHealth && (window.PlatformHealth.get('tg') || {}).configured), name: 'Telegram', statusFn: 'getTGStatus', logFn: 'getTGPollLog', tableFn: 'tgPollLogTable' },
             ];
             // Alphabetical by name (Inkbunny is rendered separately, first).
             platforms.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
@@ -1687,12 +1704,46 @@ const App = {
 
     /* ── Per-Platform Poll/Resync helpers (used by dashboard headers + polling tab) */
 
+    /* Honest per-platform credential status for the Settings rows (4.0.11).
+     *
+     * Fifteen rows rendered a hardcoded "Connected — tracking" whenever
+     * credentials merely EXISTED — `has_credentials` is presence, never
+     * validity — so cookies six months dead looked identical to fresh ones
+     * while every poll failed with "credential validation failed" in the tray.
+     * There was no value of "expired" a row could display. Nine of the fifteen
+     * are in session_check.CHECKABLE, meaning the app had a verdict and the
+     * row ignored it; the session-health card on this same page was showing
+     * the truth a few hundred pixels away.
+     *
+     * Reads that verdict via PlatformHealth (/api/platforms/sessions) and
+     * reuses the card's four states. For the platforms nothing validates
+     * (da/wp/ik/tw) it says "not verified" — deliberately less reassuring
+     * than "Connected", because the old text bought reassurance with
+     * accuracy. Also surfaces the last poll's error where the user is looking,
+     * rather than only in a dismissable notification. */
+    _credStatus(code, username) {
+        const h = (window.PlatformHealth && window.PlatformHealth.get(code)) || {};
+        const sess = (h.session && h.session.status) || null;
+        const who = username ? ` — tracking ${Utils.escapeHtml(username)}` : '';
+        let cls, text;
+        if (sess === 'valid')        { cls = 'connected';    text = `Connected${who}`; }
+        else if (sess === 'expired') { cls = 'disconnected'; text = 'Credentials expired — re-enter to resume polling'; }
+        else if (sess === 'error')   { cls = 'warn';         text = 'Could not verify — last check failed'; }
+        else                         { cls = 'muted';        text = `Credentials saved — not verified${who}`; }
+        let extra = '';
+        if (h.last_poll_status === 'error' && h.last_poll_error) {
+            extra = ` <span class="muted" style="font-size:11px">· last poll: ${Utils.escapeHtml(String(h.last_poll_error).slice(0, 160))}</span>`;
+        }
+        return { cls, html: `<span class="telegram-status ${cls}">${text}</span>${extra}` };
+    },
+
     // Display labels for toast messages — "sf" → "SoFurry" reads better
     // than the raw platform code in user-facing notifications.
     _platformLabels: {
         ib: 'Inkbunny', fa: 'FurAffinity', ws: 'Weasyl', sf: 'SoFurry',
         sqw: 'SquidgeWorld', ao3: 'AO3', da: 'DeviantArt', wp: 'Wattpad',
         ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon', tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram', e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru',
+        tg: 'Telegram',
     },
 
     /* Settings → Platforms → "Session health" card. Renders the per-platform
@@ -1700,7 +1751,10 @@ const App = {
      * "Check sessions now" button, which fires the server-side re-validation
      * (fire-and-forget) and reloads the results after it's had time to run. */
     async _initSessionHealthCard() {
-        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr'];
+        // Mirrors polling/session_check.py::CHECKABLE. Telegram's bot token
+        // does not expire, but the bot can be removed from the channel — the
+        // check catches that, which is otherwise invisible until a post fails.
+        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg'];
         const LABELS = (window.PlatformHealth && window.PlatformHealth.LABELS) || {};
         const DOT = { valid: 'connected', expired: 'disconnected', error: 'warn', unconfigured: 'muted' };
         const WORD = { valid: 'Valid', expired: 'Expired', error: 'Unverified', unconfigured: 'Not configured' };
@@ -1800,7 +1854,7 @@ const App = {
      * Falls back to the cached snapshot only if the health fetch fails/empty. */
     async _configuredPollCodes() {
         const ALL = ['ib', 'fa', 'ws', 'sf', 'sqw', 'ao3', 'da', 'wp', 'ik',
-            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr'];
+            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg'];
         try {
             const health = await API.getPlatformsHealth();
             if (health && typeof health === 'object') {
@@ -1815,7 +1869,11 @@ const App = {
             bsky: a.bskyAuth?.has_credentials, tw: a.twAuth?.has_credentials, mast: a.mastAuth?.has_credentials,
             tum: a.tumAuth?.has_credentials, pix: a.pixAuth?.has_credentials, thr: a.thrAuth?.has_credentials,
             ig: a.igAuth?.has_credentials, e621: a.e621Auth?.has_credentials,
-            fn: a.fnAuth?.has_credentials, fbr: a.fbrAuth?.has_credentials };
+            fn: a.fnAuth?.has_credentials, fbr: a.fbrAuth?.has_credentials,
+            // No tgAuth snapshot exists — Telegram is configured through the
+            // channel settings rather than an /auth route — so this fallback
+            // asks PlatformHealth, which reads the same server-side gate.
+            tg: !!(window.PlatformHealth && (window.PlatformHealth.get('tg') || {}).configured) };
         return ALL.filter(c => cached[c]);
     },
 
@@ -1851,7 +1909,7 @@ const App = {
         if (!confirm(`Full resync re-fetches every ${label} submission from scratch. This can take several minutes and will hit ${label}'s rate limits hard. Continue?`)) return;
         btn.disabled = true;
         btn.textContent = 'Syncing...';
-        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync' };
+        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync' };
         try {
             await API[fns[platform]]();
             btn.textContent = 'Done!';
@@ -2986,6 +3044,7 @@ const App = {
             mast: () => API.getMASTSummary(), tum: () => API.getTUMSummary(),
             pix: () => API.getPIXSummary(), thr: () => API.getTHRSummary(), ig: () => API.getIGSummary(),
             e621: () => API.getE621Summary(), fn: () => API.getFNSummary(), fbr: () => API.getFBRSummary(),
+            tg: () => API.getTGSummary(),
         };
         const [results, health] = await Promise.all([
             Promise.all(plats.map(p =>
@@ -2997,11 +3056,22 @@ const App = {
         const fmt = (n) => Utils.formatCompact(n || 0);
         const tiles = plats.map((p, i) => {
             const d = results[i] || {};
-            const views = d.total_views || d.total_reads || 0;
-            const faves = d.total_favorites || d.total_votes || d.total_likes || 0;
+            // Read through the registry rather than guessing at column names.
+            // The old literal chain was `total_favorites || total_votes ||
+            // total_likes`, which missed Tumblr's `total_notes`, both boorus'
+            // `total_score` and Telegram's `total_reactions` — so those tiles
+            // showed a headline 0 no matter how much engagement they had.
+            const stat = (key) => (window.platformStat
+                ? window.platformStat(p.code, d, key) : 0);
+            const views = stat('views');
+            const faves = stat('faves') || stat('score');
             const subs = d.total_submissions || 0;
             const primary = views > 0 ? views : faves;
-            const primaryLabel = views > 0 ? 'views' : 'faves';
+            // The platform's own word for it — "Notes" on Tumblr, "Reactions"
+            // on Telegram — lower-cased to sit in the tile's subtitle line.
+            const primaryLabel = (window.platformMetricLabel
+                ? window.platformMetricLabel(p.code, views > 0 ? 'views' : (stat('faves') ? 'faves' : 'score'))
+                : (views > 0 ? 'Views' : 'Faves')).toLowerCase();
             const route = window.platformRoute ? window.platformRoute(p.code) : '#/' + p.code;
             // No credentials for this platform yet → nudge onboarding with a
             // "Setup guide" button (data-guide is handled by the Guides delegate;
@@ -3060,7 +3130,7 @@ const App = {
              * platform lands here the moment it has a registry entry, and
              * `callOrNull` keeps it safe if the API method doesn't exist yet. */
             const _range = Utils.getDateRange(this._dateRange);
-            const codes = window.PLATFORMS.map(p => p.code);
+            const codes = window.POLLABLE_PLATFORMS.map(p => p.code);
             const apiName = (code, kind) =>
                 (code === 'ib' ? 'get' + kind : 'get' + code.toUpperCase() + kind);
             const callOrNull = (name, arg) => (typeof API[name] === 'function'
@@ -3106,7 +3176,7 @@ const App = {
              * list; platforms with no such list simply contribute nothing. */
             const mergeTop = (pick, key) => {
                 const merged = [];
-                window.PLATFORMS.forEach(p => {
+                window.POLLABLE_PLATFORMS.forEach(p => {
                     const s = statsByCode[p.code] || {};
                     // A views list is meaningless for a platform with no view
                     // counter (Itaku/Bluesky/Mastodon/Tumblr/e621/Furbooru).
@@ -3135,7 +3205,7 @@ const App = {
              * so try them in order and take whichever exists. Left unsliced —
              * the widget slices after applying its platform filter. */
             const recentActivity = [];
-            window.PLATFORMS.forEach(p => {
+            window.POLLABLE_PLATFORMS.forEach(p => {
                 const s = statsByCode[p.code] || {};
                 const faves = s.recent_faves || s.recent_likes || s.recent_notes
                     || s.recent_votes || s.recent_bookmarks || [];
@@ -3156,7 +3226,7 @@ const App = {
              * Mastodon, Tumblr) and for the booru family, whose metric is a net
              * score — so none of them can win "best by views". `score` is
              * carried separately rather than being folded into views. */
-            const platRollup = window.PLATFORMS.map(p => ({
+            const platRollup = window.POLLABLE_PLATFORMS.map(p => ({
                 code: p.code,
                 label: p.label,
                 badge: p.code.toUpperCase(),
@@ -3185,7 +3255,7 @@ const App = {
              * titled in the platform's own vocabulary, so AO3 reads "AO3 Hits"
              * and Tumblr "Tumblr Notes" rather than everything claiming views.
              * Built from the registry, so FurryNetwork/Furbooru chart too. */
-            const chartSpecs = window.PLATFORMS.map(p => ({
+            const chartSpecs = window.POLLABLE_PLATFORMS.map(p => ({
                 id: `chart-${p.code}-${p.metrics.snap}`,
                 code: p.code,
                 title: `${p.label} ${window.platformMetricLabel(p.code, p.metrics.snapKey)}`,
@@ -9542,6 +9612,304 @@ const App = {
     // ── TW Dashboard ─────────────────────────────────────────
     // X/Twitter dashboard with Views, Likes, Retweets, Replies, Quotes, Bookmarks.
 
+    // ── Telegram ────────────────────────────────────────────────────
+    //
+    // One metric (reactions), and one rule that shapes every screen below:
+    // a post whose reactions were never observed must never render as 0.
+    // Reactions arrive only as pushed updates and Telegram offers no backfill,
+    // so anything published before tracking was switched on has no count and
+    // never will. `uncounted` is surfaced on the dashboard for the same reason
+    // — without it, a small total reads as poor engagement rather than a short
+    // observation window.
+    //
+    // There is no views chart because a channel's view count is not in the Bot
+    // API at all (it is client-API only). That is permanent, not a gap.
+
+    async renderTGDashboard() {
+        this._loading();
+        try {
+            const [summary, agg, pins, goals] = await Promise.all([
+                API.getTGSummary({ account_id: this._acctId('tg') }),
+                API.getTGAggregate({ ...Utils.getDateRange(this._dateRange), account_id: this._acctId('tg') }),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getGoals().catch(() => ({ goals: [] })),
+            ]);
+            const tgPins = (pins.pins || []).filter(p => p.platform === 'tg');
+            const tgGoals = (goals.goals || []).filter(g => g.platform === 'tg' || g.platform === 'all');
+
+            const tgHealth = window.PlatformHealth && window.PlatformHealth.get('tg');
+            const isUnconfigured = tgHealth && tgHealth.configured === false;
+            if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                this._setContent(`
+                    ${this._refreshIndicatorHtml()}
+                    <div class="page-header"><h2>Telegram Dashboard</h2></div>
+                    ${Components.platformEmptyState('tg', isUnconfigured ? {} : { reason: 'Telegram is connected but PawPoller has not sent anything to the channel yet. Posts appear here once you publish to it.' })}
+                `);
+                return;
+            }
+
+            const uncounted = summary.uncounted || 0;
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h2>Telegram Dashboard</h2>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" data-poll="tg">Poll Now</button>
+                        <button class="btn btn-secondary" data-export="tg">Export CSV</button>
+                    </div>
+                </div>
+
+                ${tgPins.length ? Components.pinnedSubmissions(tgPins, 'tg') : ''}
+                ${tgGoals.length ? `<div class="goals-section"><h3>Goals</h3>${Components.goalProgressCards(tgGoals)}</div>` : ''}
+
+                <div class="stats-grid">
+                    ${Components.statCard('Total Posts', summary.total_submissions, null, '#/tg/submissions')}
+                    ${Components.statCard('Total Reactions', summary.total_reactions || 0)}
+                </div>
+
+                ${uncounted ? `<div class="banner banner-info" style="margin:12px 0">
+                    <strong>${uncounted}</strong> post${uncounted === 1 ? '' : 's'} sent before reaction tracking started ${uncounted === 1 ? 'has' : 'have'} no count.
+                    Telegram pushes reactions and cannot backfill them, so those posts show as
+                    <em>not counted</em> rather than as zero.
+                </div>` : ''}
+
+                ${summary.growth_rates ? Components.growthRateCards(summary.growth_rates, { faves: 'reactions/day' }) : ''}
+
+                ${Components.dateRangeBar(this._dateRange)}
+
+                <div class="chart-container">
+                    <h3>Reactions Over Time (Aggregate)</h3>
+                    <div class="chart-wrap"><canvas id="chart-agg-views"></canvas></div>
+                </div>
+
+                <div class="chart-row">
+                    <div class="chart-container">
+                        <h3>Most Reacted</h3>
+                        ${Components.tgTopList(summary.top_reacted, 'reactions_count', 'title', 'submission_id')}
+                    </div>
+                    <div class="chart-container">
+                        <h3>Fastest Growing (24h)</h3>
+                        ${Components.tgTopList(summary.fastest_growing, 'reactions_gained', 'title', 'submission_id')}
+                    </div>
+                </div>
+            `;
+
+            this._setContent(html);
+
+            if (agg.snapshots && agg.snapshots.length > 0) {
+                Charts.aggregateLine('chart-agg-views', agg.snapshots, ['reactions_count']);
+            }
+
+            this._bindDateRange(() => this.renderTGDashboard());
+            this._bindPinAndGoalActions(() => this.renderTGDashboard());
+            this._startAutoRefresh(() => this.renderTGDashboard());
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error loading Telegram dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    // ── Telegram Posts ──────────────────────────────────────────────
+
+    async renderTGSubmissions() {
+        this._loading();
+        try {
+            const data = await API.getTGSubmissions({
+                sort_by: this._tgSortState.field,
+                order: this._tgSortState.order,
+                account_id: this._acctId('tg'),
+            });
+
+            // List view only: a channel post's image lives on Telegram's CDN
+            // behind a bot-token URL that expires, so there is no thumbnail to
+            // build a grid from.
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header"><h2>Telegram Posts</h2></div>
+                <div class="toolbar">
+                    <input type="text" class="search-input" id="search-input" placeholder="Search posts...">
+                </div>
+                <div id="table-container" class="table-scroll">
+                    ${Components.tgSubmissionsTable(data.submissions)}
+                </div>
+            `;
+
+            this._setContent(html);
+            this._bindTGTableSort();
+            this._bindTGSearch(data.submissions);
+            this._startAutoRefresh(() => this.renderTGSubmissions());
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error loading Telegram posts</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    // ── Telegram Post Detail ────────────────────────────────────────
+
+    async renderTGDetail(postId) {
+        this._loading();
+        try {
+            const [data, pins, allTags] = await Promise.all([
+                API.getTGSubmission(postId),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getTags().catch(() => ({ tags: [] })),
+            ]);
+            const sub = data.submission;
+            const fullId = sub.submission_id;
+            const isPinned = (pins.pins || []).some(p => p.platform === 'tg' && String(p.submission_id) === String(fullId));
+            const breakdown = sub.reactions_breakdown || [];
+
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <a href="#/tg/submissions" class="back-link">&larr; Back to Telegram Posts</a>
+                <div class="detail-header">
+                    <div class="detail-info">
+                        <h2>${Utils.escapeHtml(sub.title || '(no title)')}</h2>
+                        <div class="detail-meta">${Utils.formatDate(sub.posted_at)} &middot; ${Utils.escapeHtml(sub.content_type || 'artwork')}</div>
+                        <div class="detail-meta">${sub.link
+                            ? `<a href="${Utils.escapeHtml(Utils.safeUrl(sub.link) || '#')}" target="_blank" rel="noopener">View in channel</a>`
+                            : 'Private channel &mdash; no public permalink'}</div>
+                        <div class="detail-stats">
+                            <div class="detail-stat">${sub.reactions_counted === false ? Components.tgReactions(sub) : Utils.formatNumber(sub.reactions_count || 0)} <span class="lbl">reactions</span></div>
+                        </div>
+                        ${breakdown.length ? `<div style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">
+                            ${breakdown.map(r => `<span class="tag-badge">${Utils.escapeHtml(String(r.emoji))} ${Utils.formatNumber(r.count)}</span>`).join('')}
+                        </div>` : ''}
+                        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <button class="btn ${isPinned ? 'btn-danger' : 'btn-secondary'} btn-pin" data-platform="tg" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">${isPinned ? 'Unpin' : 'Pin'}</button>
+                            ${(sub.tags || []).map(t => Components.tagBadge(t)).join('')}
+                            <button class="btn btn-secondary btn-add-tag" data-platform="tg" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">+ Tag</button>
+                        </div>
+                    </div>
+                </div>
+
+                ${Components.growthRateCards(data.growth_rates, { faves: 'reactions/day' })}
+
+                ${Components.dateRangeBar(this._dateRange)}
+
+                <div class="chart-container">
+                    <h3>Reactions Over Time</h3>
+                    <div class="chart-wrap"><canvas id="chart-detail"></canvas></div>
+                </div>
+            `;
+
+            this._setContent(html);
+
+            if (data.snapshots && data.snapshots.length > 0) {
+                Charts.submissionLine('chart-detail', data.snapshots, ['reactions_count']);
+            }
+
+            this._bindDateRange(async () => {
+                const range = Utils.getDateRange(this._dateRange);
+                const snaps = await API.getTGSnapshots(postId, range);
+                Charts.submissionLine('chart-detail', snaps.snapshots, ['reactions_count']);
+            });
+
+            this._bindDetailPinTag('tg', fullId, allTags.tags || [], () => this.renderTGDetail(postId));
+            this._startAutoRefresh(() => this.renderTGDetail(postId));
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error loading Telegram post</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    // ── Telegram Compare ────────────────────────────────────────────
+
+    async renderTGCompare() {
+        this._loading();
+        try {
+            const data = await API.getTGSubmissions({ sort_by: 'reactions_count', order: 'desc', account_id: this._acctId('tg') });
+            const subs = data.submissions;
+
+            const chips = subs.map(s => `
+                <label class="compare-chip ${this._tgCompareIds.has(String(s.submission_id)) ? 'selected' : ''}" data-id="${Utils.escapeHtml(String(s.submission_id))}">
+                    <input type="checkbox" ${this._tgCompareIds.has(String(s.submission_id)) ? 'checked' : ''}>
+                    ${Utils.escapeHtml(Utils.truncate(s.title || '(no title)', 25))}
+                </label>
+            `).join('');
+
+            // No metric picker: reactions are the only series there is.
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header"><h2>Compare Telegram Posts</h2></div>
+                <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Select 2-5 Telegram posts to compare their reaction trends over time.</p>
+                <div class="compare-select">${chips}</div>
+
+                ${Components.dateRangeBar(this._dateRange)}
+
+                <div class="chart-container" id="compare-chart-container" style="${this._tgCompareIds.size < 2 ? 'display:none' : ''}">
+                    <h3>Comparison</h3>
+                    <div class="chart-wrap"><canvas id="chart-compare"></canvas></div>
+                </div>
+                ${this._tgCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 posts above to see their trends compared.</p></div>' : ''}
+            `;
+
+            this._setContent(html);
+
+            document.querySelectorAll('.compare-chip').forEach(chip => {
+                chip.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const id = chip.dataset.id;
+                    if (this._tgCompareIds.has(id)) {
+                        this._tgCompareIds.delete(id);
+                    } else if (this._tgCompareIds.size < 5) {
+                        this._tgCompareIds.add(id);
+                    }
+                    this.renderTGCompare();
+                });
+            });
+
+            this._bindDateRange(() => this._loadTGComparisonChart());
+
+            if (this._tgCompareIds.size >= 2) {
+                await this._loadTGComparisonChart();
+            }
+
+            this._startAutoRefresh(() => this.renderTGCompare());
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async _loadTGComparisonChart() {
+        try {
+            if (this._tgCompareIds.size < 2) return;
+            const range = Utils.getDateRange(this._dateRange);
+            const data = await API.getTGComparison([...this._tgCompareIds], range);
+            const container = document.getElementById('compare-chart-container');
+            if (container) container.style.display = '';
+            Charts.comparisonLine('chart-compare', data.series, data.titles, 'reactions_count');
+        } catch (e) {
+            console.error('Failed to load Telegram comparison chart:', e);
+        }
+    },
+
+    _bindTGTableSort() {
+        document.querySelectorAll('#tg-submissions-table th[data-sort]').forEach(th => {
+            th.addEventListener('click', () => {
+                const field = th.dataset.sort;
+                if (this._tgSortState.field === field) {
+                    this._tgSortState.order = this._tgSortState.order === 'desc' ? 'asc' : 'desc';
+                } else {
+                    this._tgSortState.field = field;
+                    this._tgSortState.order = 'desc';
+                }
+                this.renderTGSubmissions();
+            });
+        });
+    },
+
+    _bindTGSearch(allSubmissions) {
+        const input = document.getElementById('search-input');
+        if (!input) return;
+        input.addEventListener('input', () => {
+            const q = (input.value || '').toLowerCase();
+            const filtered = q
+                ? allSubmissions.filter(s => (s.title || '').toLowerCase().includes(q))
+                : allSubmissions;
+            const table = document.getElementById('table-container');
+            if (table) table.innerHTML = Components.tgSubmissionsTable(filtered);
+            this._bindTGTableSort();
+        });
+    },
+
     async renderTWDashboard() {
         this._loading();
         try {
@@ -11839,14 +12207,14 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="sqw">
-                    <summary><span class="status-dot ${sqwAuth.has_credentials ? 'connected' : 'disconnected'}"></span>SquidgeWorld${sqwAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(sqwAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${sqwAuth.has_credentials ? this._credStatus('sqw', sqwAuth.username).cls : 'disconnected'}"></span>SquidgeWorld${sqwAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(sqwAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${sqwAuth.has_credentials ? `
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(sqwAuth.username || '')}</span>
+                        ${this._credStatus('sqw', sqwAuth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -11880,14 +12248,14 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="ao3">
-                    <summary><span class="status-dot ${ao3Auth.has_credentials ? 'connected' : 'disconnected'}"></span>AO3${ao3Auth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(ao3Auth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${ao3Auth.has_credentials ? this._credStatus('ao3', ao3Auth.username).cls : 'disconnected'}"></span>AO3${ao3Auth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(ao3Auth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${ao3Auth.has_credentials ? `
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(ao3Auth.username || '')}</span>
+                        ${this._credStatus('ao3', ao3Auth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -11928,14 +12296,14 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="da">
-                    <summary><span class="status-dot ${daAuth.has_credentials ? 'connected' : 'disconnected'}"></span>DeviantArt${daAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(daAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${daAuth.has_credentials ? this._credStatus('da', daAuth.username).cls : 'disconnected'}"></span>DeviantArt${daAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(daAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${daAuth.has_credentials ? `
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(daAuth.username || '')}</span>
+                        ${this._credStatus('da', daAuth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -11991,14 +12359,14 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="wp">
-                    <summary><span class="status-dot ${wpAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Wattpad${wpAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(wpAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${wpAuth.has_credentials ? this._credStatus('wp', wpAuth.username).cls : 'disconnected'}"></span>Wattpad${wpAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(wpAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${wpAuth.has_credentials ? `
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(wpAuth.username || '')}</span>
+                        ${this._credStatus('wp', wpAuth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -12030,14 +12398,14 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="ik">
-                    <summary><span class="status-dot ${ikAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Itaku${ikAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(ikAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${ikAuth.has_credentials ? this._credStatus('ik', ikAuth.username).cls : 'disconnected'}"></span>Itaku${ikAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(ikAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${ikAuth.has_credentials ? `
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(ikAuth.username || '')}</span>
+                        ${this._credStatus('ik', ikAuth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -12089,14 +12457,14 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="bsky">
-                    <summary><span class="status-dot ${bskyAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Bluesky${bskyAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(bskyAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${bskyAuth.has_credentials ? this._credStatus('bsky', bskyAuth.username).cls : 'disconnected'}"></span>Bluesky${bskyAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(bskyAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${bskyAuth.has_credentials ? `
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(bskyAuth.username || '')}</span>
+                        ${this._credStatus('bsky', bskyAuth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -12129,14 +12497,14 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="mast">
-                    <summary><span class="status-dot ${mastAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Mastodon${mastAuth.flavour && mastAuth.flavour !== 'Mastodon' ? ' <span class="summary-meta" style="color:var(--text-muted)">/ ' + Utils.escapeHtml(mastAuth.flavour) + '</span>' : ''}${mastAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(mastAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${mastAuth.has_credentials ? this._credStatus('mast', mastAuth.username).cls : 'disconnected'}"></span>Mastodon${mastAuth.flavour && mastAuth.flavour !== 'Mastodon' ? ' <span class="summary-meta" style="color:var(--text-muted)">/ ' + Utils.escapeHtml(mastAuth.flavour) + '</span>' : ''}${mastAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(mastAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${mastAuth.has_credentials ? `
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(mastAuth.username || '')}${mastAuth.flavour ? ' (' + Utils.escapeHtml(mastAuth.flavour) + ')' : ''}</span>
+                        ${this._credStatus('mast', (mastAuth.username || '') + (mastAuth.flavour ? ' (' + (mastAuth.flavour) + ')' : '')).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -12170,14 +12538,14 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="tum">
-                    <summary><span class="status-dot ${tumAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Tumblr${tumAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(tumAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${tumAuth.has_credentials ? this._credStatus('tum', tumAuth.username).cls : 'disconnected'}"></span>Tumblr${tumAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(tumAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${tumAuth.has_credentials ? `
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(tumAuth.username || '')}</span>
+                        ${this._credStatus('tum', tumAuth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -12210,14 +12578,14 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="pix">
-                    <summary><span class="status-dot ${pixAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Pixiv${pixAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(pixAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${pixAuth.has_credentials ? this._credStatus('pix', pixAuth.username).cls : 'disconnected'}"></span>Pixiv${pixAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(pixAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${pixAuth.has_credentials ? `
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(pixAuth.username || '')}</span>
+                        ${this._credStatus('pix', pixAuth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -12250,14 +12618,14 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="thr">
-                    <summary><span class="status-dot ${thrAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Threads${thrAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(thrAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${thrAuth.has_credentials ? this._credStatus('thr', thrAuth.username).cls : 'disconnected'}"></span>Threads${thrAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(thrAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${thrAuth.has_credentials ? `
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(thrAuth.username || '')}</span>
+                        ${this._credStatus('thr', thrAuth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -12290,14 +12658,14 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="ig">
-                    <summary><span class="status-dot ${igAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Instagram${igAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(igAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${igAuth.has_credentials ? this._credStatus('ig', igAuth.username).cls : 'disconnected'}"></span>Instagram${igAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(igAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${igAuth.has_credentials ? `
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(igAuth.username || '')}</span>
+                        ${this._credStatus('ig', igAuth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -12330,7 +12698,7 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="tw">
-                    <summary><span class="status-dot ${twAuth.has_credentials ? 'connected' : 'disconnected'}"></span>X / Twitter${twAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(twAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${twAuth.has_credentials ? this._credStatus('tw', twAuth.username).cls : 'disconnected'}"></span>X / Twitter${twAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(twAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     <div style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px">
                         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
@@ -12372,7 +12740,7 @@ const App = {
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(twAuth.username || '')}</span>
+                        ${this._credStatus('tw', twAuth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -12427,14 +12795,14 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="e621">
-                    <summary><span class="status-dot ${e621Auth.has_credentials ? 'connected' : 'disconnected'}"></span>e621${e621Auth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(e621Auth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${e621Auth.has_credentials ? this._credStatus('e621', e621Auth.username).cls : 'disconnected'}"></span>e621${e621Auth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(e621Auth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${e621Auth.has_credentials ? `
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Status</span>
                         </div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(e621Auth.username || '')}</span>
+                        ${this._credStatus('e621', e621Auth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -12467,12 +12835,12 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="fn">
-                    <summary><span class="status-dot ${fnAuth.has_credentials ? 'connected' : 'disconnected'}"></span>FurryNetwork${fnAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(fnAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${fnAuth.has_credentials ? this._credStatus('fn', fnAuth.username).cls : 'disconnected'}"></span>FurryNetwork${fnAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(fnAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${fnAuth.has_credentials ? `
                     <div class="settings-row">
                         <div><span class="settings-label">Status</span></div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(fnAuth.username || '')}</span>
+                        ${this._credStatus('fn', fnAuth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -12520,12 +12888,12 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-platform="fbr">
-                    <summary><span class="status-dot ${fbrAuth.has_credentials ? 'connected' : 'disconnected'}"></span>Furbooru${fbrAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(fbrAuth.username || '')}</span>` : ''}</summary>
+                    <summary><span class="status-dot ${fbrAuth.has_credentials ? this._credStatus('fbr', fbrAuth.username).cls : 'disconnected'}"></span>Furbooru${fbrAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(fbrAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
                     ${fbrAuth.has_credentials ? `
                     <div class="settings-row">
                         <div><span class="settings-label">Status</span></div>
-                        <span class="telegram-status connected">Connected — tracking ${Utils.escapeHtml(fbrAuth.username || '')}</span>
+                        ${this._credStatus('fbr', fbrAuth.username).html}
                     </div>
                     <div class="settings-row" style="margin-top:8px">
                         <div>
@@ -12913,7 +13281,7 @@ const App = {
                         wp: 'triggerWPPoll', ik: 'triggerIKPoll', bsky: 'triggerBSKYPoll', tw: 'triggerTWPoll',
                         mast: 'triggerMASTPoll', tum: 'triggerTUMPoll', pix: 'triggerPIXPoll',
                         thr: 'triggerTHRPoll', ig: 'triggerIGPoll', e621: 'triggerE621Poll',
-                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll' };
+                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', tg: 'triggerTGPoll' };
                     const codes = await this._configuredPollCodes();
                     const triggers = codes.map(c => API[TRIGGERS[c]]());
                     const results = await Promise.allSettled(triggers);
@@ -12950,7 +13318,7 @@ const App = {
                         wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync',
                         mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync',
                         thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync',
-                        fn: 'fullFNResync', fbr: 'fullFBRResync' };
+                        fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync' };
                     const codes = await this._configuredPollCodes();
                     const resyncs = codes.map(c => API[RESYNCS[c]]());
                     const results = await Promise.allSettled(resyncs);

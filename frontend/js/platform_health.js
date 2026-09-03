@@ -19,12 +19,29 @@
 
 (function () {
     const POLL_INTERVAL_MS = 60_000;
-    const PLATFORMS = ['ib', 'fa', 'ws', 'sf', 'sqw', 'ao3', 'da', 'wp', 'ik', 'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621'];
-    const LABELS = {
-        ib: 'Inkbunny', fa: 'FurAffinity', ws: 'Weasyl', sf: 'SoFurry',
-        sqw: 'SquidgeWorld', ao3: 'AO3', da: 'DeviantArt', wp: 'Wattpad',
-        ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon', tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram', e621: 'e621',
-    };
+    /* Derived from the shared registry (platforms.js, loaded first), NOT a
+     * literal list. The literal it replaces stopped at e621, so FurryNetwork,
+     * Furbooru and Telegram had no status dot and — worse — were filtered out
+     * of renderGlobalBanner(), meaning a dead credential on any of the three
+     * raised no app-wide "session expired" warning at all. The platform tiles
+     * are generated from the registry, so the dots they expect existed and
+     * simply never updated.
+     *
+     * The fallback literal only matters if this file is ever loaded before
+     * platforms.js; it is deliberately the full current set. */
+    const PLATFORMS = (window.PLATFORMS || []).map(p => p.code).length
+        ? window.PLATFORMS.map(p => p.code)
+        : ['ib', 'fa', 'ws', 'sf', 'sqw', 'ao3', 'da', 'wp', 'ik', 'bsky', 'tw',
+           'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg'];
+    const LABELS = (window.PLATFORMS || []).reduce(
+        (acc, p) => { acc[p.code] = p.label; return acc; },
+        {
+            ib: 'Inkbunny', fa: 'FurAffinity', ws: 'Weasyl', sf: 'SoFurry',
+            sqw: 'SquidgeWorld', ao3: 'AO3', da: 'DeviantArt', wp: 'Wattpad',
+            ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon',
+            tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram',
+            e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru', tg: 'Telegram',
+        });
 
     let _data = {};
     let _timer = null;

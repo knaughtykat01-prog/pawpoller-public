@@ -709,8 +709,16 @@ window.PublishCheck = (function () {
             'Save as draft (where supported)</label>';
         // "Post as account" selector — populated async; only shown when the
         // platform has more than one account. Absent/empty ⇒ default account.
-        html += '<span id="publish-account-row" class="publish-account-row"></span>';
+        html += '<span id="publish-persona-row" class="persona-picker persona-picker--inline" data-persona-picker hidden></span>'
+              + '<span id="publish-account-row" class="publish-account-row"></span>';
         html += '</div>';
+        if (platId === 'tg') {
+            // "This post only" text (4.3.0). Blank uses the story's saved
+            // Telegram text, then the announcement, then a cut of the description.
+            html += '<label class="pub-confirm-tgdesc publish-tg-desc">' +
+                '<span>Telegram text for this post <span class="muted">— optional, this post only</span></span>' +
+                '<textarea id="publish-tg-desc" rows="2" maxlength="900"></textarea></label>';
+        }
         html += '<div class="publish-action-live-banner" id="publish-live-banner" style="display:none">' +
             '<strong>&#9888; LIVE PUBLISH</strong> — This will be immediately visible to ' +
             'the public on ' + _escape(platName) +
@@ -796,17 +804,19 @@ window.PublishCheck = (function () {
     // posting uses the platform's default account (unchanged behaviour). Any
     // failure degrades silently to the default account.
     async function _populateAccountSelector(platId) {
+        // 4.2.0: the shared persona picker, scoped to this one platform. The
+        // chips render in #publish-persona-row; the account control (label,
+        // dropdown, or "no account") in #publish-account-row.
         const row = document.getElementById('publish-account-row');
-        if (!row || !window.API || !API.getAccounts) return;
+        const host = document.getElementById('publish-persona-row');
+        if (!row || !host || !window.Components || !Components.personaPicker) return;
         try {
-            const data = await API.getAccounts(platId);
-            const accts = (data.accounts || []).filter(a => a.enabled);
-            if (accts.length < 2) return;
-            const opts = accts.map(a =>
-                '<option value="' + a.account_id + '"' + (a.is_default ? ' selected' : '') + '>' +
-                _escape(a.label || a.handle || ('account ' + a.account_id)) + '</option>').join('');
-            row.innerHTML = ' &nbsp;<label>Post as <select id="publish-account-select">' +
-                opts + '</select></label>';
+            await Components.personaPicker({
+                host, platforms: [platId],
+                slot: () => row,
+                selectClass: 'publish-account-select',
+                storageKey: 'pp-persona-stories',
+            });
         } catch (e) { /* default account on any failure */ }
     }
 
@@ -1122,9 +1132,16 @@ window.PublishCheck = (function () {
                         confirm_live: action !== 'dry_run',
                         // "Post as" account (null ⇒ platform default).
                         account_id: (function () {
-                            const s = document.getElementById('publish-account-select');
+                            const s = document.querySelector('.publish-account-select');
                             return s && s.value ? parseInt(s.value, 10) : null;
                         })(),
+                        // Persona-first (4.2.0): the server refuses a platform this
+                        // persona has no account on, rather than defaulting.
+                        persona_id: (function () {
+                            const h = document.getElementById('publish-persona-row');
+                            return h && h.dataset.personaId ? parseInt(h.dataset.personaId, 10) : null;
+                        })(),
+                        description_override: ((document.getElementById('publish-tg-desc') || {}).value || '').trim() || null,
                     }),
                 }
             );
@@ -1682,6 +1699,19 @@ window.PublishCheck = (function () {
         if (!platforms.length) { if (msg) msg.textContent = 'Pick at least one platform.'; return; }
         const start = new Date(startVal);
         if (!startVal || isNaN(start.getTime())) { if (msg) msg.textContent = 'Invalid start time.'; return; }
+        // A drip is chapters × platforms in one click and a mis-set interval
+        // schedules a month of public posts, so it gets the dialog even though
+        // a single schedule does not (spec §10 Q4).
+        if (window.Components && !(await Components.confirmPublish({
+            title: _currentStory.replace(/_/g, ' '), subtitle: 'Drip campaign',
+            verb: 'Schedule', noun: 'sites',
+            warning: 'Every unposted chapter to each site, one slot every ' + (days || 7)
+                + ' day(s), starting ' + start.toLocaleString() + '. Cancellable as a unit from Queue & Schedule.',
+            targets: platforms.map(code => {
+                const p = (window.platformByCode && window.platformByCode(code)) || { label: code, emoji: '' };
+                return { code, label: p.label, emoji: p.emoji };
+            }),
+        }))) { if (msg) msg.textContent = 'Drip not scheduled.'; return; }
         if (msg) msg.textContent = 'Validating every chapter…';
         try {
             const resp = await fetch('/api/editor/stories/' + encodeURIComponent(_currentStory) + '/drip', {

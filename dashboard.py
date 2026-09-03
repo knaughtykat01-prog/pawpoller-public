@@ -39,6 +39,7 @@ from routes.ig_api import ig_router
 from routes.e621_api import e621_router
 from routes.fn_api import fn_router
 from routes.fbr_api import fbr_router
+from routes.tg_api import tg_router
 from routes.posting_api import posting_router
 from routes.artwork_api import artwork_router
 from routes.posts_api import posts_router
@@ -555,6 +556,7 @@ app.include_router(ig_router)    # Instagram routes (/api/ig/*)
 app.include_router(e621_router)  # e621 routes (/api/e621/*)
 app.include_router(fn_router)    # FurryNetwork routes (/api/fn/*)
 app.include_router(fbr_router)   # Furbooru routes (/api/fbr/*)
+app.include_router(tg_router)    # Telegram channel analytics (/api/tg/*)
 app.include_router(posting_router)  # Posting module routes (/api/posting/*)
 app.include_router(artwork_router)  # Artwork hub routes (/api/artwork/*)
 app.include_router(posts_router)    # Posts (microblog) module routes (/api/posts/*)

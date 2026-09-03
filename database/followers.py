@@ -25,7 +25,10 @@ import sqlite3
 
 # Platform codes whose client can fetch a follower count for the polled account.
 # Keep in sync with the FOLLOWER_FETCHERS registry in polling/followers.py.
-FOLLOWER_PLATFORMS = {"ws", "da", "wp", "ik", "bsky", "tw", "mast", "pix", "fn"}
+FOLLOWER_PLATFORMS = {"ws", "da", "wp", "ik", "bsky", "tw", "mast", "pix", "fn",
+                      # Telegram: a channel's subscriber count. The only
+                      # per-channel number the Bot API exposes.
+                      "tg"}
 
 
 def ensure_follower_tables(conn: sqlite3.Connection) -> None:

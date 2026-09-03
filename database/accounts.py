@@ -33,14 +33,38 @@ from database import platform_metrics
 logger = logging.getLogger(__name__)
 
 # All platform codes PawPoller knows about. Order is the display order.
-PLATFORMS = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky", "tw", "mast", "tum", "pix", "thr", "ig", "e621"]
+# Every platform that can hold accounts. Membership is load-bearing in a way
+# that is easy to miss: the orchestrator polls a platform by enumerating its
+# ENABLED ACCOUNTS, so a platform absent from this list is never scheduled at
+# all, however complete its poller is. Furbooru shipped in 2.201.0 and was
+# still absent a version later — production had zero fbr accounts and an
+# empty fbr_poll_log, i.e. it had never polled once. FurryNetwork escaped
+# only because a manual "Poll Now" bootstrapped its account by hand.
+# tests/test_poll_registry.py now asserts this list against the poll-cycle map.
+PLATFORMS = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky",
+             "tw", "mast", "tum", "pix", "thr", "ig", "e621", "fn", "fbr", "tg"]
+
+# Platforms that publish but have nothing to poll: no stats table, so anything
+# aggregating stats must skip them rather than query a table that does not
+# exist. They still belong in PLATFORMS, because an account IS how you hold
+# more than one of something.
+#
+# Currently EMPTY, and that is the interesting part. Telegram was the only
+# member: genuinely unpollable while the one per-post number it offers arrived
+# solely as a pushed update. Capturing those reactions into tg_submissions gave
+# it a real stats table, so it graduated out — see 4.0.10.
+#
+# The machinery stays because the category is real and the next broadcast-only
+# target will need it. (`fn` and `fbr` were absent from PLATFORMS entirely until
+# 4.0.10 — a different gap with the same effect, fixed above.)
+POST_ONLY_PLATFORMS: set[str] = set()
 
 PLATFORM_NAMES = {
     "ib": "Inkbunny", "fa": "FurAffinity", "ws": "Weasyl", "sf": "SoFurry",
     "sqw": "SquidgeWorld", "ao3": "AO3", "da": "DeviantArt", "wp": "Wattpad",
     "ik": "Itaku", "bsky": "Bluesky", "tw": "X/Twitter", "mast": "Mastodon",
     "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads", "ig": "Instagram",
-    "e621": "e621",
+    "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "tg": "Telegram",
 }
 
 # Predicate per platform: does settings hold credentials for a default account?
@@ -71,6 +95,15 @@ DEFAULT_CRED_CHECKS = {
     "thr": lambda s: bool(s.get("thr_access_token")),
     "ig": lambda s: bool(s.get("ig_access_token")),
     "e621": lambda s: bool(s.get("e621_username") and s.get("e621_api_key")),
+    # FurryNetwork's password grant is behind reCAPTCHA, so a refresh token
+    # pasted by hand is the only live path — that token IS the credential.
+    "fn": lambda s: bool(s.get("fn_refresh_token") or s.get("fn_access_token")),
+    "fbr": lambda s: bool(s.get("fbr_username") and s.get("fbr_api_key")),
+    # The bot token may be the notification bot's — that is the documented
+    # "reuse your existing bot" convenience — so either counts as configured.
+    # The channel has no such fallback: without one there is nowhere to post.
+    "tg": lambda s: bool((s.get("tg_bot_token") or s.get("telegram_bot_token"))
+                         and s.get("tg_channel")),
 }
 
 # The flat settings key whose value names the default account (for display).
@@ -92,6 +125,12 @@ _HANDLE_KEYS = {
     "thr": ["thr_username", "thr_user_id"],
     "ig": ["ig_username", "ig_user_id"],
     "e621": ["e621_username"],
+    "fn": ["fn_username"],
+    "fbr": ["fbr_username"],
+    # The channel IS the identity: "@name" for a public channel, "-100…" for a
+    # private one. Load-bearing for mirroring — see the migration in db.py that
+    # backfills it onto rows auto-created before Telegram was a real platform.
+    "tg": ["tg_channel"],
 }
 
 

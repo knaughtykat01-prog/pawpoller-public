@@ -167,6 +167,36 @@ _RULES += [
         key=("name",), exclude=("persona_id",),
     ),
     TableRule(
+        "tg_submissions", SHR,
+        "Telegram posts PawPoller sent. NOT poll output, which is why it cannot "
+        "join the PLATFORM_PREFIXES loop: every other *_submissions table is "
+        "filled by asking a site what we published, so the desktop can never "
+        "originate a row. Here the desktop CAN — it writes one whenever it posts "
+        "to a channel — and a wholesale server->desktop pull would destroy any "
+        "row the desktop made and never sent. The natural key is stable across "
+        "installs (a chat id plus a message id are Telegram's own, not ours), so "
+        "this travels upward safely. Insert-only: reaction counts are owned by "
+        "whichever machine holds the update stream, so an upward update could "
+        "only ever overwrite fresher counts with staler ones.",
+        key=("chat_id", "message_id"),
+        exclude=("account_id",), upward=INSERT_ONLY,
+    ),
+    _srv(
+        "tg_snapshots",
+        "Reaction time series with no unique constraint — merging duplicates "
+        "history, exactly as for every other *_snapshots table. Safe as SRV "
+        "because reaction ingest is ownership-gated to one machine (4.0.10), so "
+        "only the polling owner ever writes these.",
+    ),
+    _srv(
+        "tg_poll_log",
+        "Per-install poll bookkeeping, same as every other *_poll_log — the two "
+        "installs poll at different times, so merging them would produce a "
+        "history neither machine actually had. Registered by hand rather than "
+        "through PLATFORM_PREFIXES because Telegram's submissions table is SHR, "
+        "not SRV, so the trio cannot be generated as one.",
+    ),
+    TableRule(
         "publications", SHR,
         "The registry of what is posted where. Insert-only upward: after a Stage 1 "
         "pull the desktop's copy is the server's, so an upward *update* can only "
@@ -388,6 +418,8 @@ SHR_ORDER: tuple[str, ...] = (
     "masterpieces", "masterpiece_members",
     "masterpiece_not_duplicate", "masterpiece_not_variant",
     "publications",
+    # After accounts: a tg row carries its account by natural key.
+    "tg_submissions",
     "collections", "collection_members",
     "submission_groups", "submission_group_members",
     "submission_links", "submission_link_members",

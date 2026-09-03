@@ -38,8 +38,9 @@ from database.db import get_connection, init_db
 from database import (
     queries, fa_queries, ws_queries, sf_queries, sqw_queries, ao3_queries,
     da_queries, wp_queries, ik_queries, bsky_queries, tw_queries, mast_queries, tum_queries, pix_queries, thr_queries, ig_queries,
-    e621_queries,
+    e621_queries, fn_queries, fbr_queries, tg_queries,
     group_queries, analytics_queries, platform_metrics,
+    accounts as accounts_db,
 )
 from polling.poller import run_poll_cycle, poll_progress
 from polling.background import spawn, spawn_poll
@@ -309,6 +310,20 @@ _PLATFORM_HEALTH_CONFIG = [
     ("thr", thr_queries, "get_thr_last_poll", "thr_poll_interval_minutes", lambda s: bool(s.get("thr_access_token"))),
     ("ig", ig_queries, "get_ig_last_poll", "ig_poll_interval_minutes", lambda s: bool(s.get("ig_access_token"))),
     ("e621", e621_queries, "get_e621_last_poll", "e621_poll_interval_minutes", lambda s: bool(s.get("e621_username") and s.get("e621_api_key"))),
+    # fn and fbr have had poll logs since they shipped but were never listed
+    # here, so both polled every cycle with no status dot and no "next in".
+    # Telegram's cycle fetches a subscriber count and nothing else, so its log
+    # rows carry submissions_found=0 by design.
+    #
+    # These three take their "configured" predicate from the accounts registry
+    # rather than restating it. The entries above still carry their own copies,
+    # and that duplication has already gone wrong twice: DeviantArt's copy
+    # demanded the legacy cookie after OAuth became the real path, and
+    # FurryNetwork is currently described three different ways across three
+    # files. A new platform should not add a fourth place to keep in sync.
+    ("fn",  fn_queries,  "get_fn_last_poll",  "fn_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["fn"]),
+    ("fbr", fbr_queries, "get_fbr_last_poll", "fbr_poll_interval_minutes", accounts_db.DEFAULT_CRED_CHECKS["fbr"]),
+    ("tg",  tg_queries,  "get_tg_last_poll",  "tg_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["tg"]),
 ]
 
 
@@ -1079,11 +1094,11 @@ def get_poll_paused():
     }
 
 
-# Valid platform codes for the per-platform pause toggle. Mirrors the poller set.
-_PAUSEABLE_PLATFORMS = {
-    "ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik",
-    "bsky", "tw", "mast", "tum", "pix", "thr", "ig", "e621",
-}
+# Valid platform codes for the per-platform pause toggle — every platform the
+# orchestrator schedules. Derived rather than hand-listed: the old literal
+# stopped at e621, so pausing FurryNetwork, Furbooru or Telegram returned
+# 400 "Unknown platform" for platforms that were being polled every cycle.
+_PAUSEABLE_PLATFORMS = frozenset(platform_metrics.ALL_CODES)
 
 
 @router.post("/poll/pause/{code}")
@@ -1233,44 +1248,16 @@ def get_preferences():
         # per-origin/per-browser and would re-show tours on a fresh store.
         "tours_seen": settings.get("tours_seen", []),
         # ── Per-platform notification master toggles ───────────────
-        "notifications_enabled": settings.get("notifications_enabled", True),
-        "fa_notifications_enabled": settings.get("fa_notifications_enabled", True),
-        "ws_notifications_enabled": settings.get("ws_notifications_enabled", True),
-        "sf_notifications_enabled": settings.get("sf_notifications_enabled", True),
-        "sqw_notifications_enabled": settings.get("sqw_notifications_enabled", True),
-        "ao3_notifications_enabled": settings.get("ao3_notifications_enabled", True),
-        "da_notifications_enabled": settings.get("da_notifications_enabled", True),
-        "wp_notifications_enabled": settings.get("wp_notifications_enabled", True),
-        "ik_notifications_enabled": settings.get("ik_notifications_enabled", True),
-        "bsky_notifications_enabled": settings.get("bsky_notifications_enabled", True),
-        "tw_notifications_enabled": settings.get("tw_notifications_enabled", True),
-        "mast_notifications_enabled": settings.get("mast_notifications_enabled", True),
-        "tum_notifications_enabled": settings.get("tum_notifications_enabled", True),
-        "pix_notifications_enabled": settings.get("pix_notifications_enabled", True),
-        "thr_notifications_enabled": settings.get("thr_notifications_enabled", True),
-        "ig_notifications_enabled": settings.get("ig_notifications_enabled", True),
-        "e621_notifications_enabled": settings.get("e621_notifications_enabled", True),
+        # Registry-derived so a new platform cannot be rendered by the settings
+        # UI while being invisible here — see platform_metrics.setting_keys.
+        **{k: settings.get(k, True)
+           for k in platform_metrics.setting_keys("notifications_enabled")},
         # ── Watcher / follower notification toggles ────────────────
         "watcher_notifications_enabled": settings.get("watcher_notifications_enabled", True),
         "fa_watcher_notifications_enabled": settings.get("fa_watcher_notifications_enabled", True),
         # ── Per-platform poll intervals (minutes) ──────────────────
-        "poll_interval_minutes": settings.get("poll_interval_minutes", 60),
-        "fa_poll_interval_minutes": settings.get("fa_poll_interval_minutes", 60),
-        "ws_poll_interval_minutes": settings.get("ws_poll_interval_minutes", 60),
-        "sf_poll_interval_minutes": settings.get("sf_poll_interval_minutes", 60),
-        "sqw_poll_interval_minutes": settings.get("sqw_poll_interval_minutes", 60),
-        "ao3_poll_interval_minutes": settings.get("ao3_poll_interval_minutes", 60),
-        "da_poll_interval_minutes": settings.get("da_poll_interval_minutes", 60),
-        "wp_poll_interval_minutes": settings.get("wp_poll_interval_minutes", 60),
-        "ik_poll_interval_minutes": settings.get("ik_poll_interval_minutes", 60),
-        "bsky_poll_interval_minutes": settings.get("bsky_poll_interval_minutes", 60),
-        "tw_poll_interval_minutes": settings.get("tw_poll_interval_minutes", 60),
-        "mast_poll_interval_minutes": settings.get("mast_poll_interval_minutes", 60),
-        "tum_poll_interval_minutes": settings.get("tum_poll_interval_minutes", 60),
-        "pix_poll_interval_minutes": settings.get("pix_poll_interval_minutes", 60),
-        "thr_poll_interval_minutes": settings.get("thr_poll_interval_minutes", 60),
-        "ig_poll_interval_minutes": settings.get("ig_poll_interval_minutes", 60),
-        "e621_poll_interval_minutes": settings.get("e621_poll_interval_minutes", 60),
+        **{k: settings.get(k, 60)
+           for k in platform_metrics.setting_keys("poll_interval_minutes")},
         # ── Notification filter preferences ────────────────────────
         # When enabled, notifications are only sent for new comments
         # (suppressing fave/activity alerts for that platform).
@@ -1363,25 +1350,9 @@ def save_preferences(body: dict):
     # ── Per-platform notification master toggles ───────────────
     # Each platform poller checks its own *_notifications_enabled flag
     # before sending Windows toasts or Telegram alerts.
-    for key in (
-        "notifications_enabled",         # IB
-        "fa_notifications_enabled",
-        "ws_notifications_enabled",
-        "sf_notifications_enabled",
-        "sqw_notifications_enabled",
-        "ao3_notifications_enabled",
-        "da_notifications_enabled",
-        "wp_notifications_enabled",
-        "ik_notifications_enabled",
-        "bsky_notifications_enabled",
-        "tw_notifications_enabled",
-        "mast_notifications_enabled",
-        "tum_notifications_enabled",
-        "pix_notifications_enabled",
-        "thr_notifications_enabled",
-        "ig_notifications_enabled",
-        "e621_notifications_enabled",
-    ):
+    # Registry-derived for the same reason as the intervals above — the old
+    # hand-list stopped at e621, so fn/fbr/tg toggles saved nothing.
+    for key in platform_metrics.setting_keys("notifications_enabled"):
         if key in body:
             update[key] = bool(body[key])
 
@@ -1420,25 +1391,10 @@ def save_preferences(body: dict):
     # any value offered there but missing here saves nothing (the
     # 6/8/10/12-hour options were dropped this way before 2.99.0).
     _ALLOWED_INTERVALS = (15, 30, 60, 120, 240, 360, 480, 600, 720)
-    for key in (
-        "poll_interval_minutes",          # IB
-        "fa_poll_interval_minutes",
-        "ws_poll_interval_minutes",
-        "sf_poll_interval_minutes",
-        "sqw_poll_interval_minutes",
-        "ao3_poll_interval_minutes",
-        "da_poll_interval_minutes",
-        "wp_poll_interval_minutes",
-        "ik_poll_interval_minutes",
-        "bsky_poll_interval_minutes",
-        "tw_poll_interval_minutes",
-        "mast_poll_interval_minutes",
-        "tum_poll_interval_minutes",
-        "pix_poll_interval_minutes",
-        "thr_poll_interval_minutes",
-        "ig_poll_interval_minutes",
-        "e621_poll_interval_minutes",
-    ):
+    # Derived from the metrics registry rather than hand-listed: the hand-list
+    # stopped at e621, so fn, fbr and tg were rendered by the settings UI and
+    # silently dropped on save. See platform_metrics.setting_keys.
+    for key in platform_metrics.setting_keys("poll_interval_minutes"):
         if key in body:
             val = int(body[key])
             if val in _ALLOWED_INTERVALS:

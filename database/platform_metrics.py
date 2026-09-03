@@ -232,6 +232,24 @@ _REGISTRY: tuple[PlatformMetrics, ...] = (
         family="score", score="score", faves="favorites_count", comments="comments_count",
         extra=("up_score", "down_score"),
     ),
+    # Telegram is "engagement" for the same reason as Bluesky and Tumblr: there
+    # is no view counter to fold anything into. Views stay None PERMANENTLY —
+    # a channel's view count is not in the Bot API at all (client-API only), so
+    # unlike the others this is not a gap that a later release might fill.
+    #
+    # Reactions map to `faves`, which lets Telegram reuse every existing
+    # aggregate instead of introducing a family for one platform. `labels`
+    # carries the site's own word so the UI says "Reactions" while SQL says
+    # reactions_count.
+    #
+    # ⚠ Its submissions table is filled by PawPoller's own posting rather than
+    # by polling, and its reaction counts only exist from the day tracking was
+    # switched on — see docs/specs/telegram_platform.md.
+    PlatformMetrics(
+        code="tg", label="Telegram", table="tg_submissions", snapshots="tg_snapshots",
+        family="engagement", faves="reactions_count",
+        labels={"faves": "Reactions"},
+    ),
 )
 
 BY_CODE: dict[str, PlatformMetrics] = {p.code: p for p in _REGISTRY}
@@ -247,6 +265,29 @@ ENGAGEMENT_PLATFORMS = tuple(p.code for p in _REGISTRY if p.family == "engagemen
 def get(code: str) -> PlatformMetrics | None:
     """Registry entry for a platform code, or None if unknown."""
     return BY_CODE.get(code)
+
+
+def setting_key(code: str, suffix: str) -> str:
+    """Settings key for one platform's copy of a per-platform setting.
+
+    Inkbunny came first and its keys were never prefixed, so it is
+    ``poll_interval_minutes`` while everything since is ``fa_…``, ``e621_…``.
+    """
+    return suffix if code == "ib" else f"{code}_{suffix}"
+
+
+def setting_keys(suffix: str) -> tuple[str, ...]:
+    """Every platform's key for a per-platform setting, in registry order.
+
+    Three allow-lists in ``routes/api.py`` used to hand-enumerate these — poll
+    intervals, notification toggles, and the settings response — and all three
+    stopped at ``e621``. FurryNetwork, Furbooru and Telegram were therefore
+    rendered by the settings UI but **silently dropped on save**: the value
+    round-tripped in the form, vanished on write, and reappeared as the default
+    on reload with no error anywhere. Deriving the list from the registry is
+    what stops the next platform inheriting the same bug.
+    """
+    return tuple(setting_key(c, suffix) for c in ALL_CODES)
 
 
 def table_for(code: str) -> str | None:
@@ -275,6 +316,57 @@ def metric_triple(code: str) -> tuple[str | None, str | None, str | None]:
     if not spec:
         return (None, None, None)
     return (spec.views, spec.faves, spec.comments)
+
+
+# The column holding a submission's ORIGINAL post date differs by platform:
+# most store `posted_at`, Inkbunny stores `create_datetime`, a few only have
+# `created_at`. Resolved once per table via PRAGMA and cached, so a naive
+# `posted_at` lookup cannot silently drop Inkbunny the way the FA-seconds bug
+# once dropped FA from every date-based view.
+_DATE_COLS = ("posted_at", "create_datetime", "created_at")
+_date_col_cache: dict[str, str | None] = {}
+
+
+def _date_col(conn: sqlite3.Connection, table: str) -> str | None:
+    if table not in _date_col_cache:
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        _date_col_cache[table] = next((c for c in _DATE_COLS if c in have), None)
+    return _date_col_cache[table]
+
+
+def read_posted_at(conn: sqlite3.Connection, code: str, ids) -> dict[str, str]:
+    """Batched: ``{str(submission_id): original_post_date}`` for a platform.
+
+    The sibling of ``read_stats`` for the one thing it deliberately does not
+    fetch. The Library's "Most recent" sorted on the artwork record's
+    `created_at`, which is stamped at IMPORT — so a bulk import of 174 pieces
+    put ten-year-old art first. The real date was on the submission row all
+    along; the Discovered tab already read it. This is that read, batched.
+    """
+    spec = BY_CODE.get(code)
+    if not spec:
+        return {}
+    col = _date_col(conn, spec.table)
+    id_list = [str(i) for i in ids if i not in (None, "")]
+    if not col or not id_list:
+        return {}
+    out: dict[str, str] = {}
+    for i in range(0, len(id_list), _CHUNK):
+        chunk = id_list[i:i + _CHUNK]
+        norm = [int(x) if x.isdigit() else x for x in chunk]
+        ph = ",".join("?" * len(norm))
+        try:
+            rows = conn.execute(
+                f"SELECT {spec.id_col}, {col} FROM {spec.table}"
+                f" WHERE {spec.id_col} IN ({ph})", norm).fetchall()
+        except sqlite3.Error as e:
+            logger.warning("read_posted_at: %s dates unavailable (%s.%s): %s",
+                           code, spec.table, col, e)
+            return out
+        for r in rows:
+            if r[1]:
+                out[str(r[0])] = str(r[1])
+    return out
 
 
 def read_stats(conn: sqlite3.Connection, code: str, ids) -> dict[str, dict]:

@@ -15,6 +15,10 @@ def test_registry_has_all_platforms():
     assert set(get_poll_cycles().keys()) == {
         "ib", "fa", "ws", "da", "wp", "ik", "bsky", "tw", "sf", "sqw",
         "ao3", "mast", "tum", "pix", "thr", "ig", "e621", "fn", "fbr",
+        # Telegram's cycle records a subscriber count and nothing else — it has
+        # no submissions to fetch (PawPoller sent them and already records
+        # each one) and no views to read (not in the Bot API at all).
+        "tg",
     }
 
 

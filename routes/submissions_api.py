@@ -60,6 +60,48 @@ def _persona_maps(conn):
     return acct_to_persona, personas
 
 
+def _posted_dates(conn, pubs: list[dict], artworks: list[dict]) -> dict[tuple, str]:
+    """``{(content_type, name): earliest original post date}`` for every work.
+
+    Resolved at read time from the per-platform submission rows rather than
+    from a stored field, which is what lets an EXISTING library sort correctly
+    without a migration or a re-import. Two sources, batched per platform:
+
+    * every ``posted`` publication's ``external_id`` — covers stories, which
+      have no date field of their own, and any artwork that was ever posted;
+    * an artwork's ``import_source`` — belt-and-braces for an imported piece
+      whose publication link is missing.
+
+    "Earliest" because a piece live on four sites was published once; the
+    later ones are reposts, and "when was this made public" is the honest
+    reading of "most recent".
+    """
+    wanted: dict[str, set] = {}
+    owners: dict[tuple, list[tuple]] = {}
+    for p in pubs:
+        if p.get("status") != "posted" or not p.get("external_id"):
+            continue
+        key = (p.get("content_type", "story"), p["story_name"])
+        plat, ext = p.get("platform"), str(p["external_id"])
+        wanted.setdefault(plat, set()).add(ext)
+        owners.setdefault(key, []).append((plat, ext))
+    for a in artworks:
+        src = a.get("import_source") or {}
+        plat, ext = src.get("platform"), src.get("submission_id")
+        if plat and ext:
+            wanted.setdefault(plat, set()).add(str(ext))
+            owners.setdefault(("artwork", a["name"]), []).append((plat, str(ext)))
+    dates = {plat: platform_metrics.read_posted_at(conn, plat, ids)
+             for plat, ids in wanted.items()}
+    out: dict[tuple, str] = {}
+    for key, refs in owners.items():
+        found = [dates.get(plat, {}).get(ext, "") for plat, ext in refs]
+        found = [d for d in found if d]
+        if found:
+            out[key] = min(found)
+    return out
+
+
 def assemble_works(
     *,
     stories: list[dict],
@@ -70,6 +112,7 @@ def assemble_works(
     type: str = "all",
     persona: int | None = None,
     search: str | None = None,
+    posted_dates: dict | None = None,
     sort: str = "recent",
     junk: dict[str, str] | None = None,
 ) -> dict:
@@ -145,6 +188,11 @@ def assemble_works(
                 "detail_route": f"#/posting/story/{quote(s['name'])}",
                 "meta": (f"{s.get('chapters', 0) or 0} ch · {wc:,} words" if wc else ""),
                 "created_at": "",
+                # Stories have no date field on the record; the real one comes
+                # from the submission rows via _posted_dates. Before 4.0.12 this
+                # was the only value, and "" sorts LAST — so every story sank
+                # below every artwork in "Most recent", permanently.
+                "original_posted_at": (posted_dates or {}).get(("story", s["name"]), ""),
                 # Always False: junk is a Masterpiece concept and stories have no
                 # such status. Present anyway so a consumer can read `is_junk`
                 # without first checking content_type.
@@ -193,6 +241,10 @@ def assemble_works(
                 "detail_route": f"#/artwork/image/{quote(a['name'])}",
                 "meta": "",
                 "created_at": a.get("created_at", ""),
+                # Persisted by the importer since 4.0.12; resolved from the
+                # submission rows for anything imported before that.
+                "original_posted_at": (a.get("original_posted_at")
+                                       or (posted_dates or {}).get(("artwork", a["name"]), "")),
                 # Attribution (3.5.2). `artist_name` is what the card shows;
                 # `needs_artist` is the flag the Library filters and badges on.
                 # Stories are never flagged — the author wrote them.
@@ -225,7 +277,8 @@ def assemble_works(
         # `score` joins them now that the booru family's metric survives pooling.
         works.sort(key=lambda w: (w.get("stats") or {}).get(sort, 0), reverse=True)
     else:  # recent
-        works.sort(key=lambda w: (w.get("created_at") or ""), reverse=True)
+        works.sort(key=lambda w: (w.get("original_posted_at") or w.get("created_at") or ""),
+                   reverse=True)
 
     return {
         "works": works,
@@ -343,12 +396,17 @@ def list_works(
             # One query for every junk flag (masterpiece_queries.statuses), not
             # one per work — this list is the whole catalogue.
             junk = masterpiece_queries.statuses(conn)
+            # Needs the connection: one batched date query per platform, so
+            # the whole catalogue costs at most ~20 queries, not one per work.
+            artworks = artwork_reader.list_artworks()
+            posted_dates = _posted_dates(conn, pubs, artworks)
         finally:
             conn.close()
         return assemble_works(
             stories=story_reader.list_stories(),
-            artworks=artwork_reader.list_artworks(),
+            artworks=artworks,
             pubs=pubs,
+            posted_dates=posted_dates,
             junk=junk,
             acct_to_persona=acct_to_persona,
             personas=personas,
