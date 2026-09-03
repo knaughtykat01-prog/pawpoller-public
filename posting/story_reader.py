@@ -420,7 +420,12 @@ def _load_from_story_json(story_name: str, story_path: Path, json_path: Path) ->
         # ao3 already short
     }
     # Every poster ID, used to backfill missing entries from "default".
-    all_poster_ids = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "ik", "bsky", "wp"]
+    # ⚠ A platform missing here gets NO tags at all — the default cascade skips
+    # it silently. `tg` is added for story announcements (4.0.4).
+    # `fn`, `ig` and `e621` are still absent and have the same gap; left alone
+    # here because changing their tag behaviour is a separate decision, not a
+    # side effect of adding Telegram. See docs/specs/telegram_broadcast.md §8.
+    all_poster_ids = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "ik", "bsky", "wp", "tg"]
 
     tags = data.get("tags", {})
     tags_by_platform = {}

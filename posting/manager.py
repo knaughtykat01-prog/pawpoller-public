@@ -145,6 +145,9 @@ def _get_poster(platform: str, account_id: int | None = None) -> PlatformPoster:
         elif platform == "ao3":
             from posting.platforms.ao3 import AO3Poster
             poster = AO3Poster()
+        elif platform == "tg":
+            from posting.platforms.telegram import TelegramPoster
+            poster = TelegramPoster()
         elif platform == "ik":
             from posting.platforms.itaku import ItakuPoster
             poster = ItakuPoster()

@@ -12,7 +12,7 @@
 window.Artwork = {
 
     /* Image-capable platforms the hub posts to (v1), in display order. */
-    _PLATFORMS: ['ib', 'fa', 'sf', 'bsky', 'ik', 'ws', 'da', 'e621', 'ig', 'fn'],
+    _PLATFORMS: ['ib', 'fa', 'sf', 'bsky', 'ik', 'ws', 'da', 'e621', 'ig', 'fn', 'tg'],
 
     _pendingFile: null,    // browser File awaiting upload
     _pendingPath: null,    // desktop local path awaiting copy

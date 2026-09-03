@@ -25,7 +25,7 @@ window.Masterpieces = {
     // 'da' is here for ARTWORK only — DeviantArt edits literature fine, but its
     // API has no image-deviation update. This table is artwork-only, so the
     // badge is correct here and must NOT be copied to the story matrix.
-    _POST_ONLY: new Set(['bsky', 'ig', 'fn', 'da']),
+    _POST_ONLY: new Set(['bsky', 'ig', 'fn', 'da', 'tg']),
 
     /* Drop the list cache so the next grid render refetches (called on each
        Library open by bookshelf.render). Also leaves the junk-bin view, so a

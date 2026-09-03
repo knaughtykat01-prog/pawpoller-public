@@ -5,7 +5,7 @@ From a live failure on 2026-09-03. A user created a PRIVATE channel titled
 ``Testing`` into PawPoller. Every part of that was correct, and it failed.
 
 The normaliser prefixes a bare word to ``@Testing``. That username belongs to
-an unrelated public channel (id ``-1001063430776``), and ``getChat`` reads any
+an unrelated public channel (id ``-100xxxxxxxxxx``), and ``getChat`` reads any
 public channel — so the check PASSED against a stranger's channel and reported
 success. The post then failed, and the error blamed the bot's admin rights: the
 one thing the user had provably just done.
@@ -32,7 +32,7 @@ from clients.tg.client import TgClient
 
 class TestChannelNormalisation:
     @pytest.mark.parametrize("given,expected", [
-        ("-1003908367637", "-1003908367637"),   # numeric id passes through
+        ("-1234567890", "-1234567890"),         # numeric id passes through
         ("@mychan", "@mychan"),                 # explicit handle untouched
         ("mychan", "@mychan"),                  # bare word → public username
         ("https://t.me/mychan", "@mychan"),     # public link → username
