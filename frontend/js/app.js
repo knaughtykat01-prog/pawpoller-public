@@ -11548,6 +11548,21 @@ const App = {
                         <label style="font-size:13px;color:var(--text-muted)">Posting bot token ${tgChannel.has_own_token ? '(saved — leave blank to keep)' : '(optional — blank reuses your notification bot)'}</label>
                         <input type="password" id="tgchan-token" class="search-input" placeholder="${tgChannel.has_own_token ? '********' : '123456:ABC-DEF…'}" style="max-width:300px" autocomplete="new-password">
                     </div>
+                    <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;margin-top:14px">
+                        <label style="font-size:13px;color:var(--text-muted)">Channel defaults for published work</label>
+                        <p style="color:var(--text-muted);font-size:12px;margin:0 0 4px">
+                            Applied to every artwork and story announcement sent here. Any single piece can override
+                            them in its <code>art.json</code> under <code>categories.tg</code>.
+                        </p>
+                        <label class="tgopt"><input type="checkbox" id="tgchan-protect" ${tgChannel.protect ? 'checked' : ''}>
+                            <span><strong>Stop forwarding &amp; saving</strong> — Telegram's own anti-repost control. Viewers can't forward the post or save the image.</span></label>
+                        <label class="tgopt"><input type="checkbox" id="tgchan-document" ${tgChannel.document ? 'checked' : ''}>
+                            <span><strong>Send at full quality</strong> — as a file rather than a photo. Telegram re-compresses photos; this keeps the original pixels, but shows as an attachment instead of inline.</span></label>
+                        <label class="tgopt"><input type="checkbox" id="tgchan-silent" ${tgChannel.silent ? 'checked' : ''}>
+                            <span><strong>Post silently</strong> — no notification ping. Useful for bulk catch-up posts.</span></label>
+                        <label class="tgopt"><input type="checkbox" id="tgchan-notags" ${tgChannel.no_tags ? 'checked' : ''}>
+                            <span><strong>No hashtags</strong> — send the description only.</span></label>
+                    </div>
                     <div style="margin-top:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                         <button class="btn btn-primary" id="tgchan-save">Save</button>
                         <button class="btn btn-secondary" id="tgchan-test">Save &amp; send test</button>
@@ -13263,7 +13278,11 @@ const App = {
             if (tgchanSave) {
                 const tgMsg = () => document.getElementById('tgchan-msg');
                 const collectTg = () => {
-                    const payload = { channel: document.getElementById('tgchan-channel').value.trim() };
+                    const payload = { channel: document.getElementById('tgchan-channel').value.trim(),
+                        protect:  document.getElementById('tgchan-protect').checked,
+                        document: document.getElementById('tgchan-document').checked,
+                        silent:   document.getElementById('tgchan-silent').checked,
+                        no_tags:  document.getElementById('tgchan-notags').checked };
                     const tok = document.getElementById('tgchan-token').value;
                     if (tok) payload.bot_token = tok;   // blank = keep existing
                     return payload;

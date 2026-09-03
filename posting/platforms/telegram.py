@@ -105,11 +105,18 @@ class TelegramPoster(PlatformPoster):
             is_art = bool(package.file_path
                           and package.file_type.lower() in _IMAGE_TYPES)
             image = package.file_path if is_art else package.thumbnail_path
-            text = _build_caption(package, has_image=bool(image), is_art=is_art)
-            spoiler = (package.rating or "").lower() in _SPOILER_RATINGS
+            opts = _resolve_options(package, settings)
+            text = _build_caption(package, has_image=bool(image), is_art=is_art,
+                                  with_tags=opts["tags"]) if opts["caption"] else ""
 
             images = [image] if image and os.path.isfile(image) else []
-            result = await client.create_post(text, image_paths=images, spoiler=spoiler)
+            result = await client.create_post(
+                text, image_paths=images, spoiler=opts["spoiler"],
+                silent=opts["silent"], protect=opts["protect"],
+                # Sending as a document only makes sense with a real image;
+                # a text announcement has no file whose quality to preserve.
+                as_document=opts["document"] and bool(images),
+                preview=opts["preview"], pin=opts["pin"])
             if not result:
                 # client._ok() keeps Telegram's own description; a bare "failed"
                 # is what sent a user chasing admin rights that were already
@@ -170,7 +177,55 @@ class TelegramPoster(PlatformPoster):
         return errors
 
 
-def _build_caption(package: StoryUploadPackage, *, has_image: bool, is_art: bool) -> str:
+def _flag(value, default: bool) -> bool:
+    """Read a tri-state option: unset falls back, anything else is coerced.
+
+    Per-artwork options arrive as JSON, so a value may be a real bool or one of
+    the strings a human typed into art.json. Bare bool() treats "false" as TRUE,
+    which would silently invert the setting — and for `protect` or `spoiler`
+    that is the wrong way round on a live broadcast.
+    """
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() not in ("", "0", "false", "no", "off")
+    return bool(value)
+
+
+def _resolve_options(package: StoryUploadPackage, settings: dict) -> dict:
+    """Channel-wide defaults from Settings, overridden per artwork.
+
+    Per-artwork overrides ride in ``package.extra``, which artwork_reader fills
+    from ``categories_by_platform['tg']`` — the field that already exists for
+    "this platform's submission parameters". So no new plumbing was needed: an
+    art.json can carry
+
+        "categories": {"tg": {"spoiler": true, "tags": false, "document": true}}
+
+    and it reaches here untouched.
+    """
+    x = package.extra or {}
+    rating_spoiler = (package.rating or "").lower() in _SPOILER_RATINGS
+    return {
+        # Rating decides the blur unless the artwork overrides it, so a
+        # general-rated piece can still be hidden and an adult one shown.
+        "spoiler": _flag(x.get("spoiler"), rating_spoiler),
+        # Hashtags are appended by default; a channel with its own conventions
+        # can drop them globally (tg_no_tags) or on one piece.
+        "tags": _flag(x.get("tags"), not _flag(settings.get("tg_no_tags"), False)),
+        # A caption-less post is a legitimate choice for a pure-image channel.
+        "caption": _flag(x.get("caption"), True),
+        "silent": _flag(x.get("silent"), _flag(settings.get("tg_silent"), False)),
+        "protect": _flag(x.get("protect"), _flag(settings.get("tg_protect"), False)),
+        "document": _flag(x.get("document"), _flag(settings.get("tg_document"), False)),
+        "pin": _flag(x.get("pin"), False),
+        "preview": _flag(x.get("preview"), True),
+    }
+
+
+
+def _build_caption(package: StoryUploadPackage, *, has_image: bool, is_art: bool,
+                   with_tags: bool = True) -> str:
     """Artwork caption, or a story announcement.
 
     Artwork: description (or title) + hashtags — the same shape instagram.py
@@ -199,9 +254,10 @@ def _build_caption(package: StoryUploadPackage, *, has_image: bool, is_art: bool
         if links:
             parts.append("\n".join(str(u) for u in links if u))
 
-    tags = _hashtags(package.tags)
-    if tags:
-        parts.append(tags)
+    if with_tags:
+        tags = _hashtags(package.tags)
+        if tags:
+            parts.append(tags)
     return "\n\n".join(p for p in parts if p)
 
 

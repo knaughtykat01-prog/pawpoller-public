@@ -2639,3 +2639,23 @@ a.stat-card:hover {
     .cmdk-panel { max-width: 100%; }
     .cmdk-input { font-size: 16px; padding: 14px; }
 }
+
+/* Telegram channel-default toggles — a checkbox with a wrapping explanation,
+ * so each option says what it actually does to a live broadcast rather than
+ * relying on a two-word label. */
+.tgopt {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    cursor: pointer;
+}
+
+.tgopt input[type="checkbox"] {
+    margin-top: 2px;
+    flex: 0 0 auto;
+}
+
+.tgopt strong { color: var(--text-primary); }

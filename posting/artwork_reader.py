@@ -433,7 +433,11 @@ def build_artwork_package(
         description = variant_description("", variant)
     elif platform in artwork.descriptions_by_platform:
         description = artwork.descriptions_by_platform[platform]
-    elif platform == "bsky" and artwork.descriptions_by_platform.get("announcement"):
+    elif platform in ("bsky", "tg") and artwork.descriptions_by_platform.get("announcement"):
+        # The "announcement" slot is for broadcast targets — a short "this is up"
+        # blurb rather than a gallery description. Bluesky was the only one when
+        # it was added; Telegram is the same kind of surface, so one blurb now
+        # serves both instead of the user writing it twice.
         description = artwork.descriptions_by_platform["announcement"]
     else:
         description = artwork.descriptions_by_platform.get("default", artwork.description)

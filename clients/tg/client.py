@@ -89,33 +89,64 @@ class TgClient:
         return None
 
     async def create_post(self, text: str, image_paths: list[str] | None = None,
-                          spoiler: bool = False) -> dict | None:
+                          spoiler: bool = False, *,
+                          silent: bool = False, protect: bool = False,
+                          as_document: bool = False, preview: bool = True,
+                          pin: bool = False) -> dict | None:
         """Post to the channel. Returns {"id": message_id, "url": ...} or None.
 
         - no images → sendMessage
-        - one image → sendPhoto (caption)
+        - one image → sendPhoto, or sendDocument when ``as_document``
         - 2–10 images → sendMediaGroup (caption on the first)
-        ``spoiler`` blurs the photo(s) behind a tap-to-reveal (for NSFW ratings).
+
+        Options (all default to today's behaviour, so existing callers are
+        unaffected):
+
+        ``spoiler``     blur behind a tap-to-reveal (NSFW ratings).
+        ``silent``      deliver without a notification ping — for bulk or minor
+                        posts that shouldn't buzz every subscriber's phone.
+        ``protect``     block forwarding and saving. Directly useful for an art
+                        channel: it is the platform's own anti-repost control.
+        ``as_document`` send the ORIGINAL FILE instead of a compressed photo.
+                        Telegram re-encodes anything sent via sendPhoto, so this
+                        is how full-quality art reaches the channel.
+        ``preview``     link preview on text posts.
+        ``pin``         pin the message after posting (a second API call; a
+                        failure to pin never fails the post itself).
         """
         if not self.token or not self.channel:
             raise ValueError("Telegram bot token and channel are both required")
         image_paths = [p for p in (image_paths or []) if p and os.path.isfile(p)][:10]
+        # Flags shared by every send method. Telegram wants lowercase strings in
+        # multipart form data, not Python bools.
+        common = {}
+        if silent:
+            common["disable_notification"] = "true"
+        if protect:
+            common["protect_content"] = "true"
         try:
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
                 if not image_paths:
-                    return await self._send_message(client, text)
-                if len(image_paths) == 1:
-                    return await self._send_photo(client, text, image_paths[0], spoiler)
-                return await self._send_media_group(client, text, image_paths, spoiler)
+                    res = await self._send_message(client, text, common, preview)
+                elif len(image_paths) == 1 and as_document:
+                    res = await self._send_document(client, text, image_paths[0], common)
+                elif len(image_paths) == 1:
+                    res = await self._send_photo(client, text, image_paths[0], spoiler, common)
+                else:
+                    res = await self._send_media_group(client, text, image_paths, spoiler, common)
+                if res and pin:
+                    await self._pin(client, res.get("id"))
+                return res
         except httpx.HTTPError as e:
             logger.warning("Telegram post failed (%s)", e)
             raise
 
-    async def _send_message(self, client, text) -> dict | None:
+    async def _send_message(self, client, text, common=None, preview=True) -> dict | None:
         r = await client.post(self._url("sendMessage"), data={
             "chat_id": self.channel,
             "text": (text or "")[:MESSAGE_LIMIT],
-            "disable_web_page_preview": "false",
+            "disable_web_page_preview": "false" if preview else "true",
+            **(common or {}),
         })
         res = self._ok(r.json())
         if not res:
@@ -123,9 +154,10 @@ class TgClient:
         mid = res.get("message_id")
         return {"id": str(mid), "url": self._public_url(mid)}
 
-    async def _send_photo(self, client, caption, path, spoiler) -> dict | None:
+    async def _send_photo(self, client, caption, path, spoiler, common=None) -> dict | None:
         with open(path, "rb") as fh:
-            data = {"chat_id": self.channel, "caption": (caption or "")[:CAPTION_LIMIT]}
+            data = {"chat_id": self.channel, "caption": (caption or "")[:CAPTION_LIMIT],
+                    **(common or {})}
             if spoiler:
                 data["has_spoiler"] = "true"
             r = await client.post(self._url("sendPhoto"), data=data,
@@ -136,7 +168,48 @@ class TgClient:
         mid = res.get("message_id")
         return {"id": str(mid), "url": self._public_url(mid)}
 
-    async def _send_media_group(self, client, caption, paths, spoiler) -> dict | None:
+    async def _send_document(self, client, caption, path, common=None) -> dict | None:
+        """Send the ORIGINAL file, uncompressed.
+
+        ``sendPhoto`` re-encodes: Telegram strips the image down for fast
+        delivery, which is fine for a snapshot and lossy for artwork. Sending
+        the same file as a document preserves it byte-for-byte, at the cost of
+        showing as an attachment rather than an inline picture.
+
+        Worth having as an option rather than a default — most channel posts
+        want the inline preview, and an artist publishing a detailed piece wants
+        the pixels.
+        """
+        with open(path, "rb") as fh:
+            data = {"chat_id": self.channel, "caption": (caption or "")[:CAPTION_LIMIT],
+                    **(common or {})}
+            r = await client.post(self._url("sendDocument"), data=data,
+                                  files={"document": (os.path.basename(path), fh)})
+        res = self._ok(r.json())
+        if not res:
+            return None
+        mid = res.get("message_id")
+        return {"id": str(mid), "url": self._public_url(mid)}
+
+    async def _pin(self, client, message_id) -> bool:
+        """Pin a message. Never raises — a post that succeeded must not be
+        reported as failed because pinning was refused (the bot may lack the
+        'Pin Messages' admin right, which is separate from 'Post Messages')."""
+        if not message_id:
+            return False
+        try:
+            r = await client.post(self._url("pinChatMessage"),
+                                  data={"chat_id": self.channel,
+                                        "message_id": str(message_id),
+                                        "disable_notification": "true"})
+            if self._ok(r.json()) is not None:
+                return True
+            logger.warning("Telegram: posted but could not pin (%s)", self.last_error)
+        except httpx.HTTPError as e:
+            logger.warning("Telegram: posted but could not pin (%s)", e)
+        return False
+
+    async def _send_media_group(self, client, caption, paths, spoiler, common=None) -> dict | None:
         import json as _json
         media, files = [], {}
         for i, p in enumerate(paths):
@@ -151,7 +224,8 @@ class TgClient:
         try:
             r = await client.post(self._url("sendMediaGroup"),
                                   data={"chat_id": self.channel,
-                                        "media": _json.dumps(media)},
+                                        "media": _json.dumps(media),
+                                        **(common or {})},
                                   files=files)
         finally:
             for _, fh in files.values():

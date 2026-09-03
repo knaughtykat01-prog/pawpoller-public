@@ -183,3 +183,72 @@ class TestFailuresAreReported:
         res = await p.post(pkg(description="hi"))
         assert res.success is False
         assert "not a member" in res.error
+
+
+class TestPostOptions:
+    """Per-post customisation.
+
+    Overrides ride in ``package.extra``, which artwork_reader fills from
+    ``categories_by_platform['tg']`` — the field that already existed for "this
+    platform's submission parameters". No new plumbing was needed; an art.json
+    can carry ``"categories": {"tg": {"spoiler": true, "tags": false}}`` today.
+
+    Channel-wide defaults live in settings (``tg_protect`` and friends) and are
+    overridden per piece, so a channel can protect everything by default and
+    still publish one open piece.
+    """
+
+    def test_the_false_string_is_not_truthy(self):
+        """The trap this helper exists for. Options arrive as JSON that a human
+        may have typed, and bare bool("false") is True — which would invert
+        `protect` and `spoiler` on a live broadcast, in the unsafe direction."""
+        from posting.platforms.telegram import _flag
+        assert _flag("false", True) is False
+        assert _flag("no", True) is False
+        assert _flag("0", True) is False
+        assert _flag("off", True) is False
+        assert _flag(None, True) is True, "unset must fall back, not default False"
+        assert _flag(True, False) is True
+
+    def test_rating_drives_the_blur_by_default(self):
+        from posting.platforms.telegram import _resolve_options
+        assert _resolve_options(pkg(rating="explicit"), {})["spoiler"] is True
+        assert _resolve_options(pkg(rating="general"), {})["spoiler"] is False
+
+    def test_an_artwork_can_override_its_rating_both_ways(self):
+        """Show an adult piece unblurred, or hide a general one — the rating is
+        a default, not a policy."""
+        from posting.platforms.telegram import _resolve_options
+        assert _resolve_options(pkg(rating="explicit", extra={"spoiler": False}),
+                                {})["spoiler"] is False
+        assert _resolve_options(pkg(rating="general", extra={"spoiler": "true"}),
+                                {})["spoiler"] is True
+
+    def test_channel_defaults_apply_and_one_piece_can_opt_out(self):
+        from posting.platforms.telegram import _resolve_options
+        s = {"tg_protect": True, "tg_document": True, "tg_silent": True}
+        assert _resolve_options(pkg(), s)["protect"] is True
+        assert _resolve_options(pkg(extra={"protect": "false"}), s)["protect"] is False
+        assert _resolve_options(pkg(), s)["document"] is True
+
+    def test_tags_can_be_dropped_globally_or_per_piece(self):
+        from posting.platforms.telegram import _resolve_options
+        assert _resolve_options(pkg(), {})["tags"] is True
+        assert _resolve_options(pkg(), {"tg_no_tags": True})["tags"] is False
+        assert _resolve_options(pkg(extra={"tags": False}), {})["tags"] is False
+
+    def test_caption_can_be_suppressed_entirely(self):
+        from posting.platforms.telegram import _resolve_options
+        assert _resolve_options(pkg(extra={"caption": False}), {})["caption"] is False
+
+    def test_with_tags_false_drops_the_hashtags(self):
+        out = _build_caption(pkg(description="D", tags=["a", "b"]),
+                             has_image=True, is_art=True, with_tags=False)
+        assert out == "D"
+        assert "#" not in out
+
+    def test_the_announcement_blurb_is_shared_with_bluesky(self):
+        """Both are broadcast surfaces. A user writing one 'this is up' blurb
+        should not have to write it twice."""
+        src = open("posting/artwork_reader.py", encoding="utf-8").read()
+        assert 'platform in ("bsky", "tg")' in src

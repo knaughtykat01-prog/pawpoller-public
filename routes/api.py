@@ -1664,6 +1664,12 @@ def get_telegram_channel():
         "uses_notification_bot": (not own) and bool(settings.get("telegram_bot_token")),
         "configured": bool(settings.get("tg_channel")
                            and (own or settings.get("telegram_bot_token"))),
+        # Channel-wide defaults for published work. Each is overridable per
+        # artwork via categories.tg in art.json — see posting/platforms/telegram.py.
+        "protect": bool(settings.get("tg_protect")),
+        "document": bool(settings.get("tg_document")),
+        "silent": bool(settings.get("tg_silent")),
+        "no_tags": bool(settings.get("tg_no_tags")),
     }
 
 
@@ -1675,6 +1681,12 @@ def save_telegram_channel(body: dict):
     update = {}
     if "channel" in body:
         update["tg_channel"] = str(body.get("channel") or "").strip()
+    # Channel defaults. Stored as real bools so posting/platforms/telegram.py's
+    # _flag() never has to guess at a string coming back out of settings.
+    for field, key in (("protect", "tg_protect"), ("document", "tg_document"),
+                       ("silent", "tg_silent"), ("no_tags", "tg_no_tags")):
+        if field in body:
+            update[key] = bool(body.get(field))
     if body.get("bot_token"):
         update["tg_bot_token"] = str(body["bot_token"]).strip()
     config.save_settings(update)
