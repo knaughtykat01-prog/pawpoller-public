@@ -97,7 +97,10 @@ def test_furaffinity_still_gets_its_icon_code():
 def test_other_platforms_still_link_off_site():
     """Only DA was measured to strip links. Nothing else changes — this repo's
     own rule is that unverified behaviour is not emitted OR assumed."""
-    assert "twitter.com/ariryu" in artist_credit.render(TW_ARTIST, "tw")
+    # An X handle is OFF-site on SoFurry, where the plain "Name - url" form
+    # carries it. (On X itself it is a native @mention since 4.6.1.)
+    assert "twitter.com/ariryu" in artist_credit.render(TW_ARTIST, "sf")
+    assert artist_credit.render(TW_ARTIST, "tw") == "Art by @ariryu"
     assert "furaffinity" in artist_credit.render(FA_ARTIST, "e621")
     # InkBunny cross-links FA natively rather than with a URL, so the thing to
     # check there is that the native tag is still emitted.

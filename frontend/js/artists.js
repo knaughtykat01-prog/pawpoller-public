@@ -4,9 +4,11 @@
  * owners of characters, collaborators — with two things per row that the
  * artist-only page had no room for: a persona link ("this person is me", so a
  * self-drawn piece posts no credit line and carries your booru tag) and a
- * per-handle MENTION switch. A `:iconname:` on FA or an `@` on Bluesky
- * notifies; off by default, per site, because names are free and links are
- * consent. See docs/specs/people_registry.md.
+ * per-handle MENTION switch. An `@` on X / Bluesky / Instagram / Telegram /
+ * Itaku is a mention that notifies; a `:iconname:` on FA, `[name]` on Inkbunny
+ * or `<!~login>` on Weasyl is a profile link (4.6.1 wording). Off by default,
+ * per site, because names are free and links are consent. See
+ * docs/specs/people_registry.md.
  *
  * Until now the registry was only reachable THROUGH a piece: open a work, open
  * the artist picker, edit from there. That is the right place to answer "who
@@ -36,7 +38,7 @@ window.Artists = {
     PLATFORMS: [
         ['fa', 'FurAffinity'], ['e621', 'e621'], ['da', 'DeviantArt'], ['tw', 'X / Twitter'],
         ['bsky', 'Bluesky'], ['ib', 'Inkbunny'], ['ws', 'Weasyl'], ['sf', 'SoFurry'],
-        ['fn', 'FurryNetwork'], ['ik', 'Itaku'], ['ig', 'Instagram'],
+        ['fn', 'FurryNetwork'], ['ik', 'Itaku'], ['ig', 'Instagram'], ['tg', 'Telegram'],
     ],
 
     async render() {
@@ -47,8 +49,10 @@ window.Artists = {
                     <h1>People</h1>
                     <p class="muted">Artists, commissioners, character owners, collaborators — and you. Handles here
                     are what gets rendered on every platform — fix one and every piece naming them is fixed.
-                    <em>mention</em> switches whether a handle is <strong>linked</strong> (and so notified) on that
-                    site when they are named on a piece; the artist's own credit is always linked.</p>
+                    <em>mention</em> switches whether a handle is <strong>linked</strong> on that site when they are
+                    named on a piece — a real @-mention that notifies them where the site has one (X, Bluesky,
+                    Instagram, Telegram, Itaku), a profile link elsewhere (FA, Inkbunny, Weasyl, e621, DeviantArt).
+                    Off, the post carries just their name. The artist's own credit is always linked.</p>
                 </div>
                 <button class="btn btn-primary" data-ar-new type="button">+ Add person</button>
             </div>
@@ -148,7 +152,7 @@ window.Artists = {
             // Mention (4.6.0): may this handle be linked on this site when they
             // are named on a piece? A link notifies — off until they say yes.
             const men = v
-                ? `<label class="ar-mention" title="Link them on this site when named on a piece (a link notifies them)">
+                ? `<label class="ar-mention" title="Link them on this site when named on a piece — an @-mention that notifies them where the site has one, a profile link elsewhere">
                         <input type="checkbox" data-ar-mention="${a.key}|${code}"${mention[code] ? ' checked' : ''}> mention</label>` : '';
             return `<div class="ar-h">
                         <span>${label}${rm}</span>

@@ -33,7 +33,7 @@ import sqlite3
 # filtered against this tuple, so storage already accepted any code — this
 # list is what the UI offers, not what the table permits.
 KNOWN_PLATFORMS = ("fa", "e621", "da", "tw", "bsky", "ib", "ws", "sf", "fn",
-                   "ik", "ig")
+                   "ik", "ig", "tg")   # tg: 4.6.1 — a poster and a native @mention
 
 _KEY_STRIP = re.compile(r"[^a-z0-9]+")
 

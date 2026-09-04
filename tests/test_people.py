@@ -415,6 +415,93 @@ class TestReviewEdges:
         assert aq.get_artist(conn, key)["mention"] == {"fa": True}
 
 
+# ── X (4.6.1): a mention is an @handle, not a profile link ───────────────────
+
+class TestX:
+    def test_a_consented_x_handle_is_a_real_mention(self):
+        person = {"name": "SecondFur", "handles": {"tw": "SecondFur_"}, "mention": {"tw": True}}
+        assert ac.featuring([_p("commissioner", person)], "tw") == "for @SecondFur_"
+        assert ac.featuring([_p("owner", person, "Alpha")], "tw") == "featuring @SecondFur_'s Alpha"
+
+    def test_without_consent_it_is_the_bare_name(self):
+        person = {"name": "SecondFur", "handles": {"tw": "SecondFur_"}, "mention": {}}
+        assert ac.featuring([_p("commissioner", person)], "tw") == "for SecondFur"
+
+    def test_the_artist_credit_on_x_uses_the_x_handle_but_only_a_same_site_one(self):
+        assert ac.render({"name": "Inkwolf", "handles": {"tw": "inkwolf", "fa": "inkwolf"}}, "tw") == "Art by @inkwolf"
+        # An FA-only artist on X keeps the plain form the 3.5.0 tests pin.
+        assert ac.render(INK, "tw") == "Art by Inkwolf - https://www.furaffinity.net/user/inkwolf"
+
+    def test_a_pasted_at_or_a_dot_never_ships_a_broken_mention(self):
+        assert ac.render({"name": "N", "handles": {"tw": "@ink.wolf"}}, "tw") == "Art by @inkwolf"
+        # Nothing usable left → the plain form, credit never lost, no "@" mention.
+        got = ac.render({"name": "N", "handles": {"tw": "@.."}}, "tw")
+        assert got.startswith("Art by N - https://twitter.com/") and "Art by @" not in got
+
+
+# ── the whole matrix (4.6.1): every artwork site, four cases ─────────────────
+
+ART_SITES = ["fa", "ib", "ws", "sf", "da", "e621", "ik", "fn", "ig", "bsky", "tw", "tg"]
+MENTION_SITES = {"tw", "bsky", "ig", "tg", "ik", "fn"}       # @handle is a mention there
+
+
+class TestMentions:
+    def _person(self, site, handle, on=True):
+        return {"name": "SecondFur", "handles": {site: handle}, "mention": {site: True} if on else {}}
+
+    @pytest.mark.parametrize("site,handle,expect", [
+        ("ig", "second.fur", "for @second.fur"),
+        ("ig", "@Second_Fur", "for @Second_Fur"),
+        ("tg", "secondfur", "for @secondfur"),
+        ("tw", "secondfur", "for @secondfur"),
+        ("bsky", "second.fur.example", "for @second.fur.example"),
+        ("ik", "secondfur", "for @secondfur"),
+        ("fn", "secondfur", "for @secondfur"),
+    ])
+    def test_a_consented_same_site_handle_is_a_mention_where_the_site_has_them(self, site, handle, expect):
+        assert ac.featuring([_p("commissioner", self._person(site, handle))], site) == expect
+
+    @pytest.mark.parametrize("site", sorted(MENTION_SITES))
+    def test_and_the_bare_name_without_consent(self, site):
+        assert ac.featuring([_p("commissioner", self._person(site, "secondfur", on=False))], site) == "for SecondFur"
+
+    def test_a_telegram_username_under_five_characters_is_a_link_not_a_broken_mention(self):
+        assert ac.featuring([_p("commissioner", self._person("tg", "sf"))], "tg") == "for SecondFur - https://t.me/sf"
+
+    @pytest.mark.parametrize("site", ART_SITES)
+    def test_no_site_ever_loses_the_credit(self, site):
+        """The artist's name or handle appears in some form on every site, with
+        a same-site handle, with an FA-only one, and with none."""
+        for handles in ({site: "inkwolf"}, {"fa": "inkwolf"}, {}):
+            got = ac.render({"name": "Inkwolf", "handles": handles}, site)
+            assert got.startswith("Art by ") and ("inkwolf" in got.lower()), (site, handles, got)
+
+    @pytest.mark.parametrize("site", ["thr", "tum", "fbr", "mast"])
+    def test_a_stray_same_site_handle_never_beats_the_fa_one(self, site):
+        """These sites have no template (no artwork poster, no registry column):
+        a stray handle for them used to WIN the same-site pick and then render
+        as a bare name — worse than the FA-only artist. Now the FA link wins."""
+        got = ac.render({"name": "Inkwolf", "handles": {site: "stray", "fa": "inkwolf"}}, site)
+        assert "furaffinity.net/user/inkwolf" in got, (site, got)
+        assert ac.profile_url({"name": "Inkwolf", "handles": {site: "stray"}}, site) == ""
+
+    def test_telegram_is_a_first_class_registry_platform(self):
+        """A poster and a native @mention: it joins all five declarations."""
+        from database import artist_queries as aq
+        assert "tg" in aq.KNOWN_PLATFORMS and "tg" in ac.PROFILE_URL and "tg" in ac._PREFERENCE
+        assert ac.render({"name": "Inkwolf", "handles": {"tg": "inkwolf"}}, "tg") == "Art by @inkwolf"
+        assert ac.profile_url({"name": "Inkwolf", "handles": {"tg": "@inkwolf"}}, "tg") == "https://t.me/inkwolf"
+
+    def test_the_gallery_sites_link_rather_than_mention_and_the_copy_says_so(self):
+        assert ac.featuring([_p("commissioner", self._person("fa", "secondfur"))], "fa") == "for :iconsecondfur:"
+        assert ac.featuring([_p("commissioner", self._person("ib", "SecondFur"))], "ib") == "for [name]SecondFur[/name]"
+        assert ac.featuring([_p("commissioner", self._person("ws", "secondfur"))], "ws") == "for <!~secondfur>"
+        page = open("frontend/js/artists.js", encoding="utf-8").read()
+        assert "a profile link elsewhere" in page and "(and so notified)" not in page
+        picker = open("frontend/js/artist_picker.js", encoding="utf-8").read()
+        assert "A link notifies them" not in picker
+
+
 # ── source contracts ─────────────────────────────────────────────────────────
 
 class TestSources:

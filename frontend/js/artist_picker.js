@@ -48,7 +48,7 @@
     const PLATFORMS = [
         ['fa', 'FurAffinity'], ['e621', 'e621'], ['da', 'DeviantArt'], ['tw', 'X / Twitter'],
         ['bsky', 'Bluesky'], ['ib', 'Inkbunny'], ['ws', 'Weasyl'], ['sf', 'SoFurry'],
-        ['fn', 'FurryNetwork'], ['ik', 'Itaku'], ['ig', 'Instagram'],
+        ['fn', 'FurryNetwork'], ['ik', 'Itaku'], ['ig', 'Instagram'], ['tg', 'Telegram'],
     ];
     // The roles a person can have on a piece other than "drew it" (the artist
     // stays its own field). Order = the featuring line's order.
@@ -218,7 +218,7 @@
                     : `<div class="ap-warn"><div>⚠ This piece lists no characters yet — add them to the record first, then say whose they are.</div></div>`;
             }
             const mentionNote = personMode
-                ? `<div class="ap-h-note">They are <strong>linked</strong> on a site only where that handle has <em>mention</em> switched on (People page); elsewhere the line carries just the name. A link notifies them — names are free, links are consent.</div>`
+                ? `<div class="ap-h-note">They are <strong>linked</strong> on a site only where that handle has <em>mention</em> switched on (People page) — an @-mention that notifies them where the site has one, a profile link elsewhere; otherwise the line carries just the name. Names are free, links are consent.</div>`
                 : `<div class="ap-h-note">Handles save to the registry, so every
                     piece by ${esc(sel.name)} gets them. Use &times; to forget a wrong one.</div>`;
             selectedEl.innerHTML = `

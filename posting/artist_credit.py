@@ -58,6 +58,11 @@ PROFILE_URL = {
     "ik": "https://itaku.ee/profile/{h}",
     "fn": "https://furrynetwork.com/{h}",
     "ig": "https://www.instagram.com/{h}",
+    # Telegram (4.6.1) — an artwork poster AND a native @mention, so it joins
+    # the registry's platform list. ⚠ These keys, KNOWN_PLATFORMS, _PREFERENCE
+    # and both UI PLATFORMS lists must agree (tests/test_artist_platform_coverage):
+    # a template for a site nobody can enter a handle for is a half-feature.
+    "tg": "https://t.me/{h}",
 }
 
 # Which handle to reach for, in order, when linking on a given platform.
@@ -70,7 +75,7 @@ PROFILE_URL = {
 # only useful if it lands where the art is. It still outranks `e621`, whose
 # user pages are booru accounts rather than portfolios.
 _PREFERENCE = ("fa", "tw", "bsky", "ib", "ws", "da", "sf", "ik", "fn",
-               "ig", "e621")
+               "ig", "e621", "tg")
 
 
 def _fa_slug(handle: str) -> str:
@@ -148,7 +153,12 @@ def _pick_handle(artist: dict, platform: str) -> tuple[str, str]:
     handles = (artist or {}).get("handles") or {}
     if not handles:
         return "", ""
-    if platform in handles:                       # same-site account wins
+    # Same-site account wins — but only when it can be rendered as SOMETHING
+    # (every templated site has a native form or a profile URL). A stray
+    # same-site handle for a site with no template used to beat the artist's
+    # FA handle and then render as a bare name: the rule that exists to give
+    # the best link gave the worst (4.6.1).
+    if platform in handles and platform in PROFILE_URL:
         return platform, handles[platform]
     for key in _PREFERENCE:
         if key in handles:
@@ -166,6 +176,8 @@ def profile_url(artist: dict | None, platform: str = "") -> str:
         handle = _fa_slug(handle)
     elif key == "ws":
         handle = _weasyl_login(handle)
+    elif key in ("tg", "ig"):
+        handle = handle.lstrip("@")
     return PROFILE_URL.get(key, "").format(h=handle) if handle else ""
 
 
@@ -265,7 +277,46 @@ def _render_link(artist: dict, platform: str, name: str) -> str:
     # literal "<a href=..." on a live post, so it stays plain until a live test
     # says otherwise.
     #
-    # --- Everything else (tw, tum, mast, thr, ig, …) is plain text anyway.
+    # --- X: a bare @handle IS the mention — X links it and notifies the
+    # account (4.6.1). The "Name - url" form below is a profile link that
+    # notifies nobody, the opposite of what the People mention switch promises
+    # (and, for the credit, of what "Art by @artist" means on X). Same-site
+    # handle only; an artist known elsewhere keeps the plain form. Handles are
+    # [A-Za-z0-9_] on X, so anything else — a pasted "@", a dot — is dropped
+    # rather than shipped as a broken mention.
+    if platform == "tw":
+        if key == "tw":
+            h = re.sub(r"[^A-Za-z0-9_]", "", handle.lstrip("@"))
+            if h:
+                return f"@{h}"
+        nm = _clean(name, "angle")
+        return f"{nm} - {url}" if url else nm
+
+    # --- Instagram: a caption does not linkify URLs at all, but "@username"
+    # IS a mention — clickable, and it notifies (4.6.1). Usernames are
+    # [A-Za-z0-9._]. Anyone known only elsewhere keeps the plain form, which
+    # on Instagram is simply readable text.
+    if platform == "ig":
+        if key == "ig":
+            h = re.sub(r"[^A-Za-z0-9._]", "", handle.lstrip("@"))
+            if h:
+                return f"@{h}"
+        nm = _clean(name, "angle")
+        return f"{nm} - {url}" if url else nm
+
+    # --- Telegram: "@username" is linked in any message, with no parse mode
+    # needed (the caption is sent plain). Usernames are [A-Za-z0-9_], five or
+    # more; anything shorter falls back to the t.me link (4.6.1).
+    if platform == "tg":
+        if key == "tg":
+            h = re.sub(r"[^A-Za-z0-9_]", "", handle.lstrip("@"))
+            if len(h) >= 5:
+                return f"@{h}"
+        nm = _clean(name, "angle")
+        return f"{nm} - {url}" if url else nm
+
+    # --- Everything else (tum, mast, thr, …) is plain text anyway — and none
+    # of those has an artwork poster or a registry column.
     # DA's artist_comments IS an HTML field, so angle brackets in a name would
     # be swallowed rather than shown — hence "angle" here, not no cleaning.
     nm = _clean(name, "angle")
