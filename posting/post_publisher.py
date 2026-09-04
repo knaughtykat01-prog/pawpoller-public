@@ -276,36 +276,21 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
                 result["error"] = "Instagram account isn't connected"
                 return result
             # Instagram fetches the image from a public URL (it never accepts
-            # bytes). Two ways to give it one:
-            #  • Server:  IG_PUBLIC_BASE_URL is set → stash locally + serve it.
-            #  • Desktop: no public address, but paired with a server → relay each
-            #    image to that server's /api/ig/pubmedia and use the URL it returns.
+            # bytes). posting/ig_host.py climbs the ladder — this instance's public
+            # base → paired server → the PawPoller relay → a temporary tunnel —
+            # and says exactly what it tried when nothing works.
             s = settings or config.get_settings()
-            local_base = s.get("ig_public_base_url", "").strip()
-            relay_url = s.get("posting_server_url", "").strip()
-            relay_key = s.get("posting_server_api_key", "").strip()
-            if not local_base and not relay_url:
-                result["error"] = ("Instagram posting needs a public address for Meta to fetch the "
-                                   "image. On the server, set IG_PUBLIC_BASE_URL. On the desktop app, "
-                                   "pair it with your server (Settings → Posting: server URL + API "
-                                   "key) so it can hand the image to the server for hosting.")
-                return result
-            from posting import ig_media
+            from posting import ig_host
             from clients.ig.client import IgClient
-            stashed: list[str] = []      # only LOCAL stashes are cleaned up here
+            hosted = None
             try:
-                image_urls: list[str] = []
-                if local_base:
-                    # Stash each image publicly on this server (Meta cURLs it).
-                    for pth in image_paths:
-                        t = ig_media.stash_image(pth)
-                        stashed.append(t)
-                        image_urls.append(ig_media.public_url(local_base, t))
-                else:
-                    # Desktop: relay each image to the paired server (it TTL-sweeps
-                    # its own stashes, so nothing to clean up from here).
-                    for pth in image_paths:
-                        image_urls.append(await _relay_stash_image(relay_url, relay_key, pth))
+                try:
+                    hosted = await ig_host.host_images(list(image_paths), s)
+                except ig_host.NoPublicHost as e:
+                    result["error"] = str(e)
+                    return result
+                image_urls = list(hosted.urls)
+                logger.info("IG post: image hosted via %s", hosted.how)
                 client = IgClient(access_token=token, user_id=creds.get("ig_user_id", ""))
                 try:
                     r = await client.create_post(text, image_urls)
@@ -316,8 +301,8 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
                 else:
                     result["error"] = "Instagram rejected the post (check the token / logs)"
             finally:
-                for t in stashed:
-                    ig_media.cleanup(t)
+                if hosted:
+                    await hosted.close()
 
         elif platform == "tg":
             from clients.tg.client import TgClient

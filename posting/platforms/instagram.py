@@ -42,12 +42,12 @@ class InstagramPoster(PlatformPoster):
     # We therefore don't reject a large source in validate() — it'll be shrunk.
     max_file_size = 0
     accepted_file_types = ["jpg", "jpeg", "png", "webp"]
-    requires_mode = "any"     # works server-side; desktop relays to a paired server
+    requires_mode = "any"     # works everywhere: the image-host ladder (4.7.0) finds Meta a URL
 
     async def post(self, package: StoryUploadPackage) -> PostResult:
         """Publish one image to Instagram."""
         _t = self._start_timer()
-        stashed: list[str] = []
+        stashed: list = []          # Hosted objects to close in `finally`
         try:
             settings = config.get_settings()
             creds = self._resolve_creds("ig", settings)
@@ -56,29 +56,21 @@ class InstagramPoster(PlatformPoster):
                 return PostResult(success=False, error="Instagram account isn't connected",
                                   duration_seconds=self._elapsed(_t))
 
-            # Instagram fetches the image from a public URL — resolve one the same
-            # way the Posts module does (local public host, or relay to a server).
-            local_base = settings.get("ig_public_base_url", "").strip()
-            relay_url = settings.get("posting_server_url", "").strip()
-            relay_key = settings.get("posting_server_api_key", "").strip()
-            if not local_base and not relay_url:
-                return PostResult(success=False, error=(
-                    "Instagram posting needs a public address for Meta to fetch the image. "
-                    "On the server set IG_PUBLIC_BASE_URL; on the desktop app pair it with your "
-                    "server (Settings → Posting) so it can host the image."),
-                    duration_seconds=self._elapsed(_t))
-
-            from posting import ig_media
-            from posting.post_publisher import _relay_stash_image
+            # Instagram fetches the image from a public URL — climb the ladder
+            # (posting/ig_host.py): this instance's public base → paired server →
+            # the PawPoller relay → a temporary tunnel. The same ladder serves the
+            # Posts module, so both paths fail with the same actionable sentence.
+            from posting import ig_host
             from clients.ig.client import IgClient
 
             path = package.file_path or ""
-            if local_base:
-                tok = ig_media.stash_image(path)
-                stashed.append(tok)
-                image_urls = [ig_media.public_url(local_base, tok)]
-            else:
-                image_urls = [await _relay_stash_image(relay_url, relay_key, path)]
+            try:
+                hosted = await ig_host.host_images([path], settings)
+            except ig_host.NoPublicHost as e:
+                return PostResult(success=False, error=str(e), duration_seconds=self._elapsed(_t))
+            stashed.append(hosted)
+            image_urls = hosted.urls
+            logger.info("Instagram: image hosted via %s", hosted.how)
 
             caption = _build_caption(package)
             client = IgClient(access_token=token, user_id=creds.get("ig_user_id", ""))
@@ -99,12 +91,10 @@ class InstagramPoster(PlatformPoster):
             return PostResult(success=False, error=str(e),
                               duration_seconds=self._elapsed(_t))
         finally:
-            # Only LOCAL stashes are ours to clean; relayed images self-expire on
-            # the hosting server's TTL sweep.
-            if stashed:
-                from posting import ig_media
-                for tok in stashed:
-                    ig_media.cleanup(tok)
+            # Release whatever the rung set up (local stash, tunnel). Relayed
+            # images self-expire on the host's TTL sweep.
+            for hosted in stashed:
+                await hosted.close()
 
     async def edit(self, external_id: str, package: StoryUploadPackage) -> PostResult:
         return PostResult(success=False, error="Instagram does not support editing via API")

@@ -22,8 +22,8 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-strong);
-    width: min(640px, 100%);
-    max-height: min(86vh, 900px);
+    width: min(760px, 100%);   /* 640 → 760 in 4.6.4: room for the step screenshots */
+    max-height: min(88vh, 960px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -127,6 +127,20 @@
 }
 .guide-link { color: var(--accent); text-decoration: none; white-space: nowrap; }
 .guide-link:hover { text-decoration: underline; }
+
+/* Per-step screenshot (4.6.4) — a redacted capture of the real page; click opens full size. */
+.guide-step-body { min-width: 0; flex: 1; }
+.guide-fig {
+    display: block;
+    margin: 0.6rem 0 0.2rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: var(--bg-tertiary);
+    transition: var(--transition);
+}
+.guide-fig:hover { border-color: var(--accent); }
+.guide-fig img { display: block; width: 100%; height: auto; }
 
 .guide-paste {
     background: var(--bg-tertiary);

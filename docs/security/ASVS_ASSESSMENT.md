@@ -601,6 +601,19 @@ threat model.
   CycloneDX SBOM could be generated at release. *Remediation (optional):* add `cyclonedx-py` to
   the release step.
 
+- **KG-13 — The open Instagram image relay is an unauthenticated upload endpoint by
+  design (4.7.0).** (V4.1, V5.2, V13 — ACCEPTED, mitigated) `POST /api/ig/relay` lets any
+  PawPoller desktop hand this server a picture to host for Meta, because a desktop has no public
+  address of its own and the alternative was giving friends a full-access API key. *Mitigation:*
+  opt-in only (`ig_relay_open`, server-local, never synced); requires a configured public base;
+  body read in chunks under a 12 MB cap; magic-byte check then PIL re-encode to JPEG (the URL can
+  only ever serve pixels, never an uploaded file as-is); per-address rate limit (10 per 10 min,
+  first `X-Forwarded-For` hop) and a global pending cap (300); unguessable 32-hex tokens with a
+  15-minute TTL and sweep; no listing endpoint; the same public GET the operator's own posts have
+  used since 2.64.0. *Residual:* the server briefly hosts third-party (SFW, about-to-be-public)
+  images at an unguessable URL; a determined party could use it as a 15-minute JPEG host within
+  the rate limit. *Remediation (if abused):* turn the switch off — nothing else depends on it.
+
 ## How to reproduce / maintain this assessment
 
 - The requirement set is the official ASVS 5.0 release

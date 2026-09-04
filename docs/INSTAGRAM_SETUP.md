@@ -5,6 +5,9 @@ but there are roughly six steps that must happen in order, spread across three d
 (the Instagram app, Meta's developer site, and PawPoller), and several of them fail in ways that
 do not explain themselves.
 
+Every screenshot below is of the real Meta app PawPoller runs against, with its ids blurred; the
+steps are the ones that app was actually set up with, not a reading of Meta's docs.
+
 This guide is the long form. There is a shorter version inside the app — **Settings → Platforms
 → Instagram**, or the **📖 Setup guide** button on the Instagram tile at `#/platforms`.
 
@@ -189,38 +192,68 @@ In a **desktop browser that is not Chrome**, go to **[developers.facebook.com/ap
 and sign in with the Facebook account you want to own this app. It does not need to be connected
 to your Instagram account.
 
-1. **Create app**.
-2. When asked what you want the app to do, pick the option that offers **Instagram** — the
-   wording on this screen changes every few months, so go by the product rather than the exact
-   label.
-3. Once the app exists, open it and add the **Instagram** product.
-4. Inside the Instagram product, choose **API setup with Instagram login**.
+1. **Create app**. The wizard has five steps: *App details → Use cases → Business → Requirements →
+   Overview*.
+2. **App details**: any name (30 characters max); the contact email is pre-filled.
+3. **Use cases**: tick **Manage messaging & content on Instagram**. If you also want Threads, tick
+   **Access the Threads API** in the same list — one app serves both. (The list has twenty
+   entries; the *Content management* filter narrows it.)
+4. **Business**: you do not need a business portfolio — skip it. Finish the remaining steps and
+   create the app.
 
-That last phrase is the one to steer by. Meta also offers "API setup with Facebook login", which
-is a different flow requiring a Facebook Page, and it is not the one PawPoller uses.
+![Create an app — the Use cases step](../frontend/img/guides/meta/create-app.png)
 
-> **You do not need App Review.** While your app is in development mode and you are using it with
-> your *own* account, Meta requires no review. Review only becomes relevant if you publish the app
-> for other people — see §10.
+Already have an app? Open it and press **Add use cases** on its dashboard instead.
+
+Once the app exists, its dashboard lists the use cases you picked. Meta also adds **Facebook Login
+for Business** and a **Manage everything on your Page** use case by itself; PawPoller uses neither,
+so leave them alone.
+
+![The app dashboard](../frontend/img/guides/meta/dashboard.png)
+
+Now open the Instagram use case: **Use cases → Customize** next to *Manage messaging & content on
+Instagram* → the left-hand tab **API setup with Instagram login**.
+
+![API setup with Instagram login](../frontend/img/guides/meta/instagram-api-setup.png)
+
+That tab name is the one to steer by. The tab next to it, **API setup with Facebook login**, is a
+different flow that needs a Facebook Page, and Meta's welcome box on this page suggests switching
+to it "to track hashtags and insights". Ignore that: PawPoller's insights work through Instagram
+login for your own posts, and hashtag search is not something PawPoller does.
+
+> **You do not need App Review, and the app stays Unpublished.** While your app is in development
+> mode and you are using it with your *own* account, Meta requires no review. The **Publish**
+> button stays greyed out until you add a privacy policy URL — you never need to press it. Review
+> only becomes relevant if you publish the app for other people — see §10.
 
 ---
 
 ## 3. Add the permissions
 
-Still inside **API setup with Instagram login**, add these permissions:
+Short version: **you can skip this step.** The **Permissions and features** tab of the use case
+lists every Instagram permission with an **Add** button. That table is what App Review looks at.
+It does not gate the token you generate for yourself in step 5 — that token asks for all five
+scopes PawPoller can use, whatever the table says:
 
-| Permission | Needed for |
+| Scope | Needed for |
 |---|---|
-| `instagram_business_basic` | Everything. Always add this. |
+| `instagram_business_basic` | Everything. |
 | `instagram_business_manage_insights` | Stats — views, reach, saves, shares |
 | `instagram_business_content_publish` | **Posting** from PawPoller |
+| `instagram_business_manage_comments`, `instagram_business_manage_messages` | Nothing PawPoller does; Meta bundles them into the same request |
 
-**Add the publish permission now even if you only want stats today.** Adding a permission later
-means generating a brand-new token and pasting it in again; adding it up front costs nothing.
+The app this guide was written from has never had the insights or publishing scopes "added" in
+that table, and stats arrive every poll. Adding them costs nothing if you would rather see them
+listed; it does not change the token.
 
-> **This is the step people get wrong.** A token with only the first two permissions polls your
-> stats perfectly and then has **every post rejected**. Reading and writing are separate
-> permissions, and a read-only token gives no hint that it is read-only until a post fails.
+> **What matters is what you approve in step 5.** Permissions are baked into the token at
+> generation time. Approve everything the dialog asks for — declining the publishing scope gives
+> you a token that polls perfectly and has **every post rejected**, with no hint why until a post
+> fails.
+
+Section **1. Add required messaging permissions** on the *API setup* page is Meta's boilerplate
+for messaging apps. Ignore it, along with **3. Configure webhooks** (needs a published app) and
+**5. Complete app review**.
 
 ---
 
@@ -228,27 +261,37 @@ means generating a brand-new token and pasting it in again; adding it up front c
 
 Your own Instagram account has to be attached to the app before it will issue a token for it.
 
-1. In the app dashboard, find **Roles** → **Instagram Tester**.
-2. Add your Instagram username.
+1. Left sidebar → **App roles → Roles** → **Add People**.
+2. Under *Additional roles for this app* pick **Instagram Tester**, type your Instagram username,
+   **Add**.
+
+![Add people to your app](../frontend/img/guides/meta/roles-add-people.png)
+
 3. Now **accept the invitation from inside Instagram**: in the Instagram app or on the web, go to
    **Settings → Apps and websites → Tester invites** and accept.
 
+![The Roles page with a tester attached](../frontend/img/guides/meta/roles-testers.png)
+
 The invitation is easy to miss — Instagram does not notify you about it in any prominent way. If
-step 5 refuses to produce a token for your account, this unaccepted invite is the first thing to
-check.
+step 5 does not list your account, this unaccepted invite is the first thing to check. (The Roles
+page calls the role "required by the Instagram Basic Display API" — that API is retired; the role
+is simply how Meta attaches a test account to an unpublished app.)
 
 ---
 
 ## 5. Generate the long-lived token
 
-Back in **API setup with Instagram login**, find the token generator for your account.
+Back on **Use cases → Customize → API setup with Instagram login**, open section
+**2. Generate access tokens**.
 
-1. Click to generate an access token for your Instagram account.
-2. Instagram will ask you to approve the permissions you added in step 3. Approve them.
-3. Copy the token. It is long — several hundred characters. Copy all of it.
+1. If your account is not listed, press **Add account** and log into Instagram as it.
+2. Press **Generate token** on your account's row.
+3. Instagram asks you to approve the permissions from §3. **Approve all of them.**
+4. Copy the token. It is long — several hundred characters. Copy all of it.
 
 **Copy it somewhere safe before leaving the page.** Meta does not always let you view an existing
 token again; if you lose it you generate a new one, which is not a disaster, but it is avoidable.
+Leave *Webhook Subscription* off.
 
 > If nothing happens when you click generate, or the token box stays empty: **you are almost
 > certainly in Chrome.** See §0.
@@ -264,6 +307,8 @@ token again; if you lose it you generate a new one, which is not a disaster, but
 3. **User ID** is optional — leave it blank and PawPoller uses `me`, which resolves to whichever
    account the token belongs to. Fill it in only if you have a specific reason to pin it.
 4. Press **Connect**.
+
+![PawPoller's Instagram card](../frontend/img/guides/meta/pawpoller-instagram-card.png)
 
 On success the accordion's dot turns green and shows the username the token actually belongs to.
 That username is worth reading rather than skimming: it is confirmation that the token is for the
@@ -320,14 +365,26 @@ The address must be genuinely reachable from the internet — Meta is the one fe
 
 ### If PawPoller runs on your desktop
 
-The desktop app binds to `localhost`, which Meta cannot reach, so it borrows your server instead.
+The desktop app binds to `localhost`, which Meta cannot reach — so PawPoller finds Meta an address
+for you. **There is nothing to set up.** When you post, it tries these in order and uses the first
+that works:
 
-**Pair the desktop with your server** in **Settings → Posting** — the same pairing used for story
-and artwork sync. Nothing else to configure. When you post, the desktop uploads the image to your
-server, gets a public URL back, and uses that. The server cleans up after itself.
+1. **Your own server**, if you have paired the desktop with one (Settings → Posting → Server Sync).
+2. **The PawPoller relay** — a public PawPoller server hosts the picture at an unguessable link for
+   fifteen minutes, then deletes it. On by default.
+3. **A temporary tunnel from your PC** — if the relay cannot be reached, a throwaway public link to
+   the picture on your own machine, open only for the length of the post. This one needs a small
+   helper from Cloudflare (about 55 MB), downloaded once when you press the button under
+   **Settings → Posting → Instagram image host**.
 
-If you have neither a public URL nor a pairing, PawPoller says so clearly before posting rather
-than failing partway through.
+That same page shows which of the three applies to you, lets you switch the relay or the tunnel
+off, and has a *Test tunnel* button. If every route fails, the post is refused up front with a
+sentence that says exactly what was tried, rather than failing partway through.
+
+> **Running your own PawPoller server?** Its Settings → Posting → Instagram image host page has an
+> **Open relay** switch. On, it hosts pictures for other people's desktop installs the same way —
+> re-encoded to JPEG, fifteen minutes, ten pictures per address per ten minutes, three hundred at
+> once — and their app can be pointed at it under the relay's URL.
 
 ### What gets posted
 
@@ -393,9 +450,9 @@ The tester invitation is unaccepted. See §4 — accept it inside Instagram unde
 
 ### Everything is connected but posting is rejected
 
-Your token was generated before you added `instagram_business_content_publish`. Permissions are
-baked into the token at generation time, so adding the permission is not enough — **generate a new
-token** (step 5) and paste it in again.
+The token was generated without `instagram_business_content_publish` — most likely declined in
+the approval dialog. Permissions are baked into the token at generation time, so **generate a
+new token** (step 5), approve everything it asks for, and paste it in again.
 
 ---
 
@@ -427,6 +484,8 @@ expect adult content to be a problem with Meta specifically.
 
 ## Related
 
+- [`THREADS_SETUP.md`](THREADS_SETUP.md) — the same app, the Threads use case; ten minutes once
+  Instagram is done
 - [`SETUP.md` §5](SETUP.md#5-platform-credentials) — credentials for all twenty platforms, and
   what each needs to poll versus to post
 - [`SELF_HOSTING.md`](SELF_HOSTING.md) — running PawPoller on a server, which is also what gives

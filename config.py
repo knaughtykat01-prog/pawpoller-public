@@ -598,6 +598,29 @@ THR_REQUEST_DELAY_SECONDS = 1.0  # Threads Graph API — per-post insights, go g
 # ── Instagram settings ──
 IG_REQUEST_DELAY_SECONDS = 1.0  # Instagram Graph API — one /insights call per post, go gentle
 
+# ── Instagram image host for installs with no public address (4.7.0) ─────────
+# Meta fetches a post's image from a public URL. A desktop has none, so a publish
+# climbs a ladder (posting/ig_host.py): this instance's public base → a paired
+# server → the PawPoller relay (any PawPoller server with `ig_relay_open` on; the
+# project's public instance by default) → a temporary Cloudflare quick tunnel to
+# a tiny local image server (posting/ig_tunnel.py).
+IG_RELAY_DEFAULT_URL = "https://pawpoller.syncopates.app/api/ig/relay"
+IG_RELAY_MAX_BYTES = 12 * 1024 * 1024
+IG_RELAY_PER_IP = (10, 600)        # uploads per window (seconds) from one address
+IG_RELAY_MAX_PENDING = 300         # hosted images at once, all callers — then 503
+# The tunnel helper is downloaded on request, pinned by version AND digest; a
+# download that does not match is deleted, never installed. Bump both together.
+IG_TUNNEL_HELPER_VERSION = "2026.8.3"
+IG_TUNNEL_HELPER_URL = "https://github.com/cloudflare/cloudflared/releases/download/{version}/{asset}"
+IG_TUNNEL_HELPER_ASSETS = {         # (platform.system(), platform.machine()) → (asset, sha256)
+    ("Windows", "AMD64"): ("cloudflared-windows-amd64.exe",
+                           "83e726ed18ea78c5ad5213c4c3a3a27051393950d2bc8ed4de69bec12d14eaae"),
+    ("Linux", "x86_64"): ("cloudflared-linux-amd64",
+                          "f29324fe934d1e100617484c78deef803c4dc2cd351d645bbde42e96b4fccc5e"),
+    ("Linux", "aarch64"): ("cloudflared-linux-arm64",
+                           "4bcfd35521a7cbc545ebfd5d57334a71ee180e2a64874981f374c81472118391"),
+}
+
 # ── e621 settings ──
 E621_REQUEST_DELAY_SECONDS = 1.0  # e621 REST API — hard limit 2 req/s, docs ask ~1 req/s
 
@@ -716,6 +739,9 @@ SYNC_EXCLUDE = frozenset({
     # whatever THIS instance is reachable at, so a desktop's value (typically
     # localhost) would make the server hand Meta an unfetchable URL.
     "ig_public_base_url",
+    # Whether THIS server hosts Instagram images for other installs (4.7.0) —
+    # a decision about this box, never something a desktop should push here.
+    "ig_relay_open",
 })
 
 
@@ -1138,7 +1164,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.6.3"
+APP_VERSION = "4.7.0"
 
 # ── Inkbunny API settings ──
 INKBUNNY_API_BASE = "https://inkbunny.net"     # Inkbunny API root URL

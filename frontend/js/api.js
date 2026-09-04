@@ -775,6 +775,12 @@ const API = {
      * Metrics: views, reach, likes, comments, saved, shares.
      */
     getIGAuthStatus() { return this.get('/api/ig/auth/status'); },
+    // Instagram image-host ladder (4.7.0): relay + temporary tunnel
+    getIgHostStatus() { return this.get('/api/ig/host-status'); },
+    saveIgHostSettings(data) { return this.post('/api/ig/host-settings', data); },
+    downloadIgTunnelHelper() { return this.post('/api/ig/tunnel-helper/download'); },
+    removeIgTunnelHelper() { return this.post('/api/ig/tunnel-helper/remove'); },
+    testIgTunnel() { return this.post('/api/ig/tunnel-helper/test'); },
     igConnect(data) { return this.post('/api/ig/auth/connect', data); },
     igDisconnect() { return this.post('/api/ig/auth/disconnect'); },
     getIGStatus() { return this.get('/api/ig/status'); },

@@ -11,6 +11,8 @@ Instagram anyway).
 
 Server-only by nature — the image URL must be reachable by Meta, which only works
 from the deployment that sits behind a public address (``ig_public_base_url``).
+Since 4.7.0 the same stash also backs the open relay (``/api/ig/relay``) and the
+desktop's temporary tunnel server (``posting/ig_tunnel.py``) — see ``posting/ig_host.py``.
 """
 from __future__ import annotations
 import io
@@ -22,6 +24,7 @@ from pathlib import Path
 import config
 
 _TTL_SECONDS = 900          # 15 min — stale stashes are swept on the next stash
+TTL_SECONDS = _TTL_SECONDS
 _MAX_EDGE = 1440            # IG's max recommended width; downscale the long edge
 _TOKEN_RE = re.compile(r"^[a-f0-9]{32}$")
 
@@ -79,6 +82,12 @@ def stash_bytes(data: bytes) -> str:
     from PIL import Image
     sweep()
     return _stash(Image.open(io.BytesIO(data)))
+
+
+def pending_count() -> int:
+    """How many images are hosted right now (after a sweep) — the relay's cap."""
+    sweep()
+    return sum(1 for _ in _dir().glob("*.jpg"))
 
 
 def path_for(token: str) -> Path | None:

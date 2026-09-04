@@ -11561,6 +11561,13 @@ const App = {
                     </div>
                 </details>
 
+                <details class="settings-accordion" id="ig-host-accordion">
+                    <summary>Instagram image host <span class="summary-meta">— where Meta fetches your post images from</span></summary>
+                    <div class="accordion-body" id="ig-host-body">
+                        <p style="font-size:13px;color:var(--text-muted)">Loading…</p>
+                    </div>
+                </details>
+
                 <div style="margin-top:16px;display:flex;gap:12px">
                     <button class="btn btn-primary" id="save-posting-settings-btn">Save Publishing Settings</button>
                     <span id="posting-settings-status" style="font-size:13px;color:var(--text-muted);align-self:center"></span>
@@ -15833,6 +15840,64 @@ const App = {
                 }
                 btn.disabled = false;
             });
+
+            // Instagram image host (4.7.0): the ladder as this instance sees it, with
+            // self-saving toggles and the tunnel helper's download / test buttons.
+            const _igHostBody = document.getElementById('ig-host-body');
+            const _paintIgHost = async () => {
+                if (!_igHostBody) return;
+                let st;
+                try { st = await API.getIgHostStatus(); } catch (e) {
+                    _igHostBody.innerHTML = `<p style="font-size:13px;color:var(--danger)">Could not read the image-host status: ${Utils.escapeHtml(e.message)}</p>`;
+                    return;
+                }
+                const t = st.tunnel || {}, r = st.relay || {};
+                const yes = '<span style="color:var(--success)">&#10003;</span>', no = '<span style="color:var(--text-muted)">&#8211;</span>';
+                const helper = !t.supported ? 'no helper build for this machine'
+                    : t.present ? `helper ${Utils.escapeHtml(t.version || '?')} downloaded (${t.size_mb || '?'} MB)`
+                    : 'helper not downloaded';
+                const isServer = st.runtime === 'server';
+                _igHostBody.innerHTML = `
+                    <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;max-width:66ch">
+                        Instagram never takes the picture itself: it fetches it from a public address. PawPoller tries these in order and uses the first that works.
+                    </p>
+                    <ol style="font-size:13px;line-height:1.7;margin:0 0 12px 18px;padding:0">
+                        <li>${st.local_base ? yes : no} <b>This ${isServer ? 'server' : 'app'}'s public address</b> ${st.local_base ? `— <code>${Utils.escapeHtml(st.local_base)}</code>` : '— none (normal for a desktop app)'}</li>
+                        <li>${st.paired ? yes : no} <b>Your paired server</b> ${st.paired ? '— set in Server Sync above' : '— not paired'}</li>
+                        <li><label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ig-host-relay" ${r.enabled ? 'checked' : ''}> <b>The PawPoller relay</b></label>
+                            <span style="color:var(--text-muted)">— a public PawPoller server hosts the picture for 15 minutes, no setup: <code>${Utils.escapeHtml(r.url || '')}</code></span></li>
+                        <li><label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ig-host-tunnel" ${t.enabled ? 'checked' : ''}> <b>A temporary tunnel from this PC</b></label>
+                            <span style="color:var(--text-muted)">— if the relay is unreachable: a throwaway public link to the picture on this machine, closed after the post. ${Utils.escapeHtml(helper)}.</span>
+                            <div style="margin:6px 0 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                                ${t.supported && !t.present ? '<button class="btn btn-sm btn-secondary" id="ig-host-dl">Download helper (about 55 MB, from Cloudflare)</button>' : ''}
+                                ${t.present ? '<button class="btn btn-sm btn-secondary" id="ig-host-test">Test tunnel</button><button class="btn btn-sm" id="ig-host-rm">Remove helper</button>' : ''}
+                                <span id="ig-host-msg" style="font-size:12px;color:var(--text-muted)"></span>
+                            </div></li>
+                    </ol>
+                    ${isServer ? `
+                    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
+                        <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="checkbox" id="ig-host-open" ${r.open ? 'checked' : ''}> <b>Open relay</b> — let PawPoller desktop apps anywhere use this server as their Instagram image host</label>
+                        <p style="font-size:12px;color:var(--text-muted);margin:6px 0 0;max-width:66ch">Needs this server's public address above. Each picture is re-encoded to JPEG, hosted at an unguessable link for 15 minutes, then deleted; one address may send 10 pictures per 10 minutes, and the relay stops at 300 pictures at once.</p>
+                    </div>` : ''}`;
+                const msg = document.getElementById('ig-host-msg');
+                const save = async (data) => { try { await API.saveIgHostSettings(data); } catch (e) { if (msg) { msg.textContent = 'Error: ' + e.message; msg.style.color = 'var(--danger)'; } } };
+                document.getElementById('ig-host-relay')?.addEventListener('change', e => save({ ig_relay_enabled: e.target.checked }));
+                document.getElementById('ig-host-tunnel')?.addEventListener('change', e => save({ ig_tunnel_enabled: e.target.checked }));
+                document.getElementById('ig-host-open')?.addEventListener('change', e => save({ ig_relay_open: e.target.checked }));
+                document.getElementById('ig-host-dl')?.addEventListener('click', async e => {
+                    e.target.disabled = true; msg.textContent = 'Downloading… (this can take a minute)'; msg.style.color = 'var(--text-muted)';
+                    try { await API.downloadIgTunnelHelper(); await _paintIgHost(); }
+                    catch (err) { msg.textContent = 'Error: ' + err.message; msg.style.color = 'var(--danger)'; e.target.disabled = false; }
+                });
+                document.getElementById('ig-host-test')?.addEventListener('click', async e => {
+                    e.target.disabled = true; msg.textContent = 'Opening a tunnel…'; msg.style.color = 'var(--text-muted)';
+                    try { const res = await API.testIgTunnel(); msg.textContent = 'Tunnel works — Cloudflare answered at ' + res.url + ' (closed again).'; msg.style.color = 'var(--success)'; }
+                    catch (err) { msg.textContent = 'Error: ' + err.message; msg.style.color = 'var(--danger)'; }
+                    e.target.disabled = false;
+                });
+                document.getElementById('ig-host-rm')?.addEventListener('click', async () => { try { await API.removeIgTunnelHelper(); await _paintIgHost(); } catch (err) { msg.textContent = 'Error: ' + err.message; } });
+            };
+            _paintIgHost();
 
             // "Posted via PawPoller" credit line — self-saving toggle (gap-wave-2 §1).
             // Checking it saves immediately. UNchecking asks nicely first: a small

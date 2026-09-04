@@ -453,6 +453,10 @@ _AUTH_EXEMPT_PATHS = frozenset({
     # any private data (static manifest + a cache-only worker script).
     "/manifest.webmanifest",
     "/sw.js",
+    # 4.7.0: the open Instagram image relay — a desktop with no public address
+    # hands an image to this server to host for Meta. Gated in the route itself
+    # by `ig_relay_open`, a size cap, an image check and a per-address rate limit.
+    "/api/ig/relay",
 })
 _AUTH_EXEMPT_PREFIXES = ("/css/", "/js/", "/vendor/", "/img/", "/api/ig/pubmedia/", "/share/")
 

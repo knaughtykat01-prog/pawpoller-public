@@ -1,4 +1,4 @@
-/* Platform "How to get started" guides — 2.65.0.
+/* Platform "How to get started" guides — 2.65.0; per-step screenshots 4.6.4.
  *
  * One shared, static dataset describing, per platform, how to go from nothing to
  * a working + connected credential in PawPoller, plus how to keep it alive
@@ -11,7 +11,8 @@
  *   difficulty  'Easy' | 'Medium' | 'Involved'
  *   summary     one-line what-it-does
  *   need        [str]           prerequisites ("What you'll need")
- *   steps       [{t, b, link?}] ordered walk-through (b may contain simple HTML)
+ *   steps       [{t, b, link?, img?}] ordered walk-through (b may contain simple HTML;
+ *               img = {src, alt} shows a screenshot under the step, click opens it full size)
  *   paste       str             where the credential goes in PawPoller
  *   renew       {when, how}     "Keeping it alive"
  *   notes       [str]           gotchas / good-to-know
@@ -276,21 +277,28 @@
     thr: {
       kind: 'Analytics', difficulty: 'Involved',
       summary: 'Track views/likes/reposts/replies on your Threads posts.',
-      need: ['A Threads account (public)', 'A free Meta developer app', 'A long-lived access token'],
+      need: ['A Threads account (public)', 'A free Meta developer app — the same one Instagram uses, if you have that too', 'A long-lived access token'],
       steps: [
-        { t: 'Open the Meta developer dashboard', b: 'Go to developers.facebook.com and create (or open) an app.',
-          link: { label: 'developers.facebook.com', url: 'https://developers.facebook.com/apps' } },
-        { t: 'Add the Threads use case', b: 'Add the <b>Threads</b> product / use case to the app.' },
-        { t: 'Add the permissions', b: 'Add <code>threads_basic</code> and <code>threads_manage_insights</code>.' },
-        { t: 'Add yourself as a tester', b: 'Under the app\'s roles, add your Threads account, then accept the tester invite from your Threads account.' },
-        { t: 'Generate a long-lived token', b: 'Use the token generator to produce a long-lived access token for your account, and copy it.' },
-        { t: 'Connect in PawPoller', b: 'Paste the access token (and your Threads user id, optional) in Settings.' },
+        { t: 'Create (or open) a Meta developer app', b: 'On <b>My Apps</b> press <b>Create app</b>. Name it anything, and on the <b>Use cases</b> step tick <b>Access the Threads API</b> (tick <i>Manage messaging &amp; content on Instagram</i> at the same time if you want Instagram). No business portfolio is needed; finish the wizard. Already have the app? Open it and use <b>Add use cases</b>.',
+          link: { label: 'developers.facebook.com/apps', url: 'https://developers.facebook.com/apps' },
+          img: { src: '/img/guides/meta/create-app.png', alt: 'Create an app: the Use cases step, with Access the Threads API and Manage messaging &amp; content on Instagram' } },
+        { t: 'Open the Threads use case', b: 'Dashboard &rarr; <b>Use cases</b> &rarr; <b>Customize</b> next to <i>Access the Threads API</i>. <code>threads_basic</code> is already in the permissions table. Adding <code>threads_manage_insights</code> is optional: on the app this guide was written from it was never added and the stats still arrive — that table is about App Review, not your own tester token.',
+          img: { src: '/img/guides/meta/threads-permissions.png', alt: 'The Threads use case permissions table: threads_basic Ready for testing, the rest with an Add button' } },
+        { t: 'Add yourself as a Threads Tester', b: 'On the use case\'s <b>Settings</b> tab press <b>Add or Remove Threads Testers</b> (it is the same page as <b>App roles &rarr; Roles</b>). <b>Add People</b> &rarr; pick <b>Threads Tester</b> under <i>Additional roles</i> &rarr; type your Threads username.',
+          img: { src: '/img/guides/meta/roles-add-people.png', alt: 'Add people to your app: Instagram Tester and Threads Tester under Additional roles' } },
+        { t: 'Accept the invite inside Threads', b: 'In the Threads app or on threads.net: <b>Settings &rarr; Account &rarr; Website permissions</b> &rarr; accept the tester invite. Until you do, the token generator will not list you.' },
+        { t: 'Generate the long-lived token', b: 'Back on the use case\'s <b>Settings</b> tab, under <b>User Token Generator</b> your username now has a <b>Generate Access Token</b> button. Approve what it asks for, then copy the whole token — it is several hundred characters.',
+          img: { src: '/img/guides/meta/threads-settings.png', alt: 'Threads use case Settings tab: display name, empty callback URLs, and the User Token Generator with a Generate Access Token button' } },
+        { t: 'Connect in PawPoller', b: 'Settings &rarr; Platforms &rarr; Threads: paste the token, leave the user ID blank, press <b>Connect</b>. PawPoller reads your username back from the token — check it is the account you meant.',
+          img: { src: '/img/guides/meta/pawpoller-threads-card.png', alt: 'PawPoller Settings, Threads card: access token, optional user id, Connect' } },
       ],
-      paste: 'Settings → Threads → Access token (+ user id)',
-      renew: { when: 'Long-lived tokens last ~60 days', how: 'PawPoller auto-refreshes the token while it\'s polling. If it goes unused past ~60 days and lapses, generate a fresh one in the Meta dashboard and paste it in.' },
+      paste: 'Settings → Threads → Access token (user id optional — leave blank)',
+      renew: { when: 'Long-lived tokens last ~60 days', how: 'PawPoller auto-refreshes the token while it\'s polling. If it goes unused past ~60 days and lapses, generate a fresh one on the same Settings tab and paste it in — the app, tester role and use case all stay valid.' },
       notes: [
         'Do the whole setup on a <b>desktop</b> (not mobile) in <b>Microsoft Edge — or any browser that is NOT Chrome</b>. Chrome reliably breaks Meta\'s developer dashboard and token generator: the flow silently fails or the token never appears. Edge/Firefox work.',
-        'Meta gates this behind app review for public use and removes adult content — for your own account in Development mode it works without review.',
+        'Leave the app <b>Unpublished</b>. Development mode with your own account needs no App Review, and the Publish button stays greyed out until you add a privacy policy — you do not need one.',
+        'Meta adds <b>Facebook Login for Business</b> and a <b>Manage everything on your Page</b> use case by itself. PawPoller never uses either; ignore them.',
+        'Meta gates the API behind App Review for public use and removes adult content — for your own account in Development mode it works without review.',
       ],
     },
 
@@ -298,23 +306,27 @@
     ig: {
       kind: 'Analytics + posting', difficulty: 'Involved',
       summary: 'Track views/reach/likes/comments/saves and post photos to Instagram.',
-      need: ['A Business or Creator Instagram account', 'A free Meta developer app', 'A long-lived access token'],
+      need: ['A Business or Creator Instagram account', 'A free Meta developer app — the same one Threads uses, if you have that too', 'A long-lived access token'],
       steps: [
-        { t: 'Switch to a professional account', b: 'In the Instagram app: <b>Settings &rarr; Account type and tools &rarr; Switch to professional account</b> (Business or Creator). Personal accounts can\'t use the API.' },
-        { t: 'Open the Meta developer dashboard', b: 'Create (or open) an app and add the <b>Instagram</b> product &rarr; <b>API setup with Instagram login</b>.',
-          link: { label: 'developers.facebook.com', url: 'https://developers.facebook.com/apps' } },
-        { t: 'Add the permissions', b: 'Add <code>instagram_business_basic</code> and <code>instagram_business_manage_insights</code> (for stats). For posting, also add <code>instagram_business_content_publish</code>.' },
-        { t: 'Add yourself as a tester', b: 'Under <b>Roles &rarr; Instagram Tester</b> add your account, then accept the invite in Instagram (<b>Settings &rarr; Apps and websites &rarr; Tester invites</b>).' },
-        { t: 'Generate the token', b: 'In "API setup with Instagram login", generate a long-lived access token for your account (approve the scopes) and copy it.' },
-        { t: 'Connect in PawPoller', b: 'Paste the access token (and your Instagram user id, optional) in Settings.' },
+        { t: 'Switch to a professional account', b: 'In the Instagram app: <b>Settings &rarr; Account type and tools &rarr; Switch to professional account</b> (Business or Creator). Personal accounts can\'t use the API. You can skip connecting a Facebook Page.' },
+        { t: 'Create (or open) a Meta developer app', b: 'On <b>My Apps</b> press <b>Create app</b>. Name it anything, and on the <b>Use cases</b> step tick <b>Manage messaging &amp; content on Instagram</b> (tick <i>Access the Threads API</i> too if you want Threads). No business portfolio is needed; finish the wizard. Already have the app? Open it and use <b>Add use cases</b>.',
+          link: { label: 'developers.facebook.com/apps', url: 'https://developers.facebook.com/apps' },
+          img: { src: '/img/guides/meta/create-app.png', alt: 'Create an app: the Use cases step, with Access the Threads API and Manage messaging &amp; content on Instagram' } },
+        { t: 'Open the Instagram use case &rarr; API setup with Instagram login', b: 'Dashboard &rarr; <b>Use cases</b> &rarr; <b>Customize</b> next to <i>Manage messaging &amp; content on Instagram</i> &rarr; left tab <b>API setup with Instagram login</b>. Not <i>with Facebook login</i> — that one needs a Facebook Page. Meta\'s welcome box says to switch for insights; ignore it, PawPoller\'s stats work here.',
+          img: { src: '/img/guides/meta/instagram-api-setup.png', alt: 'API setup with Instagram login: app name and id, section 1 messaging permissions, section 2 Generate access tokens with one tester account and a Generate token link' } },
+        { t: 'Add yourself as an Instagram Tester', b: '<b>App roles &rarr; Roles &rarr; Add People</b> &rarr; pick <b>Instagram Tester</b> under <i>Additional roles</i> &rarr; your Instagram username. Then accept the invite in Instagram: <b>Settings &rarr; Apps and websites &rarr; Tester invites</b>. Until you accept, the token step will not list your account.',
+          img: { src: '/img/guides/meta/roles-testers.png', alt: 'App roles: one Administrator, one Instagram Tester and one Threads Tester, with the Add People button' } },
+        { t: 'Generate the token', b: 'Back on <b>API setup with Instagram login</b>, section <b>2. Generate access tokens</b>: press <b>Add account</b> if yours is not listed, then <b>Generate token</b>. Approve everything it asks for — the app asks for the basic, insights, publishing, comments and messages scopes in one go — and copy the whole token. Skip sections 1, 3 and 5: messaging permissions, webhooks and App Review are not needed.' },
+        { t: 'Connect in PawPoller', b: 'Settings &rarr; Platforms &rarr; Instagram: paste the token, leave the user ID blank, press <b>Connect</b>. PawPoller reads your username back from the token — check it is the account you meant.',
+          img: { src: '/img/guides/meta/pawpoller-instagram-card.png', alt: 'PawPoller Settings, Instagram card: access token, optional user id, Connect' } },
       ],
-      paste: 'Settings → Instagram → Access token (+ user id)',
-      renew: { when: 'Long-lived tokens last ~60 days', how: 'PawPoller auto-refreshes it while polling. If it lapses, generate a fresh token in the Meta dashboard and paste it back in.' },
+      paste: 'Settings → Instagram → Access token (user id optional — leave blank)',
+      renew: { when: 'Long-lived tokens last ~60 days', how: 'PawPoller auto-refreshes it while polling. If it lapses, generate a fresh token in section 2 of <i>API setup with Instagram login</i> and paste it back in — the app, tester role and use case all stay valid.' },
       notes: [
-        'Do the whole setup on a <b>desktop</b> (not mobile) in <b>Microsoft Edge — or any browser that is NOT Chrome</b>. Chrome reliably breaks Meta\'s developer dashboard and token generator: the flow silently fails or the token never appears. Edge/Firefox work. (The one mobile step is switching your IG account to professional, done in the Instagram app.)',
-        'Stats need <code>instagram_business_manage_insights</code>; <b>posting</b> needs <code>instagram_business_content_publish</code> — re-generate the token if you add a scope later.',
-        'Every Instagram post <b>requires a photo</b> — there are no text-only posts. Instagram fetches the image from a public address: on the server that\'s <code>IG_PUBLIC_BASE_URL</code>; on the desktop app, pair it with your server (Settings → Posting) and it hands the image to the server automatically.',
-        'Development mode + your own account needs no App Review; a public app for other users would need review + would likely be rejected for adult content.',
+        'Do the whole setup on a <b>desktop</b> (not mobile) in <b>Microsoft Edge — or any browser that is NOT Chrome</b>. Chrome reliably breaks Meta\'s developer dashboard and token generator: the flow silently fails or the token never appears. Edge/Firefox work.',
+        'The <b>Permissions and features</b> table is about App Review. On the app this guide was written from, <code>instagram_business_manage_insights</code> and <code>instagram_business_content_publish</code> were never "added" there and stats arrive anyway: the token generator asks for all five Instagram scopes regardless. Add them if you like; it costs nothing.',
+        'Every Instagram post <b>requires a photo</b> — there are no text-only posts. Instagram fetches the image from a public address, and PawPoller finds it one: your own server if you have one, otherwise the PawPoller relay (a public PawPoller server hosts the picture for 15 minutes), otherwise a temporary tunnel from your PC. Nothing to set up; see <b>Settings → Posting → Instagram image host</b> to switch either off or to download the tunnel helper.',
+        'Leave the app <b>Unpublished</b>. Development mode with your own account needs no App Review, and the Publish button stays greyed out until you add a privacy policy — you do not need one. A public app for other users would need review and would likely be rejected for adult content.',
       ],
     },
 
@@ -391,9 +403,12 @@
       const link = s.link
         ? ` <a href="${s.link.url}" target="_blank" rel="noopener" class="guide-link">${s.link.label} &#8599;</a>`
         : '';
+      const img = s.img && s.img.src
+        ? `<a class="guide-fig" href="${s.img.src}" target="_blank" rel="noopener" title="Open full size"><img src="${s.img.src}" alt="${s.img.alt || ''}" loading="lazy"></a>`
+        : '';
       return `<li class="guide-step">
           <span class="guide-step-n">${i + 1}</span>
-          <div><b>${s.t}</b><div class="guide-step-b">${s.b}${link}</div></div>
+          <div class="guide-step-body"><b>${s.t}</b><div class="guide-step-b">${s.b}${link}</div>${img}</div>
         </li>`;
     }).join('');
     const need = (g.need || []).map(n => `<li>${n}</li>`).join('');
