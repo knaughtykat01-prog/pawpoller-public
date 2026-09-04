@@ -63,6 +63,43 @@ class TwitterPoster(PlatformPoster):
         return (creds.get("tw_auth_token", ""), creds.get("tw_ct0", ""),
                 creds.get("tw_target_user", ""))
 
+    def _account_handle(self) -> str:
+        """The handle on THIS poster's account row, or '' when there is none
+        (a fresh install with no rows, or a test without a database)."""
+        if self.account_id is None:
+            return ""
+        try:
+            from database.db import get_connection
+            from database import accounts as _accts
+            conn = get_connection()
+            try:
+                acct = _accts.get_account(conn, self.account_id)
+            finally:
+                conn.close()
+            return str((acct or {}).get("handle") or "").strip().lstrip("@")
+        except Exception:
+            return ""
+
+    async def _wrong_session(self, client) -> str:
+        """'' when the cookies are (or might be) this account's; otherwise the
+        refusal, naming both handles and what to do. Unknown is NOT a refusal:
+        if X stops answering the who-am-I endpoint (its predecessors did), a
+        refusal here would silence every X post — so it posts with a warning
+        in the log, as every version before 4.6.3 did without one."""
+        handle = self._account_handle()
+        if not handle:
+            return ""
+        owners = await client.session_owner()
+        if not owners:
+            logger.warning("TW: could not verify whose session account %s (@%s) holds — posting anyway",
+                           self.account_id, handle)
+            return ""
+        if handle.lower() in {o.lower() for o in owners}:
+            return ""
+        return (f"Not posted: the X cookies stored for @{handle} belong to @{owners[0]}. "
+                f"Log into X as @{handle} in a browser, copy that session's auth_token and ct0 "
+                f"into Accounts → @{handle} → Credentials, then post again.")
+
     async def post(self, package: StoryUploadPackage) -> PostResult:
         _t = self._start_timer()
         auth_token, ct0, target_user = self._creds()
@@ -84,6 +121,14 @@ class TwitterPoster(PlatformPoster):
         from clients.tw.client import TWClient
         client = TWClient(auth_token=auth_token, ct0=ct0, target_user=target_user)
         try:
+            # Whose session is this? (4.6.3) A post goes out AS the cookies'
+            # owner, whatever the account row says — so an account whose stored
+            # cookies belong to someone else is refused BY NAME, not posted and
+            # discovered on the wrong profile. Refuse, don't guess (4.2.0).
+            refusal = await self._wrong_session(client)
+            if refusal:
+                logger.warning("TW: %s", refusal)
+                return PostResult(success=False, duration_seconds=self._elapsed(_t), error=refusal)
             media_ids: list[str] = []
             if image:
                 mid = await client.upload_media(image)

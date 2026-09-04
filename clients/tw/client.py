@@ -27,6 +27,7 @@ from typing import Any
 import httpx
 
 import config
+from clients.tw import transaction as _txn
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,9 @@ _HEADERS = {
 # to carry. ⚠ It is a plausible mitigation for error 226, not a proven one: X
 # also computes an `x-client-transaction-id` per request that PawPoller does
 # not reproduce, and that may be what 226 is really about (see BACKLOG TWAUTO).
+# 4.6.2: those two headers were shown NOT to clear 226 (two identical refusals
+# two minutes apart, 2026-09-04). The transaction id is now sent on every write
+# — clients/tw/transaction.py — as the next experiment. Reads still never send it.
 _WRITE_HEADERS = {
     "x-twitter-auth-type": "OAuth2Session",
     "Origin": "https://x.com",
@@ -317,6 +321,7 @@ class TWClient:
         # sent a tester to re-copy working credentials for a week.
         self.last_error: str = ""
         self.throttled = False          # set True on a 429; read + reset by the poller each cycle
+        self._owners: list[str] | None = None   # whose session (4.6.3), asked once
 
         if proxy_url and proxy_key:
             from polling.cf_proxy import CloudflareProxyTransport
@@ -330,6 +335,15 @@ class TWClient:
             headers=_HEADERS,
             transport=transport,
         )
+        # The per-request signing X's web client does (4.6.2): built from the
+        # home page + ondemand.s on the first write, kept for an hour, dropped
+        # on a 226 so the retry starts from a fresh page. `_txn_http` is a
+        # separate plain-browser client: the home page must be fetched the way
+        # a browser fetches it (no API bearer, no csrf header), with the same
+        # cookies. Both are lazy so polling never pays for them.
+        self._txn: _txn.ClientTransaction | None = None
+        self._txn_http: httpx.AsyncClient | None = None
+        self._txn_failed_at: float = 0.0
         self._update_cookies()
 
     async def __aenter__(self):
@@ -340,6 +354,68 @@ class TWClient:
 
     async def close(self) -> None:
         await self._http.aclose()
+        if self._txn_http is not None:
+            await self._txn_http.aclose()
+
+    # -- Transaction id (4.6.2) ----------------------------------------------
+
+    _TXN_TTL = 3600.0          # rebuild from a fresh page after an hour
+    _TXN_RETRY_AFTER = 300.0   # after a failed build, do not hammer x.com/home
+
+    def _browser_client(self) -> httpx.AsyncClient:
+        if self._txn_http is None:
+            self._txn_http = httpx.AsyncClient(
+                timeout=30.0, follow_redirects=True,
+                headers={
+                    "User-Agent": _HEADERS["User-Agent"],
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Referer": "https://x.com/",
+                })
+            self._txn_http.cookies.set("auth_token", self.auth_token, domain=".x.com")
+            self._txn_http.cookies.set("ct0", self.ct0, domain=".x.com")
+        return self._txn_http
+
+    async def _ensure_transaction(self) -> _txn.ClientTransaction | None:
+        """The signing state, built or refreshed as needed; None if X's page no
+        longer parses (logged once per cool-down — the write proceeds without)."""
+        import time as _time
+        now = _time.time()
+        if self._txn is not None and now - self._txn.built_at < self._TXN_TTL:
+            return self._txn
+        if self._txn is None and now - self._txn_failed_at < self._TXN_RETRY_AFTER:
+            return None
+        try:
+            http = self._browser_client()
+            resp = await http.get(f"{_BASE}/home")
+            html = resp.text
+            hop = _txn.migration_url(html)
+            if hop:
+                html = (await http.get(hop)).text
+            od = await http.get(_txn.ondemand_file_url(html))
+            self._txn = _txn.ClientTransaction(html, od.text)
+            logger.info("TW: transaction signing ready (key %d bytes)", len(self._txn.key_bytes))
+            return self._txn
+        except Exception as e:
+            # X changed the page/bundle, or the fetch failed. Soft: the post
+            # still goes out as it did before 4.6.2, and the log says why.
+            self._txn = None
+            self._txn_failed_at = now
+            logger.warning("TW: transaction id unavailable, posting without it: %s", e)
+            return None
+
+    async def _write_headers(self, method: str, url: str) -> dict:
+        """`_WRITE_HEADERS` plus the transaction id for THIS request."""
+        headers = dict(_WRITE_HEADERS)
+        txn = await self._ensure_transaction()
+        if txn is not None:
+            from urllib.parse import urlparse
+            headers["x-client-transaction-id"] = txn.generate(method.upper(), urlparse(url).path)
+        return headers
+
+    def _forget_transaction(self) -> None:
+        """A 226 with the header sent: the next attempt starts from a fresh page."""
+        self._txn = None
 
     def _update_cookies(self) -> None:
         """Set auth_token + ct0 cookies and CSRF header on the HTTP client."""
@@ -353,9 +429,43 @@ class TWClient:
         self.ct0 = ct0
         self.target_user = target_user
         self._user_rest_id = ""
+        self._owners = None
         self._update_cookies()
 
     # -- Authentication -------------------------------------------------------
+
+    async def session_owner(self) -> list[str]:
+        """Whose session these cookies are (4.6.3): the screen names X reports
+        for the logged-in browser session — one, or several when the browser
+        had account switching set up, the active one first. ``[]`` when X will
+        not say (endpoint gone, cookies dead) — "unknown", never "a match".
+
+        ⚠ Not the polled target. ``target_user`` is whose TIMELINE we read, and
+        reading a public timeline with your own session is fine. Posting is
+        not: a post goes out AS the session's owner, whatever the account row
+        says. 2026-09-04: three X account rows, one session — a post "as" the
+        second account landed on the first. The v1.1 ``account/settings.json``
+        and ``verify_credentials`` are 404 (code 34) for a cookie session now;
+        ``account/multi/list.json`` — the account-switcher's list — answers.
+        """
+        if self._owners is not None:
+            return list(self._owners)
+        if not (self.auth_token and self.ct0):
+            return []
+        try:
+            resp = await self._http.get(f"{_BASE}/i/api/1.1/account/multi/list.json")
+            if resp.status_code != 200:
+                logger.warning("TW: could not ask X whose session this is (HTTP %s)", resp.status_code)
+                return []
+            users = [u for u in ((resp.json() or {}).get("users") or []) if isinstance(u, dict)]
+            names = [str(u.get("screen_name") or "").strip() for u in users]
+            active = [str(u.get("screen_name")).strip() for u in users
+                      if u.get("is_active") and u.get("screen_name")]
+            self._owners = active + [n for n in names if n and n not in active]
+            return list(self._owners)
+        except Exception as e:
+            logger.warning("TW: could not ask X whose session this is: %s", e)
+            return []
 
     async def validate_cookies(self) -> bool:
         """Verify the active poll backend can authenticate.
@@ -513,7 +623,7 @@ class TWClient:
         url = f"{_BASE}/i/api/graphql/{query_id}/{op_name}"
         body = {"variables": variables, "features": features, "queryId": query_id}
         try:
-            resp = await self._http.post(url, json=body, headers=_WRITE_HEADERS)
+            resp = await self._http.post(url, json=body, headers=await self._write_headers("POST", url))
             if resp.status_code != 200:
                 logger.error("TW: %s failed (%s): %s", op_name, resp.status_code, resp.text[:300])
                 self.last_error = _http_reason(op_name, resp)
@@ -543,12 +653,11 @@ class TWClient:
             return None
         mime = mimetypes.guess_type(image_path)[0] or "image/jpeg"
         try:
+            url = "https://upload.x.com/1.1/media/upload.json"
+            headers = await self._write_headers("POST", url)
             with open(image_path, "rb") as f:
                 files = {"media": (os.path.basename(image_path), f, mime)}
-                resp = await self._http.post(
-                    "https://upload.x.com/1.1/media/upload.json",
-                    files=files, timeout=120.0, headers=_WRITE_HEADERS,
-                )
+                resp = await self._http.post(url, files=files, timeout=120.0, headers=headers)
             if resp.status_code != 200:
                 logger.error("TW: media upload failed (%s): %s",
                              resp.status_code, resp.text[:200])
@@ -571,10 +680,10 @@ class TWClient:
         if not (self.auth_token and self.ct0 and media_id and text):
             return False
         try:
+            url = "https://upload.x.com/1.1/media/metadata/create.json"
             resp = await self._http.post(
-                "https://upload.x.com/1.1/media/metadata/create.json",
-                json={"media_id": str(media_id), "alt_text": {"text": text[:1000]}},
-                headers=_WRITE_HEADERS, timeout=30.0,
+                url, json={"media_id": str(media_id), "alt_text": {"text": text[:1000]}},
+                headers=await self._write_headers("POST", url), timeout=30.0,
             )
             if resp.status_code in (200, 204):
                 return True
@@ -631,6 +740,10 @@ class TWClient:
             # why the first report could not be diagnosed from the log alone.
             logger.error("TW: CreateTweet created nothing: %s", data)
             self.last_error = _create_tweet_reason(data, result)
+            if 226 in _error_codes(data):
+                # Refused as automated WITH the header: rebuild from a fresh
+                # page before the manager's retry, so the retry is a new test.
+                self._forget_transaction()
             return None
         handle = self.target_user or "i"
         return {"id": str(rest_id), "url": f"https://x.com/{handle}/status/{rest_id}"}

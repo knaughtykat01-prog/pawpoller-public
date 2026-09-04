@@ -184,10 +184,38 @@ def get_supported_platforms() -> list[dict]:
 # Core browser login function
 # ---------------------------------------------------------------------------
 
+def _save_browser_creds(platform: str, creds: dict, account_id: int | None) -> dict:
+    """Write the captured credentials under the RIGHT account's keys (4.6.3).
+
+    This was ``config.save_settings(creds)`` — the bare canonical keys, i.e.
+    the platform's DEFAULT account, whichever account the user was logging in
+    for (BACKLOG BLOGINACCT). With an ``account_id`` the keys are namespaced
+    through ``config.account_setting_key``, exactly as the Accounts page saves
+    a pasted credential; without one (the platform-level button) the default
+    slot is still the target, as before. Returns the keys written.
+    """
+    payload = dict(creds)
+    if account_id is not None:
+        from database.db import get_connection
+        from database import accounts as _accts
+        conn = get_connection()
+        try:
+            acct = _accts.get_account(conn, int(account_id))
+        finally:
+            conn.close()
+        if not acct or acct.get("platform") != platform:
+            raise ValueError(f"Account {account_id} is not a {platform} account")
+        payload = {config.account_setting_key(int(account_id), k, bool(acct.get("is_default"))): v
+                   for k, v in creds.items()}
+    config.save_settings(payload)
+    return payload
+
+
 def login_via_browser(
     platform: str,
     extra_fields: dict[str, str] | None = None,
     timeout: int = 300,
+    account_id: int | None = None,
 ) -> dict | None:
     """Open a pywebview popup for the given platform's login page.
 
@@ -305,10 +333,11 @@ def login_via_browser(
     if extra_fields:
         creds.update(extra_fields)
 
-    # Save to settings.json
+    # Save to settings.json — under the chosen account's keys (4.6.3).
     if creds:
-        config.save_settings(creds)
-        logger.info("Saved browser login credentials for %s: %s", platform, list(creds.keys()))
+        written = _save_browser_creds(platform, creds, account_id)
+        logger.info("Saved browser login credentials for %s (account %s): %s",
+                    platform, account_id if account_id is not None else "default", list(written.keys()))
 
     return creds
 

@@ -36,6 +36,7 @@ _PERMANENT_ERROR_MARKERS = (
     "not logged in",                     # FA session cookies expired
     "expired or invalid",                # FA/SF session checks
     "token expired or invalid",
+    "cookies stored for @",              # X: the session belongs to another account (4.6.3)
 )
 
 

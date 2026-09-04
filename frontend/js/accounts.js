@@ -56,6 +56,11 @@ window.Accounts = {
             return;
         }
         this._meta = data;
+        // Browser login is desktop-only; when it is there, the credentials
+        // panel offers it PER ACCOUNT (4.6.3) — the platform-level button
+        // always wrote the default slot.
+        try { this._browserLogin = await API.getBrowserLoginPlatforms(); }
+        catch (_) { this._browserLogin = { available: false, platforms: [] }; }
         this._personas = (personas && personas.personas) || [];
         this._renderPersonasCard(document.getElementById('personas-card'));
         this._renderAddForm(document.getElementById('accounts-add'), data);
@@ -425,6 +430,8 @@ window.Accounts = {
         document.querySelectorAll('.acct-cred-editor').forEach(e => e.remove());
 
         const fields = ((this._meta || {}).platform_fields || {})[platform] || [];
+        const bl = this._browserLogin || {};
+        const canBrowser = !!bl.available && (bl.platforms || []).some(p => (p.code || p) === platform);
         const panel = document.createElement('div');
         panel.className = 'acct-cred-editor acct-form';
         panel.style.cssText = 'margin:6px 0 12px;padding:12px;border:1px solid var(--border);border-radius:8px';
@@ -450,12 +457,27 @@ window.Accounts = {
               || '<span class="muted">No credential fields for this platform.</span>'}
             <div style="display:flex;gap:8px;margin-top:8px">
                 <button class="btn btn-sm btn-primary" data-cred-save>Save</button>
+                ${canBrowser ? `<button class="btn btn-sm" data-cred-browser
+                    title="Open the site's login page; the cookies captured are saved to THIS account">Login via Browser</button>` : ''}
                 <button class="btn btn-sm" data-cred-cancel>Cancel</button>
                 <span class="acct-cred-msg muted" style="font-size:12px"></span>
             </div>`;
         row.after(panel);
 
         panel.querySelector('[data-cred-cancel]').addEventListener('click', () => panel.remove());
+        panel.querySelector('[data-cred-browser]')?.addEventListener('click', async (e) => {
+            const msg = panel.querySelector('.acct-cred-msg');
+            e.target.disabled = true;
+            msg.textContent = 'A login window will open — sign in AS this account, then it closes itself.';
+            try {
+                const r = await API.browserLogin(platform, {}, Number(accountId));
+                msg.textContent = r.ok ? 'Saved to this account — press Test to confirm who it is signed in as.'
+                                       : (r.message || 'Login cancelled.');
+            } catch (err) {
+                msg.textContent = 'Error: ' + (err.message || err).replace(/^API \d+:\s*/, '');
+            }
+            e.target.disabled = false;
+        });
         panel.querySelector('[data-cred-save]').addEventListener('click', async () => {
             const credentials = {};
             panel.querySelectorAll('[data-cred-field]').forEach(inp => {

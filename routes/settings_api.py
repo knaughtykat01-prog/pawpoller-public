@@ -330,6 +330,9 @@ async def pair_test(req: PairingTestRequest):
 
 class BrowserLoginRequest(BaseModel):
     extra_fields: dict = {}
+    # 4.6.3: which account row the captured cookies belong to. None = the
+    # platform's default slot (the bare keys), as every version before.
+    account_id: int | None = None
 
 
 @settings_router.get("/browser-login/platforms")
@@ -382,8 +385,9 @@ async def browser_login(platform: str, req: BrowserLoginRequest | None = None):
     import asyncio
     loop = asyncio.get_event_loop()
     try:
+        account_id = req.account_id if req else None
         creds = await loop.run_in_executor(
-            None, lambda: login_via_browser(platform, extra_fields)
+            None, lambda: login_via_browser(platform, extra_fields, account_id=account_id)
         )
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -397,6 +401,7 @@ async def browser_login(platform: str, req: BrowserLoginRequest | None = None):
         "ok": True,
         "message": f"Successfully logged in to {PLATFORM_LOGIN[platform]['name']}.",
         "keys_saved": list(creds.keys()),
+        "account_id": req.account_id if req else None,
     }
 
 
@@ -614,6 +619,29 @@ async def test_account_login(account_id: int):
                     "username": res.get("username", ""),
                     "expected": res.get("expected", "")}
         return {"status": "invalid", "detail": res.get("detail", "")}
+
+    if platform == "tw":
+        # 4.6.3 — the check FA got in 3.31.0: not "is somebody logged in" but
+        # "is it THIS account". Three rows held one session; the post went out
+        # as the wrong one. The Accounts page renders wrong_account by name.
+        tok, ct0 = creds.get("tw_auth_token", ""), creds.get("tw_ct0", "")
+        if not tok or not ct0:
+            return {"status": "unconfigured", "detail": "No X cookies stored for this account."}
+        from clients.tw.client import TWClient
+        client = TWClient(auth_token=tok, ct0=ct0, target_user=creds.get("tw_target_user", ""))
+        try:
+            owners = await client.session_owner()
+        finally:
+            await client.close()
+        handle = str(account.get("handle") or "").strip().lstrip("@")
+        if not owners:
+            return {"status": "invalid",
+                    "detail": "X did not recognise these cookies — log in again and paste a fresh auth_token + ct0."}
+        if handle and handle.lower() not in {o.lower() for o in owners}:
+            return {"status": "wrong_account", "username": owners[0],
+                    "detail": (f"These cookies belong to @{owners[0]}, not @{handle}. A post from this "
+                               f"account would go out as @{owners[0]} — paste @{handle}'s own session.")}
+        return {"status": "ok", "username": owners[0], "detail": "Logged in as @" + owners[0]}
 
     return {"status": "unsupported",
             "detail": f"No per-account login test for {platform} yet."}

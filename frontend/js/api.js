@@ -1164,7 +1164,10 @@ const API = {
 
     /* ── Browser login (embedded pywebview popup) ────────────── */
     getBrowserLoginPlatforms() { return this.get('/api/settings/browser-login/platforms'); },
-    browserLogin(platform, extraFields = {}) {
-        return this.post(`/api/settings/browser-login/${platform}`, { extra_fields: extraFields });
+    // accountId (4.6.3): save the captured cookies under THAT account's keys;
+    // null = the platform's default slot, as before.
+    browserLogin(platform, extraFields = {}, accountId = null) {
+        return this.post(`/api/settings/browser-login/${platform}`,
+            { extra_fields: extraFields, ...(accountId != null ? { account_id: accountId } : {}) });
     },
 };

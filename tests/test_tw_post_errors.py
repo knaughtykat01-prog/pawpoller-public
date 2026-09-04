@@ -130,8 +130,11 @@ class TestWriteHeaders:
         src = open("clients/tw/client.py", encoding="utf-8").read()
         assert '"x-twitter-auth-type": "OAuth2Session"' in src
         # 4.3.7 added set_media_alt (alt text on an uploaded image): a write.
-        assert src.count("headers=_WRITE_HEADERS") == 3, (
+        # 4.6.2: the three writes build their headers through _write_headers(),
+        # which spreads _WRITE_HEADERS and adds the per-request transaction id.
+        assert src.count("await self._write_headers(") == 3, (
             "create_tweet, upload_media and set_media_alt — the write path only")
+        assert "headers = dict(_WRITE_HEADERS)" in src
         i = src.index("async def _get_json")
         assert "_WRITE_HEADERS" not in src[i:i + 1500], "reads must be left alone"
 
