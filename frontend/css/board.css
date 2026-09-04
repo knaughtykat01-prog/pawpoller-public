@@ -258,3 +258,12 @@ details.card > .body { margin-top: 12px; }
     .loc-row { grid-template-columns: 40px minmax(0, 1fr) auto auto; }
     .loc-row .loc-stats { grid-column: 2 / -1; grid-row: 2; }
 }
+
+/* ── People (4.6.0): the chips under the artist line ───────────────────── */
+.mp-people { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.mp-person { display: inline-flex; align-items: center; gap: 6px; padding-right: 6px; }
+.mp-person .x { background: none; border: 0; padding: 0 2px; margin: 0; cursor: pointer;
+    color: var(--text-muted); font-size: 14px; line-height: 1; font-family: inherit; }
+.mp-person .x:hover, .mp-person .x:focus-visible { color: var(--danger); outline: none; }
+.mp-person--gone { opacity: .55; border-style: dashed; }
+.mp-people .tagchip-add { font-size: 11.5px; padding: 3px 9px; }

@@ -478,3 +478,14 @@ html[data-mobile="1"] #shelf-view-btn { display: none; }
 
 /* First-posted line under the artist (4.3.1) — the Library's sort key, visible. */
 .mp-firstposted { font-size: 12.5px; margin: 2px 0 6px; }
+
+/* People (4.6.0) in the picker: a "you" badge on a person who is one of the
+   operator's personas, the role chips, and the which-persona / whose-character
+   selects on the selection strip. */
+.ap-you { font-size: .62rem; line-height: 1; padding: .16rem .38rem; border-radius: 999px; font-weight: 700;
+    letter-spacing: .03em; text-transform: uppercase; vertical-align: middle;
+    background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.ap-roles { margin-bottom: .4rem; }
+.ap-persona { display: inline-flex; align-items: center; gap: .4rem; margin: .35rem 0 .2rem; font-size: .8rem; }
+.ap-persona select { font: inherit; padding: .2rem .4rem; border-radius: var(--radius-sm); background: var(--bg-secondary);
+    color: var(--text-primary); border: 1px solid var(--border); }

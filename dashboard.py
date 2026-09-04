@@ -93,6 +93,10 @@ async def lifespan(app: FastAPI):
     config.migrate_sofurry_credentials()
     config.migrate_browser_login_usernames()
     config.migrate_meta_user_ids()
+    # People (4.6.0): pieces credited before it store the artist with no
+    # registry key; match them once so corrections and persona links reach them.
+    from posting import artwork_reader as _artwork_reader
+    _artwork_reader.link_artist_keys()
     # Vault is always-on: sweep any plaintext credentials (pre-2.101.0
     # settings.json, hand edits, old-backup restores) into the vault.
     _migrated = config.ensure_vault()

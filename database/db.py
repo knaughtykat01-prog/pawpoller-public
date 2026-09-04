@@ -1356,6 +1356,19 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
                  "ON artist_handles(platform, handle)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_artists_name ON artists(name)")
 
+    # People (4.6.0, docs/specs/people_registry.md): a person row may BE one of
+    # the operator's personas, and each handle carries whether it may be
+    # @-mentioned on that site. Mention defaults OFF: a mention notifies, on
+    # adult sites under handles a friend may keep apart on purpose — names are
+    # free, links are consent. Guarded like every ADD COLUMN above.
+    for _sql in ("ALTER TABLE artists ADD COLUMN persona_id INTEGER DEFAULT NULL",
+                 "ALTER TABLE artist_handles ADD COLUMN mention INTEGER NOT NULL DEFAULT 0"):
+        try:
+            conn.execute(_sql)
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
+
     # Migration (3.29.0): re-key the DeviantArt rows that stored the wrong id.
     # DA has two identifiers per deviation — the integer in every public URL and
     # the API's GUID. The integer is what PawPoller speaks everywhere: the

@@ -573,6 +573,9 @@ def main():
     config.migrate_sofurry_credentials()
     config.migrate_browser_login_usernames()
     config.migrate_meta_user_ids()
+    # People (4.6.0): link pre-4.6.0 artist snapshots to their registry rows.
+    from posting import artwork_reader as _artwork_reader
+    _artwork_reader.link_artist_keys()
 
     # Step 2b-ii: Vault is always-on — sweep any plaintext credentials into
     # the vault BEFORE pollers/threads read settings (idempotent, cheap).

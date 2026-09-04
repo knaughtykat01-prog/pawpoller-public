@@ -227,6 +227,11 @@ class ArtworkInfo:
     # to list the ones actually worth chasing.
     artist_status: str = ""
 
+    # Everyone else in the piece (4.6.0): ``[{key, role, character?}]`` — who
+    # commissioned it, whose character it is, who worked on it. Keys point at
+    # registry rows; the package resolves them and renders the featuring line.
+    people: list = field(default_factory=list)
+
     @property
     def image_path(self) -> str | None:
         return str(self.path / self.image) if self.image else None
@@ -276,6 +281,7 @@ def list_artworks() -> list[dict]:
             # catalogue still have no recoverable artist.
             "artist": _clean_artist(data.get("artist")),
             "artist_status": _clean_artist_status(data.get("artist_status")),
+            "people": _clean_people(data.get("people")),
         })
     # Newest first (created_at is an ISO-ish string; empty sorts last).
     items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
@@ -360,6 +366,7 @@ def load_artwork(name: str) -> ArtworkInfo:
         variants=list(data.get("variants", []) or []),
         artist=_clean_artist(data.get("artist")),
         artist_status=_clean_artist_status(data.get("artist_status")),
+        people=_clean_people(data.get("people")),
     )
 
 
@@ -382,7 +389,15 @@ def _clean_artist(raw) -> dict | None:
                if str(v or "").strip()} if isinstance(handles, dict) else {}
     if not name and not handles:
         return None
-    return {"name": name, "handles": handles}
+    out = {"name": name, "handles": handles}
+    # The registry row's key (4.6.0): with it the package re-reads the row, so a
+    # handle corrected on the People page reaches every piece — and a person
+    # linked to a persona can be recognised as "me". Absent on pieces credited
+    # before 4.6.0 until link_artist_keys() matches them.
+    key = str(raw.get("key") or "").strip()
+    if key:
+        out["key"] = key
+    return out
 
 
 ARTIST_STATUSES = ("", "own", "unknown")
@@ -399,6 +414,37 @@ def _clean_artist_status(raw) -> str:
     return v if v in ARTIST_STATUSES else ""
 
 
+# Roles a person can have on a piece other than "drew it" (4.6.0,
+# docs/specs/people_registry.md §1.2). The artist stays its own field.
+PEOPLE_ROLES = ("commissioner", "owner", "collaborator")
+
+
+def _clean_people(raw) -> list[dict]:
+    """Normalise the stored ``people`` list: ``[{key, role, character?}]``.
+
+    Anything that is not a dict with a registry key and a known role is
+    dropped; an owner keeps the character name they own. Validation on the
+    way OUT of the file as well as in, because masterpiece.json is hand-editable.
+    """
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        role = str(item.get("role") or "").strip().lower()
+        if not key or role not in PEOPLE_ROLES:
+            continue
+        entry = {"key": key, "role": role}
+        if role == "owner":
+            ch = str(item.get("character") or "").strip()
+            if ch:
+                entry["character"] = ch
+        out.append(entry)
+    return out
+
+
 def build_artwork_package(
     artwork: ArtworkInfo,
     platform: str,
@@ -407,6 +453,7 @@ def build_artwork_package(
     tags_override: list[str] | None = None,
     rating_override: str | None = None,
     variant_key: str | None = None,
+    account_id: int | None = None,
 ) -> StoryUploadPackage:
     """Build a StoryUploadPackage for one artwork + platform.
 
@@ -457,8 +504,20 @@ def build_artwork_package(
     # before the PawPoller line so the running order reads
     # blurb → who drew it → who posted it. No-ops when the work has no artist
     # recorded, and won't double up if the description still credits them.
+    # People (4.6.0): the artist row is RE-READ from the registry when the
+    # piece carries its key (a handle corrected on the People page reaches
+    # every piece), falling back to the snapshot when the row is gone — a
+    # deleted person must not un-credit a piece. `is_self` is a fact about this
+    # piece AND this publish: the artist row is one of the operator's personas
+    # and it is the persona posting (`account_id`). Never a global mode — an
+    # artist also commissions, and the same piece posted by another persona is
+    # credited normally.
     from posting import artist_credit
-    description = artist_credit.append_to(description, artwork.artist, platform)
+    artist, self_row, people = _people_context(artwork, account_id)
+    before = description
+    description = artist_credit.append_to(description, artist, platform, is_self=self_row is not None)
+    description = artist_credit.append_people(description, people, platform,
+                                              after_credit=description != before)
 
     # "Posted via PawPoller" credit line (gap-wave-2 §1) — appended here, the
     # choke point every artwork posting path flows through. Self-gates on the
@@ -495,7 +554,9 @@ def build_artwork_package(
     # does get the tag.
     if platform in _ARTIST_TAG_PLATFORMS and tags_override is None:
         from posting import artist_credit
-        atag = artist_credit.artist_tag(artwork.artist)
+        # A self-drawn piece tags the person's own e621 handle (4.6.0) — the
+        # one fix `own` needed most: on a booru the artist tag IS the index.
+        atag = artist_credit.artist_tag(self_row or artist, prefer_handle=self_row is not None)
         if atag and atag not in {str(t).lower() for t in tags}:
             tags = [atag] + list(tags)
 
@@ -537,6 +598,105 @@ def build_artwork_package(
                # to (4.3.0). Only the announcing platform pays the query.
                **(_artwork_links(artwork.name, exclude=platform) if platform in _ANNOUNCERS else {})},
     )
+
+
+def _people_context(artwork: ArtworkInfo, account_id: int | None) -> tuple[dict | None, dict | None, list[dict]]:
+    """-> (artist, self_row, people) for the package (4.6.0).
+
+    ``artist`` is the registry row merged over the piece's snapshot when the
+    piece carries a key; ``self_row`` is the person row that is the POSTING
+    persona when the artist is them (or, for a legacy ``own`` piece, the row
+    linked to that persona); ``people`` is ``artwork.people`` with each key
+    resolved to its row — unknown keys dropped. Never raises: with no DB, or
+    nothing to look up, the piece's own data is used as it always was.
+    """
+    artist = artwork.artist
+    keyed = bool(artist and artist.get("key"))
+    need = keyed or bool(artwork.people) or (artwork.artist_status == "own" and account_id is not None)
+    if not need:
+        return artist, None, []
+    self_row, people = None, []
+    try:
+        from database.db import get_connection
+        from database import artist_queries as aq, accounts as _accts
+        conn = get_connection()
+        try:
+            persona = None
+            if account_id is not None:
+                acct = _accts.get_account(conn, account_id)
+                persona = (acct or {}).get("persona_id")
+            row = aq.get_artist(conn, artist["key"]) if keyed else None
+            if row:
+                artist = {"key": row["key"], "name": row.get("name") or artist.get("name") or "",
+                          "handles": dict(row.get("handles") or {}) or dict(artist.get("handles") or {})}
+            if (row and row.get("persona_id") is not None and persona is not None
+                    and int(row["persona_id"]) == int(persona)):
+                self_row = row
+            elif artwork.artist_status == "own" and persona is not None:
+                self_row = aq.person_for_persona(conn, persona)
+            rows = aq.people_for(conn, [p["key"] for p in artwork.people]) if artwork.people else {}
+            for p in artwork.people:
+                r = rows.get(p["key"])
+                if r:
+                    people.append({"role": p["role"], "character": p.get("character", ""), "person": r})
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("%s: people lookup failed, using the stored credit: %s", artwork.name, e)
+    return artist, self_row, people
+
+
+def link_artist_keys() -> dict:
+    """One-shot (4.6.0): give each piece's artist snapshot its registry key.
+
+    A piece credited before 4.6.0 stores ``{name, handles}`` with no key, so
+    nothing can get from it to the row's persona link or corrected handles.
+    Matches by exact (normalised) name, else by any shared ``(platform,
+    handle)``; writes the key only on a UNIQUE match. Two candidates → left
+    alone and reported — never invents a key. Idempotent; runs at startup.
+    """
+    linked, ambiguous = [], []
+    try:
+        from database.db import get_connection
+        from database import artist_queries as aq
+        conn = get_connection()
+    except Exception as e:
+        logger.warning("People: artist key linking skipped (no database): %s", e)
+        return {"linked": linked, "ambiguous": ambiguous}
+    try:
+        for w in list_artworks():
+            art = w.get("artist") or {}
+            if not art or art.get("key"):
+                continue
+            cands: set[str] = set()
+            if art.get("name"):
+                hit = aq.find_by_name(conn, art["name"])
+                if hit:
+                    cands.add(hit["key"])
+            for plat, h in (art.get("handles") or {}).items():
+                cands.update(aq.find_by_handle(conn, plat, h))
+            if len(cands) == 1:
+                try:
+                    raw = read_raw_metadata(w["name"])
+                    stored = raw.get("artist")
+                    stored = dict(stored) if isinstance(stored, dict) else {"name": str(stored or ""), "handles": {}}
+                    stored["key"] = cands.pop()
+                    save_artwork_metadata(w["name"], {"artist": stored})
+                    linked.append(w["name"])
+                except Exception as e:
+                    logger.warning("People: could not link %s: %s", w["name"], e)
+            elif len(cands) > 1:
+                ambiguous.append(w["name"])
+    except Exception as e:
+        logger.warning("People: artist key linking stopped: %s", e)
+    finally:
+        conn.close()
+    if linked:
+        logger.info("People: linked %d piece(s) to their registry row", len(linked))
+    if ambiguous:
+        logger.info("People: %d piece(s) match more than one person, left alone: %s",
+                    len(ambiguous), ", ".join(ambiguous[:8]))
+    return {"linked": linked, "ambiguous": ambiguous}
 
 
 def _artwork_links(artwork_name: str, exclude: str) -> dict:

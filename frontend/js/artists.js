@@ -1,4 +1,12 @@
-/* Artists — the registry as a page (3.11.0).
+/* People — the registry as a page (3.11.0 as Artists; People since 4.6.0).
+ *
+ * 4.6.0: the registry holds everyone, not only artists — commissioners, the
+ * owners of characters, collaborators — with two things per row that the
+ * artist-only page had no room for: a persona link ("this person is me", so a
+ * self-drawn piece posts no credit line and carries your booru tag) and a
+ * per-handle MENTION switch. A `:iconname:` on FA or an `@` on Bluesky
+ * notifies; off by default, per site, because names are free and links are
+ * consent. See docs/specs/people_registry.md.
  *
  * Until now the registry was only reachable THROUGH a piece: open a work, open
  * the artist picker, edit from there. That is the right place to answer "who
@@ -36,12 +44,13 @@ window.Artists = {
         app.innerHTML = `
             <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
                 <div>
-                    <h1>Artists</h1>
-                    <p class="muted">Who drew each piece, and where to find them. Handles here are what
-                    gets rendered as a credit on every platform — fix one and every piece by that artist
-                    is fixed.</p>
+                    <h1>People</h1>
+                    <p class="muted">Artists, commissioners, character owners, collaborators — and you. Handles here
+                    are what gets rendered on every platform — fix one and every piece naming them is fixed.
+                    <em>mention</em> switches whether a handle is <strong>linked</strong> (and so notified) on that
+                    site when they are named on a piece; the artist's own credit is always linked.</p>
                 </div>
-                <button class="btn btn-primary" data-ar-new type="button">+ Add artist</button>
+                <button class="btn btn-primary" data-ar-new type="button">+ Add person</button>
             </div>
             <div class="ar-bar">
                 <input type="search" id="ar-search" class="ar-search"
@@ -60,6 +69,7 @@ window.Artists = {
             // deliberately off for the picker, which opens on a keystroke.
             const d = await API.listArtists('', true);
             this._all = d.artists || [];
+            this._personas = d.personas || [];
         } catch (err) {
             document.getElementById('ar-list').innerHTML =
                 `<div class="empty-state">Could not load the registry: ${this.esc(err.message || err)}</div>`;
@@ -74,6 +84,7 @@ window.Artists = {
             if (this._filter === 'flagged' && !(a.warnings || []).length) return false;
             if (this._filter === 'nohandles' && Object.keys(a.handles || {}).length) return false;
             if (this._filter === 'unused' && (a.works || 0) > 0) return false;
+            if (this._filter === 'me' && a.persona_id == null) return false;
             if (!q) return true;
             return a.name.toLowerCase().includes(q)
                 || (a.aliases || []).some(x => String(x).toLowerCase().includes(q))
@@ -83,17 +94,18 @@ window.Artists = {
 
     _draw() {
         const chips = [
-            ['all', 'All'], ['flagged', '⚠ Warnings'],
+            ['all', 'All'], ['me', 'You'], ['flagged', '⚠ Warnings'],
             ['nohandles', 'No handles'], ['unused', 'No pieces'],
         ];
         const q = this._q.toLowerCase();
         const hit = (a) => !q || a.name.toLowerCase().includes(q)
             || (a.aliases || []).some(x => String(x).toLowerCase().includes(q))
             || Object.values(a.handles || {}).some(h => String(h).toLowerCase().includes(q));
-        const counts = { all: 0, flagged: 0, nohandles: 0, unused: 0 };
+        const counts = { all: 0, me: 0, flagged: 0, nohandles: 0, unused: 0 };
         for (const a of this._all) {
             if (!hit(a)) continue;
             counts.all++;
+            if (a.persona_id != null) counts.me++;
             if ((a.warnings || []).length) counts.flagged++;
             if (!Object.keys(a.handles || {}).length) counts.nohandles++;
             if (!(a.works || 0)) counts.unused++;
@@ -107,9 +119,21 @@ window.Artists = {
             || '<div class="empty-state">No artists match.</div>';
     },
 
+    _personaName(id) {
+        const p = (this._personas || []).find(x => String(x.persona_id) === String(id));
+        return p ? p.name : '';
+    },
+
     _row(a) {
         const handles = a.handles || {};
+        const mention = a.mention || {};
         const n = Object.keys(handles).length;
+        const pname = a.persona_id != null ? this._personaName(a.persona_id) : '';
+        const you = a.persona_id != null
+            ? `<span class="ar-badge ar-you" title="One of your personas — a piece they drew posts no credit line when that persona posts it">you${pname ? ' · ' + this.esc(pname) : ''}</span>` : '';
+        const pOpts = `<option value=""${a.persona_id == null ? ' selected' : ''}>Not me</option>` +
+            (this._personas || []).map(p =>
+                `<option value="${this.esc(p.persona_id)}"${String(p.persona_id) === String(a.persona_id) ? ' selected' : ''}>me · ${this.esc(p.name)}</option>`).join('');
         const warn = (a.warnings || []).length
             ? `<div class="ar-warn">${a.warnings.map(w => `<div>⚠ ${this.esc(w)}</div>`).join('')}</div>` : '';
         const ctx = (a.context || []).length
@@ -121,11 +145,18 @@ window.Artists = {
             const rm = v
                 ? `<button type="button" class="ar-h-rm" data-ar-rm="${a.key}|${code}"
                            title="Forget this handle for ${this.esc(a.name)}">&times;</button>` : '';
-            return `<label class="ar-h">
+            // Mention (4.6.0): may this handle be linked on this site when they
+            // are named on a piece? A link notifies — off until they say yes.
+            const men = v
+                ? `<label class="ar-mention" title="Link them on this site when named on a piece (a link notifies them)">
+                        <input type="checkbox" data-ar-mention="${a.key}|${code}"${mention[code] ? ' checked' : ''}> mention</label>` : '';
+            return `<div class="ar-h">
                         <span>${label}${rm}</span>
                         <input type="text" data-ar-handle="${a.key}|${code}"
-                               value="${this.esc(v)}" placeholder="—" autocomplete="off" spellcheck="false">
-                    </label>`;
+                               value="${this.esc(v)}" placeholder="—" autocomplete="off" spellcheck="false"
+                               aria-label="${this.esc(a.name)} on ${label}">
+                        ${men}
+                    </div>`;
         }).join('');
         return `
             <div class="ar-card" data-ar-key="${this.esc(a.key)}">
@@ -135,12 +166,14 @@ window.Artists = {
                         ${aliases}
                     </div>
                     <div class="ar-meta">
+                        ${you}
                         <span class="ar-badge">${n} handle${n === 1 ? '' : 's'}</span>
                         <span class="ar-badge${(a.works || 0) ? '' : ' ar-badge-zero'}">${a.works || 0} piece${(a.works || 0) === 1 ? '' : 's'}</span>
                     </div>
                     <div class="ar-acts">
+                        <select class="ar-persona" data-ar-persona="${this.esc(a.key)}" title="Is this person one of your personas?" aria-label="Persona">${pOpts}</select>
                         <button class="btn btn-sm" data-ar-rename="${this.esc(a.key)}" type="button">Rename</button>
-                        <button class="btn btn-sm btn-primary" data-ar-save="${this.esc(a.key)}" type="button">Save handles</button>
+                        <button class="btn btn-sm btn-primary" data-ar-save="${this.esc(a.key)}" type="button">Save</button>
                     </div>
                 </div>
                 ${warn}${ctx}
@@ -187,12 +220,27 @@ window.Artists = {
             const v = (el.value || '').trim();
             if (v) handles[code] = v;
         });
+        // Mention per handle and the persona link travel with the save (4.6.0).
+        const mention = {};
+        document.querySelectorAll('[data-ar-mention]').forEach(el => {
+            const [k, code] = el.dataset.arMention.split('|');
+            if (k === key) mention[code] = !!el.checked;
+        });
+        const psel = document.querySelector(`[data-ar-persona="${CSS.escape(key)}"]`);
         this._msg(key, 'Saving…');
         try {
             // Upserts merge, so this adds and corrects. Emptying a box does NOT
             // remove — that is what the x is for, and why it is a separate call.
-            const updated = await API.saveArtist({ name: a.name, handles });
+            const body = { name: a.name, handles, mention };
+            if (psel) body.persona_id = psel.value ? Number(psel.value) : null;
+            const updated = await API.saveArtist(body);
             a.handles = updated.handles || {};
+            a.mention = updated.mention || {};
+            a.persona_id = updated.persona_id == null ? null : updated.persona_id;
+            // Redraw THIS card only (the badge, the ticked boxes): a full
+            // _draw() would discard edits in progress on every other card.
+            const card = document.querySelector(`.ar-card[data-ar-key="${CSS.escape(key)}"]`);
+            if (card) card.outerHTML = this._row(a);
             this._msg(key, 'Saved');
             setTimeout(() => this._msg(key, ''), 2500);
         } catch (err) {
@@ -214,7 +262,7 @@ window.Artists = {
     },
 
     async _addArtist() {
-        const name = prompt('Artist name');
+        const name = prompt('Name');
         if (!name || !name.trim()) return;
         try {
             await API.saveArtist({ name: name.trim() });

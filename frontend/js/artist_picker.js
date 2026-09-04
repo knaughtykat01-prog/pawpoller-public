@@ -1,4 +1,6 @@
-/* ArtistPicker — pick (or add) the artist who drew a piece.
+/* ArtistPicker — pick (or add) the artist who drew a piece, or (4.6.0) any
+ * other person in it: who commissioned it, whose character it is, who worked
+ * on it with the artist.
  *
  * 3.10.0 shipped the artist as an editable field with a plain inline form. This
  * replaces that with the tag browser's experience, deliberately reusing the same
@@ -19,11 +21,26 @@
  *     repost policy) are shown on the card AND on the selection, because the
  *     moment they matter is while you are choosing.
  *
+ * 4.6.0 — the registry is a PEOPLE registry (docs/specs/people_registry.md):
+ *   - a person row may be one of the operator's own personas; those cards carry
+ *     a "you" badge, and *My own work* asks which persona when there are several,
+ *     so the piece can say WHICH you drew it (an e621 artist tag needs that);
+ *   - `mode: 'person'` picks someone in a ROLE — commissioner / character owner /
+ *     collaborator — for the featuring line. Same registry, same cards, same
+ *     handles; a role chip row instead of the no-artist state cards.
+ *
  * Usage:
  *   ArtistPicker.open({
- *     artist: {name, handles},        // current, may be null
- *     status: '' | 'own' | 'unknown', // current no-artist state
- *     onConfirm: ({artist, status}) => { ... },
+ *     artist: {key?, name, handles},   // current, may be null
+ *     status: '' | 'own' | 'unknown',  // current no-artist state
+ *     personas: [{persona_id, name}],  // the operator's personas (for "own")
+ *     personaId: 2,                    // the persona already linked, if any
+ *     onConfirm: ({artist, status, persona_id}) => { ... },
+ *   });
+ *   ArtistPicker.open({
+ *     mode: 'person', role: 'commissioner' | 'owner' | 'collaborator',
+ *     characters: ['Sample Character'],   // for the owner role
+ *     onConfirm: ({person: {key, name}, role, character}) => { ... },
  *   });
  */
 (function () {
@@ -32,6 +49,13 @@
         ['fa', 'FurAffinity'], ['e621', 'e621'], ['da', 'DeviantArt'], ['tw', 'X / Twitter'],
         ['bsky', 'Bluesky'], ['ib', 'Inkbunny'], ['ws', 'Weasyl'], ['sf', 'SoFurry'],
         ['fn', 'FurryNetwork'], ['ik', 'Itaku'], ['ig', 'Instagram'],
+    ];
+    // The roles a person can have on a piece other than "drew it" (the artist
+    // stays its own field). Order = the featuring line's order.
+    const ROLES = [
+        ['commissioner', 'Commissioned by', 'for …'],
+        ['owner', 'Character owner', "featuring …'s character"],
+        ['collaborator', 'Collaborator', 'with …'],
     ];
 
     const esc = (s) => (window.Utils && Utils.escapeHtml)
@@ -43,17 +67,20 @@
 
     function open(opts) {
         opts = opts || {};
+        const personMode = opts.mode === 'person';
+        const personas = Array.isArray(opts.personas) ? opts.personas : [];
+        const characters = Array.isArray(opts.characters) ? opts.characters : [];
         let artists = [];
         let cat = 'all';
         let query = '';
         let searchTimer = null;
 
         // The working selection. `mode` is what Done will apply.
-        //   'artist'  — sel.name + sel.handles
+        //   'artist'  — sel.name + sel.handles (a person, in person mode)
         //   'own' | 'unknown' | 'none'
         const startArtist = opts.artist && opts.artist.name ? opts.artist : null;
         const sel = {
-            mode: startArtist ? 'artist' : (opts.status || 'none'),
+            mode: startArtist ? 'artist' : (personMode ? 'none' : (opts.status || 'none')),
             name: startArtist ? startArtist.name : '',
             handles: Object.assign({}, (startArtist && startArtist.handles) || {}),
             warnings: [], context: [], isNew: false,
@@ -61,26 +88,39 @@
             // registry ACTUALLY stores. Both are needed to remove one: an upsert
             // merges, so clearing a field cannot say "this handle was wrong" —
             // the merge keeps it and the picker re-fills it on the next open.
-            key: '', stored: {},
+            key: (startArtist && startArtist.key) || '', stored: {},
+            // Which of the operator's personas this is — for "own" (which you
+            // drew it) and shown as a badge on a person who IS you.
+            personaId: opts.personaId != null ? opts.personaId
+                : (personas.length === 1 ? personas[0].persona_id : null),
+            role: personMode ? (ROLES.some(r => r[0] === opts.role) ? opts.role : 'commissioner') : '',
+            character: characters.length === 1 ? characters[0] : '',
         };
 
-        const chipKeys = ['all', 'flagged', 'nohandles'];
-        const chipLabel = { all: 'All', flagged: '⚠ Warnings', nohandles: 'Name only' };
+        const chipKeys = ['all', 'you', 'flagged', 'nohandles'];
+        const chipLabel = { all: 'All', you: 'You', flagged: '⚠ Warnings', nohandles: 'Name only' };
         const chips = chipKeys.map(k =>
             `<button type="button" class="tag-browser-chip${k === cat ? ' tag-browser-chip-active' : ''}" data-ap-cat="${k}">` +
             `<span class="tag-browser-chip-label">${chipLabel[k]}</span> ` +
             `<span class="tag-browser-chip-count" data-ap-count="${k}"></span></button>`).join('');
+        const roleChips = personMode ? `
+            <div class="tag-browser-filters ap-roles" role="radiogroup" aria-label="Role">
+                ${ROLES.map(([code, label, hint]) =>
+                    `<button type="button" class="tag-browser-chip ap-role${code === sel.role ? ' tag-browser-chip-active' : ''}"
+                             data-ap-role="${code}" title="${esc(hint)}">${label}</button>`).join('')}
+            </div>` : '';
 
         const root = document.createElement('div');
         root.className = 'ap-root';
         root.innerHTML = `
             <div class="tag-browser-backdrop" data-ap-backdrop></div>
-            <div class="tag-browser-modal ap-modal" role="dialog" aria-label="Artist">
+            <div class="tag-browser-modal ap-modal" role="dialog" aria-label="${personMode ? 'Person' : 'Artist'}">
                 <div class="tag-browser-header">
                     <div class="tag-browser-title-row">
-                        <div class="tag-browser-title">Who drew this?</div>
+                        <div class="tag-browser-title">${personMode ? 'Who else is in this?' : 'Who drew this?'}</div>
                         <button type="button" class="tag-browser-close" data-ap-close aria-label="Close">&times;</button>
                     </div>
+                    ${roleChips}
                     <input type="search" id="ap-search" class="tag-browser-search"
                            placeholder="Search by name or handle…" autocomplete="off">
                     <div class="tag-browser-filters">${chips}</div>
@@ -112,13 +152,29 @@
         root.querySelector('[data-ap-backdrop]').addEventListener('click', close);
         root.querySelector('[data-ap-close]').addEventListener('click', close);
 
+        const personaName = (id) => {
+            const p = personas.find(x => String(x.persona_id) === String(id));
+            return p ? p.name : '';
+        };
+        const roleLabel = (code) => (ROLES.find(r => r[0] === code) || [])[1] || code;
+
         // ── selection strip ──────────────────────────────────────────────
         //
         // Not a pill like the tag picker's: an artist's handles are the payload,
         // and they have to be visible and correctable right where you pick.
         const renderSelected = () => {
             if (sel.mode === 'own') {
-                selectedEl.innerHTML = `<span class="ap-sel-note">Marked as <strong>your own work</strong> — nothing will be credited.</span>`;
+                // Which of you: only a question when there is more than one
+                // persona. The answer is what lets a self-drawn piece carry the
+                // right e621 artist tag and no "Art by" line.
+                const who = personas.length > 1
+                    ? `<label class="ap-persona"><span>Which of you?</span>
+                        <select data-ap-persona>
+                            <option value=""${sel.personaId == null ? ' selected' : ''}>— just "mine" —</option>
+                            ${personas.map(p => `<option value="${esc(p.persona_id)}"${String(p.persona_id) === String(sel.personaId) ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}
+                        </select></label>`
+                    : (personas.length === 1 ? `<span class="muted"> (${esc(personas[0].name)})</span>` : '');
+                selectedEl.innerHTML = `<span class="ap-sel-note">Marked as <strong>your own work</strong> — no credit line; on the boorus the artist tag is yours.${who}</span>`;
                 return;
             }
             if (sel.mode === 'unknown') {
@@ -126,7 +182,7 @@
                 return;
             }
             if (sel.mode !== 'artist' || !sel.name) {
-                selectedEl.innerHTML = `<span class="tag-browser-selected-empty">No artist chosen</span>`;
+                selectedEl.innerHTML = `<span class="tag-browser-selected-empty">${personMode ? 'Nobody chosen' : 'No artist chosen'}</span>`;
                 return;
             }
             const rows = PLATFORMS.map(([code, label]) => {
@@ -147,50 +203,70 @@
             const ctx = sel.context.length
                 ? `<div class="ap-ctx">${sel.context.map(w => `<div>${esc(w)}</div>`).join('')}</div>` : '';
             const n = Object.keys(sel.handles).filter(k => (sel.handles[k] || '').trim()).length;
+            const you = sel.personaId != null
+                ? `<span class="ap-you" title="This person is one of your personas">you${personaName(sel.personaId) ? ' · ' + esc(personaName(sel.personaId)) : ''}</span>` : '';
+            // The owner role needs the character: one → taken as read; several →
+            // choose; none → say so rather than save an owner of nothing.
+            let who = '';
+            if (personMode && sel.role === 'owner') {
+                who = characters.length
+                    ? `<label class="ap-persona"><span>Whose character?</span>
+                        <select data-ap-char>
+                            ${characters.length > 1 ? `<option value=""${!sel.character ? ' selected' : ''}>— pick —</option>` : ''}
+                            ${characters.map(c => `<option value="${esc(c)}"${c === sel.character ? ' selected' : ''}>${esc(c)}</option>`).join('')}
+                        </select></label>`
+                    : `<div class="ap-warn"><div>⚠ This piece lists no characters yet — add them to the record first, then say whose they are.</div></div>`;
+            }
+            const mentionNote = personMode
+                ? `<div class="ap-h-note">They are <strong>linked</strong> on a site only where that handle has <em>mention</em> switched on (People page); elsewhere the line carries just the name. A link notifies them — names are free, links are consent.</div>`
+                : `<div class="ap-h-note">Handles save to the registry, so every
+                    piece by ${esc(sel.name)} gets them. Use &times; to forget a wrong one.</div>`;
             selectedEl.innerHTML = `
                 <div class="ap-sel-head">
                     <span class="ap-sel-name">${esc(sel.name)}</span>
-                    <span class="ap-sel-meta">${sel.isNew ? 'new artist' : `${n} handle${n === 1 ? '' : 's'}`}</span>
+                    ${you}
+                    ${personMode ? `<span class="ap-sel-meta">${esc(roleLabel(sel.role))}</span>` : ''}
+                    <span class="ap-sel-meta">${sel.isNew ? (personMode ? 'new person' : 'new artist') : `${n} handle${n === 1 ? '' : 's'}`}</span>
                     <button type="button" class="ap-sel-clear" data-ap-pick="none" title="Choose nobody">&times;</button>
                 </div>
+                ${who}
                 ${warn}${ctx}
                 <div class="ap-handles">${rows}</div>
-                <div class="ap-h-note">Handles save to the registry, so every
-                    piece by ${esc(sel.name)} gets them. Use &times; to forget a wrong one.</div>`;
+                ${mentionNote}`;
         };
 
         const updateFooter = () => {
             countEl.textContent =
-                sel.mode === 'artist' && sel.name ? `Artist: ${sel.name}`
+                sel.mode === 'artist' && sel.name ? (personMode ? `${roleLabel(sel.role)}: ${sel.name}` : `Artist: ${sel.name}`)
                 : sel.mode === 'own' ? 'Your own work'
                 : sel.mode === 'unknown' ? 'Artist unknown'
-                : 'No artist';
+                : (personMode ? 'Nobody' : 'No artist');
         };
 
         const refresh = () => { renderSelected(); updateFooter(); };
 
         // ── grid ─────────────────────────────────────────────────────────
+        const hit = (a, q) => !q || a.name.toLowerCase().includes(q)
+            || (a.aliases || []).some(x => String(x).toLowerCase().includes(q))
+            || Object.values(a.handles || {}).some(h => String(h).toLowerCase().includes(q));
+
         const matches = () => {
             const q = query.toLowerCase();
             return artists.filter(a => {
                 if (cat === 'flagged' && !(a.warnings || []).length) return false;
                 if (cat === 'nohandles' && Object.keys(a.handles || {}).length) return false;
-                if (!q) return true;
-                if (a.name.toLowerCase().includes(q)) return true;
-                if ((a.aliases || []).some(x => String(x).toLowerCase().includes(q))) return true;
-                return Object.values(a.handles || {}).some(h => String(h).toLowerCase().includes(q));
+                if (cat === 'you' && a.persona_id == null) return false;
+                return hit(a, q);
             });
         };
 
         const updateChipCounts = () => {
             const q = query.toLowerCase();
-            const hit = (a) => !q || a.name.toLowerCase().includes(q) ||
-                (a.aliases || []).some(x => String(x).toLowerCase().includes(q)) ||
-                Object.values(a.handles || {}).some(h => String(h).toLowerCase().includes(q));
-            const counts = { all: 0, flagged: 0, nohandles: 0 };
+            const counts = { all: 0, you: 0, flagged: 0, nohandles: 0 };
             for (const a of artists) {
-                if (!hit(a)) continue;
+                if (!hit(a, q)) continue;
                 counts.all++;
+                if (a.persona_id != null) counts.you++;
                 if ((a.warnings || []).length) counts.flagged++;
                 if (!Object.keys(a.handles || {}).length) counts.nohandles++;
             }
@@ -201,9 +277,10 @@
 
         // The three no-artist answers are cards, not a dropdown: "nobody drew
         // this for me" is as valid an answer as any name in the list, and burying
-        // it is what made every artist-less piece warn forever.
+        // it is what made every artist-less piece warn forever. (Not in person
+        // mode — a role either has someone or it does not exist.)
         const stateCards = () => {
-            if (query) return '';
+            if (query || personMode) return '';
             const card = (mode, icon, title, desc) => `
                 <div class="tag-browser-card ap-card ap-card-state${sel.mode === mode ? ' tag-browser-card-added' : ''}"
                      data-ap-pick="${mode}">
@@ -212,7 +289,7 @@
                     </div>
                     <div class="tag-browser-card-desc">${desc}</div>
                 </div>`;
-            return card('own', '✍', 'My own work', 'Drawn by you — there is nobody to credit.')
+            return card('own', '✍', 'My own work', 'Drawn by you — no credit line, and the booru artist tag is yours.')
                  + card('unknown', '?', 'Artist unknown', 'Commissioned or gifted, but not recoverable.');
         };
 
@@ -240,36 +317,52 @@
                     : `<span class="ap-badge ap-badge-none">name only</span>`;
                 const warn = (a.warnings || []).length
                     ? `<div class="ap-card-warn">⚠ ${esc(a.warnings[0])}</div>` : '';
+                const you = a.persona_id != null
+                    ? `<span class="ap-you" title="One of your personas">you${personaName(a.persona_id) ? ' · ' + esc(personaName(a.persona_id)) : ''}</span>` : '';
                 return `<div class="tag-browser-card ap-card${isSel ? ' tag-browser-card-added' : ''}"
                              data-ap-name="${esc(a.name)}">
                     <div class="tag-browser-card-head">
-                        <div class="tag-browser-card-name">${esc(a.name)}</div>
+                        <div class="tag-browser-card-name">${esc(a.name)} ${you}</div>
                     </div>
                     <div class="ap-badges">${badges}</div>
                     ${warn}
                 </div>`;
             }).join('');
             const body = stateCards() + newCard() + cards;
-            grid.innerHTML = body || '<div class="tag-browser-empty">No artists match.</div>';
+            grid.innerHTML = body || `<div class="tag-browser-empty">${personMode ? 'Nobody matches.' : 'No artists match.'}</div>`;
             updateChipCounts();
+        };
+
+        const pickRow = (a, name) => {
+            sel.mode = 'artist';
+            sel.name = a ? a.name : name;
+            sel.handles = Object.assign({}, (a && a.handles) || {});
+            sel.warnings = (a && a.warnings) || [];
+            sel.context = (a && a.context) || [];
+            sel.stored = Object.assign({}, (a && a.handles) || {});
+            sel.key = (a && a.key) || '';
+            sel.personaId = a && a.persona_id != null ? a.persona_id : (personMode ? null : sel.personaId);
+            sel.isNew = !a;
+        };
+        const clearSel = (mode) => {
+            sel.mode = mode;
+            sel.name = ''; sel.handles = {}; sel.warnings = []; sel.context = [];
+            sel.stored = {}; sel.key = ''; sel.isNew = false;
+            if (mode !== 'own') sel.personaId = personas.length === 1 ? personas[0].persona_id : null;
         };
 
         // ── interaction ──────────────────────────────────────────────────
         grid.addEventListener('click', (e) => {
             const state = e.target.closest('[data-ap-pick]');
             if (state) {
-                sel.mode = state.getAttribute('data-ap-pick');
-                sel.name = ''; sel.handles = {}; sel.warnings = []; sel.context = [];
-                sel.stored = {}; sel.key = ''; sel.isNew = false;
+                clearSel(state.getAttribute('data-ap-pick'));
+                if (sel.mode === 'own' && opts.personaId != null) sel.personaId = opts.personaId;
                 render(); refresh();
                 return;
             }
             const add = e.target.closest('[data-ap-new]');
             if (add) {
-                sel.mode = 'artist';
-                sel.name = add.getAttribute('data-ap-new');
-                sel.handles = {}; sel.warnings = []; sel.context = [];
-                sel.stored = {}; sel.key = ''; sel.isNew = true;
+                pickRow(null, add.getAttribute('data-ap-new'));
                 render(); refresh();
                 // Straight into the first handle field — adding an artist means
                 // typing handles, and making that one click instead of two is the
@@ -280,15 +373,7 @@
             const card = e.target.closest('[data-ap-name]');
             if (!card) return;
             const name = card.getAttribute('data-ap-name');
-            const a = artists.find(x => keyOf(x.name) === keyOf(name));
-            sel.mode = 'artist';
-            sel.name = a ? a.name : name;
-            sel.handles = Object.assign({}, (a && a.handles) || {});
-            sel.warnings = (a && a.warnings) || [];
-            sel.context = (a && a.context) || [];
-            sel.stored = Object.assign({}, (a && a.handles) || {});
-            sel.key = (a && a.key) || '';
-            sel.isNew = false;
+            pickRow(artists.find(x => keyOf(x.name) === keyOf(name)), name);
             render(); refresh();
         });
 
@@ -300,6 +385,12 @@
             const v = (el.value || '').trim();
             if (v) sel.handles[el.dataset.apHandle] = v;
             else delete sel.handles[el.dataset.apHandle];
+        });
+        selectedEl.addEventListener('change', (e) => {
+            const who = e.target.closest('[data-ap-persona]');
+            if (who) { sel.personaId = who.value ? Number(who.value) : null; updateFooter(); return; }
+            const ch = e.target.closest('[data-ap-char]');
+            if (ch) { sel.character = ch.value; }
         });
         selectedEl.addEventListener('click', async (e) => {
             // Forgetting a handle is a REGISTRY edit, not a per-piece one, so it
@@ -329,9 +420,7 @@
             }
             const clear = e.target.closest('[data-ap-pick]');
             if (!clear) return;
-            sel.mode = clear.getAttribute('data-ap-pick');
-            sel.name = ''; sel.handles = {}; sel.warnings = []; sel.context = [];
-            sel.stored = {}; sel.key = ''; sel.isNew = false;
+            clearSel(clear.getAttribute('data-ap-pick'));
             render(); refresh();
         });
 
@@ -340,6 +429,12 @@
             root.querySelectorAll('[data-ap-cat]').forEach(b =>
                 b.classList.toggle('tag-browser-chip-active', b === btn));
             render();
+        }));
+        root.querySelectorAll('[data-ap-role]').forEach(btn => btn.addEventListener('click', () => {
+            sel.role = btn.getAttribute('data-ap-role');
+            root.querySelectorAll('[data-ap-role]').forEach(b =>
+                b.classList.toggle('tag-browser-chip-active', b === btn));
+            refresh();
         }));
         searchEl.addEventListener('input', () => {
             clearTimeout(searchTimer);
@@ -352,24 +447,44 @@
             e.preventDefault();
             const q = searchEl.value.trim();
             if (!q) return;
-            const a = artists.find(x => keyOf(x.name) === keyOf(q));
-            sel.mode = 'artist';
-            sel.name = a ? a.name : q;
-            sel.handles = Object.assign({}, (a && a.handles) || {});
-            sel.warnings = (a && a.warnings) || [];
-            sel.context = (a && a.context) || [];
-            sel.stored = Object.assign({}, (a && a.handles) || {});
-            sel.key = (a && a.key) || '';
-            sel.isNew = !a;
+            pickRow(artists.find(x => keyOf(x.name) === keyOf(q)), q);
             render(); refresh();
         });
 
-        root.querySelector('#ap-confirm').addEventListener('click', () => {
-            if (opts.onConfirm) {
-                opts.onConfirm(sel.mode === 'artist' && sel.name
-                    ? { artist: { name: sel.name, handles: sel.handles }, status: '' }
-                    : { artist: null, status: sel.mode === 'none' ? '' : sel.mode });
+        root.querySelector('#ap-confirm').addEventListener('click', async () => {
+            if (!opts.onConfirm) { close(); return; }
+            if (personMode) {
+                if (sel.mode !== 'artist' || !sel.name) { close(); return; }
+                if (sel.role === 'owner' && !sel.character) {
+                    countEl.textContent = characters.length ? 'Pick whose character it is first.' : 'Add the character to the record first.';
+                    return;
+                }
+                // A role points at a registry ROW, so a person typed fresh is
+                // saved first — that is also what gives them a handle panel on
+                // the People page. An existing person whose handles were edited
+                // in the strip is saved too (upserts merge), the same as the
+                // artist path does server-side; dropping the edit would read
+                // as saved.
+                let key = sel.key;
+                const edited = Object.keys(sel.handles).some(k => (sel.handles[k] || '') !== (sel.stored[k] || ''));
+                if (!key || edited) {
+                    try {
+                        const saved = await API.saveArtist({ name: sel.name, handles: sel.handles });
+                        key = saved.key;
+                    } catch (err) {
+                        countEl.textContent = 'Could not save them: ' + (err.message || err);
+                        return;
+                    }
+                }
+                opts.onConfirm({ person: { key, name: sel.name }, role: sel.role,
+                                 character: sel.role === 'owner' ? sel.character : '' });
+                close();
+                return;
             }
+            opts.onConfirm(sel.mode === 'artist' && sel.name
+                ? { artist: { key: sel.key, name: sel.name, handles: sel.handles }, status: '', persona_id: null }
+                : { artist: null, status: sel.mode === 'none' ? '' : sel.mode,
+                    persona_id: sel.mode === 'own' ? sel.personaId : null });
             close();
         });
 
@@ -377,16 +492,23 @@
             try {
                 const r = await API.listArtists();
                 artists = r.artists || [];
+                // The registry answers with the operator's personas too (4.6.0),
+                // so "which of you" works even when the caller passed none.
+                if (!personas.length && Array.isArray(r.personas)) {
+                    personas.push(...r.personas);
+                    if (sel.personaId == null && personas.length === 1) sel.personaId = personas[0].persona_id;
+                }
                 // Carry the registry's research onto a pre-existing selection, so
                 // opening the picker on an already-credited piece still shows the
                 // warnings for that artist.
                 if (sel.mode === 'artist' && sel.name) {
-                    const a = artists.find(x => keyOf(x.name) === keyOf(sel.name));
+                    const a = artists.find(x => (sel.key && x.key === sel.key) || keyOf(x.name) === keyOf(sel.name));
                     if (a) {
                         sel.warnings = a.warnings || [];
                         sel.context = a.context || [];
                         sel.stored = Object.assign({}, a.handles || {});
                         sel.key = a.key || '';
+                        if (a.persona_id != null) sel.personaId = a.persona_id;
                         for (const [p, h] of Object.entries(a.handles || {})) {
                             if (!sel.handles[p]) sel.handles[p] = h;
                         }
@@ -402,5 +524,5 @@
         return { close };
     }
 
-    window.ArtistPicker = { open };
+    window.ArtistPicker = { open, ROLES };
 })();

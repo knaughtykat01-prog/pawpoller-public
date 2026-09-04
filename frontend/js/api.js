@@ -248,6 +248,8 @@ const API = {
     deleteArtistHandle(key, platform) {
         return this.del(`/api/artists/${encodeURIComponent(key)}/handles/${encodeURIComponent(platform)}`);
     },
+    // The person row that IS one of your personas (4.6.0), or {artist: null}.
+    getPersonForPersona(personaId) { return this.get(`/api/artists/by-persona/${encodeURIComponent(personaId)}`); },
 
     getMasterpieces() { return this.get('/api/masterpieces'); },
     getMasterpiece(name) { return this.get(`/api/masterpieces/${encodeURIComponent(name)}`); },

@@ -96,7 +96,11 @@ def classify_flags(flags) -> tuple[list[str], list[str]]:
     return warnings, context
 
 
-def _row_to_artist(row: sqlite3.Row, handles: dict) -> dict:
+# Sentinel for "not supplied" — distinct from None, which CLEARS the link.
+KEEP = object()
+
+
+def _row_to_artist(row: sqlite3.Row, handles: dict, mention: dict | None = None) -> dict:
     flags = _loads(row["flags"], [])
     warnings, context = classify_flags(flags)
     return {
@@ -108,7 +112,24 @@ def _row_to_artist(row: sqlite3.Row, handles: dict) -> dict:
         "context": context,
         "notes": row["notes"] or "",
         "handles": handles,
+        # People (4.6.0): this row IS one of the operator's personas when set;
+        # `mention` lists only the sites where an @-link is welcome.
+        "persona_id": row["persona_id"] if "persona_id" in row.keys() else None,
+        "mention": dict(mention or {}),
     }
+
+
+def _mentions_for(conn: sqlite3.Connection, keys: list[str]) -> dict[str, dict]:
+    """``{artist_key: {platform: True}}`` — only the handles that may be mentioned."""
+    out: dict[str, dict] = {k: {} for k in keys}
+    if not keys:
+        return out
+    ph = ",".join("?" * len(keys))
+    for r in conn.execute(
+            "SELECT artist_key, platform FROM artist_handles "
+            "WHERE mention = 1 AND artist_key IN (" + ph + ")", keys):
+        out.setdefault(r["artist_key"], {})[r["platform"]] = True
+    return out
 
 
 def _handles_for(conn: sqlite3.Connection, keys: list[str]) -> dict[str, dict]:
@@ -142,15 +163,18 @@ def list_artists(conn: sqlite3.Connection, q: str = "", limit: int = 500) -> lis
     else:
         rows = conn.execute(
             "SELECT * FROM artists ORDER BY name COLLATE NOCASE LIMIT ?", (limit,)).fetchall()
-    handles = _handles_for(conn, [r["artist_key"] for r in rows])
-    return [_row_to_artist(r, handles.get(r["artist_key"], {})) for r in rows]
+    keys = [r["artist_key"] for r in rows]
+    handles, mentions = _handles_for(conn, keys), _mentions_for(conn, keys)
+    return [_row_to_artist(r, handles.get(r["artist_key"], {}), mentions.get(r["artist_key"], {}))
+            for r in rows]
 
 
 def get_artist(conn: sqlite3.Connection, key: str) -> dict | None:
     row = conn.execute("SELECT * FROM artists WHERE artist_key = ?", (key,)).fetchone()
     if not row:
         return None
-    return _row_to_artist(row, _handles_for(conn, [key]).get(key, {}))
+    return _row_to_artist(row, _handles_for(conn, [key]).get(key, {}),
+                          _mentions_for(conn, [key]).get(key, {}))
 
 
 def find_by_name(conn: sqlite3.Connection, name: str) -> dict | None:
@@ -164,13 +188,19 @@ def find_by_name(conn: sqlite3.Connection, name: str) -> dict | None:
 
 def upsert_artist(conn: sqlite3.Connection, name: str, *, handles: dict | None = None,
                   aliases: list | None = None, flags: list | None = None,
-                  notes: str = "", replace_handles: bool = False) -> str:
+                  notes: str = "", replace_handles: bool = False,
+                  persona_id=KEEP, mention: dict | None = None) -> str:
     """Create or update one artist; returns the key.
 
     ``replace_handles=False`` (the default) MERGES. A handle added by hand for a
     platform the lookup never resolved must survive a later re-import, and an
     import must not have to carry every handle just to avoid destroying one.
     Pass True only when the caller genuinely means "these are now all of them".
+
+    ``persona_id`` (4.6.0): ``KEEP`` (the default) leaves the link alone, ``None``
+    clears it, an int links this person to that persona — "this person is me".
+    ``mention`` is ``{platform: bool}`` applied to the handles that exist after
+    the merge; a handle rewrite keeps the consent already given for that site.
     """
     key = artist_key(name)
     if not key:
@@ -199,7 +229,51 @@ def upsert_artist(conn: sqlite3.Connection, name: str, *, handles: dict | None =
             "INSERT INTO artist_handles (artist_key, platform, handle) VALUES (?, ?, ?) "
             "ON CONFLICT(artist_key, platform) DO UPDATE SET handle = excluded.handle",
             (key, str(platform).strip().lower(), h))
+    if persona_id is not KEEP:
+        pid = int(persona_id) if persona_id not in (None, "", 0) else None
+        conn.execute("UPDATE artists SET persona_id = ?, updated_at = datetime('now') "
+                     "WHERE artist_key = ?", (pid, key))
+    for platform, ok in (mention or {}).items():
+        conn.execute("UPDATE artist_handles SET mention = ? WHERE artist_key = ? AND platform = ?",
+                     (1 if ok else 0, key, str(platform).strip().lower()))
     return key
+
+
+def person_for_persona(conn: sqlite3.Connection, persona_id) -> dict | None:
+    """The person row that IS this persona, or None (4.6.0)."""
+    if not persona_id:
+        return None
+    row = conn.execute("SELECT * FROM artists WHERE persona_id = ? "
+                       "ORDER BY updated_at DESC LIMIT 1", (int(persona_id),)).fetchone()
+    if not row:
+        return None
+    key = row["artist_key"]
+    return _row_to_artist(row, _handles_for(conn, [key]).get(key, {}),
+                          _mentions_for(conn, [key]).get(key, {}))
+
+
+def people_for(conn: sqlite3.Connection, keys: list[str]) -> dict[str, dict]:
+    """``{key: row}`` for many keys in three queries; unknown keys are absent."""
+    keys = [k for k in dict.fromkeys(keys) if k]
+    if not keys:
+        return {}
+    ph = ",".join("?" * len(keys))
+    rows = conn.execute("SELECT * FROM artists WHERE artist_key IN (" + ph + ")", keys).fetchall()
+    handles, mentions = _handles_for(conn, keys), _mentions_for(conn, keys)
+    return {r["artist_key"]: _row_to_artist(r, handles.get(r["artist_key"], {}),
+                                            mentions.get(r["artist_key"], {}))
+            for r in rows}
+
+
+def find_by_handle(conn: sqlite3.Connection, platform: str, handle: str) -> list[str]:
+    """Keys of every person holding this handle on this site (case-insensitive)."""
+    h = str(handle or "").strip()
+    if not h:
+        return []
+    rows = conn.execute(
+        "SELECT artist_key FROM artist_handles WHERE platform = ? AND lower(handle) = lower(?) "
+        "ORDER BY artist_key", (str(platform).strip().lower(), h)).fetchall()
+    return [r["artist_key"] for r in rows]
 
 
 class ArtistExists(Exception):
@@ -250,10 +324,13 @@ def rename_artist(conn: sqlite3.Connection, key: str, new_name: str) -> dict:
     if get_artist(conn, new_key) is not None:
         raise ArtistExists(new_key)
 
+    # persona_id travels too (4.6.0) — a re-key must not turn "me" into a
+    # stranger. The handles' mention flags move with their rows below.
     conn.execute(
-        "INSERT INTO artists (artist_key, name, aliases, flags, notes) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO artists (artist_key, name, aliases, flags, notes, persona_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         (new_key, disp, json.dumps(aliases), json.dumps(old.get("flags") or []),
-         old.get("notes") or ""))
+         old.get("notes") or "", old.get("persona_id")))
     conn.execute("UPDATE artist_handles SET artist_key = ? WHERE artist_key = ?", (new_key, key))
     conn.execute("DELETE FROM artists WHERE artist_key = ?", (key,))
     return {"from": old["name"], "to": disp, "key": new_key, "rekeyed": True}

@@ -594,7 +594,8 @@ async def post_artwork(
         poster = _get_poster(platform, account_id)
         package = artwork_reader.build_artwork_package(
             artwork, platform,
-            description_override=(description_overrides or {}).get(platform))
+            description_override=(description_overrides or {}).get(platform),
+            account_id=account_id)
         if extras:
             package.extra.update(extras)
         if platform in _ANNOUNCES_LAST:
@@ -1025,7 +1026,7 @@ async def update_artwork(
                             "success": False, "skipped": True, "reason": "post-only"})
             continue
 
-        package = artwork_reader.build_artwork_package(artwork, plat)
+        package = artwork_reader.build_artwork_package(artwork, plat, account_id=account_id)
         package.extra["skip_content_refresh"] = True   # metadata sync only — never re-upload the image
         if extras:
             package.extra.update(extras)

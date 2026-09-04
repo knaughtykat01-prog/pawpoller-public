@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException
 
 from database.db import get_connection
 from database import artist_queries as aq
+from database import personas as personas_db
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,11 @@ def list_artists(q: str = "", limit: int = 500, with_counts: bool = False):
                 a["works"] = len(by_key.get(a["key"], []))
         return {"artists": artists,
                 "totals": aq.count(conn),
-                "platforms": list(aq.KNOWN_PLATFORMS)}
+                "platforms": list(aq.KNOWN_PLATFORMS),
+                # The operator's personas (4.6.0), so the page and the picker can
+                # say which person is "you" without a second request.
+                "personas": [{"persona_id": p["persona_id"], "name": p["name"], "color": p.get("color")}
+                             for p in personas_db.list_personas(conn)]}
     finally:
         conn.close()
 
@@ -115,13 +120,36 @@ def rename_artist(key: str, body: dict):
     for name in sorted(works):
         try:
             raw = artwork_reader.read_raw_metadata(name)
-            art = dict(raw.get("artist") or {})
+            art = raw.get("artist")
+            art = dict(art) if isinstance(art, dict) else {"name": str(art or ""), "handles": {}}
             art["name"] = new_name
+            # The piece references the row by key since 4.6.0 — a re-key that
+            # left the old key behind would make every future post fall back
+            # to the snapshot, silently losing corrections and the persona link.
+            if result["rekeyed"] or art.get("key"):
+                art["key"] = result["key"]
             artwork_reader.save_artwork_metadata(name, {"artist": art})
             updated.append(name)
         except Exception as e:
             logger.warning("Rename: could not update %s: %s", name, e)
             failed.append(name)
+    # people[] rows (4.6.0) point at the same key from other pieces, which the
+    # by-artist scan above never sees. Only a real re-key touches them.
+    if result["rekeyed"]:
+        for w in artwork_reader.list_artworks():
+            people = w.get("people") or []
+            if not any(p.get("key") == key for p in people) or w["name"] in failed:
+                continue
+            try:
+                for p in people:
+                    if p.get("key") == key:
+                        p["key"] = result["key"]
+                artwork_reader.save_artwork_metadata(w["name"], {"people": people})
+                if w["name"] not in updated:
+                    updated.append(w["name"])
+            except Exception as e:
+                logger.warning("Rename: could not update people on %s: %s", w["name"], e)
+                failed.append(w["name"])
     return {"status": "renamed", **result,
             "works_updated": updated, "works_failed": failed}
 
@@ -137,6 +165,16 @@ def resolve_artist(name: str):
     conn = get_connection()
     try:
         return {"artist": aq.find_by_name(conn, name)}
+    finally:
+        conn.close()
+
+
+@artists_router.get("/by-persona/{persona_id}")
+def person_for_persona(persona_id: int):
+    """The person row that IS this persona, or ``null`` (4.6.0)."""
+    conn = get_connection()
+    try:
+        return {"artist": aq.person_for_persona(conn, persona_id)}
     finally:
         conn.close()
 
@@ -158,9 +196,10 @@ def upsert_artist(body: dict):
     """Create or update an artist.
 
     ``{name, handles?: {platform: handle}, aliases?, flags?, notes?,
-    replace_handles?}``. Handles MERGE by default — see
-    ``artist_queries.upsert_artist``: a handle added by hand for a platform the
-    lookup never resolved must survive the next import.
+    replace_handles?, persona_id?, mention?: {platform: bool}}``. Handles MERGE
+    by default — see ``artist_queries.upsert_artist``: a handle added by hand
+    for a platform the lookup never resolved must survive the next import.
+    ``persona_id`` is applied only when present (null clears the link).
     """
     name = str((body or {}).get("name") or "").strip()
     if not name:
@@ -168,6 +207,16 @@ def upsert_artist(body: dict):
     handles = body.get("handles")
     if handles is not None and not isinstance(handles, dict):
         raise HTTPException(400, detail="handles must be an object")
+    persona_id = aq.KEEP
+    if "persona_id" in body:
+        persona_id = body.get("persona_id")
+        if persona_id in (None, "", 0):
+            persona_id = None
+        elif not (isinstance(persona_id, int) and not isinstance(persona_id, bool)):
+            try:
+                persona_id = int(str(persona_id))
+            except ValueError:
+                raise HTTPException(400, detail="persona_id must be a persona's id, or null")
     conn = get_connection()
     try:
         key = aq.upsert_artist(
@@ -176,7 +225,9 @@ def upsert_artist(body: dict):
             aliases=body.get("aliases") if isinstance(body.get("aliases"), list) else None,
             flags=body.get("flags") if isinstance(body.get("flags"), list) else None,
             notes=str(body.get("notes") or ""),
-            replace_handles=bool(body.get("replace_handles")))
+            replace_handles=bool(body.get("replace_handles")),
+            persona_id=persona_id,
+            mention=body.get("mention") if isinstance(body.get("mention"), dict) else None)
         conn.commit()
         return {"status": "saved", **(aq.get_artist(conn, key) or {})}
     finally:

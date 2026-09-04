@@ -653,6 +653,7 @@ def _artist_from_body(raw) -> dict | None:
     if not name and not handles:
         return None
 
+    key = ""
     conn = get_connection()
     try:
         known = aq.find_by_name(conn, name) if name else None
@@ -662,11 +663,61 @@ def _artist_from_body(raw) -> dict | None:
         if name:
             # Learn it. Merge semantics mean a handle typed here is added to the
             # artist rather than replacing everything already researched.
-            aq.upsert_artist(conn, name, handles=handles)
+            key = aq.upsert_artist(conn, name, handles=handles)
             conn.commit()
     finally:
         conn.close()
-    return {"name": name, "handles": handles}
+    # The key (4.6.0) is what lets the package re-read the row later.
+    return {"key": key, "name": name, "handles": handles} if key else {"name": name, "handles": handles}
+
+
+def _people_from_body(raw, characters: list[str]) -> list[dict]:
+    """Validate the editor's ``people`` list (4.6.0): known keys, known roles,
+    an owner's character present on the piece. Refused, not trimmed — a
+    silently dropped row reads as saved."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise HTTPException(400, detail="people must be a list")
+    out: list[dict] = []
+    conn = get_connection()
+    try:
+        for item in raw:
+            if not isinstance(item, dict):
+                raise HTTPException(400, detail="each person must be an object {key, role, character?}")
+            key = str(item.get("key") or "").strip()
+            role = str(item.get("role") or "").strip().lower()
+            if role not in artwork_reader.PEOPLE_ROLES:
+                raise HTTPException(400, detail=f"role must be one of {', '.join(artwork_reader.PEOPLE_ROLES)}")
+            if not key or not aq.get_artist(conn, key):
+                raise HTTPException(400, detail=f"unknown person {key!r} — add them to the registry first")
+            entry = {"key": key, "role": role}
+            if role == "owner":
+                ch = str(item.get("character") or "").strip()
+                if not ch or ch not in characters:
+                    raise HTTPException(400, detail="an owner needs a character from this piece's characters")
+                entry["character"] = ch
+            out.append(entry)
+    finally:
+        conn.close()
+    return out
+
+
+def _people_view(conn, art) -> tuple[list[dict], int | None]:
+    """The piece's people resolved for the page, and the artist's persona link."""
+    keys = [p["key"] for p in art.people]
+    rows = aq.people_for(conn, keys) if keys else {}
+    people = []
+    for p in art.people:
+        r = rows.get(p["key"])
+        people.append({**p, "name": r["name"] if r else p["key"], "known": bool(r),
+                       "mention": dict((r or {}).get("mention") or {}),
+                       "persona_id": (r or {}).get("persona_id")})
+    persona_id = None
+    if art.artist and art.artist.get("key"):
+        r = aq.get_artist(conn, art.artist["key"])
+        persona_id = r.get("persona_id") if r else None
+    return people, persona_id
 
 
 @masterpieces_router.patch("/{name}/variants/{key}")
@@ -1038,6 +1089,7 @@ def get_masterpiece(name: str):
             {"name": name, "title": art.title,
              "import_source": getattr(art, "import_source", None) or {},
              "original_posted_at": getattr(art, "original_posted_at", "") or ""})
+        _pv = _people_view(conn, art)
         return {
             "name": art.name,
             "status": mq.get_status(conn, name),
@@ -1051,6 +1103,10 @@ def get_masterpiece(name: str):
             # the credit line is built from it at post time.
             "artist": art.artist,
             "artist_status": art.artist_status,
+            # People (4.6.0): everyone else in it, resolved; and whether the
+            # artist row is one of the operator's personas ("drawn by you").
+            "people": _pv[0],
+            "artist_persona_id": _pv[1],
             "rating": art.rating,
             "image": art.image,
             "thumbnail": art.thumbnail,
@@ -1399,6 +1455,31 @@ def update_masterpiece(name: str, body: dict):
         updates["artist_status"] = st
     if "artist" in body:
         updates["artist"] = _artist_from_body(body.get("artist"))
+    if "own_persona_id" in body:
+        # "My own work" with a persona chosen (4.6.0, spec §1.3): upgrade to the
+        # person row linked to that persona when there is one — then the piece
+        # can carry that person's e621 tag — else the no-row form of the claim.
+        pid = body.get("own_persona_id")
+        row = None
+        if pid:
+            try:
+                pid = int(str(pid))
+            except ValueError:
+                raise HTTPException(400, detail="own_persona_id must be a persona's id")
+            conn = get_connection()
+            try:
+                row = aq.person_for_persona(conn, pid)
+            finally:
+                conn.close()
+        if row:
+            updates["artist"] = {"key": row["key"], "name": row["name"], "handles": dict(row["handles"])}
+            updates["artist_status"] = ""
+        else:
+            updates["artist"] = None
+            updates["artist_status"] = "own"
+    if "people" in body:
+        updates["people"] = _people_from_body(
+            body.get("people"), updates.get("characters", raw.get("characters") or []))
     if "platform_tags" in body and isinstance(body["platform_tags"], dict):
         # An explicit per-platform list WINS OUTRIGHT over the canonical set
         # (build_artwork_package), so this is "post exactly these to this site".

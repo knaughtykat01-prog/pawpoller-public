@@ -65,3 +65,10 @@
 .ar-ctx { margin-top: .4rem; font-size: .75rem; line-height: 1.4; color: var(--text-secondary); }
 .ar-msg { margin-top: .4rem; font-size: .78rem; color: var(--text-secondary); min-height: 1em; }
 .ar-msg-bad { color: var(--danger, #c0392b); }
+
+/* People (4.6.0): the "you" badge, the persona select, the mention switch. */
+.ar-you { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); font-weight: 700; }
+.ar-persona { font: inherit; font-size: .78rem; padding: .25rem .4rem; border-radius: var(--radius-sm);
+    background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); }
+.ar-mention { display: flex; align-items: center; gap: .3rem; font-size: .68rem; color: var(--text-muted, var(--text-secondary)); cursor: pointer; }
+.ar-mention input { margin: 0; }

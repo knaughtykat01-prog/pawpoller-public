@@ -272,13 +272,19 @@ def _render_link(artist: dict, platform: str, name: str) -> str:
     return f"{nm} - {url}" if url else nm
 
 
-def render(artist: dict | None, platform: str, *, prefix: str = "Art by") -> str:
+def render(artist: dict | None, platform: str, *, prefix: str = "Art by",
+           is_self: bool = False) -> str:
     """The credit line for one artwork on one platform, or '' if no artist.
 
     `prefix` is settable because a few pieces are gifts rather than
     commissions, and the archive used "Done by" for those.
+
+    `is_self` (4.6.0): the artist is the persona posting — "Art by :iconyou:"
+    on your own gallery reads as a bug, so there is no line at all. The booru
+    artist TAG still fires (see `artist_tag`); on a booru your own tag is how
+    people find you.
     """
-    if not artist:
+    if not artist or is_self:
         return ""
     name = (artist.get("name") or "").strip()
     if not name:
@@ -290,7 +296,8 @@ def render(artist: dict | None, platform: str, *, prefix: str = "Art by") -> str
     return f"{prefix} {_render_link(artist, platform, name)}"
 
 
-def append_to(description: str, artist: dict | None, platform: str) -> str:
+def append_to(description: str, artist: dict | None, platform: str, *,
+              is_self: bool = False) -> str:
     """Description with the credit appended, separated by a blank line.
 
     Idempotent on the artist's NAME: if the text already credits them — a
@@ -305,7 +312,7 @@ def append_to(description: str, artist: dict | None, platform: str) -> str:
     rule (never lose the credit) and fails invisibly, so nobody notices until
     the artist does. The catalogue has several names short enough to collide.
     """
-    line = render(artist, platform)
+    line = render(artist, platform, is_self=is_self)
     if not line:
         return description
     desc = description or ""
@@ -323,17 +330,133 @@ def append_to(description: str, artist: dict | None, platform: str) -> str:
     return f"{description.rstrip()}\n\n{line}"
 
 
-def artist_tag(artist: dict | None) -> str:
+def artist_tag(artist: dict | None, *, prefer_handle: bool = False) -> str:
     """The artist's name as a booru tag, or ''.
 
     Boorus key on the artist tag harder than on anything else — it is how a
     reader finds everything by that artist — and it is tier 1 in the
     catalogue's own tag priority (scripts/reorder_tags.py). Spaces become
     underscores, the convention on every booru-style site.
+
+    `prefer_handle` (4.6.0): for a self-drawn piece the person row's e621
+    handle IS their artist tag — the one already indexing their uploads —
+    so it wins over the display name when it exists.
     """
     if not artist:
         return ""
+    if prefer_handle:
+        h = str((artist.get("handles") or {}).get("e621") or "").strip()
+        if h:
+            return "_".join(h.lower().split())
     name = (artist.get("name") or "").strip()
     if not name:
         return ""
     return "_".join(name.lower().split())
+
+
+# ── People (4.6.0) ────────────────────────────────────────────────────
+# docs/specs/people_registry.md §2.2 — the "featuring" line: who commissioned
+# it, whose character it is, who worked on it. Built from the same per-site
+# user-link renderer as the credit, so every site's markup, the DA off-site
+# rule and Bluesky's dotted-handle rule apply for free.
+#
+# The one rule that is NOT the credit's: a person is LINKED on a site only
+# where their handle for that site has `mention` switched on. A `:iconname:`
+# on FA, a `[name]` on Inkbunny, an `@` on Bluesky NOTIFY that person — nine
+# sites in one click, on adult sites, under handles they may keep apart on
+# purpose. Off, the line carries the bare name. Names are free; links are
+# consent. The artist's own credit is not gated this way: crediting the
+# artist is this module's first rule, and a credit is not a tag.
+
+ROLES = ("commissioner", "owner", "collaborator")
+
+# What each site's markup would break on, for a name that is NOT linked.
+_BARE_KIND = {"fa": "bbcode", "ib": "bbcode", "ws": "markdown", "fn": "markdown",
+              "ik": "markdown", "e621": "dtext"}
+
+
+def _mention_ok(person: dict | None, platform: str) -> bool:
+    p = person or {}
+    return bool((p.get("mention") or {}).get(platform)) and bool((p.get("handles") or {}).get(platform))
+
+
+def person_link(person: dict | None, platform: str) -> str:
+    """The person's name — linked in `platform`'s markup where consented, else bare."""
+    name = _flat((person or {}).get("name") or "")
+    if not name:
+        return ""
+    if _mention_ok(person, platform):
+        # Only the same-site handle: a cross-site link from another handle is
+        # not what "mention me on FA" consented to.
+        same = {"name": name, "handles": {platform: person["handles"][platform]}}
+        return _render_link(same, platform, name)
+    return _clean(name, _BARE_KIND.get(platform, "angle"))
+
+
+def _and(items: list[str]) -> str:
+    items = [i for i in items if i]
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def featuring(people: list[dict] | None, platform: str) -> str:
+    """One line, fixed order — `for A · featuring B's X and Y · with C`.
+
+    `people` is ``[{"role", "person": <registry row>, "character"?}]`` as
+    `artwork_reader._people_context` resolves it. Rows with an unknown role or
+    no name are dropped; owners are grouped per person so two characters by
+    one owner read as one clause.
+    """
+    by_role: dict[str, list[dict]] = {r: [] for r in ROLES}
+    for p in people or []:
+        role = (p or {}).get("role")
+        person = (p or {}).get("person") or {}
+        if role not in by_role or not _flat(person.get("name") or ""):
+            continue
+        by_role[role].append(p)
+    parts: list[str] = []
+    if by_role["commissioner"]:
+        parts.append("for " + _and([person_link(p["person"], platform) for p in by_role["commissioner"]]))
+    if by_role["owner"]:
+        groups: dict[str, tuple[dict, list[str]]] = {}
+        for p in by_role["owner"]:
+            k = p["person"].get("key") or _flat(p["person"]["name"])
+            person, chars = groups.setdefault(k, (p["person"], []))
+            ch = _flat(p.get("character") or "")
+            if ch and ch not in chars:
+                chars.append(ch)
+        bits = []
+        for person, chars in groups.values():
+            link = person_link(person, platform)
+            bits.append(f"{link}'s {_and(chars)}" if chars else link)
+        parts.append("featuring " + _and(bits))
+    if by_role["collaborator"]:
+        parts.append("with " + _and([person_link(p["person"], platform) for p in by_role["collaborator"]]))
+    return " · ".join(parts)
+
+
+def append_people(description: str, people: list[dict] | None, platform: str, *,
+                  after_credit: bool = False) -> str:
+    """Description with the featuring line appended — idempotent like `append_to`.
+
+    Not added when the exact line is already there, nor when every named
+    person already appears at a word boundary (a hand-written "drawn for X").
+    `after_credit`: the credit line was just appended, so this one sits
+    directly under it rather than as its own paragraph.
+    """
+    line = featuring(people, platform)
+    if not line:
+        return description
+    desc = description or ""
+    if line in desc:
+        return description
+    names = [_flat(((p or {}).get("person") or {}).get("name") or "") for p in people or []]
+    names = [n for n in names if n]
+    if names and all(re.search(rf"\b{re.escape(n)}\b", desc, re.IGNORECASE) for n in names):
+        return description
+    if not desc.strip():
+        return line
+    return f"{desc.rstrip()}{chr(10) if after_credit else chr(10) * 2}{line}"

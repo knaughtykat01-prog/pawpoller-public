@@ -786,7 +786,11 @@ window.Masterpieces = {
         const _astatus = m.artist_status || '';
         const _nh = Object.keys((_art && _art.handles) || {}).length;
         let artistBody;
-        if (_art && _art.name) {
+        if (_art && _art.name && m.artist_persona_id != null) {
+            // The artist row is one of your personas (4.6.0): when that persona
+            // posts, no "Art by" line goes out and the booru tag is yours.
+            artistBody = `Drawn by <strong>you</strong> <span class="muted">· as ${this.esc(_art.name)}</span>`;
+        } else if (_art && _art.name) {
             artistBody = `Art by <strong>${this.esc(_art.name)}</strong>` +
                 (_nh ? ` <span class="muted">· ${_nh} linked account${_nh === 1 ? '' : 's'}</span>`
                      : ` <span class="muted">· no linked accounts</span>`);
@@ -797,12 +801,25 @@ window.Masterpieces = {
         } else {
             artistBody = `⚠ No artist recorded`;
         }
+        // Everyone else (4.6.0): who commissioned it, whose character it is,
+        // who worked on it — posted as a line under the credit, linked only
+        // where that person's handle for the site has mention switched on.
+        const chips = (m.people || []).map((p, i) => {
+            const label = p.role === 'commissioner' ? `for ${this.esc(p.name)}`
+                : p.role === 'owner' ? `${this.esc(p.name)}'s ${this.esc(p.character || '?')}`
+                : `with ${this.esc(p.name)}`;
+            const linked = Object.keys(p.mention || {}).length;
+            const tip = `${p.role}${p.known === false ? ' · no longer in the registry' : linked ? ` · linked on ${linked} site${linked === 1 ? '' : 's'}` : ' · name only (no mention switched on)'}`;
+            return `<span class="chip mp-person${p.known === false ? ' mp-person--gone' : ''}" title="${this.esc(tip)}">${label}${p.persona_id != null ? ' <span class="ap-you">you</span>' : ''}<button type="button" class="x" data-mp-people-x="${i}" aria-label="Remove ${this.esc(p.name)}">×</button></span>`;
+        }).join('');
         return `
             <div class="mp-artist${(!(_art && _art.name) && !_astatus) ? ' mp-artist--missing' : ''}">
                 <span id="mp-artist-body">${artistBody}</span>
                 <button class="btn btn-sm" data-mp-artist-edit type="button"
                     title="Set who drew this. A name already in the registry fills in every handle that was verified for them.">✎ ${_art && _art.name ? 'Edit' : 'Set'} artist</button>
-            </div>`;
+            </div>
+            <div class="mp-people" id="mp-people">${chips}<button class="tagchip-add" type="button" data-mp-people-add
+                title="Who commissioned it, whose character it is, who worked on it — posted as a line under the credit">+ person</button></div>`;
     },
 
     /* ── Hero (§5.2) ─────────────────────────────────────────────────────── */
@@ -1632,6 +1649,17 @@ window.Masterpieces = {
             if (del) { e.preventDefault(); this._deletePiece(this._current); return; }
             const aedit = e.target.closest('[data-mp-artist-edit]');
             if (aedit) { e.preventDefault(); this._openArtistPicker(); return; }
+            const padd = e.target.closest('[data-mp-people-add]');
+            if (padd) { e.preventDefault(); this._openPeoplePicker(); return; }
+            const px = e.target.closest('[data-mp-people-x]');
+            if (px) {
+                e.preventDefault();
+                const i = Number(px.dataset.mpPeopleX);
+                const cur = ((this._detail || {}).people || []);
+                this._savePeople(this._peopleBody(cur.filter((_, j) => j !== i)),
+                                 `${(cur[i] || {}).name || 'Person'} removed`);
+                return;
+            }
             const tbe = e.target.closest('[data-mp-tbedit]');
             if (tbe) { e.preventDefault(); this._editPlatformTags(tbe.dataset.mpTbedit); return; }
             const foldPick = e.target.closest('[data-mp-fold-pick]');
@@ -2024,23 +2052,80 @@ window.Masterpieces = {
     // same job. It is now the same modal, so "who drew this" and "what is it
     // tagged" are picked the same way.
 
-    _openArtistPicker() {
+    async _openArtistPicker() {
         if (!this._current) return;
         if (!window.ArtistPicker) { this._toast('info', 'Artist picker unavailable'); return; }
         const m = this._detail || {};
+        const personas = await this._loadPersonaList();
         ArtistPicker.open({
             artist: m.artist || null,
             status: m.artist_status || '',
-            onConfirm: ({ artist, status }) => this._saveArtist(artist, status),
+            personas,
+            personaId: m.artist_persona_id != null ? m.artist_persona_id : null,
+            onConfirm: ({ artist, status, persona_id }) => this._saveArtist(artist, status, persona_id),
         });
     },
 
-    async _saveArtist(artist, status) {
+    /* The operator's personas as a LIST, once per page life — "My own work"
+     * asks which of you when there are several (4.6.0).
+     * ⚠ Not `_loadPersonas` / `_personas`: those already exist above — the
+     * Post-as map keyed by id. A duplicate key in this object literal would
+     * silently replace the original method (eslint no-dupe-keys caught it). */
+    async _loadPersonaList() {
+        if (this._personaList) return this._personaList;
+        try {
+            const r = await API.getPersonas();
+            this._personaList = Array.isArray(r) ? r : (r.personas || []);
+        } catch (_) { this._personaList = []; }
+        return this._personaList;
+    },
+
+    /* People (4.6.0): the stored shape from the page's resolved one, dropping
+     * rows whose registry entry is gone (the API refuses unknown keys). */
+    _peopleBody(list) {
+        return (list || []).filter(p => p.known !== false)
+            .map(p => ({ key: p.key, role: p.role, ...(p.character ? { character: p.character } : {}) }));
+    },
+
+    _openPeoplePicker() {
+        if (!this._current) return;
+        if (!window.ArtistPicker) { this._toast('info', 'Picker unavailable'); return; }
+        const m = this._detail || {};
+        ArtistPicker.open({
+            mode: 'person',
+            characters: m.characters || [],
+            onConfirm: ({ person, role, character }) => {
+                const next = this._peopleBody(m.people);
+                if (next.some(p => p.key === person.key && p.role === role && (p.character || '') === (character || ''))) {
+                    this._toast('info', `${person.name} is already there`); return;
+                }
+                next.push({ key: person.key, role, ...(character ? { character } : {}) });
+                this._savePeople(next, `${person.name} added`);
+            },
+        });
+    },
+
+    async _savePeople(next, msg) {
+        if (!this._current) return;
+        try {
+            await API.patchMasterpiece(this._current, { people: next });
+            this._toast('success', msg || 'Saved');
+            await this.renderDetail(this._current);
+        } catch (err) {
+            this._toast('error', 'Could not save people: ' + (err.message || err));
+        }
+    },
+
+    async _saveArtist(artist, status, personaId) {
         if (!this._current) return;
         try {
             // Both fields always travel: choosing an artist has to clear a stale
             // "my own work", and choosing "my own work" has to clear the artist.
-            await API.patchMasterpiece(this._current, { artist, artist_status: status || '' });
+            // "My own work" with a persona chosen upgrades to that persona's
+            // person row server-side (4.6.0) when one exists.
+            const body = { artist, artist_status: status || '' };
+            if (status === 'own' && personaId != null) body.own_persona_id = personaId;
+            await API.patchMasterpiece(this._current, body);
             this._toast('success',
                 artist ? `Artist set to ${artist.name}`
                 : status === 'own' ? 'Marked as your own work'
