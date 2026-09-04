@@ -2248,42 +2248,15 @@ a.stat-card:hover {
 .det-panel { display: none; }
 .det-panel.is-active { display: block; }
 
-/* ── Story Detail Page ─────────────────────────────────────── */
-/* The detail info card overrides the default .card padding so the cover
-   image can run edge-to-edge. Body padding is restored by .story-detail-info-body,
-   which always wraps the actual content (renderStoryDetail emits it
-   unconditionally — empty cover just means no .story-detail-cover sibling). */
-.story-detail-info { margin-bottom: 14px; padding: 0; overflow: hidden; }
-.story-detail-info h2 { margin: 0 0 4px; }
-.story-detail-cover { height: 200px; background-size: cover; background-position: center; border-bottom: 1px solid var(--border); }
-.story-detail-info-body { padding: 16px; }
-/* Compact hero: when there's a cover, sit it beside the body instead of a
-   full-width banner above — saves ~200px of vertical scroll on wide screens.
-   No cover → the plain stacked card (no empty column). */
-@media (min-width: 720px) {
-    .story-detail-info--hascover { display: grid; grid-template-columns: 210px 1fr; }
-    .story-detail-info--hascover .story-detail-cover {
-        height: 100%; min-height: 210px;
-        border-bottom: none; border-right: 1px solid var(--border);
-    }
-}
-.story-detail-meta { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0; font-size: 0.9rem; color: var(--text-secondary); align-items: center; }
-.story-detail-desc { color: var(--text-secondary); line-height: 1.5; margin-top: 8px; }
-.story-detail-summary { margin-top: 10px; padding: 10px 12px; background: var(--bg-tertiary); border-left: 3px solid var(--accent-dim); border-radius: var(--radius-sm); color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5; }
-.story-detail-summary strong { color: var(--text-primary); }
-.story-detail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+/* ── Story chips (the story board's hero and the editor use these) ── */
+/* The tabbed story page's own rules (.story-detail-*, the totals strip, the
+   pending-queue callout, the pub rows, the tags accordion, the sparkline)
+   went with the page in 4.5.0 — the story board is styled by board.css. */
 .chip { font-size: 0.75rem; padding: 3px 9px; border-radius: var(--radius-pill); background: var(--bg-tertiary); color: var(--text-secondary); }
 .chip-character { border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); }
 .chip-relationship { border: 1px solid rgba(90,224,160,0.25); color: var(--success); }
-.story-warnings { color: var(--warning); font-size: 0.9rem; margin: 4px 0; }
 .back-link { display: inline-block; margin-bottom: 12px; color: var(--text-muted); text-decoration: none; font-size: 0.9rem; }
 .back-link:hover { color: var(--text-primary); }
-
-/* Cross-platform totals strip */
-.totals-strip { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 16px; }
-.totals-stat { flex: 1; min-width: 110px; display: flex; flex-direction: column; align-items: flex-start; padding: 6px 0; }
-.totals-value { font-size: 1.4rem; font-weight: 600; color: var(--text-primary); line-height: 1.1; }
-.totals-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
 
 /* Chapters list */
 .chapter-entry { padding: 6px 0; border-bottom: 1px solid var(--border); }
@@ -2294,36 +2267,13 @@ a.stat-card:hover {
 .chapter-words { color: var(--text-muted); font-size: 0.8rem; }
 .chapter-desc { font-size: 0.82rem; color: var(--text-muted); line-height: 1.45; margin: 4px 0 2px 45px; font-style: italic; }
 
-/* Publication rows */
-.pub-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; flex-wrap: wrap; }
-.pub-row:last-child { border-bottom: none; }
-.pub-platform { min-width: 100px; font-weight: 500; }
-.pub-chapter { color: var(--text-muted); min-width: 40px; }
-.pub-stats { color: var(--text-secondary); font-size: 0.8rem; }
-.pub-date { color: var(--text-muted); font-size: 0.8rem; cursor: help; }
-.pub-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
-.pub-actions a { font-size: 0.8rem; }
-.update-count-badge { font-size: 0.7rem; padding: 2px 7px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); cursor: help; }
 .upload-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
-
-/* Pending queue callout */
-.pending-queue-card { border-left: 3px solid var(--accent); }
-.pending-queue-list { list-style: none; padding: 0; margin: 8px 0 0; }
-.pending-queue-list li { padding: 4px 0; font-size: 0.88rem; color: var(--text-secondary); }
-.pending-queue-list .muted { color: var(--text-muted); font-size: 0.8rem; margin-left: 4px; }
 
 /* Change-detection badges */
 .change-badge { font-size: 0.7rem; padding: 2px 8px; border-radius: var(--radius-pill); cursor: help; font-weight: 500; }
 .change-drift { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent); }
 .change-missing { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 .change-unknown { background: color-mix(in srgb, var(--text-muted) 15%, transparent); color: var(--text-muted); }
-
-/* Top fans inline strip on IB pub rows */
-.pub-row-wrapper { padding: 8px 0; border-bottom: 1px solid var(--border); }
-.pub-row-wrapper:last-child { border-bottom: none; }
-.pub-row-wrapper .pub-row { border-bottom: none; padding: 0; }
-.pub-fans { font-size: 0.78rem; color: var(--text-muted); margin: 4px 0 0 110px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.fan-chip { padding: 1px 7px; border-radius: var(--radius-pill); background: var(--bg-tertiary); color: var(--text-secondary); font-size: 0.72rem; }
 
 /* Recent activity log */
 .log-row { padding: 8px 0; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 100px 1fr auto; gap: 10px; align-items: baseline; font-size: 0.85rem; }
@@ -2335,18 +2285,9 @@ a.stat-card:hover {
 .log-failed .log-status { color: var(--danger); }
 .log-error { grid-column: 2 / -1; font-size: 0.78rem; color: var(--danger); margin-top: 2px; cursor: help; }
 
-/* Per-platform tags accordion */
-.tags-platform { margin: 8px 0; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
-.tags-platform summary { padding: 8px 12px; background: var(--bg-tertiary); cursor: pointer; font-size: 0.9rem; user-select: none; }
-.tags-platform summary:hover { background: var(--bg-card); }
-.tags-platform[open] summary { border-bottom: 1px solid var(--border); }
-.tag-count { color: var(--text-muted); font-size: 0.8rem; margin-left: 4px; }
-.tag-list { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 12px; }
+/* .tag-pill stays: the metadata editor's tag lists use it. */
 .tag-pill { font-size: 0.72rem; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border); }
 
-/* Inline sparkline on pub rows */
-.pub-spark { display: inline-flex; align-items: center; color: var(--accent); opacity: 0.85; min-width: 100px; }
-.pub-spark .sparkline { display: block; }
 
 /* Best-performer crown badge */
 .best-badge { font-size: 0.95rem; margin-right: 4px; cursor: help; }

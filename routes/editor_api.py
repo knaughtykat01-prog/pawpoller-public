@@ -2679,6 +2679,56 @@ async def get_metadata(story_name: str):
     }
 
 
+# The sites a story can be posted to whose tag limits matter (4.5.0, C2 spec
+# §6.6.1). ⚠ NOT masterpieces_api._PREVIEW_PLATFORMS: that is the ART list — it
+# carries e621, Itaku and Furbooru, which take no stories, and omits AO3 and
+# Wattpad, the two whose limits actually bite a story.
+_STORY_PREVIEW_PLATFORMS = ("ao3", "sqw", "sf", "fa", "ib", "ws", "wp")
+# story.json may name a site by its long key; story_reader maps these the same way.
+_STORY_LONG_KEYS = {"ib": "inkbunny", "fa": "furaffinity", "ws": "weasyl", "sf": "sofurry",
+                    "sqw": "squidgeworld", "wp": "wattpad"}
+
+
+@editor_router.get("/stories/{story_name:path}/tag-preview")
+async def story_tag_preview(story_name: str):
+    """What each site will actually receive as tags for this story, and what it
+    loses — the story twin of the masterpiece route, in the same shape so one
+    renderer serves both pages.
+
+    A story has no core/auxiliary split, so ``core_count`` is always 0; the key
+    is returned anyway because two shapes would mean two renderers.
+    """
+    from posting import tag_budget
+
+    story_dir = _resolve_story_dir(story_name)
+    sj = story_dir / "story.json"
+    if not sj.is_file():
+        raise HTTPException(status_code=404, detail="story.json not found")
+    try:
+        data = json.loads(sj.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Invalid JSON in story.json: {e}")
+    raw = data.get("tags") if isinstance(data.get("tags"), dict) else {}
+    canonical = [str(t) for t in (raw.get("default") or []) if str(t).strip()]
+
+    rows = []
+    for code in _STORY_PREVIEW_PLATFORMS:
+        override = raw.get(code)
+        if not isinstance(override, list):
+            override = raw.get(_STORY_LONG_KEYS.get(code, ""))
+        has_override = isinstance(override, list)
+        source = [str(t) for t in override] if has_override else canonical
+        # An override is posted verbatim — the user saying "exactly these" — so
+        # it is reported as-is rather than re-trimmed behind their back.
+        p = (tag_budget.preview(source, code) if not has_override else {
+            "platform": code, "limit": tag_budget.describe(code),
+            "sent": len(source), "total": len(source), "dropped": [],
+            "chars": len(" ".join(source))})
+        p["override"] = has_override
+        rows.append(p)
+    return {"name": story_name, "canonical": canonical, "core_count": 0, "platforms": rows}
+
+
 @editor_router.put("/stories/{story_name:path}/metadata")
 async def save_metadata(story_name: str, req: MetadataSaveRequest):
     """Save the story's story.json with backup + optimistic concurrency check."""

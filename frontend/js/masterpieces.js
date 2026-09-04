@@ -25,7 +25,7 @@ window.Masterpieces = {
     // 'da' is here for ARTWORK only — DeviantArt edits literature fine, but its
     // API has no image-deviation update. This table is artwork-only, so the
     // badge is correct here and must NOT be copied to the story matrix.
-    _POST_ONLY: new Set(['bsky', 'ig', 'fn', 'da', 'tg']),
+    _POST_ONLY: new Set(['bsky', 'ig', 'fn', 'da', 'tg', 'tw']),
 
     /* Drop the list cache so the next grid render refetches (called on each
        Library open by bookshelf.render). Also leaves the junk-bin view, so a
@@ -679,26 +679,62 @@ window.Masterpieces = {
         catch (e) { return ''; }
     },
 
+    /* The page is a COMPOSITION (4.4.0, C2 spec §6.2): a hero and three
+     * columns of cards, each card a small renderer returning a string. The ids
+     * and data-* names that _init()'s delegate and the four post-paint fills
+     * depend on are unchanged — the markup around them moved, the names did
+     * not (spec §2, §4). The SFW blur keys on `img.mp-hero-img[data-rating]`
+     * and `.mp-alts[data-rating]` (app.js / safe_mode.css); _heroHtml emits
+     * both byte-for-byte. */
     _paintDetail(name, m) {
         const root = document.getElementById('mp-detail');
         if (!root) return;
         // Kept for the delegated handlers (_applyOverrides needs the existing
         // per-platform tag map so an override doesn't clobber the others).
         this._detail = m;
+        const v = this._detailView(name, m);
 
-        const t = m.totals || {};
+        root.innerHTML = `
+            <div class="board-wrap">
+                ${this._heroHtml(name, m, v)}
+                <div class="board">
+                    <div class="board-col">${this._canonicalHtml(name, m)}${this._tagsHtml(m)}${this._budgetHtml()}</div>
+                    <div class="board-col">${this._publishHtml(m)}${this._linkHtml()}${this._foldHtml()}</div>
+                    <div class="board-col board-col--3">${this._locationsHtml(m)}${this._growthHtml()}${this._bestHtml(m)}${this._rendersHtml(name, m, v)}</div>
+                </div>
+            </div>`;
+
+        // Open on the selected render (2.193.0) — patched after innerHTML because
+        // the chip list, and therefore the selection, is computed after `hero`.
+        if (v.mainUrl && v.mainUrl !== v.heroUrl) {
+            const heroImg = document.getElementById('mp-hero-img');
+            const bg = document.getElementById('mp-stage-bg');
+            if (heroImg) heroImg.src = v.mainUrl;
+            if (bg) bg.src = v.mainUrl;
+        }
+
+        // The post-paint fills, as before: the shared platform rows, the
+        // same-image suggestions, the per-site tag budget (which also styles
+        // the chips), the combined chart (≥ 2 points). Chips render at once
+        // from the textarea so the tags are never blank while the budget loads.
+        this._wireDetailPublish(name, m);
+        this._loadSuggestions();
+        this._tagChips();
+        this._loadTagBudget();
+        this._loadChart(name);
+        this._foldTarget = null;      // reset the "fold into" choice per detail open
+    },
+
+    /* The values several renderers share: which render is selected, its URL,
+     * the rating that drives the SFW blur. Computed once. */
+    _detailView(name, m) {
         const heroUrl = this._canonUrl(name, m.image);
-        const _mpRating = this.esc((m.rating || '').toLowerCase());  // drives SFW blur
-        // NB: the hero <img> src is patched to the selected variant below (mainUrl
-        // is computed after the chips), so a '?v=' deep link opens on that render.
-        const hero = heroUrl
-            ? `<img class="mp-hero-img" id="mp-hero-img" data-rating="${_mpRating}" src="${this.esc(heroUrl)}" alt="${this.esc(m.title || name)}">`
-            : `<div class="mp-hero-ph">🖼️</div>`;
+        const rating = this.esc((m.rating || '').toLowerCase());  // drives SFW blur
+        const imgs = m.images || [];
+        const variants = m.variants || [];
         // Variant chips (2.158.0): declared variants render labeled with their OWN
         // stats (the cohort total stays in the headline); pieces without declared
         // variants fall back to the 2.152 unlabeled gallery of folder images.
-        const imgs = m.images || [];
-        const variants = m.variants || [];
         const chips = variants.length
             ? variants.map(v => ({
                 u: this._canonUrl(name, v.image),
@@ -715,87 +751,17 @@ window.Masterpieces = {
             const i = variants.findIndex(v => (v.key || '') === wantKey);
             if (i >= 0) selIdx = i;
         }
-        const gallery = chips.length > 1
-            ? `<div class="mp-alts" data-rating="${_mpRating}">${chips.map((c, i) => `
-                <div class="mp-altwrap${i === selIdx ? ' is-active' : ''}" data-mp-img="${this.esc(c.u)}"
-                     data-vstats="${this.esc(c.st)}" role="button" tabindex="0">
-                    <img class="mp-alt" src="${this.esc(c.u)}" alt="" loading="lazy">
-                    <div class="mp-alt-label">${this.esc(c.label)}</div>
-                </div>`).join('')}</div>`
-            : '';
-        const vstatsLine = chips.length > 1
-            ? `<div class="mp-vstats muted" id="mp-vstats">${this.esc(chips[selIdx].st)}</div>` : '';
-        // The selected render drives the stage image AND the ambient backdrop, so
-        // a deep-linked variant doesn't open behind the hero's blur.
         const mainUrl = (chips[selIdx] && chips[selIdx].u) || heroUrl;
         const selLabel = selIdx > 0 && chips[selIdx] ? chips[selIdx].label : '';
-        // Variant manager (2.189.0). The chips above are a VIEWER; this is where
-        // you rename one or separate it back out into its own Masterpiece.
-        // Only for declared variants — unlabeled 2.152 alts have nothing to manage.
-        // Rows for DECLARED variants (2.189.0) — rename or separate.
-        const declaredRows = !variants.length ? '' : `
-                    ${variants.map(v => {
-                        const isPrimary = !v.key;
-                        const sites = (v.member_count || 0);
-                        return `<div class="mp-vrow" data-vkey="${this.esc(v.key)}">
-                            <span class="mp-vname">${this.esc(v.label || v.key || 'Primary')}${isPrimary
-                                ? ' <span class="muted mp-vprimary">primary</span>'
-                                : ` <code class="mp-vkey" title="Internal key — set when the variant was created and kept on rename, so it can differ from the label">${this.esc(v.key)}</code>`}</span>
-                            <span class="muted mp-vmeta">${sites} site${sites === 1 ? '' : 's'}</span>
-                            <span class="mp-vacts">
-                                <button class="btn btn-sm" type="button" data-mp-vrename="${this.esc(v.key)}"
-                                    title="Rename this variant">&#9998; Rename</button>
-                                ${isPrimary ? '' : `<button class="btn btn-sm" type="button" data-mp-vsplit="${this.esc(v.key)}"
-                                    title="Separate this variant into its own Masterpiece — its image and site-links go with it">&#10548; Separate</button>`}
-                            </span>
-                        </div>`;
-                    }).join('')}`;
-        // Rows for UNDECLARED alts (3.36.0). A multi-image import attaches every
-        // image from one source post to a single record, so these chips can be
-        // entirely different artworks — but with no `variants` entry there was
-        // nothing to act on and this panel never rendered at all. They get the
-        // same Separate, which declares + splits server-side in one call.
-        const altRows = (!variants.length && imgs.length > 1) ? `
-                    ${imgs.slice(1).map((f, i) => `<div class="mp-vrow" data-vimage="${this.esc(f)}">
-                        <span class="mp-vname">Alt ${i + 1} <code class="mp-vkey"
-                            title="The file in this piece's folder">${this.esc(f)}</code></span>
-                        <span class="muted mp-vmeta">no site links of its own</span>
-                        <span class="mp-vacts">
-                            <button class="btn btn-sm" type="button" data-mp-isplit="${this.esc(f)}"
-                                title="Separate this image into its own Masterpiece — this piece keeps its links and stats">&#10548; Separate</button>
-                        </span>
-                    </div>`).join('')}` : '';
-        const manageNote = variants.length
-            ? `Separating undoes a variant merge: the image moves to a new
-                    Masterpiece and its site-links follow, keeping their stats.`
-            : `These extra images came in together from one source post, so some may be
-                    different pieces entirely. Separating moves one into its own Masterpiece;
-                    this piece keeps every site link and stat, because none of them belong to
-                    the alt. The new record is hashed, so “Link the same image elsewhere” can
-                    find its real uploads.`;
-        const manageCount = variants.length || imgs.length;
-        const variantAdmin = (declaredRows || altRows) ? `
-            <details class="mp-vadmin">
-                <summary class="mp-vadmin-sum">Manage variants <span class="muted">(${manageCount})</span></summary>
-                <div class="mp-vadmin-body">${declaredRows}${altRows}
-                    <p class="muted mp-vadmin-note">${manageNote}</p>
-                </div>
-            </details>` : '';
-        const rating = m.rating ? `<span class="${this._ratingCls(m.rating)}">${this.esc(m.rating)}</span>` : '';
-        const personas = this._personaChips(m.persona_ids);
-        const isJunk = m.status === 'junk';
-        const junkBadge = isJunk
-            ? `<span class="mp-role" title="Hidden from the grid — restore to bring it back">🗑 junk</span>` : '';
-        const junkBtn = `<button class="btn btn-sm" data-mp-junk data-junk="${isJunk ? '' : 'junk'}" type="button"
-            title="${isJunk ? 'Put this back in the Masterpieces grid'
-                : 'Hide from the grid without deleting — the folder and site-links are kept'}">
-            ${isJunk ? '♻ Restore' : '🗑 Junk'}</button>`;
+        return { heroUrl, rating, imgs, variants, chips, selIdx, mainUrl, selLabel, isJunk: m.status === 'junk' };
+    },
 
-        // Canonical tags = core + auxiliary, in that order (core carries the
-        // 20-25 that platforms with a tag budget actually receive; auxiliary is
-        // the long tail). `default` is the pre-split flat list, still read so
-        // folders that haven't been re-saved keep working. Falls back to the
-        // union across platforms if a work only has per-platform lists.
+    /* Canonical tags = core + auxiliary, in that order (core carries the 20-25
+     * that platforms with a tag budget actually receive; auxiliary is the long
+     * tail). `default` is the pre-split flat list, still read so folders that
+     * haven't been re-saved keep working. Falls back to the union across
+     * platforms if a work only has per-platform lists. */
+    _canonicalTagList(m) {
         const ct = m.canonical_tags || {};
         const seenTag = new Set();
         let tagList = [];
@@ -807,66 +773,15 @@ window.Masterpieces = {
             Object.values(ct).forEach(arr => (arr || []).forEach(x => seen.add(x)));
             tagList = [...seen];
         }
-        const curRating = (m.rating || '').toLowerCase();
-        const ratingOpts = ['general', 'mature', 'adult'].map(r =>
-            `<option value="${r}"${curRating === r ? ' selected' : ''}>${r[0].toUpperCase() + r.slice(1)}</option>`).join('');
-        const charsStr = (m.characters || []).join(', ');
-        const tagsStr = tagList.join(', ');
+        return tagList;
+    },
 
-        // Locations ("Published to") — one row per linked site-upload.
-        const locs = m.locations || [];
-        const locRows = locs.map(l => {
-            const p = this._plat(l.platform);
-            const st = l.stats || {};
-            const thumbUrl = this._thumbSrc(l.platform, l.thumbnail_url);
-            const thumb = thumbUrl
-                ? `<img class="mp-loc-thumb" src="${this.esc(thumbUrl)}" alt="" loading="lazy">`
-                : `<span class="mp-loc-thumb mp-loc-thumb--none"></span>`;
-            const roleCls = l.role === 'primary' ? 'mp-role mp-role--primary' : 'mp-role';
-            const role = l.role ? `<span class="${roleCls}">${this.esc(l.role)}</span>` : '';
-            // Platforms whose poster can't edit in place are Sync-exempt (§0-A1).
-            const postOnly = this._POST_ONLY.has(l.platform)
-                ? `<span class="mp-role mp-role--postonly" title="This site can't be edited in place — re-post to update">post-only</span>` : '';
-            const safe = window.Utils && Utils.safeUrl ? Utils.safeUrl(l.url) : l.url;
-            const link = safe ? `<a href="${this.esc(safe)}" target="_blank" rel="noopener">open&nbsp;&#8599;</a>` : '';
-            const title = l.title ? `<div class="muted" style="font-size:.8rem">${this.esc(l.title)}</div>` : '';
-            const detach = `<button class="mp-loc-detach" title="Unlink this upload from the Masterpiece"
-                data-mp-detach data-platform="${this.esc(l.platform)}" data-sid="${this.esc(l.submission_id)}">✕</button>`;
-            return `
-                <tr>
-                    <td>${thumb}</td>
-                    <td><span class="mp-loc-plat">${p.emoji || ''} ${this.esc(p.label)}</span> ${role}${postOnly}${title}</td>
-                    <td>${this._fmt(st.views)}</td>
-                    <td>${this._fmt(st.favorites)}</td>
-                    <td>${this._fmt(st.comments)}</td>
-                    <td>${link}</td>
-                    <td>${detach}</td>
-                </tr>`;
-        }).join('');
-        const locTable = locs.length
-            ? `<table class="mp-loc-table">
-                    <thead><tr><th></th><th>Platform</th><th>Views</th><th>Faves</th><th>Comments</th><th></th><th></th></tr></thead>
-                    <tbody>${locRows}</tbody>
-               </table>`
-            // "Phase 4" was a forward reference to work that shipped in 2.128.0
-            // — publishing has auto-linked since then (`manager.post_artwork`
-            // upserts a member on each successful post). Left in place it read
-            // as "not built yet", which is the opposite of true, and an internal
-            // phase number means nothing to whoever is looking at this screen.
-            : `<div class="mp-empty">No linked uploads yet — use <strong>Link the same image elsewhere</strong>
-               below to attach this image's copies on other sites. Publishing to a platform links it
-               automatically, so this fills in on its own as you post.</div>`;
-
-        // Attribution line (3.5.2). Almost every piece here is someone else's
-        // work, and the credit posted to each site is built from this field —
-        // so its absence is a warning, not a blank. `author` is the posting
-        // persona and is a different thing entirely.
-        //
-        // 3.10.0 — this is now EDITABLE, and "no artist" is three states rather
-        // than one warning. Before, the only way to fix a missing credit was to
-        // hand-edit masterpiece.json on the server (which is what this line
-        // used to tell you to do), and a piece the account holder drew himself
-        // warned forever because nothing could say "there is nobody to credit".
+    /* Attribution line (3.5.2). Almost every piece here is someone else's
+     * work, and the credit posted to each site is built from this field — so
+     * its absence is a warning, not a blank. `author` is the posting persona
+     * and is a different thing entirely. 3.10.0 — editable, and "no artist" is
+     * three states rather than one warning. */
+    _artistLineHtml(m) {
         const _art = m.artist || null;
         const _astatus = m.artist_status || '';
         const _nh = Object.keys((_art && _art.handles) || {}).length;
@@ -882,61 +797,95 @@ window.Masterpieces = {
         } else {
             artistBody = `⚠ No artist recorded`;
         }
-        const artistLine = `
+        return `
             <div class="mp-artist${(!(_art && _art.name) && !_astatus) ? ' mp-artist--missing' : ''}">
                 <span id="mp-artist-body">${artistBody}</span>
                 <button class="btn btn-sm" data-mp-artist-edit type="button"
                     title="Set who drew this. A name already in the registry fills in every handle that was verified for them.">✎ ${_art && _art.name ? 'Edit' : 'Set'} artist</button>
-            </div>
-            `;
+            </div>`;
+    },
 
-        root.innerHTML = `
-            <div class="mp-detail-head">
-                ${heroUrl ? `<img class="mp-stage-bg" id="mp-stage-bg" src="${this.esc(heroUrl)}" alt="" aria-hidden="true">` : ''}
-                <div class="mp-hero-col"><div class="mp-hero">${hero}</div>${gallery}${vstatsLine}${variantAdmin}
-                    <div class="mp-hero-actions">
-                        <label class="btn btn-sm" title="Swap in a better/higher-res version — keeps this record, its tags and every site link. The old file stays as a gallery alternate.">
-                            ⇪ Replace image
-                            <input type="file" id="mp-replace-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
-                        </label>
-                        <label class="btn btn-sm" title="Upload another render (SFW/NSFW/rough…) straight in as a labeled variant of this piece.">
-                            ＋ Add variant
-                            <input type="file" id="mp-addvariant-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
-                        </label>
-                        <span id="mp-replace-msg" class="muted"></span>
+    /* ── Hero (§5.2) ─────────────────────────────────────────────────────── */
+    _heroHtml(name, m, v) {
+        const t = m.totals || {};
+        const hero = v.heroUrl
+            ? `<img class="mp-hero-img" id="mp-hero-img" data-rating="${v.rating}" src="${this.esc(v.heroUrl)}" alt="${this.esc(m.alt_text || m.title || name)}">`
+            : `<div class="mp-hero-ph">🖼️</div>`;
+        // The tile is a BUTTON so the full-size render is reachable without a
+        // mouse (§13). The lightbox reads the CURRENT hero src, so it follows
+        // the selected variant.
+        const tile = v.heroUrl
+            ? `<button type="button" class="board-hero-tile" data-mp-lightbox title="Open full size">${hero}</button>`
+            : `<div class="board-hero-tile">${hero}</div>`;
+        const gallery = v.chips.length > 1
+            ? `<div class="mp-alts" data-rating="${v.rating}">${v.chips.map((c, i) => `
+                <div class="mp-altwrap${i === v.selIdx ? ' is-active' : ''}" data-mp-img="${this.esc(c.u)}"
+                     data-vstats="${this.esc(c.st)}" role="button" tabindex="0" title="${this.esc(c.label)}">
+                    <img class="mp-alt" src="${this.esc(c.u)}" alt="" loading="lazy">
+                    <div class="mp-alt-label">${this.esc(c.label)}</div>
+                </div>`).join('')}</div>`
+            : '';
+        const vstatsLine = v.chips.length > 1
+            ? `<div class="mp-vstats muted" id="mp-vstats">${this.esc(v.chips[v.selIdx].st)}</div>` : '';
+        const rating = m.rating ? `<span class="${this._ratingCls(m.rating)}">${this.esc(m.rating)}</span>` : '';
+        const personas = this._personaChips(m.persona_ids);
+        const liveN = (m.locations || []).length;
+        const livePill = liveN ? `<span class="pill pill--live">live on ${liveN}</span>` : '';
+        const junkBadge = v.isJunk
+            ? `<span class="mp-role" title="Hidden from the grid — restore to bring it back">🗑 junk</span>` : '';
+        const junkBtn = `<button class="btn btn-sm" data-mp-junk data-junk="${v.isJunk ? '' : 'junk'}" type="button"
+            title="${v.isJunk ? 'Put this back in the Masterpieces grid'
+                : 'Hide from the grid without deleting — the folder and site-links are kept'}">
+            ${v.isJunk ? '♻ Restore' : '🗑 Junk'}</button>`;
+        const firstPosted = m.first_posted
+            ? `<div class="mp-firstposted muted" title="${m.first_posted_source === 'title'
+                ? 'Matched to a site upload by its title — link the upload to confirm'
+                : 'The date the Library sorts this piece by'}">First posted ${m.first_posted_source === 'title' ? '≈ ' : ''}${Utils.formatDate(m.first_posted)}</div>`
+            : `<div class="mp-firstposted muted" title="No site upload linked, so no post date — the Library sorts it by when it was added">Not posted anywhere PawPoller knows of</div>`;
+        return `
+            <div class="board-hero">
+                ${v.heroUrl ? `<img class="mp-stage-bg board-hero-bg" id="mp-stage-bg" src="${this.esc(v.heroUrl)}" alt="" aria-hidden="true">` : ''}
+                ${tile}
+                <div class="board-hero-mid">
+                    <h1 class="mp-title">${this.esc(m.title || name)}${v.selLabel
+                        ? ` <span class="muted mp-selvariant" style="font-weight:400;font-size:.75em">— ${this.esc(v.selLabel)}</span>`
+                        : ''}</h1>
+                    ${this._artistLineHtml(m)}
+                    ${firstPosted}
+                    <div class="chip-rows">
+                        <div class="chip-row">${rating}${livePill}${junkBadge}${personas ? `<span class="mp-personas">${personas}</span>` : ''}</div>
+                        ${gallery ? `<div class="chip-row">${gallery}${vstatsLine}</div>` : ''}
+                    </div>
+                    <div class="board-stats">
+                        <div class="n">${this._fmt(t.views)}<small>Views</small></div>
+                        <div class="n">${this._fmt(t.favorites)}<small>Favourites</small></div>
+                        <div class="n">${this._fmt(t.comments)}<small>Comments</small></div>
+                        <div class="n">${t.locations || 0}<small>Sites</small></div>
                     </div>
                 </div>
-                <div class="mp-head-info">
-                    <div class="mp-title">${this.esc(m.title || name)}${selLabel
-                        ? ` <span class="muted mp-selvariant" style="font-weight:400;font-size:.75em">— ${this.esc(selLabel)}</span>`
-                        : ''}</div>
-                    ${artistLine}
-                    ${m.first_posted
-                        ? `<div class="mp-firstposted muted" title="${m.first_posted_source === 'title'
-                            ? 'Matched to a site upload by its title — link the upload to confirm'
-                            : 'The date the Library sorts this piece by'}">First posted ${m.first_posted_source === 'title' ? '≈ ' : ''}${Utils.formatDate(m.first_posted)}</div>`
-                        : `<div class="mp-firstposted muted" title="No site upload linked, so no post date — the Library sorts it by when it was added">Not posted anywhere PawPoller knows of</div>`}
-                    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">${rating}${junkBadge}
-                        ${personas ? `<span class="mp-personas">${personas}</span>` : ''}
-                        <button class="btn btn-sm" data-add-collection data-mtype="masterpiece"
-                            data-mref="${this.esc(name)}" data-label="${this.esc(m.title || name)}"
-                            title="Bundle this piece (with its companion story / announcement posts) into a Collection">＋ Add to Collection</button>
-                        ${junkBtn}
-                        <button class="btn btn-sm btn-danger" data-mp-delete type="button"
-                            title="Delete this piece from your library. Already-published posts stay live on each platform. Prefer 🗑 Junk if you only want it out of the grid.">Delete</button></div>
-                    <div class="mp-headline">
-                        <div class="mp-headline-item"><span class="mp-headline-num">${this._fmt(t.views)}</span><span class="mp-headline-label">Views</span></div>
-                        <div class="mp-headline-item"><span class="mp-headline-num">${this._fmt(t.favorites)}</span><span class="mp-headline-label">Favorites</span></div>
-                        <div class="mp-headline-item"><span class="mp-headline-num">${this._fmt(t.comments)}</span><span class="mp-headline-label">Comments</span></div>
-                        <div class="mp-headline-item"><span class="mp-headline-num">${t.locations || 0}</span><span class="mp-headline-label">Sites</span></div>
-                    </div>
+                <div class="board-hero-actions">
+                    <button class="btn btn-sm btn-primary" data-mp-sync type="button"
+                        title="Push this record to every editable site (metadata only — never re-uploads the image)">↑ Sync to sites</button>
+                    <button class="btn btn-sm" data-add-collection data-mtype="masterpiece"
+                        data-mref="${this.esc(name)}" data-label="${this.esc(m.title || name)}"
+                        title="Bundle this piece (with its companion story / announcement posts) into a Collection">＋ Add to Collection</button>
+                    <div class="pair">${junkBtn}<button class="btn btn-sm btn-danger" data-mp-delete type="button"
+                        title="Delete this piece from your library. Already-published posts stay live on each platform. Prefer 🗑 Junk if you only want it out of the grid.">Delete</button></div>
                 </div>
-            </div>
+            </div>`;
+    },
 
-            <div class="mp-section">
-                <div class="mp-section-title">Canonical record
-                    <span class="muted" style="font-weight:400;font-size:.8rem">— edit once, then sync to every editable site</span>
-                </div>
+    /* ── Column 1 — the record (§5.3) ───────────────────────────────────── */
+    _canonicalHtml(name, m) {
+        const curRating = (m.rating || '').toLowerCase();
+        const ratingOpts = ['general', 'mature', 'adult'].map(r =>
+            `<option value="${r}"${curRating === r ? ' selected' : ''}>${r[0].toUpperCase() + r.slice(1)}</option>`).join('');
+        const charsStr = (m.characters || []).join(', ');
+        return `
+            <section class="card" aria-labelledby="mp-sec-canon">
+                <div class="sec-title"><h2 id="mp-sec-canon">Canonical record</h2>
+                    <button class="btn btn-primary btn-sm" data-mp-save type="button">Save</button></div>
+                <p class="sec-note">Edit once, then sync to every editable site.</p>
                 <div class="mp-edit">
                     <label class="mp-field"><span>Title</span>
                         <input class="mp-input" id="mp-e-title" value="${this.esc(m.title || '')}"></label>
@@ -952,37 +901,62 @@ window.Masterpieces = {
                         <label class="mp-field"><span>Characters <span class="muted">(comma-separated)</span></span>
                             <input class="mp-input" id="mp-e-chars" value="${this.esc(charsStr)}"></label>
                     </div>
-                    <label class="mp-field"><span>Tags <span class="muted">(canonical — tag it fully; each site takes what it can)</span>
-                            <button class="btn btn-sm" data-mp-tagbrowse type="button">🏷️ Browse</button></span>
-                        <input class="mp-input" id="mp-e-tags" value="${this.esc(tagsStr)}"></label>
-                    <!-- What each site actually receives (3.12.0). Without this a
-                         budget quietly eating 40 tags on DeviantArt looks exactly
-                         like a work that was only tagged twice. -->
-                    <div id="mp-tagbudget" class="mp-tagbudget"></div>
-                    <div class="mp-edit-actions">
-                        <button class="btn btn-primary btn-sm" data-mp-save type="button">Save canonical</button>
-                        <button class="btn btn-sm" data-mp-sync type="button"
-                            title="Push this record to every editable site (metadata only — never re-uploads the image)">↑ Sync to sites</button>
-                        <span class="mp-edit-msg muted" id="mp-edit-msg"></span>
+                    <div class="mp-edit-actions"><span class="mp-edit-msg muted" id="mp-edit-msg"></span></div>
+                </div>
+            </section>`;
+    },
+
+    /* Tags as chips — a VIEW over #mp-e-tags (§5.3). The hidden textarea keeps
+     * holding the comma list, so _readCanonical and _saveCanonical are
+     * unchanged; chips edit it and re-render. */
+    _tagsHtml(m) {
+        const tagList = this._canonicalTagList(m);
+        return `
+            <section class="card" aria-labelledby="mp-sec-tags">
+                <div class="sec-title"><h2 id="mp-sec-tags">Tags</h2>
+                    <button class="btn btn-sm btn-browse" data-mp-tagbrowse type="button" title="Pick from the tag library">🏷️ Browse library</button></div>
+                <p class="sec-note">Tag it fully — each site takes what it can.</p>
+                <div class="tagblock">
+                    <div class="tagbar"><span class="tagcount"><b id="mp-tagcount">${tagList.length}</b> tags · <b id="mp-corecount">–</b> core</span></div>
+                    <textarea id="mp-e-tags" class="mp-input" hidden aria-hidden="true">${this.esc(tagList.join(', '))}</textarea>
+                    <ul class="tagchips" id="mp-tagchips" role="list" aria-label="Canonical tags"></ul>
+                    <div class="tag-legend">
+                        <span><span class="tagchip tagchip--core"><b>core</b></span> kept everywhere</span>
+                        <span><span class="tagchip tagchip--cut"><b>trimmed</b></span> dropped on at least one site</span>
                     </div>
                 </div>
-            </div>
+            </section>`;
+    },
 
-            <div class="mp-section">
-                <div class="mp-section-title">Published to</div>
-                ${locTable}
-            </div>
+    _budgetHtml() {
+        return `
+            <section class="card" aria-labelledby="mp-sec-budget">
+                <div class="sec-title"><h2 id="mp-sec-budget">What each site gets</h2></div>
+                <p class="sec-note">Trimming drops from the tail — core tags always survive.</p>
+                <div id="mp-tagbudget" class="mp-tagbudget"><div class="card-skel"></div></div>
+            </section>`;
+    },
 
-            <div class="mp-section">
-                <div class="mp-section-title">Publish to more
-                    <span class="muted" style="font-weight:400;font-size:.8rem">— post this image to sites it isn't on yet</span>
-                </div>
+    /* ── Column 2 — where it goes (§5.4) ────────────────────────────────── */
+    _publishHtml(m) {
+        if (m.status === 'junk') {
+            // Read-only for a junked piece (§11): every other card stays.
+            return `
+            <section class="card" aria-labelledby="mp-sec-pub">
+                <div class="sec-title"><h2 id="mp-sec-pub">Publish to more</h2></div>
+                <p class="board-readonly">Restore this piece to publish it.</p>
+            </section>`;
+        }
+        return `
+            <section class="card" aria-labelledby="mp-sec-pub">
+                <div class="sec-title"><h2 id="mp-sec-pub">Publish to more</h2>
+                    <span class="acts">
+                        <button class="btn btn-sm" data-mp-schedule-toggle type="button">&#128340; Schedule&hellip;</button>
+                        <button class="btn btn-primary btn-sm" data-mp-publish type="button">Publish now</button>
+                    </span></div>
+                <p class="sec-note">Sites this piece isn't on yet.</p>
                 <div id="mp-detail-platforms"></div>
-                <div class="mp-edit-actions">
-                    <button class="btn btn-primary btn-sm" data-mp-publish type="button">Publish now</button>
-                    <button class="btn btn-sm" data-mp-schedule-toggle type="button">&#128340; Schedule&hellip;</button>
-                    <span class="mp-edit-msg muted" id="mp-pub-msg"></span>
-                </div>
+                <div class="mp-edit-actions"><span class="mp-edit-msg muted" id="mp-pub-msg"></span></div>
                 <div class="schedule-form" id="mp-schedule-form" style="display:none">
                     <div class="schedule-form-inner">
                         <label class="schedule-label" for="mp-schedule-datetime">Publish the ticked platforms at:</label>
@@ -994,24 +968,31 @@ window.Masterpieces = {
                     </div>
                 </div>
                 <div class="schedule-pending" id="mp-scheduled-list"></div>
-            </div>
+            </section>`;
+    },
 
-            <div class="mp-section">
-                <div class="mp-section-title">Link the same image elsewhere
-                    <button class="btn btn-sm mp-scan-btn" data-mp-scan
-                        title="Hash platform thumbnails to find this exact image on other sites (native, no AI)">↻ Scan for matches</button>
+    _linkHtml() {
+        return `
+            <section class="card" aria-labelledby="mp-sec-link">
+                <div class="sec-title"><h2 id="mp-sec-link">Link the same image elsewhere</h2></div>
+                <p class="sec-note">Attach copies already uploaded to other sites.</p>
+                <div class="acts" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px">
+                    <button class="btn btn-sm" data-mp-scan type="button"
+                        title="Hash platform thumbnails to find this exact image on other sites (native, no AI)">↻ Scan</button>
                     <button class="btn btn-sm" data-mp-linkpick type="button"
-                        title="Pick a discovered post/upload to link by hand — for when the auto-scan misses it">🔍 Link one by hand…</button>
+                        title="Pick a discovered post/upload to link by hand — for when the auto-scan misses it">🔍 By hand…</button>
                     <button class="btn btn-sm" data-mp-linkurl type="button"
-                        title="Paste the post's URL. The picker can only offer posts with no publication row, so a post already filed under its own site title is invisible to it — this reaches those.">🔗 Paste a link…</button>
+                        title="Paste the post's URL. The picker can only offer posts with no publication row, so a post already filed under its own site title is invisible to it — this reaches those.">🔗 Paste link…</button>
                 </div>
                 <div id="mp-suggest-body"><div class="muted">Looking for the same image on other sites…</div></div>
-            </div>
+            </section>`;
+    },
 
-            <div class="mp-section">
-                <div class="mp-section-title">Same piece as another?
-                    <span class="muted" style="font-weight:400;font-size:.8rem">— fold <strong>this</strong> piece into another Masterpiece</span>
-                </div>
+    _foldHtml() {
+        return `
+            <section class="card" aria-labelledby="mp-sec-fold">
+                <div class="sec-title"><h2 id="mp-sec-fold">Same piece as another?</h2></div>
+                <p class="sec-note">Fold <strong>this</strong> piece into another Masterpiece.</p>
                 <div class="mp-fold">
                     <div class="mp-fold-pick">
                         <button class="btn btn-sm" data-mp-fold-pick type="button">🔍 Choose a piece…</button>
@@ -1032,31 +1013,247 @@ window.Masterpieces = {
                         <span class="mp-edit-msg muted" id="mp-fold-msg"></span>
                     </div>
                 </div>
-            </div>
+            </section>`;
+    },
 
-            <div class="mp-section" id="mp-chart-card" style="display:none">
-                <div class="mp-section-title">Combined growth <span class="muted" style="font-weight:400">— summed across every site</span></div>
+    /* ── Column 3 — what happened (§5.5) ────────────────────────────────── */
+    _healthDot(code) {
+        const PH = window.PlatformHealth;
+        if (!PH || !PH.classify) return '';
+        // No entry at all (health not fetched yet, or a profile with no
+        // sessions) is "not checked", not "unconfigured": classify(null) says
+        // the latter, and a page of red dots because a fetch has not happened
+        // is the §55 mistake — a dot that asserts a fault it has not seen.
+        const state = PH.get(code) ? PH.classify(code) : 'unknown';
+        const labels = {
+            healthy: 'Polling normally', stale: 'Last poll is overdue', throttled: 'Rate-limited by the site',
+            error: 'Last poll failed — see Settings', running: 'Polling now', unknown: 'Not polled yet',
+            unconfigured: 'No credentials for this site',
+        };
+        const text = labels[state] || state;
+        return `<span class="health-dot health-dot--${this.esc(state)}" title="${this.esc(text)}" aria-label="${this.esc(text)}"></span>`;
+    },
+
+    _locationsHtml(m) {
+        const locs = m.locations || [];
+        const rows = locs.map(l => {
+            const p = this._plat(l.platform);
+            const st = l.stats || {};
+            const thumbUrl = this._thumbSrc(l.platform, l.thumbnail_url);
+            const thumb = thumbUrl
+                ? `<img class="thumb-sq" src="${this.esc(thumbUrl)}" alt="" loading="lazy">`
+                : `<span class="thumb-sq thumb-sq--none"></span>`;
+            const roleCls = l.role === 'primary' ? 'mp-role mp-role--primary' : 'mp-role';
+            const role = l.role ? `<span class="${roleCls}">${this.esc(l.role)}</span>` : '';
+            // Platforms whose poster can't edit in place are Sync-exempt (§0-A1).
+            const postOnly = this._POST_ONLY.has(l.platform)
+                ? `<span class="mp-role mp-role--postonly" title="This site can't be edited in place — re-post to update">post-only</span>` : '';
+            const safe = window.Utils && Utils.safeUrl ? Utils.safeUrl(l.url) : l.url;
+            const link = safe ? `<a class="btn btn-sm" href="${this.esc(safe)}" target="_blank" rel="noopener">open&nbsp;&#8599;</a>` : '<span></span>';
+            const sub = [l.account_label || l.account || '', l.title || ''].filter(Boolean).map(x => this.esc(x)).join(' · ');
+            return `
+                <div class="loc-row">
+                    ${thumb}
+                    <div class="loc-site">
+                        <span class="name">${this._healthDot(l.platform)}${p.emoji || ''} ${this.esc(p.label)} ${role}${postOnly}</span>
+                        ${sub ? `<span class="sub">${sub}</span>` : ''}
+                    </div>
+                    <span class="loc-stats" title="views · favourites · comments">${this._fmt(st.views)} · ${this._fmt(st.favorites)} · ${this._fmt(st.comments)}</span>
+                    ${link}
+                    <button class="mp-loc-detach" title="Unlink this upload from the Masterpiece" aria-label="Unlink"
+                        data-mp-detach data-platform="${this.esc(l.platform)}" data-sid="${this.esc(l.submission_id)}">✕</button>
+                </div>`;
+        }).join('');
+        // Publishing has auto-linked since 2.128.0 (`manager.post_artwork` upserts
+        // a member on each successful post), so this fills in on its own.
+        const body = locs.length
+            ? `<div class="loc-list">${rows}</div>`
+            : `<div class="mp-empty">Not posted anywhere yet. <strong>Publish to more</strong> links a site
+               automatically as you post; <strong>Link the same image elsewhere</strong> attaches copies
+               already uploaded.</div>`;
+        return `
+            <section class="card" aria-labelledby="mp-sec-loc">
+                <div class="sec-title"><h2 id="mp-sec-loc">Published to</h2></div>
+                <p class="sec-note">Where this piece already lives.</p>
+                ${body}
+            </section>`;
+    },
+
+    _growthHtml() {
+        return `
+            <section class="card" id="mp-chart-card" style="display:none" aria-labelledby="mp-sec-growth">
+                <div class="sec-title"><h2 id="mp-sec-growth">Combined growth</h2></div>
+                <p class="sec-note">Summed across every site.</p>
                 <div class="mp-chart-wrap"><canvas id="mp-combined-chart"></canvas></div>
+            </section>`;
+    },
+
+    /* Client-side from locations[].stats — no new API (spec §10). */
+    _bestHtml(m) {
+        const locs = (m.locations || []).filter(l => l.platform);
+        if (!locs.length) return '';
+        const views = locs.map(l => ({ code: l.platform, v: Number((l.stats || {}).views) || 0 }));
+        const total = views.reduce((a, b) => a + b.v, 0);
+        const top = views.reduce((a, b) => (b.v > a.v ? b : a), views[0]);
+        const share = total ? Math.round(top.v / total * 100) : 0;
+        const avg = Math.round(total / views.length);
+        const p = this._plat(top.code);
+        return `
+            <section class="card" aria-labelledby="mp-sec-best">
+                <div class="sec-title"><h2 id="mp-sec-best">Best performer</h2></div>
+                <p class="sec-note">${total ? `${this.esc(p.label)} carries ${share}% of this piece's views.` : 'No views recorded yet.'}</p>
+                <div class="best-grid">
+                    <div class="stat-card"><div class="label">Top site</div><div class="value">${p.emoji || ''} ${this.esc(p.label)}</div></div>
+                    <div class="stat-card"><div class="label">Per-site average</div><div class="value">${this._fmt(avg)}</div></div>
+                </div>
+            </section>`;
+    },
+
+    /* The variant manager (2.189.0) plus Replace / Add variant, collapsed at the
+     * foot of column 3 (§5.2): rarely used, and it was the largest thing above
+     * the fold. The chips in the hero stay the viewer. */
+    _rendersHtml(name, m, v) {
+        const variants = v.variants, imgs = v.imgs;
+        const declaredRows = !variants.length ? '' : variants.map(x => {
+            const isPrimary = !x.key;
+            const sites = (x.member_count || 0);
+            return `<div class="mp-vrow" data-vkey="${this.esc(x.key)}">
+                <span class="mp-vname">${this.esc(x.label || x.key || 'Primary')}${isPrimary
+                    ? ' <span class="muted mp-vprimary">primary</span>'
+                    : ` <code class="mp-vkey" title="Internal key — set when the variant was created and kept on rename, so it can differ from the label">${this.esc(x.key)}</code>`}</span>
+                <span class="muted mp-vmeta">${sites} site${sites === 1 ? '' : 's'}</span>
+                <span class="mp-vacts">
+                    <button class="btn btn-sm" type="button" data-mp-vrename="${this.esc(x.key)}" title="Rename this variant">&#9998; Rename</button>
+                    ${isPrimary ? '' : `<button class="btn btn-sm" type="button" data-mp-vsplit="${this.esc(x.key)}"
+                        title="Separate this variant into its own Masterpiece — its image and site-links go with it">&#10548; Separate</button>`}
+                </span>
             </div>`;
+        }).join('');
+        // Undeclared alts (3.36.0): a multi-image import attaches every image
+        // from one source post to a single record, so these can be entirely
+        // different artworks. Same Separate, which declares + splits in one call.
+        const altRows = (!variants.length && imgs.length > 1) ? imgs.slice(1).map((f, i) => `
+            <div class="mp-vrow" data-vimage="${this.esc(f)}">
+                <span class="mp-vname">Alt ${i + 1} <code class="mp-vkey" title="The file in this piece's folder">${this.esc(f)}</code></span>
+                <span class="muted mp-vmeta">no site links of its own</span>
+                <span class="mp-vacts">
+                    <button class="btn btn-sm" type="button" data-mp-isplit="${this.esc(f)}"
+                        title="Separate this image into its own Masterpiece — this piece keeps its links and stats">&#10548; Separate</button>
+                </span>
+            </div>`).join('') : '';
+        const manageNote = variants.length
+            ? `Separating undoes a variant merge: the image moves to a new Masterpiece and its site-links follow, keeping their stats.`
+            : `These extra images came in together from one source post, so some may be different pieces entirely. Separating moves one into its own Masterpiece; this piece keeps every site link and stat, because none of them belong to the alt. The new record is hashed, so “Link the same image elsewhere” can find its real uploads.`;
+        const count = variants.length || imgs.length || 1;
+        const manager = (declaredRows || altRows)
+            ? `<div class="mp-vadmin-body">${declaredRows}${altRows}<p class="muted mp-vadmin-note">${manageNote}</p></div>`
+            : `<p class="muted" style="font-size:12.5px;margin:0">One render. Add a variant to keep another version of this piece alongside it.</p>`;
+        return `
+            <details class="card renders-card">
+                <summary>Renders <span class="muted">— ${count} image${count === 1 ? '' : 's'}; replace, rename, separate</span></summary>
+                <div class="body">
+                    ${manager}
+                    <div class="renders-acts">
+                        <label class="btn btn-sm" title="Swap in a better/higher-res version — keeps this record, its tags and every site link. The old file stays as a gallery alternate.">
+                            ⇪ Replace image
+                            <input type="file" id="mp-replace-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+                        </label>
+                        <label class="btn btn-sm" title="Upload another render (SFW/NSFW/rough…) straight in as a labeled variant of this piece.">
+                            ＋ Add variant
+                            <input type="file" id="mp-addvariant-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+                        </label>
+                        <span id="mp-replace-msg" class="muted"></span>
+                    </div>
+                </div>
+            </details>`;
+    },
 
-        // Open on the selected render (2.193.0) — patched after innerHTML because
-        // the chip list, and therefore the selection, is computed after `hero`.
-        if (mainUrl && mainUrl !== heroUrl) {
-            const heroImg = document.getElementById('mp-hero-img');
-            const bg = document.getElementById('mp-stage-bg');
-            if (heroImg) heroImg.src = mainUrl;
-            if (bg) bg.src = mainUrl;
+    /* ── Tag chips (§5.3, §13) ──────────────────────────────────────────── */
+    /* Render the chips from #mp-e-tags. Core / cut styling comes from the last
+     * tag-preview (_loadTagBudget → this._budget); with none yet, plain chips:
+     * the tags are real data the page already holds, and hiding them would
+     * lose more than the annotation is worth (§11). */
+    _tagChips() {
+        const ta = document.getElementById('mp-e-tags');
+        const host = document.getElementById('mp-tagchips');
+        if (!ta || !host) return;
+        const tags = ta.value.split(',').map(x => x.trim()).filter(Boolean);
+        const d = this._budget || null;
+        const core = new Set(((d && d.canonical) ? d.canonical.slice(0, d.core_count || 0) : []).map(x => String(x).toLowerCase()));
+        const cutBy = {};
+        ((d && d.platforms) || []).forEach(p => (p.dropped || []).forEach(t => {
+            const k = String(t).toLowerCase();
+            (cutBy[k] = cutBy[k] || []).push(this._PLATFORM_LABELS[p.platform] || p.platform);
+        }));
+        const chips = tags.map(t => {
+            const k = t.toLowerCase();
+            const cls = 'tagchip' + (core.has(k) ? ' tagchip--core' : '') + (cutBy[k] ? ' tagchip--cut' : '');
+            const title = cutBy[k] ? ` title="Cut on ${this.esc(cutBy[k].join(', '))}"`
+                : (core.has(k) ? ' title="Core — kept on every site"' : '');
+            return `<li class="${cls}"${title}><b>${this.esc(t)}</b><button type="button" class="x" data-mp-chip-x="${this.esc(t)}" aria-label="Remove tag ${this.esc(t)}">×</button></li>`;
+        }).join('');
+        host.innerHTML = chips
+            + (tags.length ? '' : `<li class="tag-empty">No tags yet — add some, or browse the library.</li>`)
+            + `<li class="tagchip-slot"><button type="button" class="tagchip-add" data-mp-chip-add>+ add tag</button>
+               <input type="text" class="tagchip-input" id="mp-tag-add" placeholder="tag, another tag" hidden aria-label="Add tags"></li>`;
+        const n = document.getElementById('mp-tagcount'); if (n) n.textContent = String(tags.length);
+        const c = document.getElementById('mp-corecount'); if (c) c.textContent = d ? String(d.core_count || 0) : '–';
+    },
+
+    _tagsFromTextarea() {
+        const ta = document.getElementById('mp-e-tags');
+        return ta ? ta.value.split(',').map(x => x.trim()).filter(Boolean) : [];
+    },
+
+    _setTags(list) {
+        const ta = document.getElementById('mp-e-tags');
+        if (!ta) return;
+        ta.value = list.join(', ');
+        this._tagChips();
+    },
+
+    _addTagsFromInput(input) {
+        const add = input.value.split(',').map(x => x.trim()).filter(Boolean);
+        input.value = '';
+        input.hidden = true;
+        if (add.length) {
+            const cur = this._tagsFromTextarea();
+            const seen = new Set(cur.map(x => x.toLowerCase()));
+            add.forEach(t => { if (!seen.has(t.toLowerCase())) { seen.add(t.toLowerCase()); cur.push(t); } });
+            this._setTags(cur);
         }
+        const btn = document.querySelector('[data-mp-chip-add]');
+        if (btn) btn.focus();
+    },
 
-        // Publish-to-more picker (ported from the Artwork detail, 2.193.0). Reuses
-        // Artwork's live shared helpers rather than duplicating the platform rows.
-        this._wireDetailPublish(name, m);
+    _removeTag(tag) {
+        const cur = this._tagsFromTextarea();
+        const i = cur.findIndex(x => x.toLowerCase() === String(tag).toLowerCase());
+        if (i === -1) return;
+        cur.splice(i, 1);
+        this._setTags(cur);
+        // Focus the next chip's ×, or + add when it was the last — otherwise
+        // focus falls to <body> and a keyboard user loses their place (§13).
+        const xs = document.querySelectorAll('#mp-tagchips [data-mp-chip-x]');
+        const next = xs[Math.min(i, xs.length - 1)] || document.querySelector('[data-mp-chip-add]');
+        if (next) next.focus();
+    },
 
-        // Same-image suggestions (native pHash) + combined time-series (≥2 points).
-        this._loadSuggestions();
-        this._loadTagBudget();
-        this._loadChart(name);
-        this._foldTarget = null;      // reset the "fold into" choice per detail open
+    /* The hero tile's full-size view (§5.2). Carries the hero's class and
+     * data-rating so SFW mode blurs it exactly as it blurs the tile. */
+    _openLightbox() {
+        const img = document.getElementById('mp-hero-img');
+        if (!img || !img.src) return;
+        const ov = document.createElement('div');
+        ov.className = 'modal-overlay open mp-lightbox';
+        ov.setAttribute('role', 'dialog');
+        ov.setAttribute('aria-label', 'Full-size render');
+        ov.innerHTML = `<img class="mp-hero-img" data-rating="${this.esc(img.dataset.rating || '')}" src="${this.esc(img.src)}" alt="${this.esc(img.alt || '')}">`;
+        const close = () => { document.removeEventListener('keydown', onKey); ov.remove(); img.closest('[data-mp-lightbox]')?.focus(); };
+        const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+        ov.addEventListener('click', close);
+        document.addEventListener('keydown', onKey);
+        document.body.appendChild(ov);
     },
 
     /* ── Publish / schedule / delete (ported from the Artwork detail, 2.193.0) ──
@@ -1080,13 +1277,20 @@ window.Masterpieces = {
         const _live = [...new Set([
             ...(m.publications || []).filter(p => p.status === 'posted' && p.external_url).map(p => p.platform),
             ...(m.locations || []).filter(l => l.url).map(l => l.platform),
-        ])].filter(c => c && c !== 'tg');
-        window.Artwork._renderPlatformRows(
-            host, ((this._detail || {}).categories || {}).tg || {},
-            // Telegram text + link picker (4.3.0); the box only where the record
-            // exposes descriptions, so a save can never clobber the others.
-            { desc: (m.descriptions && typeof m.descriptions === 'object') ? (m.descriptions.tg || '') : undefined,
-              live: _live });
+        ])].filter(Boolean);
+        const cats = (this._detail || {}).categories || {};
+        const hasDescs = !!(m.descriptions && typeof m.descriptions === 'object');
+        const optsByCode = {}, extraByCode = {};
+        // One panel per announcer (Telegram 4.0.10/4.3.0; X and Bluesky 4.3.7).
+        // The text box only where the record exposes descriptions, so a save can
+        // never clobber the others; each panel's link list leaves itself out.
+        (window.Artwork._ANNOUNCERS || ['tg']).forEach(code => {
+            optsByCode[code] = cats[code] || {};
+            extraByCode[code] = { code,
+                desc: hasDescs ? (m.descriptions[code] || '') : undefined,
+                live: _live.filter(c => c !== code) };
+        });
+        window.Artwork._renderPlatformRows(host, optsByCode, extraByCode);
 
         // Dim + disable platforms this piece is already posted to. Both the
         // publications list and the resolved member locations count as "posted",
@@ -1173,40 +1377,49 @@ window.Masterpieces = {
      * durable and visible on the record instead of a one-shot. */
     async _applyOverrides(name, overrides) {
         const keys = Object.keys(overrides || {});
-        const tgOpts = (window.Artwork && window.Artwork._collectTgOpts)
-            ? window.Artwork._collectTgOpts() : {};
-        const hadTg = !!(((this._detail || {}).categories || {}).tg);
-        // Stored Telegram text (4.3.0) — merged into descriptions, never replacing
-        // the map, and only when the record exposed it (else the box was not shown).
-        const tgDesc = (window.Artwork && window.Artwork._collectTgDesc)
-            ? window.Artwork._collectTgDesc() : null;
-        const oldDescs = (this._detail && this._detail.descriptions && typeof this._detail.descriptions === 'object')
-            ? this._detail.descriptions : null;
+        const A = window.Artwork;
+        const codes = (A && A._ANNOUNCERS) || ['tg'];
+        const detail = this._detail || {};
+        const oldCats = detail.categories || {};
+        const oldDescs = (detail.descriptions && typeof detail.descriptions === 'object') ? detail.descriptions : null;
+
+        // Per-announcer options (Telegram since 4.0.10; X and Bluesky 4.3.7).
+        // Only panels ON THE PAGE are read, so a platform with no panel keeps
+        // whatever the record holds for it.
+        let categories = null;
+        codes.forEach(code => {
+            if (!(A && A._collectPlatOpts) || !document.querySelector(`.art-tg-opt[data-platform="${code}"]`)) return;
+            const o = A._collectPlatOpts(code);
+            const had = !!oldCats[code];
+            if (!Object.keys(o).length && !had) return;
+            categories = categories || { ...oldCats };
+            if (Object.keys(o).length) categories[code] = o; else delete categories[code];
+        });
+        // Stored per-announcer text (4.3.0) \u2014 merged into descriptions, never
+        // replacing the map, and only when the record exposed it (else no box).
         let descriptions = null;
-        if (tgDesc !== null && oldDescs) {
+        if (oldDescs && A && A._collectPlatDesc) {
             const next = { ...oldDescs };
-            if (tgDesc) next.tg = tgDesc; else delete next.tg;
+            codes.forEach(code => {
+                const text = A._collectPlatDesc(code);
+                if (text === null) return;
+                if (text) next[code] = text; else delete next[code];
+            });
             if (JSON.stringify(next) !== JSON.stringify(oldDescs)) descriptions = next;
         }
-        if (!keys.length && !Object.keys(tgOpts).length && !hadTg && !descriptions) return;
+        if (!keys.length && !categories && !descriptions) return;
 
         const payload = {};
         if (descriptions) payload.descriptions = descriptions;
         if (keys.length) {
-            const tags = { ...((this._detail || {}).canonical_tags || {}) };
+            const tags = { ...(detail.canonical_tags || {}) };
             keys.forEach(p => { tags[p] = overrides[p]; });
             payload.tags = tags;
         }
-        // Telegram's per-piece options travel the same route as tag overrides:
-        // written to the record before publishing, so the poster reads them from
-        // masterpiece.json rather than needing a request field the backend has
-        // no parameter for. Merge, so other platforms' params survive.
-        if (Object.keys(tgOpts).length || hadTg) {
-            const categories = { ...((this._detail || {}).categories || {}) };
-            if (Object.keys(tgOpts).length) categories.tg = tgOpts;
-            else delete categories.tg;
-            payload.categories = categories;
-        }
+        // Options travel the same route as tag overrides: written to the record
+        // before publishing, so the poster reads them from masterpiece.json
+        // rather than needing a request field the backend has no parameter for.
+        if (categories) payload.categories = categories;
         if (Object.keys(payload).length) await API.updateArtwork(name, payload);
     },
 
@@ -1225,7 +1438,7 @@ window.Masterpieces = {
             targets: window.Artwork
                 ? window.Artwork._confirmTargets('#mp-detail-platforms', platforms, accountIds)
                 : platforms.map(code => ({ code, label: code })),
-            tgDesc: platforms.includes('tg') ? {} : null,
+            textBoxes: window.Artwork ? window.Artwork._pubTextBoxes(platforms) : [],
         });
         if (!conf) { if (msg) msg.textContent = ''; return; }
         if (msg) msg.textContent = 'Publishing…';
@@ -1234,7 +1447,7 @@ window.Masterpieces = {
             const res = await API.publishArtwork({
                 artwork_name: name, platforms, account_ids: accountIds,
                 persona_id: personaId,
-                description_overrides: conf.tgDescription ? { tg: conf.tgDescription } : undefined,
+                description_overrides: window.Artwork ? window.Artwork._pubDescOverrides(conf) : undefined,
                 confirm_live: true,
             });
             const ok = res.successes || 0;
@@ -1325,7 +1538,43 @@ window.Masterpieces = {
         if (this._wired) return;
         this._wired = true;
         document.addEventListener('keydown', (e) => this._onNavKey(e));
+        // The add-tag box (§13): Enter commits a comma list, Escape cancels,
+        // Backspace on an empty box removes the last chip.
+        document.addEventListener('keydown', (e) => {
+            const inp = e.target && e.target.id === 'mp-tag-add' ? e.target : null;
+            if (!inp) return;
+            if (e.key === 'Enter') { e.preventDefault(); this._addTagsFromInput(inp); }
+            else if (e.key === 'Escape') {
+                e.preventDefault(); inp.value = ''; inp.hidden = true;
+                const b = document.querySelector('[data-mp-chip-add]'); if (b) b.focus();
+            } else if (e.key === 'Backspace' && !inp.value) {
+                e.preventDefault();
+                const xs = document.querySelectorAll('#mp-tagchips [data-mp-chip-x]');
+                const last = xs[xs.length - 1];
+                if (last) this._removeTag(last.dataset.mpChipX);
+                const again = document.getElementById('mp-tag-add');
+                if (again) { again.hidden = false; again.focus(); }
+            }
+        });
+        // Clicking away from a half-typed tag keeps it rather than losing it.
+        document.addEventListener('focusout', (e) => {
+            if (e.target && e.target.id === 'mp-tag-add' && e.target.value.trim()) this._addTagsFromInput(e.target);
+        });
         document.addEventListener('click', (e) => {
+            // Tag chips (4.4.0) — a view over #mp-e-tags; see _tagChips.
+            const chipX = e.target.closest('[data-mp-chip-x]');
+            if (chipX) { e.preventDefault(); this._removeTag(chipX.dataset.mpChipX); return; }
+            const chipAdd = e.target.closest('[data-mp-chip-add]');
+            if (chipAdd) {
+                e.preventDefault();
+                const inp = document.getElementById('mp-tag-add');
+                if (inp) { inp.hidden = false; inp.focus(); }
+                return;
+            }
+            const lb = e.target.closest('[data-mp-lightbox]');
+            if (lb) { e.preventDefault(); this._openLightbox(); return; }
+            const bre = e.target.closest('[data-mp-budget-retry]');
+            if (bre) { e.preventDefault(); this._loadTagBudget(); return; }
             const save = e.target.closest('[data-mp-save]');
             if (save) { e.preventDefault(); this._saveCanonical(); return; }
             const sync = e.target.closest('[data-mp-sync]');
@@ -1700,7 +1949,9 @@ window.Masterpieces = {
         try {
             d = await API.getMasterpieceTagPreview(this._current);
         } catch (err) {
-            box.innerHTML = '';
+            // One line and a retry; the chips stay, plain (§11).
+            box.innerHTML = `<div class="muted">Couldn't load the per-site view.
+                <button class="btn btn-sm" type="button" data-mp-budget-retry>Retry</button></div>`;
             return;
         }
         this._budget = d;
@@ -1724,10 +1975,8 @@ window.Masterpieces = {
                             p.override ? 'Edit' : 'Override'}</button>
                     </div>`;
         }).join('');
-        box.innerHTML = `
-            <div class="mp-tb-head">What each site gets
-                <span class="muted">— ${d.canonical.length} canonical tags, ${d.core_count} core</span></div>
-            ${rows}`;
+        box.innerHTML = rows || `<div class="muted">No site budgets to show.</div>`;
+        this._tagChips();      // core / cut styling comes from this call (4.4.0)
     },
 
     /* Curating one platform. Prefilled with what that site WOULD get, so the
@@ -1849,7 +2098,7 @@ window.Masterpieces = {
         TagPicker.open({
             title: 'Canonical tags',
             selected,
-            onConfirm: (names) => { input.value = (names || []).join(', '); },
+            onConfirm: (names) => { input.value = (names || []).join(', '); this._tagChips(); },
         });
     },
 

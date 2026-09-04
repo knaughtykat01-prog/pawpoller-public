@@ -268,6 +268,123 @@ def get_story_detail(story_name: str):
         raise HTTPException(500, detail=str(e))
 
 
+@posting_router.post("/stories/{story_name:path}/link-url")
+def link_story_by_url(story_name: str, body: dict):
+    """Record a copy of this story that was posted by hand, from its URL (4.5.0).
+
+    The story twin of ``masterpieces_api.link_member_by_url``, deliberately the
+    same contract: **previews by default**, ``confirm: true`` performs the link.
+    The preview says what the URL resolved to, whether the poller has seen it,
+    and what it is already attached to — an artwork member or another story's
+    publication — because linking silently over either is the mistake the art
+    route was written to avoid.
+
+    ⚠ ``chapter_index`` is REQUIRED on confirm and has no safe default: a story
+    publishes per chapter, ``0`` means "the whole work", and
+    ``upsert_publication`` would happily file chapter 7 as the whole story.
+    Re-linking a (platform, chapter) that already exists is refused rather than
+    updated — an upsert there reads as success and changes nothing asked for.
+
+    Body: ``{url, confirm?: bool, chapter_index?: int, platform?, submission_id?}``.
+    """
+    from posting import submission_urls, story_reader
+    from database import posting_queries, collections_queries
+
+    try:
+        story = story_reader.load_story(story_name)
+    except FileNotFoundError:
+        raise HTTPException(404, detail=f"Story not found: {story_name}")
+
+    url = str(body.get("url") or "").strip()
+    forced_p = str(body.get("platform") or "").strip()
+    forced_s = str(body.get("submission_id") or "").strip()
+    if forced_p and forced_s:
+        cands = [(forced_p, forced_s)]
+    elif url:
+        cands = submission_urls.candidates_for(url)
+    else:
+        raise HTTPException(400, detail="url (or platform + submission_id) is required")
+    if not cands:
+        raise HTTPException(422, detail=(
+            "That does not look like a submission link I recognise. Supported: "
+            + ", ".join(submission_urls.SUPPORTED_PLATFORMS)))
+
+    conn = get_connection()
+    try:
+        resolved = []
+        for plat, sid in cands:
+            row = collections_queries._submission_row(conn, plat, str(sid)) or {}
+            owner = conn.execute(
+                "SELECT masterpiece_name FROM masterpiece_members "
+                "WHERE platform = ? AND submission_id = ?", (plat, str(sid))).fetchone()
+            pub = conn.execute(
+                "SELECT story_name, chapter_index FROM publications "
+                "WHERE platform = ? AND external_id = ? LIMIT 1", (plat, str(sid))).fetchone()
+            resolved.append({
+                "platform": plat,
+                "submission_id": str(sid),
+                "known": bool(row),
+                "title": row.get("title", "") if row else "",
+                "account_id": row.get("account_id") if row else None,
+                "linked_to": owner["masterpiece_name"] if owner else "",
+                "publication_of": pub["story_name"] if pub else "",
+                "publication_chapter": pub["chapter_index"] if pub else None,
+            })
+
+        if not body.get("confirm"):
+            return {"status": "preview", "total_chapters": int(story.total_chapters or 0),
+                    "candidates": resolved}
+
+        if len(cands) != 1:
+            raise HTTPException(422, detail="That link matched more than one site — pass platform and submission_id")
+        if body.get("chapter_index") is None:
+            raise HTTPException(400, detail=(
+                "chapter_index is required: 0 for the whole story, otherwise the chapter number"))
+        try:
+            chapter_index = int(body.get("chapter_index"))
+        except (TypeError, ValueError):
+            raise HTTPException(400, detail="chapter_index must be a number")
+        total = int(story.total_chapters or 0)
+        if chapter_index < 0 or chapter_index > total:
+            raise HTTPException(400, detail=f"chapter_index must be between 0 and {total}")
+
+        plat, sid = cands[0]
+        existing = conn.execute(
+            "SELECT pub_id FROM publications WHERE story_name = ? AND platform = ? "
+            "AND chapter_index = ? AND content_type = 'story'",
+            (story_name, plat, chapter_index)).fetchone()
+        if existing:
+            raise HTTPException(409, detail=(
+                f"This story already has a {plat} publication for "
+                f"{'the whole story' if chapter_index == 0 else 'chapter ' + str(chapter_index)} — "
+                "linking again would silently overwrite it. Forget that one first if it is wrong."))
+        row = resolved[0]
+        # What they posted by hand is, by every reasonable reading, the file on
+        # disk now — record its hash so the row does not start life "drifted"
+        # (detect_changes treats a missing hash as changed, deliberately).
+        file_hash, format_file = "", ""
+        try:
+            from posting import sync as posting_sync
+            fp, fmt = story_reader._resolve_format_file(story, chapter_index, plat)
+            if fp and os.path.isfile(fp):
+                file_hash, format_file = posting_sync.hash_file(fp), str(fmt or "")
+        except Exception:  # a fake or format-less story: no hash, same as a claim
+            pass
+        pub_id = posting_queries.upsert_publication(
+            conn, story_name, chapter_index, plat,
+            account_id=row.get("account_id"),
+            external_id=str(sid),
+            external_url=url or submission_urls.build_url(plat, str(sid)),
+            title_used=row.get("title") or "",
+            file_hash=file_hash, format_file=format_file,
+            status="posted", content_type="story")
+        conn.commit()
+        return {"status": "linked", "pub_id": pub_id, "platform": plat,
+                "submission_id": str(sid), "chapter_index": chapter_index}
+    finally:
+        conn.close()
+
+
 @posting_router.get("/image")
 def get_story_image(story: str = Query(...), file: str = Query(...)):
     """Serve a cover/thumbnail image from a story folder.

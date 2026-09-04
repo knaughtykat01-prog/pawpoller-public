@@ -24,6 +24,7 @@ from pathlib import Path
 
 import config
 from posting import tag_budget
+from posting.announce import ANNOUNCERS as _ANNOUNCERS
 from posting.platforms.base import StoryUploadPackage
 
 logger = logging.getLogger(__name__)
@@ -441,7 +442,7 @@ def build_artwork_package(
         description = variant_description("", variant)
     elif platform in artwork.descriptions_by_platform:
         description = artwork.descriptions_by_platform[platform]
-    elif platform in ("bsky", "tg") and artwork.descriptions_by_platform.get("announcement"):
+    elif platform in _ANNOUNCERS and artwork.descriptions_by_platform.get("announcement"):
         # The "announcement" slot is for broadcast targets — a short "this is up"
         # blurb rather than a gallery description. Bluesky was the only one when
         # it was added; Telegram is the same kind of surface, so one blurb now
@@ -534,7 +535,7 @@ def build_artwork_package(
                **({"alt_text": artwork.alt_text} if artwork.alt_text else {}),
                # Where this piece is already live, for the announcement to link
                # to (4.3.0). Only the announcing platform pays the query.
-               **(_artwork_links(artwork.name, exclude=platform) if platform == "tg" else {})},
+               **(_artwork_links(artwork.name, exclude=platform) if platform in _ANNOUNCERS else {})},
     )
 
 

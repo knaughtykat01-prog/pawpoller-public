@@ -197,40 +197,9 @@
 .work-back a { color: var(--text-secondary); text-decoration: none; font-size: .9rem; }
 .work-back a:hover { color: var(--accent); }
 
-.work-hero {
-    display: grid; grid-template-columns: 180px 1fr auto; gap: 1.75rem; align-items: start;
-    margin-bottom: 1.75rem; padding-bottom: 1.75rem;
-    border-bottom: 1px solid var(--card-border-inner);
-}
-.work-cover {
-    aspect-ratio: 3 / 4; border-radius: 12px; background-size: cover; background-position: center;
-    background-color: var(--bg-tertiary, var(--bg-card)); border: 1px solid var(--card-border-inner);
-    box-shadow: 0 4px 14px rgba(0,0,0,.16), 0 20px 40px -18px rgba(0,0,0,.4);
-}
-.work-cover--blank { display: flex; align-items: center; justify-content: center;
-    background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 22%, var(--bg-card)), var(--bg-card)); }
-.work-head { min-width: 0; }
-.work-title {
-    font-family: var(--font-serif); font-weight: 700; font-size: clamp(1.8rem, 3.4vw, 2.6rem);
-    line-height: 1.08; letter-spacing: -.01em; color: var(--text-primary); margin: .2rem 0 .6rem;
-}
-.work-tags { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .9rem; }
-.work-tag {
-    font-size: .74rem; font-weight: 600; text-transform: capitalize;
-    color: var(--text-secondary); background: var(--bg-card);
-    border: 1px solid var(--card-border-inner); border-radius: 999px; padding: .2rem .6rem;
-}
-.work-summary {
-    font-family: var(--font-serif); font-size: 1.05rem; line-height: 1.6;
-    color: var(--text-secondary); margin: 0; max-width: 60ch;
-}
-.work-margin {
-    display: flex; flex-direction: column; gap: .55rem; min-width: 92px;
-    padding-left: 1.5rem; border-left: 1px solid var(--card-border-inner);
-}
-.work-margin-row { display: flex; flex-direction: column; line-height: 1.1; }
-.wm-v { font-family: var(--font-serif); font-weight: 700; font-size: 1.5rem; color: var(--text-primary); }
-.wm-l { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+/* The work page's hero, margin rail and pub list went in 4.5.0: #/library/work/
+   is the story board (board.css). .work-back, .work-card and the chapter-reach
+   rows below are still used — by the board, and by other pages. */
 
 .work-card {
     background: var(--bg-card); border: 1px solid var(--card-border-inner);
@@ -241,21 +210,6 @@
     margin: 0 0 1rem; display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
 }
 .work-h2-note { font-family: var(--font-sans); font-size: .78rem; font-weight: 500; color: var(--text-muted); }
-
-/* Published-to list */
-.pub-list { display: flex; flex-direction: column; }
-.pub-row {
-    display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
-    padding: .6rem 0; border-top: 1px solid var(--card-border-inner);
-}
-.pub-row:first-child { border-top: none; }
-.pub-plat { display: flex; align-items: center; gap: .45rem; font-weight: 600; color: var(--text-primary); min-width: 150px; }
-.pub-emoji { font-size: 1.05rem; }
-.pub-stat { font-size: .85rem; color: var(--text-primary); font-variant-numeric: tabular-nums; }
-.pub-stat em { color: var(--text-muted); font-style: normal; font-size: .78rem; }
-.pub-open { margin-left: auto; color: var(--accent); text-decoration: none; font-size: .82rem; font-weight: 600; }
-.pub-open:hover { text-decoration: underline; }
-.pub-notyet { margin-top: .9rem; font-size: .82rem; color: var(--text-muted); }
 
 /* Chapter reach */
 .chapter-list { display: flex; flex-direction: column; }

@@ -251,4 +251,8 @@ class TestPostOptions:
         """Both are broadcast surfaces. A user writing one 'this is up' blurb
         should not have to write it twice."""
         src = open("posting/artwork_reader.py", encoding="utf-8").read()
-        assert 'platform in ("bsky", "tg")' in src
+        # 4.3.7: the pair became the announcer registry when X joined. One list
+        # (posting/announce.py) so the reader, the manager and the UI agree.
+        assert "platform in _ANNOUNCERS and artwork.descriptions_by_platform.get(\"announcement\")" in src
+        from posting.announce import ANNOUNCERS
+        assert {"bsky", "tg", "tw"} <= set(ANNOUNCERS)

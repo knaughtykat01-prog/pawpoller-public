@@ -1,0 +1,260 @@
+/* The C2 board — the Masterpiece page (4.4.0) and, in phase 2, the Story page.
+   Spec: docs/specs/c2_detail_redesign.md. Token-driven: every colour, radius
+   and shadow is a var() from tokens.css, so the board retones with the app
+   (spec §12 — the mockup's two drifted tokens are NOT reproduced here).
+
+   Loaded after masterpieces.css and before safe_mode.css (which must stay
+   last). The page's old layout rules (.mp-detail-head, the .mp-edit max-width,
+   the .mp-fold max-width) are DELETED from masterpieces.css, not overridden. */
+
+/* ── Shell (§5.1) ─────────────────────────────────────────────────────── */
+.board-wrap { max-width: 1760px; margin: 0 auto; }
+
+.board-hero {
+    display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; gap: 20px;
+    align-items: center; padding: 18px 22px; margin-bottom: 18px;
+    position: relative; overflow: hidden;
+    border-radius: var(--radius-lg); border: 1px solid var(--card-border-inner);
+    background: var(--bg-glass);
+}
+/* The ambient backdrop keeps the .mp-stage-bg class: the variant-chip handler
+   in _init() patches #mp-stage-bg's src, and the class carries its rules. */
+.board-hero-bg { position: absolute; inset: -8%; width: 116%; height: 116%; }
+.board-hero > *:not(.board-hero-bg) { position: relative; z-index: 1; min-width: 0; }
+
+/* The hero tile is a BUTTON wrapping the image, so the full-size render is
+   reachable without a mouse (§13). .mp-hero keeps its box rules. */
+.board-hero-tile {
+    display: block; width: 180px; height: 180px; padding: 0; margin: 0;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; cursor: zoom-in;
+}
+.board-hero-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.board-hero-tile .mp-hero-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.board-hero-tile .mp-hero-ph { display: flex; align-items: center; justify-content: center; height: 100%; }
+
+.board-hero-mid { display: flex; flex-direction: column; gap: 6px; }
+.board-hero-mid h1.mp-title { margin: 0; font-size: 24px; line-height: 1.15; }
+.board-hero-mid .mp-artist { margin: 0; }
+.board-hero-mid .mp-firstposted { margin: 0; }
+.chip-rows { display: flex; flex-direction: column; gap: 6px; }
+.chip-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* Variant chips shrink inside the hero (§5.2: ≤ 48px). The strip keeps its
+   class and data-rating — that pair is the SFW blur selector (§4). */
+.board-hero .mp-alts { gap: 5px; }
+.board-hero .mp-altwrap { width: 48px; }
+.board-hero .mp-alt { width: 44px; height: 44px; }
+.board-hero .mp-alt-label { font-size: .55rem; }
+
+.board-stats { display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap; margin-top: 6px; }
+.board-stats .n { font-size: 20px; font-weight: 700; line-height: 1.1; }
+.board-stats .n small {
+    display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--text-muted); font-weight: 400; margin-top: 2px;
+}
+
+.board-hero-actions { display: flex; flex-direction: column; gap: 7px; min-width: 160px; }
+.board-hero-actions .btn { width: 100%; text-align: center; }
+.board-hero-actions .pair { display: flex; gap: 6px; }
+.board-hero-actions .pair .btn { flex: 1; }
+
+/* Pills beside the title (rating keeps .mp-rating; these are the rest). */
+.pill {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
+    padding: 3px 9px; border-radius: var(--radius-pill);
+    background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-secondary);
+}
+.pill--live { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, var(--border)); }
+
+/* ── The board ─────────────────────────────────────────────────────────── */
+.board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.board-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.board .card { padding: 18px 20px; }
+.board section.card { display: block; }
+.sec-title {
+    font-size: 15px; font-weight: 600; margin: 0 0 4px;
+    display: flex; align-items: center; gap: 8px; justify-content: space-between;
+}
+.sec-title h2 { font: inherit; margin: 0; }
+.sec-title .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.sec-note { font-size: 12.5px; color: var(--text-muted); margin: 0 0 14px; }
+
+/* The canonical record loses its 640px cage: it is the width of its column. */
+.board .mp-edit { max-width: none; }
+.board .mp-fold { max-width: none; }
+.board .mp-input { width: 100%; }
+.board .mp-edit-actions { margin-top: 2px; }
+
+/* ── Tags (§5.3) ───────────────────────────────────────────────────────── */
+/* Namespaced .tagchip, not .chip — components.css owns .chip for the story
+   pages' character/relationship chips and it looks nothing like this. */
+.tagblock { display: flex; flex-direction: column; gap: 10px; }
+.tagbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.tagcount { font-size: 12px; color: var(--text-muted); }
+.tagcount b { color: var(--text-primary); }
+.btn-browse {
+    background: color-mix(in srgb, var(--accent) 18%, var(--bg-tertiary));
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+    color: var(--text-primary); font-weight: 600;
+}
+.tagchips { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.tagchip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; padding: 4px 6px 4px 9px;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius-pill); color: var(--text-secondary);
+}
+.tagchip b { color: var(--text-primary); font-weight: 500; }
+.tagchip .x {
+    background: none; border: 0; padding: 0 2px; margin: 0; cursor: pointer;
+    color: var(--text-muted); font-size: 14px; line-height: 1; font-family: inherit;
+}
+.tagchip .x:hover, .tagchip .x:focus-visible { color: var(--danger); outline: none; }
+/* Core tags survive every platform's trim — the trim drops from the tail, so
+   which tags are core is the difference between a cut that matters and one
+   that does not. */
+.tagchip--core { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary)); }
+.tagchip--cut { opacity: .5; border-style: dashed; }
+.tagchip-add {
+    font-size: 12px; padding: 4px 10px; border-radius: var(--radius-pill); font-family: inherit;
+    background: transparent; border: 1px dashed var(--border); color: var(--text-muted); cursor: pointer;
+}
+.tagchip-add:hover, .tagchip-add:focus-visible { border-color: var(--accent); color: var(--text-primary); outline: none; }
+.tagchip-input {
+    font: inherit; font-size: 12px; padding: 4px 9px; border-radius: var(--radius-pill);
+    background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--accent);
+    min-width: 12rem;
+}
+.tagchip-slot { display: inline-flex; gap: 6px; align-items: center; list-style: none; }
+.tag-legend { font-size: 11.5px; color: var(--text-muted); display: flex; gap: 14px; flex-wrap: wrap; }
+.tag-legend .tagchip { padding: 1px 7px; font-size: 10.5px; }
+.tag-empty { font-size: 12.5px; color: var(--text-muted); }
+
+/* ── What each site gets (§5.3) — _loadTagBudget's rows, on the board grid ── */
+.board .mp-tagbudget { margin: 0; font-size: 12.5px; }
+.board .mp-tb-row {
+    grid-template-columns: 1fr auto auto auto; gap: 8px; padding: 7px 0; border-radius: 0;
+    border-bottom: 1px solid var(--border);
+}
+.board .mp-tb-row:last-child { border-bottom: 0; }
+.board .mp-tb-row:nth-child(even) { background: transparent; }
+.board .mp-tb-lim { font-size: 11px; }
+
+/* ── Publish to more (§5.4): the shared rows inside a ~540px card ───────── */
+.board #mp-detail-platforms .artwork-plat-row { padding: 6px 0; }
+.board #mp-detail-platforms .artwork-plat-adv { margin-left: auto; }
+.board #mp-detail-platforms .artwork-plat-adv summary { font-size: 12px; }
+
+/* ── Published to (§5.5): a list, not a seven-column table ─────────────── */
+.loc-list { display: flex; flex-direction: column; }
+.loc-row {
+    display: grid; grid-template-columns: 40px minmax(0, 1fr) auto auto auto; gap: 10px;
+    align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.loc-row:last-child { border-bottom: 0; }
+.thumb-sq {
+    width: 40px; height: 40px; border-radius: 6px; object-fit: cover; display: block;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+}
+.thumb-sq--none { border-style: dashed; }
+/* A story has no thumbnail: the site's mark fills the tile instead. */
+.thumb-sq--emoji { display: flex; align-items: center; justify-content: center; font-size: 20px; line-height: 1; }
+.loc-site { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.loc-site .name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 600; }
+.loc-site .sub { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loc-stats { font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; }
+.loc-row .mp-loc-detach { padding: .1rem .3rem; }
+/* The credential dot (§5.5) — the only surface that never showed platform
+   health was the detail page, and "why did this site stop growing" is
+   answered here. Classes follow PlatformHealth.classify(). */
+.health-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--text-muted); flex: 0 0 auto; }
+.health-dot--healthy { background: var(--success); }
+.health-dot--stale, .health-dot--throttled { background: var(--warning); }
+.health-dot--unknown { background: var(--text-muted); }
+.health-dot--error, .health-dot--unconfigured { background: var(--danger); }
+.health-dot--running { background: var(--info); }
+
+/* ── Best performer (§5.5) — the house stat cards, two up ──────────────── */
+.best-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0; }
+.best-grid .stat-card { padding: 14px 16px; }
+.best-grid .stat-card .value { font-size: 18px; }
+
+/* ── Collapsed cards (Renders, and phase 2's More) — native details ──────── */
+details.card > summary {
+    cursor: pointer; font-size: 15px; font-weight: 600; list-style: none;
+    display: flex; align-items: center; gap: 8px;
+}
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::before { content: '▸'; color: var(--text-muted); font-size: 12px; }
+details.card[open] > summary::before { content: '▾'; }
+details.card > summary .muted { font-weight: 400; font-size: 12.5px; }
+details.card > .body { margin-top: 12px; }
+.board .mp-vadmin { margin-top: 0; border: 0; background: transparent; }
+.board .mp-vadmin-body { padding: 0; }
+.renders-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.renders-acts label { cursor: pointer; }
+
+/* ── States (§11) ──────────────────────────────────────────────────────── */
+.card-skel {
+    height: 54px; border-radius: var(--radius-sm);
+    background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
+    background-size: 200% 100%; animation: board-shimmer 1.2s linear infinite;
+}
+@keyframes board-shimmer { from { background-position: 200% 0 } to { background-position: -200% 0 } }
+@media (prefers-reduced-motion: reduce) { .card-skel { animation: none; } }
+.board .mp-empty { padding: 1rem 0; text-align: left; }
+.board-readonly { font-size: 12.5px; color: var(--text-muted); }
+
+/* ── Lightbox for the hero tile (§5.2) — the shared overlay pattern ───────── */
+.mp-lightbox { display: flex; align-items: center; justify-content: center; padding: 3vh 3vw; }
+.mp-lightbox img { max-width: 94vw; max-height: 94vh; object-fit: contain; border-radius: var(--radius); box-shadow: var(--shadow-strong); }
+
+/* ── Story board (phase 2, §5.7) ───────────────────────────────────────── */
+.sb-cover { background-size: cover; background-position: center; background-color: var(--bg-tertiary); cursor: default; }
+.sb-cover--blank { display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 22%, var(--bg-card)), var(--bg-card)); }
+.sb-cover .book-initial { font-family: var(--font-serif); font-weight: 700; font-size: 3rem; color: var(--text-secondary); }
+.pill--warn { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); text-transform: none; letter-spacing: 0; }
+.board-hero-mid .chip { font-size: 11.5px; }
+.plat-lines { display: flex; flex-direction: column; }
+.plat-line { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.plat-line:last-child { border-bottom: 0; }
+.sb-link { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.sb-link .mp-input { flex: 1; }
+.link-cand { font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.link-cand:last-of-type { border-bottom: 0; }
+/* Published to, grouped by site: the site row, then its posts under it. */
+.pub-group { border-bottom: 1px solid var(--border); }
+.pub-group:last-child { border-bottom: 0; }
+.pub-group > .loc-row { border-bottom: 0; }
+.pub-subs { padding: 0 0 8px 50px; display: flex; flex-direction: column; gap: 4px; }
+.pub-sub { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12.5px; color: var(--text-secondary); }
+.pub-sub .loc-stats { font-size: 12px; }
+.needs-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.needs-row:last-child { border-bottom: 0; }
+.needs-k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; padding: 2px 7px; border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
+.needs-k--bad { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.sb-h3 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 12px 0 6px; font-weight: 600; }
+.sb-h3:first-child { margin-top: 0; }
+.format-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.board .chapter-row { padding: 7px 0; border-top: 1px solid var(--border); }
+.board .chapter-row:first-child { border-top: 0; }
+@media (max-width: 900px) { .pub-subs { padding-left: 0; } }
+
+/* ── Breakpoints (§5.1, §9 Q5) ─────────────────────────────────────────── */
+@media (max-width: 1400px) {
+    .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .board-col--3 { grid-column: 1 / -1; }
+}
+@media (max-width: 900px) {
+    .board { grid-template-columns: 1fr; }
+    .board-hero { grid-template-columns: 96px 1fr; }
+    .board-hero-tile { width: 96px; height: 96px; }
+    .board-hero > .board-hero-actions { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
+    .board-hero-actions .btn { width: auto; }
+    /* thumb · site · open · ✕ on one line; the stats drop under the site name
+       rather than the ✕ wrapping under the thumb. */
+    .loc-row { grid-template-columns: 40px minmax(0, 1fr) auto auto; }
+    .loc-row .loc-stats { grid-column: 2 / -1; grid-row: 2; }
+}

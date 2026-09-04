@@ -41,6 +41,7 @@ import logging
 import os
 
 import config
+from posting import announce
 from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
 
 logger = logging.getLogger(__name__)
@@ -50,11 +51,12 @@ logger = logging.getLogger(__name__)
 CAPTION_LIMIT = 1024
 MESSAGE_LIMIT = 4096
 
-_IMAGE_TYPES = ("png", "jpg", "jpeg", "gif", "webp")
+_IMAGE_TYPES = announce.IMAGE_TYPES
 
-# Ratings that get a tap-to-reveal blur. Mirrors the vocabulary bluesky.py maps
-# to its own labels, so one rating field drives both platforms consistently.
-_SPOILER_RATINGS = ("adult", "explicit", "nsfw", "mature", "questionable")
+# Ratings that get a tap-to-reveal blur — the one vocabulary every announcer
+# shares (posting/announce.py), so a rating drives the blur here, the
+# sensitive flag on X and the content label on Bluesky consistently.
+_SPOILER_RATINGS = announce.SPOILER_RATINGS
 
 
 class TelegramPoster(PlatformPoster):
@@ -224,19 +226,9 @@ class TelegramPoster(PlatformPoster):
         return errors
 
 
-def _flag(value, default: bool) -> bool:
-    """Read a tri-state option: unset falls back, anything else is coerced.
-
-    Per-artwork options arrive as JSON, so a value may be a real bool or one of
-    the strings a human typed into art.json. Bare bool() treats "false" as TRUE,
-    which would silently invert the setting — and for `protect` or `spoiler`
-    that is the wrong way round on a live broadcast.
-    """
-    if value is None:
-        return default
-    if isinstance(value, str):
-        return value.strip().lower() not in ("", "0", "false", "no", "off")
-    return bool(value)
+# Moved to posting/announce.py in 4.3.7 when X and Bluesky grew the same
+# options; kept under the old name so nothing that reads this module changes.
+_flag = announce.flag
 
 
 def _resolve_options(package: StoryUploadPackage, settings: dict) -> dict:
@@ -271,76 +263,9 @@ def _resolve_options(package: StoryUploadPackage, settings: dict) -> dict:
 
 
 
-_LINK_MODES = ("auto", "first", "all", "pick", "none")
-
-
-def _resolve_links(package: StoryUploadPackage) -> list[str]:
-    """Which of the work's URLs the caption carries, and in what order (4.3.0).
-
-    Inputs ride in ``package.extra`` (all optional):
-
-    * ``links_by_platform`` — ``[(platform, url), …]`` of EXISTING posted
-      publications (story_reader._story_extra / artwork_reader._artwork_links).
-      ``links`` is the older bare-URL list, used when the pairs are absent.
-    * ``run_links`` — ``[(platform, url), …]`` posted SO FAR IN THIS PUBLISH.
-      The manager sets it, and sorts announcing platforms last so it exists.
-    * ``link_mode`` (one of _LINK_MODES) and ``link_platforms`` (an ordered
-      list of codes) — per-piece options from ``categories.tg`` (artwork) or
-      ``platform_options.tg`` (story). ⚠ Read RAW, never through _flag(): a
-      list coerced to True was exactly the bug publish_flow spec §6 named.
-
-    Modes:
-      auto  — the existing links, ordered by link_platforms where given; and
-              when there are none yet, the first link THIS publish produced.
-              That is "wherever it lands first" (spec §10 Q3), and it is the
-              default so a never-posted piece sent to FA + Telegram in one go
-              links to FA without anyone configuring anything.
-      first — only the first successful link of this publish, else the first
-              existing one.
-      all   — every existing link plus this publish's, ordered.
-      pick  — only the platforms in link_platforms, in that order.
-      none  — no links.
-
-    The first link matters most: it is the one Telegram previews.
-    """
-    x = package.extra or {}
-    mode = str(x.get("link_mode") or "auto").strip().lower()
-    if mode not in _LINK_MODES:
-        mode = "auto"
-    if mode == "none":
-        return []
-    raw_order = x.get("link_platforms")
-    order = [str(c) for c in raw_order] if isinstance(raw_order, (list, tuple)) else []
-
-    def pairs(key: str) -> list[tuple[str, str]]:
-        out: list[tuple[str, str]] = []
-        for item in x.get(key) or []:
-            if isinstance(item, (list, tuple)) and len(item) == 2 and item[1]:
-                out.append((str(item[0]), str(item[1])))
-        return out
-
-    existing = pairs("links_by_platform") or [("", str(u)) for u in (x.get("links") or []) if u]
-    run = pairs("run_links")
-
-    if mode == "first":
-        pool = run or existing
-        return [pool[0][1]] if pool else []
-    if mode == "auto" and not existing:
-        return [run[0][1]] if run else []
-
-    seen: set[str] = set()
-    pool: list[tuple[str, str]] = []
-    for p, u in existing + run:
-        if u not in seen:
-            seen.add(u)
-            pool.append((p, u))
-    if mode == "pick":
-        pool = [(p, u) for p, u in pool if p in order]
-    if order:
-        rank = {c: i for i, c in enumerate(order)}
-        # Stable: listed platforms in the user's order, unlisted after them.
-        pool.sort(key=lambda pu: rank.get(pu[0], len(order)))
-    return [u for _, u in pool]
+_LINK_MODES = announce.LINK_MODES
+# The link picker's resolver (4.3.0) is shared with X and Bluesky since 4.3.7.
+_resolve_links = announce.resolve_links
 
 
 def _build_caption(package: StoryUploadPackage, *, has_image: bool, is_art: bool,
@@ -383,19 +308,4 @@ def _build_caption(package: StoryUploadPackage, *, has_image: bool, is_art: bool
     return "\n\n".join(p for p in parts if p)
 
 
-def _hashtags(tags: list[str]) -> str:
-    """Tags as Telegram hashtags — alnum/underscore, deduped, order preserved.
-
-    ⚠ No 30-tag cap. That is Instagram's rule; copying it here would silently
-    drop tags for no reason. The length ceiling is the caption limit, which
-    validate() reports rather than enforcing by truncation.
-    """
-    seen: set[str] = set()
-    out: list[str] = []
-    for t in tags or []:
-        h = "".join(ch for ch in str(t) if ch.isalnum() or ch == "_")
-        if not h or h.lower() in seen:
-            continue
-        seen.add(h.lower())
-        out.append("#" + h)
-    return " ".join(out)
+_hashtags = announce.hashtags

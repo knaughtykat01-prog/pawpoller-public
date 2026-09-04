@@ -559,7 +559,32 @@ class TWClient:
             logger.error("TW: media upload error: %s", e)
             return None
 
-    async def create_tweet(self, text: str, media_ids: list[str] | None = None) -> dict | None:
+    async def set_media_alt(self, media_id: str, text: str) -> bool:
+        """Attach alt text to an uploaded image. Best-effort (4.3.7).
+
+        The v1.1 ``media/metadata/create`` endpoint, sent with the same cookie
+        session as the upload. ⚠ Not verified against X's current anti-
+        automation stance: it may be refused where the upload was not. A
+        refusal is logged and returns False; it never fails the post, because
+        alt text is worth having and not worth losing the post over.
+        """
+        if not (self.auth_token and self.ct0 and media_id and text):
+            return False
+        try:
+            resp = await self._http.post(
+                "https://upload.x.com/1.1/media/metadata/create.json",
+                json={"media_id": str(media_id), "alt_text": {"text": text[:1000]}},
+                headers=_WRITE_HEADERS, timeout=30.0,
+            )
+            if resp.status_code in (200, 204):
+                return True
+            logger.warning("TW: alt text refused (%s): %s", resp.status_code, resp.text[:200])
+        except Exception as e:
+            logger.warning("TW: alt text error: %s", e)
+        return False
+
+    async def create_tweet(self, text: str, media_ids: list[str] | None = None,
+                           *, sensitive: bool = False) -> dict | None:
         """Post a tweet via the internal CreateTweet GraphQL mutation.
 
         Same cookie auth as polling; attaches up to 4 uploaded ``media_ids``
@@ -575,7 +600,10 @@ class TWClient:
         variables = {
             "tweet_text": text,
             "dark_request": False,
-            "media": {"media_entities": media_entities, "possibly_sensitive": False},
+            # `sensitive` is X's own flag for adult media (4.3.7). It used to be
+            # hard-coded False, which posted adult art unflagged — the kind of
+            # thing that gets an account restricted rather than the post refused.
+            "media": {"media_entities": media_entities, "possibly_sensitive": bool(sensitive)},
             "semantic_annotation_ids": [],
         }
         self.last_error = ""

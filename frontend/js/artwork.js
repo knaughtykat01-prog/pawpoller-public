@@ -12,7 +12,16 @@
 window.Artwork = {
 
     /* Image-capable platforms the hub posts to (v1), in display order. */
-    _PLATFORMS: ['ib', 'fa', 'sf', 'bsky', 'ik', 'ws', 'da', 'e621', 'ig', 'fn', 'tg'],
+    _PLATFORMS: ['ib', 'fa', 'sf', 'bsky', 'tw', 'ik', 'ws', 'da', 'e621', 'ig', 'fn', 'tg'],
+    /* The announcing platforms — a caption, links to where the piece already
+     * lives, hashtags — and therefore the ones whose row carries the per-piece
+     * options panel (Telegram since 4.0.10; X and Bluesky since 4.3.7). Mirrors
+     * posting/announce.py ANNOUNCERS. */
+    _ANNOUNCERS: ['tg', 'tw', 'bsky'],
+    _PANEL_TITLES: { tg: 'Telegram options', tw: 'X options', bsky: 'Bluesky options' },
+    /* The per-piece text box's cap per platform — the box, not the post: links
+     * and hashtags share the real limit, which the poster fits to. */
+    _TEXT_CAPS: { tg: 900, tw: 280, bsky: 300 },
 
     _pendingFile: null,    // browser File awaiting upload
     _pendingPath: null,    // desktop local path awaiting copy
@@ -584,12 +593,18 @@ window.Artwork = {
      * same classes. Telegram's per-piece options live in the row's own
      * Override section so they appear wherever you pick platforms, rather
      * than only on one screen. */
-    _renderPlatformRows(el, tgOpts, tgExtra) {
-        tgOpts = tgOpts || {};
+    _renderPlatformRows(el, optsByCode, extraByCode) {
+        // Both maps are keyed by platform code (4.3.7). A caller from before X
+        // and Bluesky had panels passed Telegram's alone; that shape still
+        // works and is read as {tg: …}.
+        const opts = this._byCode(optsByCode);
+        const extras = this._byCode(extraByCode);
         // The persona chips render into this host (4.2.0); the rows' slots
         // then carry the resolved account per platform.
         el.innerHTML = '<div class="persona-picker" data-persona-picker hidden></div>' + this._PLATFORMS.map(code => {
             const p = this._plat(code);
+            const ann = this._ANNOUNCERS.includes(code);
+            const o = opts[code] || {};
             return `
             <div class="artwork-plat-row" data-platform="${code}">
                 <label class="artwork-plat-toggle">
@@ -599,16 +614,22 @@ window.Artwork = {
                 </label>
                 <span class="art-acct-slot" data-platform="${code}"></span>
                 <details class="artwork-plat-adv">
-                    <summary>${code === 'tg'
-                        ? 'Telegram options' + (Object.values(tgOpts).some(v => v) ? ' · set' : '')
+                    <summary>${ann
+                        ? this._PANEL_TITLES[code] + (Object.values(o).some(v => v) ? ' · set' : '')
                         : 'Override'}</summary>
                     <label class="field">Tags for ${this.esc(p.label)}
                         <input type="text" class="art-plat-tags" data-platform="${code}" placeholder="(defaults to the tags above)">
                     </label>
-                    ${code === 'tg' ? this._tgOptRows(tgOpts, tgExtra) : ''}
+                    ${ann ? this._tgOptRows(o, { ...(extras[code] || {}), code }) : ''}
                 </details>
             </div>`;
         }).join('');
+    },
+
+    /* A per-platform map, or the pre-4.3.7 Telegram-only value read as {tg}. */
+    _byCode(x) {
+        if (!x || typeof x !== 'object') return {};
+        return this._ANNOUNCERS.some(c => c in x) ? x : { tg: x };
     },
 
     /* Rows for Components.confirmPublish: one per ticked platform, with the
@@ -651,6 +672,25 @@ window.Artwork = {
     _personaLabel(scope) {
         const h = document.querySelector(`${scope} [data-persona-picker]`);
         return h ? (h.dataset.personaLabel || '') : '';
+    },
+
+    /* The "this post only" text boxes the confirm dialog shows: one per
+     * announcing platform in the selection (Telegram since 4.3.0; X and
+     * Bluesky since 4.3.7). */
+    _pubTextBoxes(platforms) {
+        return this._ANNOUNCERS.filter(c => (platforms || []).includes(c)).map(code => ({
+            code, label: this._plat(code).label, cap: this._TEXT_CAPS[code] || 900,
+        }));
+    },
+
+    /* The dialog's per-platform text as the publish body's description
+     * overrides, or undefined when every box was blank. */
+    _pubDescOverrides(conf) {
+        const d = (conf && conf.descriptions) || {};
+        const out = {};
+        Object.keys(d).forEach(code => { if (d[code]) out[code] = d[code]; });
+        if (conf && conf.tgDescription && !out.tg) out.tg = conf.tgDescription;
+        return Object.keys(out).length ? out : undefined;
     },
 
     _wireUpload() {
@@ -853,7 +893,7 @@ window.Artwork = {
             title: meta.title, subtitle: 'New artwork',
             persona: this._personaLabel('#art-platforms'),
             targets: this._confirmTargets('#art-platforms', meta.platforms, accountIds),
-            tgDesc: meta.platforms.includes('tg') ? {} : null,
+            textBoxes: this._pubTextBoxes(meta.platforms),
         });
         if (!conf) {
             this._toast('info', 'Saved — not published');
@@ -867,7 +907,7 @@ window.Artwork = {
                 platforms: meta.platforms,
                 account_ids: accountIds,
                 persona_id: this._personaId('#art-platforms'),
-                description_overrides: conf.tgDescription ? { tg: conf.tgDescription } : undefined,
+                description_overrides: this._pubDescOverrides(conf),
                 confirm_live: true,
             });
             const ok = res.successes || 0;
@@ -910,188 +950,8 @@ window.Artwork = {
      * release in the wild. */
     async renderDetail(name) {
         if (window.Masterpieces) return window.Masterpieces.renderDetail(name);
-        return this._renderDetailLegacy(name);
-    },
-
-    async _renderDetailLegacy(name) {
-        const app = document.getElementById('app');
-        app.innerHTML = `<div class="loading-spinner">Loading…</div>`;
-        let data;
-        try {
-            data = await API.getArtwork(name);
-        } catch (err) {
-            app.innerHTML = `<div class="card error">Artwork not found: ${this.esc(name)}</div>`;
-            return;
-        }
-        const cover = data.image
-            ? `<img class="artwork-detail-img" id="art-detail-img" data-rating="${this.esc((data.rating || '').toLowerCase())}" src="${this._imgUrl(name, data.image)}" alt="${this.esc(data.title)}">` : '';
-        // Variant strip (2.190.0): declared variants render labeled; a piece with
-        // only undeclared alt files falls back to the raw folder images. Clicking
-        // a thumbnail swaps the main image. Read-only — managed in Masterpieces.
-        const _variants = data.variants || [];
-        const _chips = _variants.length
-            ? _variants.map(v => ({ img: v.image, label: v.label || v.key || 'Primary' }))
-            : (data.images || []).map((f, i) => ({ img: f, label: i === 0 ? 'Primary' : `Alt ${i}` }));
-        const altStrip = _chips.length > 1
-            ? `<div class="artwork-detail-alts" data-rating="${this.esc((data.rating || '').toLowerCase())}">
-                ${_chips.map((c, i) => `
-                    <button type="button" class="artwork-alt${i === 0 ? ' is-active' : ''}"
-                        data-art-alt="${this._imgUrl(name, c.img)}" title="${this.esc(c.label)}">
-                        <img src="${this._imgUrl(name, c.img)}" alt="" loading="lazy">
-                        <span class="artwork-alt-label">${this.esc(c.label)}</span>
-                    </button>`).join('')}
-               </div>` : '';
-        const pubRows = (data.publications || []).map(p => {
-            const plat = this._plat(p.platform);
-            const st = p.stats || {};
-            const link = p.external_url
-                ? `<a href="${this.esc(Utils.safeUrl(p.external_url) || '#')}" target="_blank" rel="noopener">view ↗</a>` : '—';
-            const stats = p.stats
-                ? `${Utils.formatNumber(st.views || 0)} views · ${Utils.formatNumber(st.favorites_count || 0)} faves · ${Utils.formatNumber(st.comments_count || 0)} comments`
-                : '<span class="muted">not yet polled</span>';
-            return `<tr>
-                <td>${plat.emoji || ''} ${this.esc(plat.label)}</td>
-                <td><span class="artwork-status artwork-status--${this.esc(p.status)}">${this.esc(p.status)}</span></td>
-                <td>${stats}</td>
-                <td>${link}</td>
-            </tr>`;
-        }).join('');
-
-        // Editable canonical metadata (rating / title / description / tags). The
-        // rating select is pre-selected to the current value; the tags box shows
-        // the default tag list (the cascade source for every platform).
-        const curRating = (data.rating || '').toLowerCase();
-        const ratingOpts = ['general', 'mature', 'adult'].map(r =>
-            `<option value="${r}"${curRating === r ? ' selected' : ''}>${r[0].toUpperCase() + r.slice(1)}</option>`).join('');
-        const tagsObj = data.tags || {};
-        const defaultTags = (tagsObj.default && tagsObj.default.length)
-            ? tagsObj.default
-            : [...new Set(Object.values(tagsObj).flat())];
-        const defaultTagsStr = defaultTags.join(', ');
-        // Per-piece Telegram overrides live in categories.tg — the same field
-        // the backend already reads. Unset means 'follow the channel default',
-        // which is why each control is tri-state rather than a checkbox.
-        const tgOpts = (data.categories && data.categories.tg) || {};
-
-        app.innerHTML = `
-            <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
-                <div>
-                    <h1>${this.esc(data.title || name)}</h1>
-                    <p class="muted"><a href="#/library/type/artwork">← Back to Library</a></p>
-                </div>
-                <div style="display:flex;gap:.5rem;flex-shrink:0;">
-                    <button class="btn btn-danger" id="art-delete">Delete</button>
-                </div>
-            </div>
-            <div class="artwork-detail">
-                <div class="artwork-detail-col">${cover}${altStrip}</div>
-                <div class="artwork-detail-col">
-                    <div class="card">
-                        <h3>Details <span class="muted" style="font-weight:400;font-size:.8rem">— edit the canonical record</span></h3>
-                        <label class="field">Title
-                            <input type="text" id="art-edit-title" value="${this.esc(data.title || '')}" placeholder="Artwork title">
-                        </label>
-                        <label class="field">Description
-                            <textarea id="art-edit-desc" rows="4" placeholder="Caption / description">${this.esc(data.description || '')}</textarea>
-                        </label>
-                        <label class="field">Alt text <span class="muted">(for screen readers; used on Bluesky)</span>
-                            <input type="text" id="art-edit-alt" value="${this.esc(data.alt_text || '')}" placeholder="e.g. A grey wolf in a red jacket grins at the viewer">
-                        </label>
-                        <div class="field-row">
-                            <label class="field">Rating
-                                <select id="art-edit-rating">${ratingOpts}</select>
-                            </label>
-                        </div>
-                        <label class="field">Tags <span class="muted">(comma-separated default)</span>
-                            <textarea id="art-edit-tags" rows="2" placeholder="tag one, tag two">${this.esc(defaultTagsStr)}</textarea>
-                        </label>
-                        <details class="art-tg-opts">
-                            <summary>&#128227; Telegram options <span class="muted">— this piece only</span></summary>
-                            <p class="muted" style="font-size:12px;margin:6px 0 10px">
-                                Each falls back to your channel default in Settings &rarr; Telegram.
-                                Leave one on <strong>Default</strong> to follow the channel.
-                            </p>
-                            ${this._tgOptRows(tgOpts, {
-                                desc: (data.descriptions && typeof data.descriptions === 'object') ? (data.descriptions.tg || '') : undefined,
-                                live: (data.publications || []).filter(p => p.status === 'posted' && p.external_url && p.platform !== 'tg').map(p => p.platform),
-                            })}
-                        </details>
-                        <div class="artwork-actions">
-                            <button type="button" class="btn btn-sm" id="art-edit-tagbrowse">🏷️ Browse tag library</button>
-                            <button type="button" class="btn btn-primary btn-sm" id="art-edit-save">Save changes</button>
-                            <span id="art-edit-msg" class="muted"></span>
-                        </div>
-                    </div>
-                    <div class="card">
-                        <h3>Published</h3>
-                        ${pubRows
-                            ? `<table class="data-table"><thead><tr><th>Platform</th><th>Status</th><th>Stats</th><th></th></tr></thead><tbody>${pubRows}</tbody></table>`
-                            : '<p class="muted">Not published anywhere yet.</p>'}
-                    </div>
-                    <div class="card">
-                        <h3>Publish to more</h3>
-                        <div id="art-detail-platforms"></div>
-                        <div class="artwork-actions">
-                            <button class="btn btn-primary" id="art-detail-publish">Publish now</button>
-                            <button class="btn btn-outline" id="art-detail-schedule-toggle">&#128340; Schedule&hellip;</button>
-                            <span id="art-detail-msg" class="muted"></span>
-                        </div>
-                        <div class="schedule-form" id="art-schedule-form" style="display:none">
-                            <div class="schedule-form-inner">
-                                <label class="schedule-label" for="art-schedule-datetime">Publish the ticked platforms at:</label>
-                                <input type="datetime-local" class="schedule-datetime" id="art-schedule-datetime">
-                                <div class="schedule-form-actions">
-                                    <button class="btn btn-sm btn-primary" id="art-schedule-confirm">Confirm schedule</button>
-                                    <button class="btn btn-sm btn-outline" id="art-schedule-cancel">Cancel</button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="schedule-pending" id="art-scheduled-list"></div>
-                    </div>
-                </div>
-            </div>`;
-
-        // A compact platform picker for "publish to more", excluding already-posted.
-        const posted = new Set((data.publications || [])
-            .filter(p => p.status === 'posted').map(p => p.platform));
-        this._renderPlatformRows(document.getElementById('art-detail-platforms'),
-                                 (data.categories && data.categories.tg) || {});
-        // Pre-disable already-posted platforms.
-        document.querySelectorAll('#art-detail-platforms .art-plat-row').forEach(row => {
-            if (posted.has(row.dataset.platform)) {
-                row.style.opacity = '.5';
-                const cb = row.querySelector('.art-plat-check');
-                if (cb) { cb.disabled = true; cb.title = 'Already posted'; }
-            }
-        });
-        await this._populateAccountSelectors();
-
-        document.getElementById('art-delete').addEventListener('click', () => this._delete(name));
-        // Variant strip: swap the main image (2.190.0).
-        document.querySelectorAll('.artwork-detail-alts .artwork-alt').forEach(btn =>
-            btn.addEventListener('click', () => {
-                const main = document.getElementById('art-detail-img');
-                if (main) main.src = btn.dataset.artAlt;
-                document.querySelectorAll('.artwork-detail-alts .artwork-alt')
-                    .forEach(b => b.classList.toggle('is-active', b === btn));
-            }));
-        document.getElementById('art-detail-publish').addEventListener('click', () => this._publishMore(name));
-        document.getElementById('art-edit-save').addEventListener('click', () => this._saveMeta(name, data));
-        document.getElementById('art-edit-tagbrowse').addEventListener('click', () => this._openTagLibrary('art-edit-tags'));
-
-        // Scheduling: toggle the picker, confirm, and list what's already queued.
-        const schedForm = document.getElementById('art-schedule-form');
-        const schedInput = document.getElementById('art-schedule-datetime');
-        document.getElementById('art-detail-schedule-toggle').addEventListener('click', () => {
-            const showing = schedForm.style.display !== 'none';
-            schedForm.style.display = showing ? 'none' : '';
-            if (!showing && !schedInput.value) schedInput.value = this._defaultScheduleLocal();
-        });
-        document.getElementById('art-schedule-cancel').addEventListener('click', () => {
-            schedForm.style.display = 'none';
-        });
-        document.getElementById('art-schedule-confirm').addEventListener('click', () => this._confirmSchedule(name));
-        this._loadArtScheduled(name);
+        // The pre-2.193 renderer was deleted in 4.5.0; the page IS the Masterpiece page.
+        document.getElementById('app').innerHTML = '<div class="card error">The Masterpieces module did not load.</div>';
     },
 
     /* datetime-local wants 'YYYY-MM-DDTHH:MM' in LOCAL time. Default to one
@@ -1223,56 +1083,102 @@ window.Artwork = {
          'Off suppresses the preview card Telegram generates for the first link in the post.'],
     ],
 
-    /* opts = categories.tg (the tri-states, plus link_mode / link_platforms).
-     * extra = { desc, live } is passed only where the page can SAVE what the
-     * two 4.3.0 controls collect: `desc` (undefined ⇒ no box) is the stored
-     * per-piece Telegram text, `live` the codes this piece is posted to. */
+    /* The rows for one announcer's panel. Keys mirror the poster's
+     * _resolve_options \u2014 a test holds the two lists to each other. */
+    _optsFor(code) {
+        return code === 'tw' ? this._TW_OPTS : code === 'bsky' ? this._BSKY_OPTS : this._TG_OPTS;
+    },
+
+    /* X (4.3.7) \u2014 posting/platforms/twitter.py _resolve_options. */
+    _TW_OPTS: [
+        ['sensitive', 'Mark as sensitive',
+         'Follows the rating unless set here. X expects the flag on adult media; an unflagged adult image is how an account gets restricted, not how a post gets refused.'],
+        ['tags',      'Include hashtags',
+         'Dropped first when the post would not fit 280 \u2014 the text always wins.'],
+        ['caption',   'Include text',
+         'Off sends the image alone.'],
+        ['alt',       'Send alt text',
+         'Attaches the piece\u2019s alt text to the image. Best-effort: X may refuse it without refusing the post.'],
+    ],
+
+    /* Bluesky (4.3.7) \u2014 posting/platforms/bluesky.py _resolve_options. */
+    _BSKY_OPTS: [
+        ['label',   'Content label',
+         'Follows the rating unless set here \u2014 adult pieces get \u201csexual\u201d, mature ones \u201cnudity\u201d.',
+         [['none', 'None'], ['nudity', 'Nudity'], ['sexual', 'Sexual'], ['porn', 'Porn'], ['graphic-media', 'Graphic media']]],
+        ['tags',    'Include hashtags',
+         'Off unless set \u2014 300 graphemes is not much. On, they become clickable tags, and are dropped first when the post would not fit.'],
+        ['caption', 'Include text',
+         'Off sends the image alone, with its alt text.'],
+    ],
+
+    /* opts = categories.<code> (the tri-states or choices, plus link_mode /
+     * link_platforms). extra = { code, desc, live } is passed only where the
+     * page can SAVE what the two 4.3.0 controls collect: `desc` (undefined \u21d2
+     * no box) is the stored per-piece text for that platform, `live` the codes
+     * this piece is posted to. `code` defaults to 'tg', so a caller from before
+     * the panel was shared (4.3.7) still gets Telegram. */
     _tgOptRows(opts, extra) {
         this._wireTgPanelOnce();
-        const rows = this._TG_OPTS.map(([key, label, help]) => {
+        const code = (extra && extra.code) || 'tg';
+        const rows = this._optsFor(code).map(([key, label, help, choices]) => {
             const v = (opts || {})[key];
-            const sel = (v === undefined || v === null) ? '' : (v ? 'on' : 'off');
-            return `
-            <div class="art-tg-row">
-                <select class="art-tg-opt" data-tgopt="${key}">
+            let select;
+            if (!choices) {
+                const sel = (v === undefined || v === null) ? '' : (v ? 'on' : 'off');
+                select = `<select class="art-tg-opt" data-tgopt="${key}" data-platform="${code}">
                     <option value=""${sel === '' ? ' selected' : ''}>Default</option>
                     <option value="on"${sel === 'on' ? ' selected' : ''}>On</option>
                     <option value="off"${sel === 'off' ? ' selected' : ''}>Off</option>
-                </select>
+                </select>`;
+            } else {
+                // A choice (Bluesky's content label): '' is Default, like the tri-states.
+                const cur = (v === undefined || v === null) ? '' : String(v);
+                select = `<select class="art-tg-opt" data-tgopt="${key}" data-platform="${code}" data-kind="choice">${
+                    [['', 'Default'], ...choices].map(([val, text]) =>
+                        `<option value="${val}"${cur === val ? ' selected' : ''}>${this.esc(text)}</option>`).join('')
+                }</select>`;
+            }
+            return `
+            <div class="art-tg-row">
+                ${select}
                 <span class="art-tg-label"><strong>${label}</strong><br><span class="muted">${help}</span></span>
             </div>`;
         }).join('');
         if (!extra) return rows;
 
         opts = opts || {};
+        const p = this._plat(code);
         const uid = Math.random().toString(36).slice(2, 8);
         const desc = extra.desc;
+        const cap = this._TEXT_CAPS[code] || 900;
         const descHtml = desc === undefined ? '' : `
             <label class="art-tg-desc-label">
-                <span><strong>Text for Telegram</strong> <span class="muted">— optional. Overrides the piece's description on Telegram only; blank uses the announcement blurb, then the description.</span></span>
-                <textarea class="art-tg-desc" rows="3" maxlength="900" placeholder="What the channel post says">${this.esc(desc)}</textarea>
+                <span><strong>Text for ${this.esc(p.label)}</strong> <span class="muted">\u2014 optional. Overrides the piece\u2019s description on ${this.esc(p.label)} only; blank uses the announcement blurb, then the description.</span></span>
+                <textarea class="art-tg-desc" data-platform="${code}" rows="3" maxlength="${cap}" placeholder="What the ${this.esc(p.label)} post says">${this.esc(desc)}</textarea>
                 <span class="art-tg-count muted"></span>
             </label>`;
 
-        // Link picker (spec §8.4, §10 Q3). The stored order comes first so the
+        // Link picker (spec \u00a78.4, \u00a710 Q3). The stored order comes first so the
         // user's ranking survives a reload; live sites not yet ranked follow.
+        // Each panel's list leaves ITSELF out \u2014 a post does not link to itself.
         const mode = ['auto', 'first', 'all', 'pick', 'none'].includes(opts.link_mode) ? opts.link_mode : 'auto';
         const order = Array.isArray(opts.link_platforms) ? opts.link_platforms.map(String) : [];
-        const live = (extra.live || []).filter(c => c !== 'tg');
+        const live = (extra.live || []).filter(c => c !== code);
         const listed = [...order, ...live.filter(c => !order.includes(c))];
         const modes = [
             ['auto',  'Automatic', 'links where it is already live; on a fresh piece, wherever it lands first'],
             ['first', 'Wherever it lands first', 'the first site this publish succeeds on'],
             ['all',   'All links', 'every site it is on, in the order below'],
-            ['pick',  'Pick…', 'only the ticked sites, in that order'],
+            ['pick',  'Pick\u2026', 'only the ticked sites, in that order'],
             ['none',  'No links', ''],
-        ].map(([v, l, h]) => `<label title="${this.esc(h)}"><input type="radio" class="art-tg-linkmode" name="tg-linkmode-${uid}" value="${v}"${mode === v ? ' checked' : ''}> ${l}</label>`).join('');
-        const list = listed.map(code => {
-            const p = this._plat(code);
-            return `<li class="art-tg-link" data-code="${code}">
-                <input type="checkbox" class="art-tg-linkpick" value="${code}"${order.includes(code) || mode !== 'pick' ? ' checked' : ''}>
-                <span>${p.emoji || ''} ${this.esc(p.label)}${live.includes(code) ? '' : ' <span class="muted">(not live)</span>'}</span>
-                <button type="button" class="art-tg-linkup" title="Move up — the first link is the one Telegram previews">▲</button>
+        ].map(([v, l, h]) => `<label title="${this.esc(h)}"><input type="radio" class="art-tg-linkmode" data-platform="${code}" name="tg-linkmode-${uid}" value="${v}"${mode === v ? ' checked' : ''}> ${l}</label>`).join('');
+        const list = listed.map(c => {
+            const lp = this._plat(c);
+            return `<li class="art-tg-link" data-code="${c}">
+                <input type="checkbox" class="art-tg-linkpick" data-platform="${code}" value="${c}"${order.includes(c) || mode !== 'pick' ? ' checked' : ''}>
+                <span>${lp.emoji || ''} ${this.esc(lp.label)}${live.includes(c) ? '' : ' <span class="muted">(not live)</span>'}</span>
+                <button type="button" class="art-tg-linkup" title="Move up \u2014 the first link is the one the post previews">\u25b2</button>
             </li>`;
         }).join('');
         const linksHtml = `
@@ -1281,8 +1187,8 @@ window.Artwork = {
                 <div class="art-tg-links-modes">${modes}</div>
                 ${listed.length
                     ? `<ul class="art-tg-linklist"${mode === 'pick' || mode === 'all' ? '' : ' hidden'}>${list}</ul>
-                       <span class="muted" style="font-size:11.5px">The first link is the one Telegram previews.</span>`
-                    : `<span class="muted" style="font-size:11.5px">Nothing published yet — <em>Automatic</em> links wherever this lands first when you publish to several sites at once.</span>`}
+                       <span class="muted" style="font-size:11.5px">The first link is the one the post previews.</span>`
+                    : `<span class="muted" style="font-size:11.5px">Nothing published yet \u2014 <em>Automatic</em> links wherever this lands first when you publish to several sites at once.</span>`}
             </div>`;
         return rows + descHtml + linksHtml;
     },
@@ -1310,31 +1216,42 @@ window.Artwork = {
             const t = e.target;
             if (!(t && t.classList && t.classList.contains('art-tg-desc'))) return;
             const count = t.parentElement && t.parentElement.querySelector('.art-tg-count');
-            // Telegram's cap is on the WHOLE caption (text + hashtags + links),
-            // so this is an approximation; validate() measures the real thing.
-            if (count) count.textContent = `${t.value.length} / 900 (caption limit 1,024 incl. tags and links)`;
+            // The cap is on the WHOLE post (text + hashtags + links), so this is
+            // an approximation; the poster measures the real thing and fits.
+            const cap = t.maxLength > 0 ? t.maxLength : 900;
+            const code = t.dataset.platform || 'tg';
+            const note = code === 'tw' ? 'X counts a link as 23 and most emoji as 2; hashtags and links share the 280'
+                : code === 'bsky' ? 'Bluesky counts graphemes; hashtags and links share the 300'
+                : 'caption limit 1,024 incl. tags and links';
+            if (count) count.textContent = `${t.value.length} / ${cap} (${note})`;
         });
     },
 
-    /* The stored Telegram text, or null when the page shows no box. */
-    _collectTgDesc() {
-        const el = document.querySelector('.art-tg-desc');
+    /* The stored per-piece text for one announcer, or null when the page
+     * shows no box for it. */
+    _collectPlatDesc(code) {
+        const el = document.querySelector(`.art-tg-desc[data-platform="${code}"]`);
         return el ? el.value.trim() : null;
     },
+    _collectTgDesc() { return this._collectPlatDesc('tg'); },
 
-    /* Read the tri-state rows back. Only EXPLICIT choices are stored, so an
-     * untouched option stays absent and keeps following the channel default. */
-    _collectTgOpts() {
+    _collectTgOpts() { return this._collectPlatOpts('tg'); },
+
+    /* One announcer's panel, read back. Only EXPLICIT choices are stored. */
+    _collectPlatOpts(code) {
         const out = {};
-        document.querySelectorAll('.art-tg-opt').forEach(sel => {
+        document.querySelectorAll(`.art-tg-opt[data-platform="${code}"]`).forEach(sel => {
             if (sel.value === 'on') out[sel.dataset.tgopt] = true;
             else if (sel.value === 'off') out[sel.dataset.tgopt] = false;
+            // A choice control stores its value; '' (Default) stays absent, so an
+            // untouched option keeps following the rating / platform default.
+            else if (sel.dataset.kind === 'choice' && sel.value) out[sel.dataset.tgopt] = sel.value;
         });
-        // Link picker (4.3.0). NOT booleans — the poster reads these two raw.
+        // Link picker (4.3.0). NOT booleans \u2014 the poster reads these two raw.
         // 'auto' is the default and is stored as absence, like the tri-states.
-        const modeEl = document.querySelector('.art-tg-linkmode:checked');
+        const modeEl = document.querySelector(`.art-tg-linkmode[data-platform="${code}"]:checked`);
         if (modeEl && modeEl.value && modeEl.value !== 'auto') out.link_mode = modeEl.value;
-        const picks = Array.from(document.querySelectorAll('.art-tg-linkpick:checked')).map(c => c.value);
+        const picks = Array.from(document.querySelectorAll(`.art-tg-linkpick[data-platform="${code}"]:checked`)).map(c => c.value);
         if (picks.length && (!modeEl || modeEl.value === 'pick' || modeEl.value === 'all')) out.link_platforms = picks;
         return out;
     },
@@ -1350,9 +1267,14 @@ window.Artwork = {
         // Merge, don't replace: categories holds every platform's submission
         // params, so writing only `tg` would wipe FA's category, IB's type, etc.
         const categories = { ...(data.categories || {}) };
-        const tgOpts = this._collectTgOpts();
-        if (Object.keys(tgOpts).length) categories.tg = tgOpts;
-        else delete categories.tg;
+        // One announcer panel each (4.3.7). Only panels ON THE PAGE are read,
+        // so a platform with no panel keeps whatever it had.
+        this._ANNOUNCERS.forEach(code => {
+            if (!document.querySelector(`.art-tg-opt[data-platform="${code}"]`)) return;
+            const o = this._collectPlatOpts(code);
+            if (Object.keys(o).length) categories[code] = o;
+            else delete categories[code];
+        });
 
         const updates = {
             title,
@@ -1365,12 +1287,15 @@ window.Artwork = {
         // Merge, don't replace — descriptions holds every platform's override,
         // so writing only `tg` would wipe short/announcement. Same rule as
         // categories above; save_artwork_metadata does a shallow data.update().
-        const tgDesc = this._collectTgDesc();
-        if (tgDesc !== null) {
-            const descriptions = { ...(data.descriptions || {}) };
-            if (tgDesc) descriptions.tg = tgDesc; else delete descriptions.tg;
-            updates.descriptions = descriptions;
-        }
+        const descriptions = { ...(data.descriptions || {}) };
+        let descChanged = false;
+        this._ANNOUNCERS.forEach(code => {
+            const text = this._collectPlatDesc(code);
+            if (text === null) return;                       // no box on the page
+            descChanged = true;
+            if (text) descriptions[code] = text; else delete descriptions[code];
+        });
+        if (descChanged) updates.descriptions = descriptions;
         btn.disabled = true;
         msg.textContent = 'Saving…';
         try {
@@ -1398,14 +1323,14 @@ window.Artwork = {
             title, thumb: img.src || '', subtitle: 'Publish to more',
             persona: this._personaLabel('#art-detail-platforms'),
             targets: this._confirmTargets('#art-detail-platforms', checked, accountIds),
-            tgDesc: checked.includes('tg') ? {} : null,
+            textBoxes: this._pubTextBoxes(checked),
         });
         if (!conf) { msg.textContent = ''; return; }
         msg.textContent = 'Publishing…';
         try {
             const res = await API.publishArtwork({ artwork_name: name, platforms: checked, account_ids: accountIds,
                 persona_id: this._personaId('#art-detail-platforms'),
-                description_overrides: conf.tgDescription ? { tg: conf.tgDescription } : undefined,
+                description_overrides: this._pubDescOverrides(conf),
                 confirm_live: true });
             const ok = res.successes || 0;
             const fail = Components.showPublishResults(msg, res.results);
@@ -1872,13 +1797,13 @@ window.Artwork = {
         // schedule is reversible from the Queue page. This is the sharpest of
         // the six: the ticks came back from localStorage and may be unread,
         // so the dialog's button carries the count and the persona.
-        let tgOverride = null;   // "this post only" Telegram text from the dialog (4.3.0)
+        let descOverrides;   // "this post only" text per announcer, from the dialog (4.3.0; all three since 4.3.7)
         if (!scheduledLocal) {
             const opt = (st.options || []).find(o => o.id === st.presetId) || {};
             const ok = await Components.confirmPublish({
                 title: (this._pendingFile && this._pendingFile.name) || (this._pendingPath || '').split(/[\\/]/).pop() || 'New artwork',
                 subtitle: 'Quick publish',
-                tgDesc: platforms.includes('tg') ? {} : null,
+                textBoxes: this._pubTextBoxes(platforms),
                 persona: opt.id && opt.id !== 'all' ? opt.label : '',
                 targets: platforms.map(code => {
                     const p = (window.platformByCode && window.platformByCode(code)) || { label: code, emoji: '' };
@@ -1887,7 +1812,7 @@ window.Artwork = {
                 }),
             });
             if (!ok) { msg.textContent = 'Not published.'; return; }
-            tgOverride = ok.tgDescription || null;
+            descOverrides = this._pubDescOverrides(ok);
         }
 
         let scheduledIso = null;
@@ -1959,7 +1884,7 @@ window.Artwork = {
             } else {
                 const res = await API.publishArtwork({ artwork_name: name, platforms, account_ids: accountIds,
                     persona_id: this._qpPersonaId(opt),
-                    description_overrides: tgOverride ? { tg: tgOverride } : undefined,
+                    description_overrides: descOverrides,
                     confirm_live: true });
                 const ok = res.successes || 0;
                 const fail = Components.showPublishResults(msg, res.results);

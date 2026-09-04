@@ -129,7 +129,9 @@ class TestWriteHeaders:
     def test_the_write_path_sends_them_and_polling_does_not(self):
         src = open("clients/tw/client.py", encoding="utf-8").read()
         assert '"x-twitter-auth-type": "OAuth2Session"' in src
-        assert src.count("headers=_WRITE_HEADERS") == 2, "create_tweet and upload_media only"
+        # 4.3.7 added set_media_alt (alt text on an uploaded image): a write.
+        assert src.count("headers=_WRITE_HEADERS") == 3, (
+            "create_tweet, upload_media and set_media_alt — the write path only")
         i = src.index("async def _get_json")
         assert "_WRITE_HEADERS" not in src[i:i + 1500], "reads must be left alone"
 

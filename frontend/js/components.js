@@ -1772,8 +1772,12 @@ const Components = {
      * @param {string} [o.verb]      Button verb, default "Publish".
      * @param {string} [o.noun]      Plural noun for the count, default "sites".
      * @param {string} [o.warning]   Extra line, e.g. drip schedules a month of posts.
-     * @param {Object} [o.tgDesc]    When given, a "Telegram text for this post" box
-     *                               (4.3.0); its value comes back as tgDescription.
+     * @param {Array}  [o.textBoxes] [{ code, label, cap, value? }] — one "text for
+     *                               this post" box per announcing platform (4.3.7);
+     *                               their values come back as `descriptions[code]`.
+     * @param {Object} [o.tgDesc]    The pre-4.3.7 form of the above: a Telegram box
+     *                               alone (4.3.0). Still honoured; its value also
+     *                               comes back as `tgDescription`.
      */
     confirmPublish(o) {
         const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
@@ -1808,10 +1812,10 @@ const Components = {
                     </div>
                     <ul class="pub-confirm-list">${rows}</ul>
                     ${o.warning ? `<p class="pub-confirm-warn">${esc(o.warning)}</p>` : ''}
-                    ${o.tgDesc ? `<label class="pub-confirm-tgdesc">
-                        <span>Telegram text for this post <span class="muted">— optional, this post only. Blank uses the piece's saved Telegram text, then its description.</span></span>
-                        <textarea data-pub-tgdesc rows="2" maxlength="900">${esc(o.tgDesc.value || '')}</textarea>
-                    </label>` : ''}
+                    ${(o.textBoxes || (o.tgDesc ? [{ code: 'tg', label: 'Telegram', cap: 900, value: o.tgDesc.value }] : [])).map(b => `<label class="pub-confirm-tgdesc">
+                        <span>${esc(b.label || b.code)} text for this post <span class="muted">— optional, this post only. Blank uses the piece's saved ${esc(b.label || b.code)} text, then its description.</span></span>
+                        <textarea data-pub-desc="${esc(b.code)}"${b.code === 'tg' ? ' data-pub-tgdesc' : ''} rows="2" maxlength="${b.cap || 900}">${esc(b.value || '')}</textarea>
+                    </label>`).join('')}
                     <p class="pub-confirm-note muted">This goes out live. Taking it down afterwards means doing it on each site by hand.</p>
                     <div class="pub-confirm-actions">
                         <button type="button" class="btn btn-secondary" data-pub-cancel>Cancel</button>
@@ -1826,10 +1830,18 @@ const Components = {
             const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); done(false); } };
             ov.addEventListener('click', (e) => { if (e.target === ov) done(false); });
             ov.querySelector('[data-pub-cancel]').addEventListener('click', () => done(false));
-            ov.querySelector('[data-pub-ok]').addEventListener('click', () => done({
-                ok: true,
-                tgDescription: ((ov.querySelector('[data-pub-tgdesc]') || {}).value || '').trim(),
-            }));
+            ov.querySelector('[data-pub-ok]').addEventListener('click', () => {
+                const descriptions = {};
+                ov.querySelectorAll('[data-pub-desc]').forEach(el => {
+                    const v = (el.value || '').trim();
+                    if (v) descriptions[el.dataset.pubDesc] = v;
+                });
+                done({
+                    ok: true,
+                    descriptions,
+                    tgDescription: descriptions.tg || '',   // the 4.3.0 name, kept for callers that read it
+                });
+            });
             document.addEventListener('keydown', onKey);
             document.body.appendChild(ov);
             // Focus lands on Cancel: Enter from a stale keypress must not publish.

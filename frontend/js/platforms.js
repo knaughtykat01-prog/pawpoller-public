@@ -19,7 +19,7 @@
         { code: 'wp',   label: 'Wattpad',      emoji: '\u{1F4D3}', color: 'var(--platform-wp)',   pollOnly: true  },
         { code: 'ik',   label: 'Itaku',        emoji: '\u{1F5BC}', color: 'var(--platform-ik)',   pollOnly: true  },
         { code: 'bsky', label: 'Bluesky',      emoji: '\u{1F98B}', color: 'var(--platform-bsky)', pollOnly: true  },
-        { code: 'tw',   label: 'X / Twitter',  emoji: '\u{1F426}', color: 'var(--platform-tw)',   pollOnly: true  },
+        { code: 'tw',   label: 'X / Twitter',  emoji: '\u{1F426}', color: 'var(--platform-tw)',   pollOnly: false },
         { code: 'mast', label: 'Mastodon',     emoji: '\u{1F418}', color: 'var(--platform-mast)', pollOnly: true  },
         { code: 'tum',  label: 'Tumblr',       emoji: '\u{1F4D8}', color: 'var(--platform-tum)',  pollOnly: true  },
         { code: 'pix',  label: 'Pixiv',        emoji: '\u{1F58C}', color: 'var(--platform-pix)',  pollOnly: true  },

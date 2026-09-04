@@ -148,6 +148,9 @@ def _get_poster(platform: str, account_id: int | None = None) -> PlatformPoster:
         elif platform == "tg":
             from posting.platforms.telegram import TelegramPoster
             poster = TelegramPoster()
+        elif platform == "tw":
+            from posting.platforms.twitter import TwitterPoster
+            poster = TwitterPoster()
         elif platform == "ik":
             from posting.platforms.itaku import ItakuPoster
             poster = ItakuPoster()
@@ -212,7 +215,10 @@ def _resolve_account_id(platform: str, account_id: int | None,
 # links they carry can include what this same publish just created — "wherever
 # it lands first" (publish_flow spec §10 Q3). Everything else keeps the
 # caller's order.
-_ANNOUNCES_LAST = ("tg",)
+# Since 4.3.7 X and Bluesky are announcers too — their posts carry the same
+# links — so they take the same last place. Read from one list so the manager,
+# the artwork reader and the UI cannot disagree about who announces.
+from posting.announce import ANNOUNCERS as _ANNOUNCES_LAST  # noqa: E402
 
 
 def _announcers_last(platforms: list[str]) -> list[str]:

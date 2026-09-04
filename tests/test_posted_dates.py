@@ -190,4 +190,5 @@ class TestSurfaces:
         assert "first_posted" in open("routes/masterpieces_api.py", encoding="utf-8").read()
         assert "first_posted" in open("routes/posting_api.py", encoding="utf-8").read()
         assert "First posted" in open("frontend/js/masterpieces.js", encoding="utf-8").read()
-        assert "first_posted" in open("frontend/js/bookshelf.js", encoding="utf-8").read()
+        # The story page is the story board since 4.5.0 (bookshelf.js is the grid).
+        assert "first_posted" in open("frontend/js/story_board.js", encoding="utf-8").read()

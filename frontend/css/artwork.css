@@ -494,26 +494,13 @@
     .artwork-upload, .artwork-detail { grid-template-columns: 1fr; }
 }
 
-/* Per-piece Telegram options in the artwork edit form.
+/* Per-piece announcer options (Telegram / X / Bluesky) — the rows
+ * _tgOptRows draws inside _renderPlatformRows' platform panels. (The old
+ * edit form's own <details> wrapper went with that form in 4.5.0.)
  *
  * Tri-state selects rather than checkboxes: "Default" (follow the channel
  * setting) is a distinct, and the most common, state. A checkbox would collapse
  * it into whichever bool the default happened to be when the piece was saved. */
-.art-tg-opts {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 10px 12px;
-    margin: 12px 0;
-    background: var(--bg-tertiary);
-}
-
-.art-tg-opts > summary {
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
 .art-tg-row {
     display: flex;
     align-items: flex-start;

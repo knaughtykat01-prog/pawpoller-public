@@ -38,7 +38,7 @@
 }
 
 /* ── "Fold this piece into another" — per-piece dup/variant (2.161.0) ── */
-.mp-fold { display: flex; flex-direction: column; gap: .6rem; max-width: 46ch; }
+.mp-fold { display: flex; flex-direction: column; gap: .6rem; }
 .mp-fold-kinds { display: flex; flex-direction: column; gap: .35rem; }
 .mp-fold-kinds label { font-size: .86rem; display: flex; gap: .4rem; align-items: baseline; cursor: pointer; }
 .mp-fold-vlabel { margin: 0; }
@@ -91,17 +91,10 @@
 
 /* ── Detail view ── */
 /* 2.158.0: the head is a STAGE — a giant blurred/translucent copy of the
-   focused variant floats behind everything (the "ambient backdrop"). */
-.mp-detail-head {
-    display: flex;
-    gap: 1.25rem;
-    flex-wrap: wrap;
-    margin-bottom: 1.25rem;
-    position: relative;
-    overflow: hidden;
-    border-radius: 16px;
-    padding: 1.2rem;
-}
+   focused variant floats behind everything (the "ambient backdrop"). The
+   head's own flex layout (.mp-detail-head, .mp-hero-col, .mp-head-info, the
+   .mp-headline row) was retired in 4.4.0: the page is the C2 board now
+   (board.css), and .mp-stage-bg is the one rule the hero still uses. */
 .mp-stage-bg {
     position: absolute;
     inset: -8%;
@@ -114,8 +107,6 @@
     pointer-events: none;
     transition: opacity .35s ease;
 }
-.mp-detail-head > .mp-hero-col,
-.mp-detail-head > .mp-head-info { position: relative; z-index: 1; }
 @media (prefers-reduced-motion: reduce) { .mp-stage-bg { transition: none } }
 .mp-hero {
     flex: 0 0 auto;
@@ -133,8 +124,6 @@
 .mp-hero-ph { font-size: 3rem; opacity: .4; }
 
 /* Gallery strip (2.152.0) — every image in the folder; click swaps the hero. */
-.mp-hero-col { flex: 0 0 auto; display: flex; flex-direction: column; gap: .45rem; width: min(320px, 42vw); }
-.mp-hero-col .mp-hero { width: 100%; }
 .mp-alts { display: flex; flex-wrap: wrap; gap: .4rem; }
 .mp-alt {
     width: 56px;
@@ -218,10 +207,6 @@
 }
 .mp-vadmin-note { font-size: .76rem; margin: .5rem 0 0; line-height: 1.4; }
 
-.mp-hero-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .2rem; }
-.mp-hero-actions label { cursor: pointer; }
-.mp-hero-actions .muted { font-size: .78rem; }
-.mp-head-info { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: .55rem; }
 .mp-title { font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
 /* Attribution line (3.5.2). Present = quiet; absent = warned, because the
    credit posted to every site is built from this field. */
@@ -298,12 +283,6 @@
 .mp-rating--adult { color: var(--danger, #c0392b); border-color: color-mix(in srgb, var(--danger, #c0392b) 40%, var(--border)); }
 .mp-rating--mature { color: #e0883a; border-color: color-mix(in srgb, #e0883a 40%, var(--border)); }
 
-/* Headline pooled stats row */
-.mp-headline { display: flex; gap: 1.4rem; flex-wrap: wrap; }
-.mp-headline-item { display: flex; flex-direction: column; }
-.mp-headline-num { font-size: 1.3rem; font-weight: 700; line-height: 1.1; }
-.mp-headline-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
-
 /* Personas + tags reuse the Collections visual language */
 .mp-personas { display: flex; gap: .4rem; flex-wrap: wrap; }
 .mp-persona {
@@ -369,8 +348,10 @@
 .mp-role--primary { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .mp-role--postonly { color: var(--text-muted); }
 
-/* Canonical edit form (Phase 5) */
-.mp-edit { display: flex; flex-direction: column; gap: .8rem; max-width: 640px; }
+/* Canonical edit form (Phase 5). The 640px max-width went in 4.4.0: inside
+   an unbounded .main-content with no min-width breakpoint it was the reason a
+   2560px screen showed one narrow column and a field of nothing (C2 spec §0). */
+.mp-edit { display: flex; flex-direction: column; gap: .8rem; }
 .mp-field { display: flex; flex-direction: column; gap: .3rem; font-size: .88rem; }
 .mp-field > span { color: var(--text-muted); display: flex; align-items: center; gap: .5rem; }
 .mp-field-row { display: flex; gap: .8rem; flex-wrap: wrap; }

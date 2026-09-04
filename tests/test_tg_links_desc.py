@@ -196,7 +196,11 @@ class TestPlumbing:
         assert "updates.descriptions = descriptions" in art, "the stored text is merged, not replaced"
         assert art.count("description_overrides: ") == 3, "new form, publish-more, quick publish"
         mp = self._src("frontend/js/masterpieces.js")
-        assert "payload.descriptions = descriptions" in mp and "description_overrides: conf.tgDescription" in mp
+        assert "payload.descriptions = descriptions" in mp
+        # 4.3.7: the dialog's text boxes are one per announcer (X and Bluesky
+        # joined Telegram), so the masterpiece page hands the whole result to
+        # Artwork._pubDescOverrides rather than lifting tgDescription alone.
+        assert "description_overrides: window.Artwork ? window.Artwork._pubDescOverrides(conf)" in mp
         me = self._src("frontend/js/metadata_editor.js")
         assert 'data-desc-tab="tg"' in me and "Announcement (Bsky/Telegram)" in me
         assert "metadata-tg-linkmode" in me and "tg.link_platforms = picks" in me

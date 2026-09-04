@@ -23,6 +23,7 @@ import os
 
 import config
 from clients.bsky.client import BskyClient
+from posting import announce
 from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
 
 logger = logging.getLogger(__name__)
@@ -64,17 +65,19 @@ class BlueskyPoster(PlatformPoster):
         try:
             client = await self._ensure_client()
 
-            # Build post text — announcement style
-            text = package.description
-            if len(text) > 295:
-                text = text[:292] + "..."
-
-            # Determine NSFW labels
-            labels = None
-            if package.rating.lower() in ("adult", "explicit", "nsfw"):
-                labels = ["sexual"]
-            elif package.rating.lower() in ("mature", "questionable"):
-                labels = ["nudity"]
+            opts = _resolve_options(package)
+            is_art = bool(package.file_path
+                          and package.file_type in ("png", "jpg", "jpeg", "gif", "webp"))
+            # Announcement text: body + links to where the piece already lives +
+            # hashtags, fitted to 300 graphemes (4.3.7). Until now this was the
+            # description cut at 295 characters with no links and no tags.
+            # Hashtags stay OFF by default — a post that had none before this
+            # release must not grow them on upgrade — and become clickable facets
+            # when the piece's panel turns them on.
+            text = (announce.compose(package, is_art=is_art, with_tags=opts["tags"],
+                                     limit=announce.BSKY_LIMIT, measure=announce.graphemes)
+                    if opts["caption"] else "")
+            labels = opts["labels"]
 
             # Pick the image to embed: an artwork post uses the primary image
             # (the art itself); a story announcement uses the cover thumbnail.
@@ -157,9 +160,42 @@ class BlueskyPoster(PlatformPoster):
             or package.thumbnail_path)
         if not package.description and not has_image:
             errors.append("Bluesky post requires text or an image")
-        if len(package.description.encode("utf-8")) > 900:
-            errors.append("Bluesky text too long (max ~300 graphemes)")
+        # Length is no longer an error: announce.compose fits the text to 300
+        # graphemes (hashtags first, then the body), because a gallery
+        # description was never going to be a Bluesky post and the per-piece
+        # text box exists for the short version. Refusing here blocked every
+        # normally-described piece.
         return errors
+
+
+# Bluesky's self-labels. "sexual" and "nudity" are what the rating maps to;
+# the other two are only ever chosen on the piece.
+_LABELS = ("nudity", "sexual", "porn", "graphic-media")
+
+
+def _resolve_options(package: StoryUploadPackage) -> dict:
+    """Per-piece options from ``categories.bsky`` (artwork_reader puts them in
+    ``package.extra``), each falling back to Bluesky's own default (4.3.7).
+
+    ``label`` is a choice, not a tri-state: '' follows the rating (adult →
+    sexual, mature → nudity, else none), "none" clears it, and one of
+    _LABELS sets it outright.
+    """
+    x = package.extra or {}
+    rating = (package.rating or "").lower()
+    if rating in ("adult", "explicit", "nsfw"):
+        from_rating = ["sexual"]
+    elif rating in ("mature", "questionable"):
+        from_rating = ["nudity"]
+    else:
+        from_rating = None
+    raw = str(x.get("label") or "").strip().lower()
+    labels = None if raw == "none" else ([raw] if raw in _LABELS else from_rating)
+    return {
+        "labels": labels,
+        "tags": announce.flag(x.get("tags"), False),
+        "caption": announce.flag(x.get("caption"), True),
+    }
 
 
 # Under Bluesky's ~976 KB blob cap, with headroom.

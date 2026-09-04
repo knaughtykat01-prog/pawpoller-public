@@ -1189,8 +1189,9 @@ const App = {
             // is untouched — merging hubs doesn't merge the pages behind them.
             window.location.replace('#/library/type/story');
         } else if (parts[0] === 'posting' && parts[1] === 'story' && parts[2]) {
-            // Story name may contain slashes (e.g. My_Story/Alt_Version)
-            Posting.renderStoryDetail(parts.slice(2).join('/'));
+            // The tabbed story page is gone (4.5.0, C2 spec §9 Q1): the Library's
+            // work route is THE story page. Redirect so old links still land.
+            window.location.replace('#/library/work/' + parts.slice(2).join('/'));
         } else if (parts[0] === 'posting' && parts[1] === 'queue') {
             Posting.renderQueue();
         } else if (parts[0] === 'posting' && parts[1] === 'published') {
@@ -1276,8 +1277,9 @@ const App = {
             // Deep-link to the shelf pre-sorted by a metric (Overview stat cards).
             if (window.Bookshelf) { window.Bookshelf._sort = parts[2]; window.Bookshelf.render(); }
         } else if (parts[0] === 'library' && parts[1] === 'work' && parts[2]) {
-            // Work name may contain slashes — rejoin the tail.
-            if (window.Bookshelf) window.Bookshelf.renderWork(parts.slice(2).join('/'));
+            // Work name may contain slashes — rejoin the tail. The story board
+            // (story_board.js, 4.5.0) replaced Bookshelf's read-only work page.
+            if (window.StoryBoard) StoryBoard.render(parts.slice(2).join('/'));
         } else if (parts[0] === 'library' && parts[1] === 'browse') {
             // The CLASSIC full grid (filters/search/sorts) — the Showcase's
             // "✕ Classic view" target. Reset the segment (see bare-route note).

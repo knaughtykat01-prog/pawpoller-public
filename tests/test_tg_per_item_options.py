@@ -26,8 +26,13 @@ import pytest
 
 class TestArtworkOptionsUI:
     def test_the_edit_form_offers_the_options(self):
+        # The live form is the Masterpiece page's platform panels, drawn by
+        # artwork.js's _renderPlatformRows (the pre-2.193 edit form that held
+        # its own <details> block was deleted in 4.5.0).
         js = open("frontend/js/artwork.js", encoding="utf-8").read()
-        assert "art-tg-opts" in js, "no Telegram options block in the artwork form"
+        mp = open("frontend/js/masterpieces.js", encoding="utf-8").read()
+        assert "Artwork._renderPlatformRows(" in mp, "the Masterpiece page does not draw the platform panels"
+        assert "this._tgOptRows(" in js[js.index("_renderPlatformRows(el"):], "no options rows in the platform panels"
         assert "_tgOptRows" in js and "_collectTgOpts" in js
 
     def test_every_backend_option_has_a_control(self):

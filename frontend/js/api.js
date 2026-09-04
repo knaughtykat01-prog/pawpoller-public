@@ -94,7 +94,7 @@ const API = {
      * Content-Type header.  Same error-handling pattern as get():
      * throws on network failure or non-OK HTTP status.
      */
-    async post(path, body = {}) {
+    async post(path, body = {}, opts = {}) {
         if (_API_DEBUG) console.log('[API] POST', path, body);
         let resp;
         try {
@@ -114,7 +114,11 @@ const API = {
             // If an action the user just triggered (a post / upload) died on an
             // expired platform session, escalate to a blocking modal — a toast
             // is too easy to miss for something that needs credentials re-entered.
-            if (!_maybeAuthModal(path, resp.status, text)) {
+            // opts.quiet: statuses the CALLER handles as an expected outcome
+            // (a 409 "changed elsewhere", a 422 "not a link I know") — the
+            // caller shows them in place; the crash popup would say the same
+            // thing again, dressed as a failure.
+            if (!(opts.quiet || []).includes(resp.status) && !_maybeAuthModal(path, resp.status, text)) {
                 _popError('POST', path, resp.status, text);
             }
             throw new Error(`API ${resp.status}: ${text}`);
@@ -136,6 +140,21 @@ const API = {
         if (!resp.ok) {
             const text = await resp.text();
             _popError('PATCH', path, resp.status, text);
+            throw new Error(`API ${resp.status}: ${text}`);
+        }
+        return resp.json();
+    },
+
+    async put(path, body = {}, opts = {}) {
+        if (_API_DEBUG) console.log('[API] PUT', path, body);
+        const resp = await fetch(path, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+            const text = await resp.text();
+            if (!(opts.quiet || []).includes(resp.status)) _popError('PUT', path, resp.status, text);
             throw new Error(`API ${resp.status}: ${text}`);
         }
         return resp.json();
@@ -960,6 +979,14 @@ const API = {
     /* ── Posting Module ───────────────────────────────────────── */
     getPostingStories() { return this.get('/api/posting/stories'); },
     getPostingStory(name) { return this.get(`/api/posting/stories/${encodeURIComponent(name)}`); },
+    /* Story board (4.5.0): the editable record + its mtime, the per-site tag
+     * view, and recording a hand-posted copy by URL (preview, then confirm). */
+    getStoryMetadata(name) { return this.get(`/api/editor/stories/${encodeURIComponent(name)}/metadata`); },
+    // 409 = changed elsewhere; the board offers Reload in place.
+    saveStoryMetadata(name, body) { return this.put(`/api/editor/stories/${encodeURIComponent(name)}/metadata`, body, { quiet: [409] }); },
+    getStoryTagPreview(name) { return this.get(`/api/editor/stories/${encodeURIComponent(name)}/tag-preview`); },
+    // 409 = that chapter is already recorded there; 422 = not a link it knows.
+    linkStoryByUrl(name, body) { return this.post(`/api/posting/stories/${encodeURIComponent(name)}/link-url`, body, { quiet: [400, 409, 422] }); },
     /* Editor story text — used by the Promo Maker's "pull an excerpt" picker. */
     getEditorStories() { return this.get('/api/editor/stories'); },
     getEditorStoryContent(name) {
