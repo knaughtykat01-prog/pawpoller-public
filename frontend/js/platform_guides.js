@@ -334,7 +334,7 @@
     tg: {
       kind: 'Analytics + posting', difficulty: 'Easy',
       summary: 'Broadcast art and story announcements to a Telegram channel you run, and track the reactions and subscribers they earn.',
-      need: ['A Telegram channel you own', 'A bot, made in 30 seconds', 'The bot added to the channel as an admin'],
+      need: ['A Telegram channel you own', 'A bot made just for the channel (30 seconds in @BotFather) — not your notification bot', 'The bot added to the channel as an admin'],
       steps: [
         { t: 'Create a bot', b: 'Message <b>@BotFather</b> on Telegram and send <code>/newbot</code>. Give it a name and a username ending in <code>bot</code>. He replies with a <b>token</b> — a long string like <code>123456789:AAHk…</code>. That whole string is the token.',
           link: { label: '@BotFather', url: 'https://t.me/BotFather' } },
@@ -346,6 +346,7 @@
       paste: 'Settings → Telegram → Channel posting',
       renew: { when: 'Bot tokens don’t expire', how: 'Only if you revoke one with /revoke in BotFather — then paste the new token back in.' },
       notes: [
+        '<b>Two bots, always.</b> If you also use PawPoller\'s Telegram notifications, that is a different bot: PawPoller refuses to let one token do both jobs, because a bot that is an admin of a channel can be mistaken for your private chat — and a digest once went public that way.',
         '⚠ <b>A private channel has no <code>@username</code>.</b> Its title is not a handle. It can only be reached by a numeric <code>-100…</code> id, which Telegram never shows you — that is what <b>Find my channel</b> fetches. A <code>t.me/+…</code> invite link is not a handle either, and a bot cannot join by invite link at all.',
         '⚠ <b>Typing a bare name is risky.</b> A bare word is treated as a public <code>@username</code>, and someone else may already own it. PawPoller now tells you which channel it actually reached, so check that name is yours.',
         '<b>Reactions are counted from the day you switch tracking on.</b> Telegram <i>pushes</i> reactions and offers no way to ask for them, so anything posted before then shows as <i>not counted</i> rather than as zero — a real absence of measurement, not an absence of interest.',

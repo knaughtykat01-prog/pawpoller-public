@@ -56,7 +56,7 @@ async def run_tg_poll_cycle(account_id: int | None = None,
         is_default = bool(row["is_default"]) if row else True
 
         creds = config.resolve_account_credentials("tg", account_id, is_default, settings)
-        token = creds.get("tg_bot_token", "") or settings.get("telegram_bot_token", "")
+        token = creds.get("tg_bot_token", "")       # its own bot since 4.8.0
         # ⚠ No flat fallback for the channel — inheriting another account's
         # channel would record ITS subscriber count against this account. Same
         # reasoning as the posting path.

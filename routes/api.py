@@ -1505,11 +1505,14 @@ def get_telegram():
     settings = config.get_settings()
     token = settings.get("telegram_bot_token", "")
     chat_id = settings.get("telegram_chat_id", "")
+    from polling.telegram import is_private_chat
     return {
         "token_set": bool(token),
         "chat_id_set": bool(chat_id),
         "enabled": settings.get("telegram_enabled", False),
         "connected": bool(token and chat_id),
+        # False = the saved chat is a channel/group: nothing is sent there (4.8.0)
+        "chat_is_private": is_private_chat(chat_id) if chat_id else True,
     }
 
 
@@ -1530,6 +1533,10 @@ async def connect_telegram(body: dict):
     bot_token = body.get("bot_token", "").strip()
     if not bot_token:
         raise HTTPException(400, "Bot token is required")
+    _existing = config.get_settings()
+    if bot_token == (_existing.get("tg_bot_token") or "").strip():
+        raise HTTPException(400, "That is your channel-posting bot. Notifications need their own bot "
+                                 "(4.8.0) — make another one in @BotFather and paste that token here.")
 
     # Call Telegram's getUpdates to validate the token and find the chat_id
     try:
@@ -1547,18 +1554,24 @@ async def connect_telegram(body: dict):
     # which gives us the chat_id needed to send notifications back to them.
     # We also check my_chat_member events which are generated when the user
     # first interacts with the bot.
+    # ⚠ Only a PRIVATE chat will do (4.8.0). A bot that administers a channel
+    # receives `my_chat_member` and `channel_post` updates carrying the CHANNEL's
+    # chat, and before 4.8.0 this scan took the first chat it saw — which is how
+    # a six-hour digest ended up posted in someone's public channel. The person's
+    # own chat is the one whose type is "private".
     chat_id = None
     for result in data.get("result", []):
         msg = result.get("message") or result.get("my_chat_member", {})
         chat = msg.get("chat") if isinstance(msg, dict) else None
-        if chat and chat.get("id"):
+        if chat and chat.get("id") and chat.get("type") == "private":
             chat_id = str(chat["id"])
             break
 
     if not chat_id:
         raise HTTPException(
             404,
-            "No messages found. Please send /start to your bot on Telegram first, then try again.",
+            "No private chat found. Send /start to your bot from your own Telegram account, then "
+            "try again. A channel the bot administers does not count — digests there would be public.",
         )
 
     # Persist all Telegram config and enable notifications
@@ -1584,6 +1597,11 @@ async def test_telegram():
     chat_id = settings.get("telegram_chat_id")
     if not token or not chat_id:
         raise HTTPException(400, "Telegram is not connected")
+    from polling.telegram import is_private_chat
+    if not is_private_chat(chat_id):
+        raise HTTPException(400, "Your notification chat is a channel or group — digests there would be "
+                                 "public, so nothing is sent. Disconnect, then reconnect by sending /start "
+                                 "to the bot from your own account.")
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -1612,7 +1630,8 @@ def disconnect_telegram():
 
 # ── Telegram channel POSTING (Posts-module broadcast target) ─────
 # Distinct from notifications above: this publishes your composed Posts to a
-# channel the bot administers. Bot token defaults to the notification bot's.
+# channel the bot administers. Since 4.8.0 the posting bot is its own bot —
+# the notification bot is never borrowed, so the two jobs cannot be confused.
 
 @router.get("/settings/telegram/channel")
 def get_telegram_channel():
@@ -1622,9 +1641,10 @@ def get_telegram_channel():
     return {
         "channel": settings.get("tg_channel", ""),
         "has_own_token": bool(own),
-        "uses_notification_bot": (not own) and bool(settings.get("telegram_bot_token")),
-        "configured": bool(settings.get("tg_channel")
-                           and (own or settings.get("telegram_bot_token"))),
+        # 4.8.0: the notification bot is never borrowed for channel posting.
+        "uses_notification_bot": False,
+        "needs_own_token": not own,
+        "configured": bool(settings.get("tg_channel") and own),
         # Channel-wide defaults for published work. Each is overridable per
         # artwork via categories.tg in art.json — see posting/platforms/telegram.py.
         "protect": bool(settings.get("tg_protect")),
@@ -1636,9 +1656,10 @@ def get_telegram_channel():
 
 @router.post("/settings/telegram/channel")
 def save_telegram_channel(body: dict):
-    """Save the target channel + optional posting-specific bot token. A blank
-    token keeps the stored one (and falls back to the notification bot); the
-    channel is normalised loosely (@name / name / t.me link all accepted)."""
+    """Save the target channel + the posting bot's token. A blank token keeps the
+    stored one; there is no fallback to the notification bot (4.8.0), and the
+    notification bot's own token is refused here. The channel is normalised
+    loosely (@name / name / t.me link all accepted)."""
     update = {}
     if "channel" in body:
         update["tg_channel"] = str(body.get("channel") or "").strip()
@@ -1649,7 +1670,11 @@ def save_telegram_channel(body: dict):
         if field in body:
             update[key] = bool(body.get(field))
     if body.get("bot_token"):
-        update["tg_bot_token"] = str(body["bot_token"]).strip()
+        tok = str(body["bot_token"]).strip()
+        if tok == (config.get_settings().get("telegram_bot_token") or "").strip():
+            raise HTTPException(400, "That is your notification bot's token. Channel posting needs its own "
+                                     "bot (4.8.0) — make one in @BotFather and paste that token here.")
+        update["tg_bot_token"] = tok
     config.save_settings(update)
     return {"status": "saved", "channel": config.get_settings().get("tg_channel", "")}
 
@@ -1677,9 +1702,10 @@ async def detect_telegram_channels():
     channel identifies itself and the user never types an id.
     """
     settings = config.get_settings()
-    token = settings.get("tg_bot_token", "") or settings.get("telegram_bot_token", "")
+    token = settings.get("tg_bot_token", "")
     if not token:
-        raise HTTPException(400, "No bot token — add a posting bot token first")
+        raise HTTPException(400, "No posting bot token — channel posting needs its own bot "
+                                 "(Settings → Telegram → Channel posting)")
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -1730,9 +1756,10 @@ async def test_telegram_channel(body: dict | None = None):
     provided, else the saved one."""
     settings = config.get_settings()
     channel = ((body or {}).get("channel") or settings.get("tg_channel") or "").strip()
-    token = settings.get("tg_bot_token", "") or settings.get("telegram_bot_token", "")
+    token = settings.get("tg_bot_token", "")
     if not token:
-        raise HTTPException(400, "No bot token — connect Telegram first, or add a posting bot token")
+        raise HTTPException(400, "No posting bot token — channel posting needs its own bot "
+                                 "(Settings → Telegram → Channel posting)")
     if not channel:
         raise HTTPException(400, "No channel set")
     from clients.tg.client import TgClient

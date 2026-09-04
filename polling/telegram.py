@@ -85,15 +85,50 @@ def format_tz(dt: datetime | None = None) -> str:
 
 # ── Core send helper ─────────────────────────────────────────
 
-async def send_telegram(text: str) -> bool:
-    """Send an HTML-formatted Telegram message.  Returns True on success."""
-    settings = config.get_settings()
+def is_private_chat(chat_id) -> bool:
+    """A person's chat id is a plain positive number. Groups are negative and
+    channels / supergroups are ``-100…`` — so a notification chat that is not a
+    positive integer is somewhere public, and digests must not go there (4.8.0)."""
+    return str(chat_id or "").strip().isdigit()
+
+
+_warned_public_chat: set[str] = set()
+
+
+def notification_target(settings: dict) -> tuple[str, str] | None:
+    """``(token, chat_id)`` for notifications, or None when Telegram is off,
+    unconfigured, or pointed at a channel / group.
+
+    Every sender goes through this (send_telegram and the direct senders in
+    fa_poller / notifications / poller) so the private-chat rule cannot be
+    bypassed by one path forgetting it. The warning is logged once per chat id
+    per process, not once per digest.
+    """
     if not settings.get("telegram_enabled", False):
-        return False
+        return None
     token = settings.get("telegram_bot_token")
     chat_id = settings.get("telegram_chat_id")
     if not token or not chat_id:
+        return None
+    if not is_private_chat(chat_id):
+        key = str(chat_id)
+        if key not in _warned_public_chat:
+            _warned_public_chat.add(key)
+            logger.warning("Telegram notifications are pointed at a channel or group (chat id %s…), "
+                           "not your private chat — refusing to send digests and alerts there. "
+                           "Reconnect Telegram by sending /start to the bot from your own account "
+                           "(Settings → Telegram).", key[:5])
+        return None
+    return token, str(chat_id)
+
+
+async def send_telegram(text: str) -> bool:
+    """Send an HTML-formatted Telegram message.  Returns True on success."""
+    settings = config.get_settings()
+    target = notification_target(settings)
+    if not target:
         return False
+    token, chat_id = target
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(

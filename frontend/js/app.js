@@ -11854,6 +11854,13 @@ const App = {
                         </div>
                         <span class="telegram-status connected">Connected</span>
                     </div>
+                    ${telegram.chat_is_private === false ? `
+                    <div class="settings-row" style="border:1px solid var(--danger);border-radius:var(--radius-sm);padding:10px 12px;background:color-mix(in srgb, var(--danger) 8%, transparent)">
+                        <div style="font-size:13px;line-height:1.5">
+                            <strong>Your notification chat is a channel or group.</strong> Digests and alerts would be public there, so nothing is being sent.
+                            Press <strong>Disconnect</strong>, then reconnect by sending <code>/start</code> to the bot <em>from your own account</em>.
+                        </div>
+                    </div>` : ''}
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Send Telegram notifications</span>
@@ -11909,8 +11916,8 @@ const App = {
                     <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;max-width:64ch">
                         Broadcast your <strong>Posts</strong> to a Telegram channel (text + images). Create a channel,
                         add your bot as an <strong>admin</strong> with post rights, then put the channel's
-                        <code>@username</code> below. Uses your notification bot${tgChannel.has_own_token ? '' : ' by default'} —
-                        or set a separate posting bot token.
+                        <code>@username</code> below. <strong>Channel posting uses its own bot</strong> — a second one from
+                        @BotFather, never the notification bot above — so digests and alerts can never end up in the channel.${tgChannel.needs_own_token ? ' <span style="color:var(--warning,#c80)">No posting bot yet — paste its token below.</span>' : ''}
                     </p>
                     <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
                         <label style="font-size:13px;color:var(--text-muted)">Channel</label>
@@ -11922,7 +11929,7 @@ const App = {
                         </p>
                     </div>
                     <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;margin-top:8px">
-                        <label style="font-size:13px;color:var(--text-muted)">Posting bot token ${tgChannel.has_own_token ? '(saved — leave blank to keep)' : '(optional — blank reuses your notification bot)'}</label>
+                        <label style="font-size:13px;color:var(--text-muted)">Posting bot token ${tgChannel.has_own_token ? '(saved — leave blank to keep)' : '(required — a bot of its own)'}</label>
                         <input type="password" id="tgchan-token" class="search-input" placeholder="${tgChannel.has_own_token ? '********' : '123456:ABC-DEF…'}" style="max-width:300px" autocomplete="new-password">
                     </div>
                     <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;margin-top:14px">

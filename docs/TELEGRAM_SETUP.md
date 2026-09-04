@@ -65,11 +65,13 @@ He asks for a name (anything) and a username (must end in `bot`). He then replie
 That entire string is the token. **It is the bot** — anyone holding it can post as it — so treat it
 like a password. If it ever leaks, `/revoke` in BotFather issues a new one.
 
-> **One bot or two?** PawPoller can reuse the bot you already use for notifications. That is
-> simpler. Two bots keeps your private alerts and your public channel posts as separate identities,
-> which is worth it if the channel is public. If you reuse one, note that PawPoller long-polls the
-> notification bot for commands, so a token doing both jobs can occasionally contend — the app
-> tells you clearly if that happens.
+> **Two bots, always.** The bot you make here is for the channel. If you also use PawPoller's
+> Telegram notifications (Settings → Telegram, the private alerts and digests), that is a
+> *different* bot — PawPoller will not let one token do both jobs. The reason is not tidiness: a
+> bot that is an admin of a channel knows the channel's chat, and a notification setup that
+> borrowed it once sent a full analytics digest into a public channel. Two bots means your private
+> numbers and your public posts can never be confused, and it lets each bot read its own channel's
+> reactions.
 
 ---
 
@@ -197,10 +199,17 @@ somewhere real, just not where you meant.
 Post a message in the channel first, then try again. The bot only learns about a channel when
 something happens in it while the bot is an admin.
 
-### 409: "this bot token is already being long-polled"
+### "Channel posting needs its own bot token"
 
-You are using your notification bot's token for channel posting, and both jobs want the same
-update stream. Make a second bot for the channel.
+You were posting with the notification bot, which 4.8.0 no longer allows. Make a second bot in
+BotFather, add it to the channel as an admin with Post Messages, paste its token under Channel
+posting. Your channel and its settings are unchanged.
+
+### "Your notification chat is a channel or group"
+
+The red row under Settings → Telegram. Your alerts were pointed at a channel, so PawPoller has
+stopped sending them. Press Disconnect, then send `/start` to the notification bot **from your
+own account** and press Connect again — it now only accepts your private chat.
 
 ### The pin didn't happen but the post did
 

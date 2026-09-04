@@ -99,11 +99,10 @@ DEFAULT_CRED_CHECKS = {
     # pasted by hand is the only live path — that token IS the credential.
     "fn": lambda s: bool(s.get("fn_refresh_token") or s.get("fn_access_token")),
     "fbr": lambda s: bool(s.get("fbr_username") and s.get("fbr_api_key")),
-    # The bot token may be the notification bot's — that is the documented
-    # "reuse your existing bot" convenience — so either counts as configured.
-    # The channel has no such fallback: without one there is nowhere to post.
-    "tg": lambda s: bool((s.get("tg_bot_token") or s.get("telegram_bot_token"))
-                         and s.get("tg_channel")),
+    # 4.8.0: channel posting has its own bot; the notification bot is never
+    # borrowed. The channel has no fallback either: without one there is
+    # nowhere to post.
+    "tg": lambda s: bool(s.get("tg_bot_token") and s.get("tg_channel")),
 }
 
 # The flat settings key whose value names the default account (for display).

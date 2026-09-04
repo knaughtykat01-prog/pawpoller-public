@@ -679,7 +679,8 @@ CREDENTIAL_FIELDS = frozenset({
     # Integrations
     "telegram_bot_token", "telegram_chat_id",
     # Telegram channel posting (Posts module) — bot token is secret; the channel
-    # (@name) stays plaintext identity. Falls back to telegram_bot_token if unset.
+    # (@name) stays plaintext identity. Its OWN bot since 4.8.0 — never the
+    # notification bot (that is how a digest once landed in a public channel).
     "tg_bot_token",
     # Weekly email digest — SMTP app password (host/user/from/recipients stay
     # plaintext as non-secret config; only the password is vaulted).
@@ -1164,7 +1165,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.7.0"
+APP_VERSION = "4.8.0"
 
 # ── Inkbunny API settings ──
 INKBUNNY_API_BASE = "https://inkbunny.net"     # Inkbunny API root URL

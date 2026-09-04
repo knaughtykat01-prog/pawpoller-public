@@ -42,13 +42,14 @@ class TestRegistry:
         two drift. This is the load-bearing entry."""
         assert adb._HANDLE_KEYS.get("tg") == ["tg_channel"]
 
-    def test_credentials_accept_either_bot(self):
-        """Reusing the notification bot is the documented convenience, so
-        either token counts — but a channel is required, because without one
-        there is nowhere to post."""
+    def test_credentials_need_the_posting_bot(self):
+        """4.8.0: the notification bot is never borrowed for channel posting —
+        a digest once landed in a public channel because one bot did both
+        jobs. Only the posting bot counts, and a channel is required, because
+        without one there is nowhere to post."""
         check = adb.DEFAULT_CRED_CHECKS["tg"]
         assert check({"tg_bot_token": "x", "tg_channel": "@c"}) is True
-        assert check({"telegram_bot_token": "x", "tg_channel": "@c"}) is True
+        assert check({"telegram_bot_token": "x", "tg_channel": "@c"}) is False, "not borrowed (4.8.0)"
         assert check({"tg_bot_token": "x"}) is False, "a channel is mandatory"
         assert check({}) is False
 
@@ -89,13 +90,13 @@ class TestChannelResolution:
             "the channel must NOT fall back to another account's — that is a "
             "silent wrong-channel broadcast")
 
-    def test_the_bot_token_may_still_fall_back(self):
-        """Deliberately asymmetric: inheriting the notification BOT is the
-        documented convenience; inheriting a CHANNEL is a bug."""
+    def test_the_bot_token_does_not_fall_back_either(self):
+        """Until 4.8.0 the BOT could fall back to the notification bot while the
+        CHANNEL could not. Both are now strict: the posting bot is its own bot."""
         src = open("posting/platforms/telegram.py", encoding="utf-8").read()
         i = src.index("async def post(")
         block = self._code_only(src[i:i + 2500])
-        assert 'settings.get("telegram_bot_token"' in block
+        assert 'settings.get("telegram_bot_token"' not in block
 
     def test_validate_resolves_the_account(self):
         """Reading flat settings validated account 2 against account 1's

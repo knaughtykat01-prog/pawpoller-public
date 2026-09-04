@@ -84,22 +84,24 @@ class TelegramPoster(PlatformPoster):
         try:
             creds = self._resolve_creds("tg", config.get_settings())
             settings = config.get_settings()
-            # The posting bot falls back to the notification bot, matching
-            # post_publisher's tg branch so both paths resolve identically.
-            # ⚠ The bot token MAY fall back to the notification bot — that is the
-            # documented "reuse your existing bot" convenience.
+            # 4.8.0: the posting bot is its own bot — no fallback to the
+            # notification bot. A six-hour digest once landed in a public channel
+            # because one bot did both jobs and the notification chat auto-detect
+            # picked the channel; two bots, two jobs closes that for good.
             #
-            # The CHANNEL must not. A `or settings.get("tg_channel")` fallback
+            # The CHANNEL must not fall back either. A `or settings.get("tg_channel")` fallback
             # here means a second account whose channel is unset silently
             # inherits the DEFAULT account's channel and broadcasts to the wrong
             # one, with no error. post_publisher's tg branch never had that
             # fallback, so the two paths disagreed despite a comment claiming
             # they resolved identically.
-            token = creds.get("tg_bot_token", "") or settings.get("telegram_bot_token", "")
+            token = creds.get("tg_bot_token", "")
             channel = creds.get("tg_channel", "")
             if not token:
                 return PostResult(success=False, duration_seconds=self._elapsed(_t),
-                                  error="Telegram bot token isn't set (Settings → Telegram)")
+                                  error="Telegram channel posting needs its own bot token "
+                                        "(Settings → Telegram → Channel posting) — the notification "
+                                        "bot is no longer used for channels")
             if not channel:
                 return PostResult(success=False, duration_seconds=self._elapsed(_t),
                                   error="No Telegram channel set (Settings → Telegram)")
@@ -193,11 +195,12 @@ class TelegramPoster(PlatformPoster):
             creds = self._resolve_creds("tg", s)
         except Exception:          # no DB (fresh install) — fall back to flat
             creds = {}
-        token = creds.get("tg_bot_token", "") or s.get("telegram_bot_token", "")
+        token = creds.get("tg_bot_token", "") or (s.get("tg_bot_token", "") if not creds else "")
         channel = creds.get("tg_channel", "") or (
             s.get("tg_channel", "") if not creds else "")
         if not token:
-            errors.append("Telegram bot token isn't set (Settings → Telegram)")
+            errors.append("Telegram channel posting needs its own bot token "
+                          "(Settings → Telegram → Channel posting)")
         if not channel:
             errors.append("No Telegram channel set (Settings → Telegram)")
 

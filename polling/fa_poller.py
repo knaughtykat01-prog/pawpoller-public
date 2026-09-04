@@ -200,10 +200,11 @@ async def _send_fa_telegram(new_comment_details: list[dict],
     settings = config.get_settings()
     if not settings.get("telegram_enabled", False):
         return
-    token = settings.get("telegram_bot_token")
-    chat_id = settings.get("telegram_chat_id")
-    if not token or not chat_id:
+    from polling.telegram import notification_target as _nt
+    _target = _nt(settings)     # private chat only (4.8.0)
+    if not _target:
         return
+    token, chat_id = _target
     if not new_comment_details and not new_watcher_names:
         return
 
@@ -643,10 +644,11 @@ async def send_fa_watcher_digest() -> None:
         return
     if not settings.get("telegram_enabled", False):
         return
-    token = settings.get("telegram_bot_token")
-    chat_id = settings.get("telegram_chat_id")
-    if not token or not chat_id:
+    from polling.telegram import notification_target as _nt
+    _target = _nt(settings)     # private chat only (4.8.0)
+    if not _target:
         return
+    token, chat_id = _target
 
     conn = get_connection()
     try:

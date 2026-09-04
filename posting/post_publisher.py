@@ -306,15 +306,14 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
 
         elif platform == "tg":
             from clients.tg.client import TgClient
-            # Reuse the notification bot token if a posting-specific one isn't set,
-            # so a user who already connected Telegram for alerts only needs to add
-            # the channel + make the bot an admin of it.
-            s = settings or config.get_settings()
-            token = creds.get("tg_bot_token", "") or s.get("telegram_bot_token", "")
+            # 4.8.0: channel posting has its own bot; the notification bot is
+            # never borrowed (that is how a digest once landed in a channel).
+            token = creds.get("tg_bot_token", "")
             channel = creds.get("tg_channel", "")
             if not token:
-                result["error"] = ("Telegram bot token isn't set — connect Telegram (Settings → "
-                                   "Telegram channel), or reuse your notification bot")
+                result["error"] = ("Telegram channel posting needs its own bot token (Settings → "
+                                   "Telegram → Channel posting) — the notification bot is no longer "
+                                   "used for channels")
                 return result
             if not channel:
                 result["error"] = "No Telegram channel set — add your @channel in the Telegram settings"

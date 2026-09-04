@@ -84,11 +84,10 @@ def _configured(code: str, s: dict) -> bool:
     if code == "fbr":
         return bool(s.get("fbr_username"))   # public read API — username is enough
     if code == "tg":
-        # Either bot counts (reusing the notification bot is the documented
-        # setup); a channel is mandatory because there is nothing to check
-        # without one.
-        return bool((s.get("tg_bot_token") or s.get("telegram_bot_token"))
-                    and s.get("tg_channel"))
+        # 4.8.0: only the posting bot counts — the notification bot is never
+        # borrowed for channels. A channel is mandatory because there is nothing
+        # to check without one.
+        return bool(s.get("tg_bot_token") and s.get("tg_channel"))
     return False
 
 
@@ -117,7 +116,7 @@ class _TgSessionProbe:
     async def validate_session(self):
         from clients.tg.client import TgClient
         s = self._settings
-        token = s.get("tg_bot_token") or s.get("telegram_bot_token", "")
+        token = s.get("tg_bot_token", "")
         try:
             client = TgClient(bot_token=token, channel=s.get("tg_channel", ""))
         except ValueError as e:      # an invite link, not a channel

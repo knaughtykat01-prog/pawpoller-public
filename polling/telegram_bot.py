@@ -46,8 +46,16 @@ logger = logging.getLogger(__name__)
 # repeated query parameters, which Telegram rejects.
 _ALLOWED_UPDATES = '["message", "channel_post", "message_reaction_count"]'
 
-# Track the last processed update_id to avoid processing duplicates.
-_last_update_id = 0
+# Reactions-only subscription for channel bots (4.8.0): they answer no commands.
+_REACTIONS_ONLY = '["message_reaction_count"]'
+
+# Per-token state (4.8.0). One getUpdates consumer is permitted per bot token
+# and each token has its own update stream, so offsets, conflict back-off and
+# the startup flush are all keyed by token — the notification bot and every
+# channel-posting bot are polled side by side in one loop.
+_last_update_ids: dict[str, int] = {}
+_conflict_backoff: dict[str, int] = {}
+_flushed: set[str] = set()
 
 
 async def _send(token: str, chat_id: str, text: str) -> None:
@@ -61,8 +69,6 @@ async def _send(token: str, chat_id: str, text: str) -> None:
     except Exception as e:
         logger.warning("Bot reply failed: %s", e)
 
-
-_CONFLICT_BACKOFF = 0  # seconds to sleep before next poll (0 = normal)
 
 
 def _record_reaction_update(payload: dict) -> None:
@@ -102,42 +108,41 @@ def _record_reaction_update(payload: dict) -> None:
         logger.warning("TG: could not record reaction update: %s", e)
 
 
-async def _poll_updates(token: str) -> list[dict]:
-    """Fetch new messages from Telegram using long polling.
+async def _poll_updates(token: str, allowed: str = _ALLOWED_UPDATES) -> list[dict]:
+    """Fetch new updates for ONE bot token using long polling.
 
     Returns an empty list on error.  On 409 Conflict (another instance is
-    polling the same bot token), sets an exponential backoff so the main
-    loop sleeps instead of hammering the API every few seconds.
+    polling the same token), sets an exponential back-off for that token so
+    the loop sleeps instead of hammering the API.
     """
-    global _last_update_id, _CONFLICT_BACKOFF
     try:
         async with httpx.AsyncClient(timeout=35.0) as client:
             resp = await client.get(
                 f"https://api.telegram.org/bot{token}/getUpdates",
-                params={"offset": _last_update_id + 1, "timeout": 30,
+                params={"offset": _last_update_ids.get(token, 0) + 1, "timeout": 30,
                         # ⚠ Telegram's DEFAULT allowed_updates excludes
                         # message_reaction_count, so reactions were being
                         # dropped by omission. It must be re-sent on EVERY call
                         # — it is not sticky, and one call without it silently
                         # reverts to the default. Reactions are not buffered
                         # while unsubscribed: they are gone, with no backfill.
-                        "allowed_updates": _ALLOWED_UPDATES},
+                        "allowed_updates": allowed},
             )
             # 409 Conflict = another bot instance is polling the same token.
             # Back off exponentially (30s → 60s → 120s, cap 300s) to avoid
             # flooding the logs.  Resets to 0 on a successful poll.
             if resp.status_code == 409:
-                _CONFLICT_BACKOFF = min(max(_CONFLICT_BACKOFF * 2, 30), 300)
+                _conflict_backoff[token] = min(max(_conflict_backoff.get(token, 0) * 2, 30), 300)
                 logger.warning("Bot getUpdates 409 Conflict — another instance is polling this token. "
-                               "Backing off %ds.", _CONFLICT_BACKOFF)
+                               "Backing off %ds.", _conflict_backoff[token])
                 return []
             data = resp.json()
             if not data.get("ok"):
                 return []
-            _CONFLICT_BACKOFF = 0  # Successful poll — reset backoff
+            _conflict_backoff[token] = 0  # Successful poll — reset backoff
             results = data.get("result", [])
             if results:
-                _last_update_id = results[-1]["update_id"]
+                _last_update_ids[token] = results[-1]["update_id"]
             return results
     except Exception as e:
         logger.warning("Bot getUpdates failed: %s", e)
@@ -1111,94 +1116,131 @@ async def _handle_message(token: str, chat_id: str, text: str) -> None:
 
 # ── Main bot loop ────────────────────────────────────────────
 
-async def run_bot() -> None:
-    """Main bot loop — polls for updates and dispatches commands."""
-    global _last_update_id
+def channel_bot_tokens(settings: dict) -> list[str]:
+    """Every distinct channel-posting bot token — the default slot and each
+    per-account ``acct_<id>_tg_bot_token`` — EXCLUDING the notification bot.
 
-    settings = config.get_settings()
-    if not settings.get("telegram_enabled", False):
-        logger.info("Telegram bot disabled — not starting command listener")
-        return
+    Since 4.8.0 channel posting has its own bot, and reactions to a channel's
+    posts are pushed only to a bot that is an admin there, so each of these
+    tokens needs its own reader; the notification bot no longer stands in.
+    """
+    notif = (settings.get("telegram_bot_token") or "").strip()
+    out: list[str] = []
+    for key, value in settings.items():
+        if key != "tg_bot_token" and not (key.startswith("acct_") and key.endswith("_tg_bot_token")):
+            continue
+        tok = (value or "").strip() if isinstance(value, str) else ""
+        if tok and tok != notif and tok not in out:
+            out.append(tok)
+    return out
 
-    token = settings.get("telegram_bot_token")
-    chat_id = settings.get("telegram_chat_id")
-    if not token or not chat_id:
-        logger.info("Telegram bot not configured — skipping command listener")
-        return
 
-    logger.info("Telegram bot command listener started")
-
-    # Flush old updates on startup so we don't process stale commands
+async def _flush(token: str, allowed: str) -> None:
+    """Skip whatever piled up while nobody was listening, so stale commands are
+    not replayed on startup. The flush needs allowed_updates too — without it
+    the subscription resets to the default and the first reactions are lost."""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
                 f"https://api.telegram.org/bot{token}/getUpdates",
-                # The flush needs allowed_updates too — without it this call
-                # resets the subscription to the default, and the first reactions
-                # after startup are lost.
-                params={"offset": -1, "allowed_updates": _ALLOWED_UPDATES},
+                params={"offset": -1, "allowed_updates": allowed},
             )
-            data = resp.json()
-            results = data.get("result", [])
+            results = (resp.json() or {}).get("result", [])
             if results:
-                _last_update_id = results[-1]["update_id"]
+                _last_update_ids[token] = results[-1]["update_id"]
                 logger.info("Flushed %d old Telegram updates", len(results))
     except Exception as e:
         logger.warning("Failed to flush old updates: %s", e)
+    _flushed.add(token)
 
+
+async def _poll_channel_bot(token: str) -> None:
+    """One long poll of a channel-posting bot: reactions only, nothing answered."""
+    if token not in _flushed:
+        await _flush(token, _REACTIONS_ONLY)
+    for update in await _poll_updates(token, _REACTIONS_ONLY):
+        if "message_reaction_count" in update:
+            _record_reaction_update(update["message_reaction_count"])
+
+
+_warned_public_commands: set[str] = set()
+
+
+async def _poll_notification_bot(token: str, chat_id: str) -> None:
+    """One long poll of the notification bot: commands from the configured
+    private chat, plus any reactions it happens to receive."""
+    from polling.telegram import is_private_chat
+    if token not in _flushed:
+        await _flush(token, _ALLOWED_UPDATES)
+    private = is_private_chat(chat_id)
+    if not private and str(chat_id) not in _warned_public_commands:
+        _warned_public_commands.add(str(chat_id))
+        logger.warning("Telegram commands are disabled: the notification chat (%s…) is a channel "
+                       "or group, not your private chat. Reconnect Telegram from your own account.",
+                       str(chat_id)[:5])
+    for update in await _poll_updates(token, _ALLOWED_UPDATES):
+        # ⚠ A reaction update carries `chat` at the UPDATE ROOT, not inside
+        # `message`. The command allow-list below reads msg["chat"]["id"],
+        # which is "" for a reaction — so without its own branch every
+        # reaction is silently dropped by the security filter.
+        if "message_reaction_count" in update:
+            _record_reaction_update(update["message_reaction_count"])
+            continue
+        if not private:
+            continue          # never answer commands anywhere public (4.8.0)
+
+        msg = update.get("message", {})
+        text = msg.get("text", "")
+        msg_chat_id = str(msg.get("chat", {}).get("id", ""))
+
+        # Only respond to the configured chat (security)
+        if msg_chat_id != str(chat_id):
+            continue
+
+        if text:
+            await _handle_message(token, chat_id, text)
+
+
+async def _guarded(token: str, coro) -> None:
+    back = _conflict_backoff.get(token, 0)
+    if back:
+        await asyncio.sleep(back)
+    await coro
+
+
+async def run_bot() -> None:
+    """Main bot loop — the notification bot (commands + its reactions) and every
+    channel-posting bot (reactions only), long-polled side by side.
+
+    Each iteration re-reads settings, so connecting or disconnecting a bot takes
+    effect without a restart. ⚠ Telegram permits exactly ONE getUpdates consumer
+    per bot token; main.py and server.py BOTH start this loop, so a paired
+    desktop and its server contend — polling already arbitrates that with
+    get_polling_owner(), and reusing it means the same machine owns both, and
+    no new setting is invented.
+    """
+    logger.info("Telegram bot listener started")
+    from posting.scheduler import detect_runtime_mode
     while True:
-        # Re-read settings each loop in case Telegram gets disconnected
         settings = config.get_settings()
-        if not settings.get("telegram_enabled", False):
+        token = (settings.get("telegram_bot_token") or "").strip()
+        chat_id = str(settings.get("telegram_chat_id") or "").strip()
+        notif_on = bool(settings.get("telegram_enabled", False) and token and chat_id)
+        channel_tokens = channel_bot_tokens(settings)
+        if not notif_on and not channel_tokens:
             await asyncio.sleep(30)
             continue
-
-        token = settings.get("telegram_bot_token", "")
-        if not token:
-            await asyncio.sleep(30)
-            continue
-
-        # ⚠ Telegram permits exactly ONE getUpdates consumer per bot token; a
-        # second gets 409. main.py and server.py BOTH start this loop, so a
-        # paired desktop and its server already contend — that is what
-        # _CONFLICT_BACKOFF was written for.
-        #
-        # Contention was merely noisy while this loop only handled commands
-        # (whoever won answered them). It is a correctness problem now that it
-        # also ingests reactions: each consumer takes updates the other never
-        # sees, so the reaction counts split unpredictably between two machines
-        # and neither has the full picture.
-        #
-        # Polling already arbitrates this with get_polling_owner(). Reusing it
-        # means the same machine owns both, and no new setting is invented.
-        from posting.scheduler import detect_runtime_mode
         if config.get_polling_owner(detect_runtime_mode()) != "local":
             await asyncio.sleep(60)
             continue
 
-        # If another bot instance is contending for this token, back off
-        # instead of hammering the API.  _CONFLICT_BACKOFF is set by
-        # _poll_updates() on 409 responses and reset on success.
-        if _CONFLICT_BACKOFF > 0:
-            await asyncio.sleep(_CONFLICT_BACKOFF)
-
-        updates = await _poll_updates(token)
-        for update in updates:
-            # ⚠ A reaction update carries `chat` at the UPDATE ROOT, not inside
-            # `message`. The command allow-list below reads msg["chat"]["id"],
-            # which is "" for a reaction — so without its own branch every
-            # reaction is silently dropped by the security filter.
-            if "message_reaction_count" in update:
-                _record_reaction_update(update["message_reaction_count"])
-                continue
-
-            msg = update.get("message", {})
-            text = msg.get("text", "")
-            msg_chat_id = str(msg.get("chat", {}).get("id", ""))
-
-            # Only respond to the configured chat (security)
-            if msg_chat_id != str(chat_id):
-                continue
-
-            if text:
-                await _handle_message(token, chat_id, text)
+        jobs = []
+        if notif_on:
+            jobs.append(_guarded(token, _poll_notification_bot(token, chat_id)))
+        for t in channel_tokens:
+            jobs.append(_guarded(t, _poll_channel_bot(t)))
+        results = await asyncio.gather(*jobs, return_exceptions=True)
+        for r in results:
+            if isinstance(r, Exception):
+                logger.warning("Telegram bot loop: %s", r)
+        await asyncio.sleep(1)

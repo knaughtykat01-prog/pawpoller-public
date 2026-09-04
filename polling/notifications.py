@@ -237,10 +237,11 @@ async def maybe_send_telegram_summary(
         return
     if not settings.get("telegram_enabled", False):
         return
-    token = settings.get("telegram_bot_token")
-    chat_id = settings.get("telegram_chat_id")
-    if not token or not chat_id:
+    from polling.telegram import notification_target as _nt
+    _target = _nt(settings)     # private chat only (4.8.0)
+    if not _target:
         return
+    token, chat_id = _target
     # Prefix the header with the persona/account when the active poll cycle set a
     # multi-account context. No-op on single-account installs (prefix == "").
     platform, account_id = current_alert_account.get()
