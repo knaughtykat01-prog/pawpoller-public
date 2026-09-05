@@ -280,3 +280,17 @@
     font-size: 11px;
     padding: 2px 6px;
 }
+
+/* ── Tech Centre panel (4.10.0) ─────────────────────────────────────────── */
+.tech-panel { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary, transparent); }
+.tech-panel h3 { margin: 0 0 6px; font-size: 14px; color: var(--text-primary); }
+.tech-panel p { margin: 4px 0; color: var(--text-secondary); font-size: 13px; }
+.tech-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: 13px; }
+.tech-last { list-style: none; padding: 0; margin: 10px 0 0; font-size: 12px; }
+.tech-last li { padding: 5px 0; border-top: 1px solid var(--border); }
+.tech-badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; margin-right: 6px; background: var(--bg-tertiary, rgba(128,128,128,.18)); color: var(--text-secondary); }
+.tech-badge.fixed { color: var(--success, #4ccf7a); }
+.tech-badge.user_error, .tech-badge.wontfix { color: var(--warning, #f2b84b); }
+.tech-badge.new, .tech-badge.acknowledged { color: var(--accent); }
+.tech-id { font-family: ui-monospace, Consolas, monospace; font-size: 12px; user-select: all; }
+.tech-pre { max-height: 220px; overflow: auto; font-size: 11px; background: var(--bg-primary, rgba(0,0,0,.25)); border: 1px solid var(--border); border-radius: 6px; padding: 8px; white-space: pre-wrap; word-break: break-word; }

@@ -1230,6 +1230,8 @@ def get_preferences():
     return {
         # ── Application ────────────────────────────────────────────
         "minimize_to_tray": settings.get("minimize_to_tray", False),
+        "auto_update": settings.get("auto_update", True),
+        "update_skip_version": settings.get("update_skip_version", ""),
         "run_on_startup": config.get_run_on_startup(),
         "display_timezone": settings.get("display_timezone", "UTC"),
         "theme": settings.get("theme", "dark"),
@@ -1319,6 +1321,11 @@ def save_preferences(body: dict):
     # ── Application toggles ────────────────────────────────────
     if "minimize_to_tray" in body:
         update["minimize_to_tray"] = bool(body["minimize_to_tray"])
+    # Startup update gate (4.9.0): on by default; one version may be skipped.
+    if "auto_update" in body:
+        update["auto_update"] = bool(body["auto_update"])
+    if "update_skip_version" in body:
+        update["update_skip_version"] = str(body.get("update_skip_version") or "").strip()[:32]
     if "telegram_enabled" in body:
         update["telegram_enabled"] = bool(body["telegram_enabled"])
     if "auto_sync_enabled" in body:

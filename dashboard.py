@@ -48,6 +48,7 @@ from routes.commissions_api import commissions_router
 from routes.artists_api import artists_router
 from routes.masterpieces_api import masterpieces_router
 from routes.whatsnew_api import whatsnew_router
+from routes.tech_api import tech_router
 from routes.backup_api import backup_router
 from routes.mirror_api import mirror_router
 from routes.discord_api import discord_router
@@ -78,6 +79,11 @@ logging.basicConfig(
 import log_redaction
 log_redaction.install()
 config.refresh_log_secrets()   # seed the secret list; config pushes on every save
+
+# Tech Centre capture (4.10.0): ERROR records with a traceback become reports —
+# queued only, and sent only once the user has said yes (techcentre.consent).
+import techcentre
+techcentre.install()
 
 logger = logging.getLogger("dashboard")
 
@@ -567,6 +573,7 @@ app.include_router(e621_router)  # e621 routes (/api/e621/*)
 app.include_router(fn_router)    # FurryNetwork routes (/api/fn/*)
 app.include_router(fbr_router)   # Furbooru routes (/api/fbr/*)
 app.include_router(tg_router)    # Telegram channel analytics (/api/tg/*)
+app.include_router(tech_router)  # Tech Centre consent/status/reports (/api/tech/*)
 app.include_router(posting_router)  # Posting module routes (/api/posting/*)
 app.include_router(artwork_router)  # Artwork hub routes (/api/artwork/*)
 app.include_router(posts_router)    # Posts (microblog) module routes (/api/posts/*)

@@ -429,6 +429,13 @@ const API = {
     saveCredentials(data) { return this.post('/api/settings/credentials', data); },
     getPreferences() { return this.get('/api/settings/preferences'); },
     savePreferences(data) { return this.post('/api/settings/preferences', data); },
+    // Tech Centre (4.10.0): consent, the first-error prompt, status for Diagnostics.
+    getTechStatus() { return this.get('/api/tech/status'); },
+    setTechConsent(value) { return this.post('/api/tech/consent', { value }); },
+    resolveTechPrompt(decision) { return this.post('/api/tech/prompt', { decision }); },
+    sendTechTest() { return this.post('/api/tech/test', {}); },
+    flushTech() { return this.post('/api/tech/flush', {}); },
+    reportFrontendError(data) { return this.post('/api/tech/frontend-error', data); },
     getTelegram() { return this.get('/api/settings/telegram'); },
     connectTelegram(data) { return this.post('/api/settings/telegram', data); },
     testTelegram() { return this.post('/api/settings/telegram/test'); },

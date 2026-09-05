@@ -71,6 +71,12 @@ Back these two folders up and you've got everything.
 
 ### 1.5 Updating
 
+Since 4.9.0 the desktop app updates itself **before it opens**: on launch it checks for a newer
+release (three seconds, then it gives up and starts), shows a small progress window while it
+downloads and installs one, and the app that opens is the new version. Turn it off under
+Settings → About → *Update automatically before the app opens*, or press *Skip this version*
+there to wait for the next release. Offline, the installed version simply starts.
+
 In-app: the auto-updater checks GitHub for new releases and surfaces a notification with a one-click update flow.
 
 Manual: download the new release zip / installer, install over the old version (the installer upgrades in place; for the zip, extract over the old folder while keeping your `data\` and `logs\` folders untouched), re-launch. The database auto-migrates.

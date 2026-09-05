@@ -338,6 +338,23 @@ def _sync_settings_on_startup():
 def main():
     global _tray_icon, _window
 
+    # --- Step 0: Update before anything loads (4.9.0) ---
+    # Packaged builds only, timeboxed, fails open. When a newer release exists
+    # this downloads it under a small splash, applies it and exits so the swap
+    # script relaunches the new build — the window the user sees is the new
+    # version, never "get in, then restart". SystemExit passes straight through
+    # the except below on purpose.
+    try:
+        import update_gate
+        _gate = update_gate.run()
+        logger.info("Startup update gate: %s", _gate)
+        if str(_gate).startswith("failed:"):
+            # A failed self-update is ours to know about (4.10.0) — queued, sent with consent.
+            import techcentre
+            techcentre.report("update", "update_gate.run", "UpdateFailed", str(_gate))
+    except Exception as e:
+        logger.warning("Startup update gate skipped: %s", e)
+
     # --- Step 1: Database initialisation ---
     logger.info("Initialising database...")
     init_db()  # Creates tables/schema if the DB file does not exist yet

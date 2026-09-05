@@ -614,6 +614,20 @@ threat model.
   images at an unguessable URL; a determined party could use it as a 15-minute JPEG host within
   the rate limit. *Remediation (if abused):* turn the switch off — nothing else depends on it.
 
+- **KG-14 — Technical error reports leave the machine, by consent (4.10.0).** (V1.2 data
+  handling, V7 error handling, V8 privacy — ACCEPTED, mitigated) `techcentre.py` sends scrubbed
+  error reports to the operator's Tech Centre (`tech.syncopates.app`). *Mitigation:* nothing is
+  queued or sent until `tech_reports` is explicitly true (asked once: wizard step or first-error
+  prompt with the exact report shown; unset = hold one report locally, false = discard);
+  double scrub (`log_redaction.scrub` + tokens/`key=value`/emails/home dirs/@handles/URL paths/every
+  handle in settings) before the report is even written to disk; user-fixable classes (auth,
+  network, disk, 401/403/404/429) are never reported; one report per fingerprint per hour, 50
+  queued at most, 24 KB wire cap; install id is a random uuid4 stored only as a salted hash on the
+  service; frontend errors are auth-gated through the app's own API. *Residual:* a traceback or
+  log tail can still carry an unforeseen identifier; the service purges reports after 90 days and
+  the operator can mark an issue `user_error` to stop a fingerprint being sent at all.
+  *Remediation (if needed):* `PAWPOLLER_TECH_CENTRE_URL=""` disables the client outright.
+
 ## How to reproduce / maintain this assessment
 
 - The requirement set is the official ASVS 5.0 release

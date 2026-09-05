@@ -55,6 +55,10 @@ a = Analysis(
         *_CHANGELOG,
     ],
     hiddenimports=[
+        # Startup update splash (4.9.0) — imported inside a function, so the
+        # static scan misses it; without these the packaged app updates silently.
+        'tkinter',
+        'tkinter.ttk',
         'uvicorn.logging',
         'uvicorn.loops',
         'uvicorn.loops.auto',

@@ -31,6 +31,12 @@ config.SETTINGS_PATH.write_text("{}", encoding="utf-8")
 @pytest.fixture(scope="session")
 def _db_template(tmp_path_factory):
     """The initialised schema, built ONCE, as bytes.
+import os as _os
+# Tech Centre (4.10.0): the suite must never send a report anywhere, and must not start the
+# sender thread when dashboard.py is imported — an empty URL disables the client outright.
+_os.environ.setdefault("PAWPOLLER_TECH_CENTRE_URL", "")
+_os.environ.setdefault("PAWPOLLER_TECH_CENTRE_THREAD", "0")
+
 
     `init_db()` reads ~20 schema files and executes every CREATE plus the
     migration chain — about 0.9s. Doing that per test was the entire cost of

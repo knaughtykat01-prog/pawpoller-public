@@ -174,6 +174,33 @@ const App = {
          * onerror="". The `error` event doesn't bubble, so listen in the
          * capture phase; any <img data-img-fallback> that fails to load
          * hides itself and reveals its next sibling (the placeholder). (2.51.4) */
+        /* Tech Centre (4.10.0): uncaught browser errors go to the same consent-gated
+         * queue as backend tracebacks. Throttled hard — a render loop must not
+         * become a flood — and network/auth noise is filtered out here. */
+        this._techSeen = new Set();
+        const reportFrontend = (message, source, line, stack, cls) => {
+            try {
+                if (!message || this._techSeen.size >= 5 || this._techSeen.has(message)) return;
+                this._techSeen.add(message);
+                if (!window.API || !API.reportFrontendError) return;
+                API.reportFrontendError({
+                    message: String(message).slice(0, 500), source: String(source || '').slice(0, 120),
+                    line: line || 0, stack: String(stack || '').slice(0, 4096), error_class: cls || 'JSError',
+                    page: (window.location.hash || '').slice(0, 80),
+                }).catch(() => {});
+            } catch (_) { /* the reporter itself must never throw */ }
+        };
+        window.addEventListener('error', (e) => {
+            if (!e || !e.message) return;                       // resource errors carry no message
+            reportFrontend(e.message, e.filename, e.lineno, e.error && e.error.stack, e.error && e.error.name);
+        });
+        window.addEventListener('unhandledrejection', (e) => {
+            const r = e && e.reason;
+            const msg = r && (r.message || String(r));
+            if (!msg || /401|403|Unauthori[sz]ed|Failed to fetch|NetworkError|Load failed|AbortError/i.test(msg)) return;
+            reportFrontend(msg, '', 0, r && r.stack, (r && r.name) || 'UnhandledRejection');
+        });
+
         document.addEventListener('error', (e) => {
             const t = e.target;
             if (t && t.matches && t.matches('img[data-img-fallback]')) {
@@ -978,6 +1005,12 @@ const App = {
             && !['dashboard-login', 'dashboard-setup', 'setup', 'login', 'loading'].includes(parts[0])) {
             this._whatsNewChecked = true;
             this._maybeShowWhatsNew();
+        }
+
+        /* Tech Centre (4.10.0): an install that predates the consent step is asked
+         * at its FIRST technical error — the backend holds the report until then. */
+        if (!['dashboard-login', 'dashboard-setup', 'setup', 'login', 'loading'].includes(parts[0])) {
+            this._maybeShowTechPrompt();
         }
 
         if (parts[0] === 'dashboard-login') {
@@ -2433,14 +2466,14 @@ const App = {
          * "skip archive + platforms" branch falls out naturally. */
         const stepOrder = () => {
             if (runtimeMode === 'server') {
-                return ['welcome', 'archive', 'platforms', 'persona', 'done'];
+                return ['welcome', 'archive', 'platforms', 'persona', 'tech', 'done'];
             }
             if (selectedMode === 'paired_desktop') {
                 // Paired installs read the server's data — personas live there.
-                return ['welcome', 'mode', 'pairing', 'done'];
+                return ['welcome', 'mode', 'pairing', 'tech', 'done'];
             }
             // standalone (or undecided) — full flow
-            return ['welcome', 'mode', 'archive', 'platforms', 'persona', 'done'];
+            return ['welcome', 'mode', 'archive', 'platforms', 'persona', 'tech', 'done'];
         };
 
         // Validate against the CURRENT path rather than trusting what was stored:
@@ -2582,6 +2615,25 @@ const App = {
                         <button class="btn btn-primary login-btn" id="setup-persona-create" style="flex:1">Create persona</button>
                         <button class="btn" id="setup-skip" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Skip</button>
                     </div>`;
+            } else if (currentStep === 'tech') {
+                /* ── Technical error reports (4.10.0) — asked once, here, for
+                   new installs; installs that predate this step get the same
+                   question at their first technical error. Both answers
+                   advance; the choice lives in Settings → Diagnostics. ──── */
+                body = `
+                    <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">Send technical problems to the tech centre?</h2>
+                    <p style="color:var(--text-secondary);margin-bottom:12px;font-size:13px">When PawPoller hits a problem that is not yours to fix — a crash, a broken poll, a platform answering in a way it should not — it can send a short report to the PawPoller tech centre so it gets fixed without you having to write in.</p>
+                    <ul style="text-align:left;color:var(--text-secondary);font-size:13px;line-height:1.7;margin:0 0 12px;padding-left:18px">
+                        <li><strong style="color:var(--text-primary)">Sent:</strong> the error, a scrubbed traceback, the last few log lines, the app version, your operating system, a random install id.</li>
+                        <li><strong style="color:var(--text-primary)">Never sent:</strong> account names, cookies, tokens, passwords, artwork, story text, or file paths with your name in them.</li>
+                        <li>Problems you can fix yourself — an expired login, no network, a full disk — are never sent; the app tells you instead.</li>
+                    </ul>
+                    <p style="color:var(--text-muted);font-size:12px;margin-bottom:16px">You can change this any time in Settings → Diagnostics.</p>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
+                        <button class="btn btn-primary login-btn" id="setup-tech-yes" style="flex:1">Yes, send them</button>
+                        <button class="btn" id="setup-tech-no" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">No thanks</button>
+                    </div>`;
             } else if (currentStep === 'done') {
                 const summaryByMode = {
                     'standalone': 'PawPoller is set up to run locally. It\'ll poll and post from this machine.',
@@ -2689,6 +2741,15 @@ const App = {
                     if (msgEl) msgEl.textContent = 'Could not create persona: ' + (err.message || err);
                 }
             });
+
+            /* Tech Centre consent (4.10.0) — both answers are answers: store, advance. */
+            for (const [id, value] of [['setup-tech-yes', true], ['setup-tech-no', false]]) {
+                document.getElementById(id)?.addEventListener('click', async () => {
+                    try { await API.setTechConsent(value); }
+                    catch (err) { console.warn('[Setup] tech consent save failed:', err); }
+                    goNext();
+                });
+            }
 
             /* First-poll offer on the Done step (gap G2) — fire one poll per
              * connected platform (all its enabled accounts); fire-and-forget,
@@ -3737,6 +3798,66 @@ const App = {
             this._showWhatsNewModal(data);
         }
         try { localStorage.setItem('pp_seen_version', current); } catch (e) { /* private mode */ }
+    },
+
+    /* ── Tech Centre first-error prompt (4.10.0) ─────────────────────────
+     * Polled at most every two minutes on route changes; only fires when the
+     * backend holds a report AND the user has never answered. × = not now
+     * (snoozed for this session); the three buttons are the real answers. */
+    async _maybeShowTechPrompt() {
+        if (this._techPromptSnoozed || this._techPromptOpen) return;
+        const now = Date.now();
+        if (this._techPromptLast && now - this._techPromptLast < 120000) return;
+        this._techPromptLast = now;
+        let st;
+        try { st = await API.getTechStatus(); } catch (e) { return; }
+        if (!st || !st.enabled || st.asked || !st.prompt) return;
+        this._showTechPromptModal(st.prompt);
+    },
+
+    _showTechPromptModal(p) {
+        const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
+        let ov = document.getElementById('techprompt-ov');
+        if (!ov) { ov = document.createElement('div'); ov.id = 'techprompt-ov'; ov.className = 'wn-ov'; document.body.appendChild(ov); }
+        const preview = Object.assign({}, p.preview || {}, { kind: p.kind, where: p.where, error_class: p.error_class, message: p.message, at: p.at });
+        ov.innerHTML = `
+            <div class="wn-modal" role="dialog" aria-modal="true" aria-label="Send this technical problem?">
+                <div class="wn-top">
+                    <h2>🛠 A technical problem</h2>
+                    <button class="wn-x" type="button" aria-label="Not now">×</button>
+                </div>
+                <div class="wn-scroll">
+                    <p>PawPoller hit a problem that is not something you can fix on your side:</p>
+                    <p><strong>${esc(p.title)}</strong></p>
+                    <p>Send it to the PawPoller tech centre so it can be fixed? A report holds the error, a scrubbed traceback, the last few log lines, the app version and your operating system. It never holds your account names, cookies, tokens, artwork or story text — those are stripped before anything leaves this machine.</p>
+                    <details><summary>Exactly what would be sent</summary><pre class="tech-pre">${esc(JSON.stringify(preview, null, 1))}</pre></details>
+                    <p style="color:var(--text-muted);font-size:12px">Change your mind any time in Settings → Diagnostics → Technical error reports.</p>
+                </div>
+                <div class="wn-foot" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                    <button class="btn" type="button" data-tech="never">Don't send</button>
+                    <button class="btn" type="button" data-tech="once">Send just this one</button>
+                    <button class="btn btn-primary" type="button" data-tech="always">Send &amp; keep sending</button>
+                </div>
+            </div>`;
+        ov.classList.add('open');
+        this._techPromptOpen = true;
+        const close = () => { ov.classList.remove('open'); this._techPromptOpen = false; };
+        ov.querySelector('.wn-x').addEventListener('click', () => { this._techPromptSnoozed = true; close(); });
+        ov.querySelectorAll('[data-tech]').forEach(btn => btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try {
+                const out = await API.resolveTechPrompt(btn.dataset.tech);
+                const msg = {
+                    always: 'Thanks — technical problems will be sent from now on.',
+                    once: out.outcome === 'sent' ? 'Sent. You will be asked again if another one comes up.' : 'Could not send it right now.',
+                    never: 'Okay — nothing will be sent.',
+                }[btn.dataset.tech];
+                if (msg && window.Utils && Utils.showToast) Utils.showToast(msg);
+            } catch (e) {
+                if (window.Utils && Utils.showToast) Utils.showToast('Could not save that: ' + (e.message || e), 'error');
+            }
+            close();
+        }));
     },
 
     _showWhatsNewModal(data) {
@@ -11754,7 +11875,7 @@ const App = {
                             <span class="settings-label">Current: ${Utils.escapeHtml(updateInfo.current)} &rarr; Latest: ${Utils.escapeHtml(updateInfo.latest)}</span>
                             ${_isServer ? '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">This is a server install — update by running <code>pawupdate</code> (or <code>git pull &amp;&amp; docker compose up -d --build</code>) on the host.</div>' : ''}
                         </div>
-                        ${_isServer ? '' : '<button class="btn btn-primary" id="apply-update-btn">Update Now</button>'}
+                        ${_isServer ? '' : '<div style="display:flex;gap:8px;align-items:center"><button class="btn btn-primary" id="apply-update-btn">Update Now</button><button class="btn btn-secondary" id="skip-update-btn" style="padding:4px 10px;font-size:12px" title="Don\'t offer this version again at startup; the next one will be">Skip this version</button></div>'}
                     </div>
                 </div>` : `
                 <div class="settings-section">
@@ -11765,6 +11886,15 @@ const App = {
                             <span class="settings-value" style="color:var(--success)" id="update-status-text">Up to date</span>
                             <button class="btn btn-secondary" id="check-update-btn" style="padding:4px 12px;font-size:12px">Check for Updates</button>
                         </div>
+                    </div>
+                </div>`}
+
+                ${_isServer ? '' : `
+                <div class="settings-section">
+                    <h3>Updates at startup</h3>
+                    <div class="settings-row">
+                        <div><span class="settings-label">Update automatically before the app opens</span><div style="font-size:11px;color:var(--text-muted);margin-top:2px">A newer release is downloaded and installed under a small progress window, and the app you see is the new one. Offline or slow? The installed version starts as normal.${prefs.update_skip_version ? ' Skipping ' + Utils.escapeHtml(prefs.update_skip_version) + ' until the next release.' : ''}</div></div>
+                        <label class="toggle-switch"><input type="checkbox" id="pref-auto-update" ${prefs.auto_update !== false ? 'checked' : ''}><span class="toggle-slider"></span></label>
                     </div>
                 </div>`}
 
@@ -15715,6 +15845,19 @@ const App = {
             }
 
             // Auto-Update
+            // Startup update gate (4.9.0): the switch and "skip this version".
+            document.getElementById('pref-auto-update')?.addEventListener('change', async e => {
+                try { await API.savePreferences({ auto_update: e.target.checked }); }
+                catch (err) { e.target.checked = !e.target.checked; alert('Could not save: ' + err.message); }
+            });
+            document.getElementById('skip-update-btn')?.addEventListener('click', async e => {
+                const latest = (updateInfo && updateInfo.latest) || '';
+                if (!latest) return;
+                e.target.disabled = true;
+                try { await API.savePreferences({ update_skip_version: latest }); e.target.textContent = 'Skipped ' + latest; }
+                catch (err) { e.target.disabled = false; alert('Could not save: ' + err.message); }
+            });
+
             const applyUpdateBtn = document.getElementById('apply-update-btn');
             if (applyUpdateBtn) {
                 applyUpdateBtn.addEventListener('click', async () => {

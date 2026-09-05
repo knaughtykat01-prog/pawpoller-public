@@ -75,6 +75,7 @@
                 }
                 this._render(root);
                 this._mounted = true;
+                this._loadTech(root);
                 // Re-attach to an in-flight run if one exists
                 const act = await fetch('/api/testing/active', { credentials: 'same-origin' }).then(r => r.json());
                 if (act && act.run_id) {
@@ -88,6 +89,7 @@
         _render(root) {
             const catalog = this._categories.map(cat => this._renderCategory(cat)).join('');
             root.innerHTML = `
+                ${this._renderTech()}
                 <div class="diag-wrap">
                     <div class="diag-toolbar">
                         <input type="search" class="diag-search" placeholder="Filter tests…" />
@@ -130,6 +132,127 @@
             this._logEl = root.querySelector('#diag-log');
             this._summaryEl = root.querySelector('#diag-summary');
             this._bindEvents(root);
+        },
+
+        /* ── Tech Centre panel (4.10.0) — consent switch, install id, last reports ── */
+        _tech: null,
+
+        _renderTech() {
+            const st = this._tech;
+            const esc = (s) => this._esc(s == null ? '' : String(s));
+            if (!st) return '<div class="tech-panel" id="tech-panel"><h3>Technical error reports</h3><p>Loading…</p></div>';
+            if (!st.enabled) return '<div class="tech-panel" id="tech-panel"><h3>Technical error reports</h3><p>Disabled in this build.</p></div>';
+            const on = st.consent === true;
+            const state = st.consent === null
+                ? 'Not decided yet — you will be asked at the first technical problem.'
+                : on ? 'On — technical problems are sent to the PawPoller tech centre.' : 'Off — nothing is sent.';
+            const last = (st.last || []).map(e => {
+                const badge = e.status
+                    ? `<span class="tech-badge ${esc(e.status)}">${esc(String(e.status).replace('_', ' '))}</span>`
+                    : (e.sent ? '<span class="tech-badge">sent</span>' : '<span class="tech-badge">not sent</span>');
+                const note = e.fixed_in ? ` — fixed in ${esc(e.fixed_in)}` : (e.note ? ` — ${esc(e.note)}` : '');
+                const when = esc(String(e.at || '').replace('T', ' ').replace('Z', ' UTC'));
+                return `<li>${badge}${esc(e.title)}<span style="color:var(--text-muted)"> · ${when}${note}</span></li>`;
+            }).join('');
+            return `
+                <div class="tech-panel" id="tech-panel">
+                    <h3>Technical error reports</h3>
+                    <p>${esc(state)}</p>
+                    <div class="tech-row">
+                        <label class="toggle-switch"><input type="checkbox" id="tech-consent" ${on ? 'checked' : ''}><span class="toggle-slider"></span></label>
+                        <span>Send technical problems to the tech centre</span>
+                    </div>
+                    <p>Sent: the error, a scrubbed traceback, the last log lines, the app version, your OS and a random install id. Never: account names, cookies, tokens, artwork or story text. Problems you can fix yourself are never sent.</p>
+                    <div class="tech-row">
+                        <span>Install id: <span class="tech-id">${esc(st.install_id)}</span></span>
+                        <span style="color:var(--text-muted)">· quote this if you write in about a problem</span>
+                    </div>
+                    <div class="tech-row">
+                        <button class="btn btn-xs" id="tech-test">Send a test report</button>
+                        <button class="btn btn-xs" id="tech-flush" ${st.pending ? '' : 'disabled'}>Send ${Number(st.pending) || 0} queued now</button>
+                        <button class="btn btn-xs" id="tech-refresh">Refresh</button>
+                        <span id="tech-msg" style="color:var(--text-muted);font-size:12px"></span>
+                    </div>
+                    <div class="tech-row">
+                        <span style="color:var(--text-muted)">Send a sample of each kind:</span>
+                        <button class="btn btn-xs" data-sample="exception">Crash</button>
+                        <button class="btn btn-xs" data-sample="platform_response">Platform answer</button>
+                        <button class="btn btn-xs" data-sample="api_500">API 500</button>
+                        <button class="btn btn-xs" data-sample="frontend">Browser error</button>
+                        <button class="btn btn-xs" data-sample="update">Failed update</button>
+                    </div>
+                    ${last ? `<ul class="tech-last">${last}</ul>` : '<p style="color:var(--text-muted)">No reports yet.</p>'}
+                </div>`;
+        },
+
+        async _loadTech(root) {
+            try {
+                this._tech = await fetch('/api/tech/status', { credentials: 'same-origin' }).then(r => r.json());
+            } catch (err) {
+                this._tech = { enabled: false };
+            }
+            this._paintTech(root);
+        },
+
+        _paintTech(root) {
+            const host = root.querySelector('#tech-panel');
+            if (!host) return;
+            const tmp = document.createElement('div');
+            tmp.innerHTML = this._renderTech();
+            host.replaceWith(tmp.firstElementChild);
+            this._bindTech(root);
+        },
+
+        _bindTech(root) {
+            const msg = (t, bad) => {
+                const el = root.querySelector('#tech-msg');
+                if (el) { el.textContent = t; el.style.color = bad ? 'var(--danger)' : 'var(--text-muted)'; }
+            };
+            const post = (path, body) => fetch(path, {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}),
+            });
+            root.querySelector('#tech-consent')?.addEventListener('change', async (e) => {
+                try {
+                    const r = await post('/api/tech/consent', { value: e.target.checked });
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    this._tech = await r.json();
+                } catch (err) { msg('Could not save: ' + (err.message || err), true); return; }
+                this._paintTech(root);
+            });
+            root.querySelector('#tech-test')?.addEventListener('click', async () => {
+                msg('Sending…');
+                let text = '', bad = false;
+                try {
+                    const r = await post('/api/tech/test');
+                    const d = await r.json();
+                    if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+                    text = 'Test report received by the tech centre (issue #' + d.issue_id + ').';
+                } catch (err) { text = 'Test failed: ' + (err.message || err); bad = true; }
+                await this._loadTech(root);
+                msg(text, bad);
+            });
+            root.querySelector('#tech-flush')?.addEventListener('click', async () => {
+                msg('Sending…');
+                let text = '', bad = false;
+                try { const d = await post('/api/tech/flush').then(r => r.json()); text = 'Sent ' + d.sent + '.'; }
+                catch (err) { text = 'Could not send: ' + (err.message || err); bad = true; }
+                await this._loadTech(root);
+                msg(text, bad);
+            });
+            root.querySelectorAll('[data-sample]').forEach(btn => btn.addEventListener('click', async () => {
+                msg('Sending sample…');
+                let text = '', bad = false;
+                try {
+                    const r = await post('/api/tech/sample', { kind: btn.dataset.sample });
+                    const d = await r.json();
+                    if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+                    text = 'Sample "' + btn.textContent.trim() + '" received by the tech centre (issue #' + d.issue_id + ').';
+                } catch (err) { text = 'Sample failed: ' + (err.message || err); bad = true; }
+                await this._loadTech(root);
+                msg(text, bad);
+            }));
+            root.querySelector('#tech-refresh')?.addEventListener('click', () => this._loadTech(root));
         },
 
         _renderCategory(cat) {
