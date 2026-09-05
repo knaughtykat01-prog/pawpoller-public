@@ -49,6 +49,7 @@ from routes.artists_api import artists_router
 from routes.masterpieces_api import masterpieces_router
 from routes.whatsnew_api import whatsnew_router
 from routes.tech_api import tech_router
+from routes.media_api import media_router
 from routes.backup_api import backup_router
 from routes.mirror_api import mirror_router
 from routes.discord_api import discord_router
@@ -574,6 +575,7 @@ app.include_router(fn_router)    # FurryNetwork routes (/api/fn/*)
 app.include_router(fbr_router)   # Furbooru routes (/api/fbr/*)
 app.include_router(tg_router)    # Telegram channel analytics (/api/tg/*)
 app.include_router(tech_router)  # Tech Centre consent/status/reports (/api/tech/*)
+app.include_router(media_router) # Connected-desktop uploads into the inbox (/api/media/*)
 app.include_router(posting_router)  # Posting module routes (/api/posting/*)
 app.include_router(artwork_router)  # Artwork hub routes (/api/artwork/*)
 app.include_router(posts_router)    # Posts (microblog) module routes (/api/posts/*)

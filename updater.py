@@ -326,6 +326,11 @@ def _pick_update_asset(assets: list) -> str | None:
     suffix = _LINUX_ASSET_SUFFIX if sys.platform.startswith("linux") else _WINDOWS_ASSET_SUFFIX
     for asset in assets:
         name = asset.get("name", "")
+        # 4.12.0: the release also carries PawPoller-Server-* archives (the headless build).
+        # On Windows both end in .zip — picking the server build would replace the desktop
+        # app with a console server and there would be no window to notice it.
+        if name.startswith("PawPoller-Server-"):
+            continue
         if name.endswith(suffix):
             # Skip the Windows installer (.exe) — handled by the suffix
             # match above (the suffix is .zip on Windows, so .exe assets

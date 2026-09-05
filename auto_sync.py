@@ -86,11 +86,10 @@ def _sync_target():
     # misconfigured http:// target is the API key (and full settings dump
     # including platform credentials) on the wire in cleartext — much
     # worse than just not syncing.
-    if not server_url.lower().startswith("https://"):
-        logger.warning(
-            "Auto-sync disabled: posting_server_url must use https:// "
-            "for non-localhost targets (got %r)", server_url,
-        )
+    # 4.11.0: Tailscale addresses/names are a trusted transport too (config.is_trusted_transport).
+    ok, why = config.is_trusted_transport(server_url)
+    if not ok:
+        logger.warning("Auto-sync disabled: %s (got %r)", why, server_url)
         return None
     return server_url, api_key
 

@@ -421,6 +421,10 @@ Visit `http://localhost:8420` in a browser.
 
 ### 3.4 Run as a systemd service (Linux headless)
 
+> **Shortcut (4.12.0):** `installer/server/install.sh` does all of this from a prebuilt release —
+> unit, dedicated user, self-update, checksums — on Linux and macOS; `install.ps1` on Windows.
+> See `docs/SELF_HOSTING.md` (top). The manual unit below still works for a source checkout.
+
 Create `/etc/systemd/system/pawpoller.service`:
 
 ```ini

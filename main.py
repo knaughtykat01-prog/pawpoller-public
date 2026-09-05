@@ -336,25 +336,73 @@ def _sync_settings_on_startup():
 
 
 def main():
-    global _tray_icon, _window
-
-    # --- Step 0: Update before anything loads (4.9.0) ---
-    # Packaged builds only, timeboxed, fails open. When a newer release exists
-    # this downloads it under a small splash, applies it and exits so the swap
-    # script relaunches the new build — the window the user sees is the new
-    # version, never "get in, then restart". SystemExit passes straight through
-    # the except below on purpose.
+    """Entry: the update gate first, then whichever mode this install is in."""
     try:
         import update_gate
         _gate = update_gate.run()
         logger.info("Startup update gate: %s", _gate)
         if str(_gate).startswith("failed:"):
-            # A failed self-update is ours to know about (4.10.0) — queued, sent with consent.
             import techcentre
             techcentre.report("update", "update_gate.run", "UpdateFailed", str(_gate))
     except Exception as e:
         logger.warning("Startup update gate skipped: %s", e)
+    from desktop_agent import connect_target, decide_mode
+    settings = config.get_settings()
+    if decide_mode(sys.argv[1:], settings) == "connected":
+        url, key = connect_target(sys.argv[1:], settings)
+        if url and key:
+            return run_connected(url, key)
+        logger.warning("connected mode without a server URL/key — falling back to standalone")
+    return run_standalone()
 
+
+def run_connected(server_url: str, api_key: str):
+    """A window onto the server + the local agent (SYNCTRUTH, 4.13.0).
+
+    No init_db, no pollers, no scheduler, no Telegram bot, no auto-sync, no mirror
+    watcher: everything lives on the server. This process keeps only the update gate
+    (already run), the tray, the agent's write-behind queue, and the pywebview window.
+    """
+    global _tray_icon, _window
+    import webview
+    import desktop_agent
+
+    # A desktop that just migrated from paired mode still has the old copy on disk (4.14.0).
+    desktop_agent.retire_local_database(config.DATA_DIR)
+    agent = desktop_agent.Agent(server_url, api_key)
+    agent.start()
+    logger.info("Connected mode: window onto %s (agent queue: %d pending)", server_url, agent.queue.pending_count())
+
+    _tray_icon = _create_tray_icon()
+    threading.Thread(target=_tray_icon.run, kwargs={"setup": lambda icon: None}, daemon=True).start()
+
+    reachable = agent.server_reachable()
+    kwargs = dict(width=1200, height=800, min_size=(800, 500), js_api=desktop_agent.AgentApi(agent))
+    if reachable:
+        _window = webview.create_window("PawPoller", url=server_url, **kwargs)
+    else:
+        _window = webview.create_window("PawPoller", html=desktop_agent.offline_page(server_url, agent), **kwargs)
+        agent.when_reachable(lambda: _window.load_url(server_url))
+    _window.events.closing += _on_closing
+    _start_kwargs = {}
+    if sys.platform.startswith("linux"):
+        _start_kwargs["gui"] = "qt"
+    webview.start(**_start_kwargs)
+    if _tray_icon is not None:
+        _tray_icon.stop()
+    agent.stop()
+    logger.info("Window closed — shutting down (connected).")
+
+
+def run_standalone():
+    global _tray_icon, _window
+
+    # --- Step 0: Update before anything loads (4.9.0) --- (now in main(); kept as a no-op marker)
+    # Packaged builds only, timeboxed, fails open. When a newer release exists
+    # this downloads it under a small splash, applies it and exits so the swap
+    # script relaunches the new build — the window the user sees is the new
+    # version, never "get in, then restart". SystemExit passes straight through
+    # the except below on purpose.
     # --- Step 1: Database initialisation ---
     logger.info("Initialising database...")
     init_db()  # Creates tables/schema if the DB file does not exist yet

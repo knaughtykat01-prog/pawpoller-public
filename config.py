@@ -952,7 +952,49 @@ def get_account_credentials(account_id: int) -> dict:
 SETUP_MODE_STANDALONE = "standalone"
 SETUP_MODE_PAIRED = "paired_desktop"
 SETUP_MODE_SERVER = "server"
-VALID_SETUP_MODES = frozenset({SETUP_MODE_STANDALONE, SETUP_MODE_PAIRED, SETUP_MODE_SERVER})
+# 4.13.0: a connected desktop is a window onto its server plus a local agent — no database,
+# no pollers, no scheduler here (docs/specs/server_truth_sync.md). paired_desktop stays as the
+# legacy mirror mode until its installs have migrated.
+SETUP_MODE_CONNECTED = "connected"
+VALID_SETUP_MODES = frozenset({SETUP_MODE_STANDALONE, SETUP_MODE_PAIRED, SETUP_MODE_SERVER, SETUP_MODE_CONNECTED})
+
+
+# ── Trusted transports for pairing (HOSTFREE, 4.11.0) ───────────────────────
+# A bearer token (and, on the sync channel, decrypted platform credentials) may only
+# travel where it cannot be read on the wire: HTTPS anywhere, plain HTTP only to the
+# loopback or over Tailscale, whose WireGuard tunnel already encrypts end to end.
+# Tailscale hands out 100.64.0.0/10 (the CGNAT range) and fd7a:115c:a1e0::/48, and
+# MagicDNS names end in .ts.net. `tailscale serve` gives HTTPS anyway; the exception is
+# for people who skip that step, not a reason to skip it.
+_TAILSCALE_V4 = "100.64.0.0/10"
+_TAILSCALE_V6 = "fd7a:115c:a1e0::/48"
+
+
+def is_trusted_transport(url: str) -> tuple[bool, str]:
+    """(ok, reason) — may a bearer token be sent to *url*?"""
+    import ipaddress
+    from urllib.parse import urlsplit
+    try:
+        parts = urlsplit((url or "").strip())
+    except ValueError:
+        return False, "not a URL"
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return False, "must start with http:// or https://"
+    if parts.scheme == "https":
+        return True, "https"
+    host = parts.hostname.lower()
+    if host in ("localhost", "::1") or host.startswith("127."):
+        return True, "loopback"
+    if host.endswith(".ts.net"):
+        return True, "tailscale name"
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None and (ip in ipaddress.ip_network(_TAILSCALE_V4) or ip in ipaddress.ip_network(_TAILSCALE_V6)):
+        return True, "tailscale address"
+    return False, ("plain http:// is only allowed to localhost or over Tailscale "
+                   "(100.64.0.0/10 addresses, *.ts.net names) — use https://")
 
 
 def get_polling_owner(runtime: str) -> str:
@@ -973,7 +1015,7 @@ def get_polling_owner(runtime: str) -> str:
         return "local"  # this process *is* the server, it polls
     settings = get_settings()
     mode = settings.get("setup_mode")
-    if mode == SETUP_MODE_PAIRED:
+    if mode in (SETUP_MODE_PAIRED, SETUP_MODE_CONNECTED):
         return "server"
     if mode == SETUP_MODE_STANDALONE:
         return "local"
@@ -1165,7 +1207,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.10.2"
+APP_VERSION = "4.14.1"
 
 # ── Inkbunny API settings ──
 INKBUNNY_API_BASE = "https://inkbunny.net"     # Inkbunny API root URL

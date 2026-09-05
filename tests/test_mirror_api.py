@@ -127,7 +127,9 @@ def test_pull_refuses_plain_http_to_a_remote_host(client, monkeypatch):
     monkeypatch.setattr("posting.scheduler.detect_runtime_mode", lambda: "desktop")
     r = client.post("/api/mirror/pull", json={"server_url": "http://203.0.113.10:8420"})
     assert r.status_code == 400
-    assert "plain HTTP" in r.json()["detail"]
+    # 4.14.0: the wording comes from config.is_trusted_transport, shared with auto_sync and pair-test.
+    detail = r.json()["detail"]
+    assert "plain http" in detail.lower() and "Tailscale" in detail
 
 
 def test_pull_requires_a_server_url(client, monkeypatch):

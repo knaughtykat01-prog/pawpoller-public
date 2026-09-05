@@ -293,6 +293,19 @@ const Posting = {
 
     /* Paint the Queue & Schedule page in the chosen view (list | calendar) from
      * the cached queue data, so toggling views doesn't refetch. */
+    /* Does this install send scheduled items on time? A server always does; a desktop
+     * only while it is open. Runtime mode is cached on App by the sidebar version check;
+     * until it is known we assume desktop, the honest default. (4.11.0) */
+    _sendsOnTime() {
+        return App._runtimeMode === 'server';
+    },
+
+    _isOverdue(item) {
+        if (!item || item.status !== 'pending' || !item.scheduled_at) return false;
+        const t = this._schedInstant(item.scheduled_at);
+        return t instanceof Date && !isNaN(t) && t.getTime() < Date.now();
+    },
+
     _paintQueue() {
         const queue = this._queueData || [];
         if (!queue.length) {
@@ -303,8 +316,15 @@ const Posting = {
         }
         const view = this._queueView;
         const scheduled = queue.filter(q => q.status === 'pending' && q.scheduled_at);
+        // Honest wording (HOSTFREE rung 1, 4.11.0): a server sends on time; a desktop only
+        // sends while it is open, and catches up within a minute of the next launch.
+        const overdue = scheduled.filter(q => this._isOverdue(q)).length;
+        const rule = this._sendsOnTime()
+            ? 'The server sends them on time.'
+            : 'They go out at their time while PawPoller is open &mdash; otherwise the next time you open it.';
+        const overdueNote = overdue ? ` <strong>${overdue} overdue</strong> &mdash; sending at the next check.` : '';
         const schedNote = scheduled.length
-            ? `<p class="page-subtitle">${scheduled.length} scheduled &middot; ${queue.length} total. Scheduled items publish automatically at their time (server runs them; desktop-only platforms fire next time the app is open).</p>`
+            ? `<p class="page-subtitle">${scheduled.length} scheduled &middot; ${queue.length} total. ${rule}${overdueNote}</p>`
             : `<p class="page-subtitle">${queue.length} items</p>`;
         const toggle = `<div class="q-viewtoggle" style="display:inline-flex;gap:.3rem;flex-shrink:0;">
             <button class="btn btn-sm${view === 'list' ? ' btn-primary' : ' btn-outline'}" data-q-view="list">&#9776; List</button>
@@ -417,6 +437,10 @@ const Posting = {
                     ? Utils.escapeHtml(this._schedInstant(item.scheduled_at).toLocaleString())
                     : '<span class="muted">Immediate</span>';
                 const pending = item.status === 'pending';
+                const isOverdue = this._isOverdue(item);
+                const statusBadge = isOverdue
+                    ? `<span class="status-badge status-overdue" title="${this._sendsOnTime() ? 'Sending at the next check' : 'Its time passed while PawPoller was closed; it sends at the next check'}">overdue</span>`
+                    : `<span class="status-badge status-${item.status}">${item.status}</span>`;
                 let actions = '';
                 if (pending && item.scheduled_at) {
                     actions += `<button class="btn btn-sm btn-outline" data-q-resched="${item.queue_id}">Reschedule</button> `;
@@ -445,7 +469,7 @@ const Posting = {
                             <button class="btn btn-xs btn-outline" data-q-editcancel="${item.queue_id}">&times;</button>
                         </span>
                     </td>
-                    <td data-label="Status"><span class="status-badge status-${item.status}">${item.status}</span></td>
+                    <td data-label="Status">${statusBadge}</td>
                     <td data-label="Actions">${actions}</td>
                 </tr>`;
             };

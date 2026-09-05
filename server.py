@@ -65,6 +65,9 @@ if os.environ.get("PAWPOLLER_DEBUG_PROXY"):
 # the normal config.get_settings() path.
 
 _ENV_TO_SETTINGS = {
+    # Installed servers (4.14.0): the installer names a backups folder and turns auto-backup on.
+    "PAWPOLLER_AUTO_BACKUP_DIR": "auto_backup_dir",
+    "PAWPOLLER_AUTO_BACKUP":     "auto_backup_enabled",
     "IB_USERNAME":      "username",
     "IB_PASSWORD":      "password",
     "FA_USERNAME":      "fa_username",
@@ -137,7 +140,7 @@ def _seed_settings_from_env():
         if existing:
             # UI/vault already has a value — leave it alone.
             continue
-        if settings_key == "telegram_enabled":
+        if settings_key in ("telegram_enabled", "auto_backup_enabled"):
             updates[settings_key] = val.lower() in ("true", "1", "yes")
         else:
             updates[settings_key] = val
@@ -612,6 +615,12 @@ def main():
         # it costs nothing when off (3.18.0).
         ("Mirror drift watcher", run_drift_watcher),
     ]
+
+    # Installed (dockerless) servers update themselves (4.12.0): the installer's unit sets
+    # PAWPOLLER_SERVER_MANAGED=1 + PAWPOLLER_SERVER_ROOT; Docker and source runs never see them.
+    import server_updater
+    if server_updater.managed():
+        threads.append(("Server self-update", server_updater.loop))
 
     for name, target in threads:
         logger.info("Starting %s...", name)

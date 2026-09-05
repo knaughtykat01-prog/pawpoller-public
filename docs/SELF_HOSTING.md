@@ -7,6 +7,24 @@ It assumes no prior Docker or Linux experience. Every command is one you copy,
 paste and run. Where you have to make a decision, the recommended option is
 marked and the reason is given.
 
+> **The short way (4.12.0): a machine you already own.** If you have any computer that can stay on —
+> a spare laptop, a mini PC, a Raspberry Pi — you can skip this whole guide. Run one command on it and
+> the server installs itself, starts on boot, restarts if it stops, and keeps itself up to date:
+>
+> ```bash
+> # Linux or macOS
+> curl -fsSL https://raw.githubusercontent.com/knaughtykat01-prog/pawpoller-public/main/installer/server/install.sh | bash
+> ```
+> ```powershell
+> # Windows, from an elevated PowerShell
+> irm https://raw.githubusercontent.com/knaughtykat01-prog/pawpoller-public/main/installer/server/install.ps1 | iex
+> ```
+>
+> Then install Tailscale on that machine and on the one you use, run `sudo tailscale serve --bg 8420`
+> on the server, and pair the desktop app to `https://<machine>.<your-tailnet>.ts.net` — see
+> [§8 Option C](#option-c--tailscale-private-no-domain-no-open-ports). No domain, no open ports, no
+> monthly fee. The rest of this guide is for running it on a rented cloud server instead.
+
 **Time:** about 30 minutes, most of it waiting.
 **Cost:** free to about $6/month depending on which host you pick.
 
@@ -108,6 +126,20 @@ capacity is frequently exhausted in popular regions.
    makes only outbound connections. This is a strong reason to prefer it here.
 
 ---
+
+### Google Cloud e2-micro (free tier, with caveats)
+
+Google gives every billing account **one** `e2-micro` in `us-west1`, `us-central1` or `us-east1`, a 30 GB
+**standard** persistent disk and 1 GB of egress a month at no charge. PawPoller fits. Three things
+turn "free" into a bill, all learned the hard way:
+
+- **A second VM, or a *balanced* disk, is paid.** Keep one e2-micro with a `pd-standard` boot disk.
+- **Every external IPv4 address is billed** (about US$3.65 a month). That is the one line you will
+  see. A Cloudflare Tunnel (§8 Option A) lets the VM run without a public address at all.
+- **Egress to Australia and China is not in the free 1 GB.** Small for PawPoller, but not zero.
+
+A card is required. If you are choosing between the two, Oracle's tier is roomier and has a Sydney
+region; Google's is simpler if you already live in its console.
 
 ## 3. Connect to it
 
@@ -411,6 +443,35 @@ Leave `PAWPOLLER_BIND` alone in both options. The proxy reaches PawPoller over
 loopback; the port stays closed to the world.
 
 ---
+
+### Option C — Tailscale (private, no domain, no open ports)
+
+If the server is a machine you own — a spare laptop, a mini PC, a Raspberry Pi — you do not
+need a domain, a certificate or a port forward. Tailscale puts your devices on a private
+network with each other wherever they are, and the server gets a stable name.
+
+1. Install Tailscale on the server and on the computer that runs the PawPoller desktop app
+   (https://tailscale.com/download). Sign both in with the same account. The personal plan is
+   free.
+2. On the server, give PawPoller HTTPS on its Tailscale name (a real certificate, issued by
+   Tailscale):
+
+   ```bash
+   sudo tailscale serve --bg 8420
+   tailscale status --json | grep -m1 '"DNSName"'
+   ```
+
+   The name looks like `myserver.tail1234.ts.net`. Your server is now
+   `https://myserver.tail1234.ts.net` — from any of your own devices, and from nowhere else.
+3. In the desktop app's setup wizard choose *Paired with a server* and enter that address plus
+   the API key from the server's Settings page. PawPoller accepts Tailscale addresses
+   (`*.ts.net` names and `100.x.y.z` addresses) even without step 2, because Tailscale already
+   encrypts the link; step 2 just makes it a normal `https://` URL.
+
+**Only if you need a public link** (for example a shareable gallery page), the same tool can
+expose it to the internet with one more command — `sudo tailscale funnel --bg 8420` — which
+gives the same name a public HTTPS address. Polling and posting never need this: everything
+PawPoller does is outbound, and Instagram's image hosting uses the maintainer's relay.
 
 ### Install it on your phone or tablet
 

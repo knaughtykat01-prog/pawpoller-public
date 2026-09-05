@@ -299,9 +299,9 @@ def _mirror_target(body: dict) -> tuple[str, str]:
     # Matches auto_sync.py / settings_api.py: the payload carries a bearer
     # token and, for the database, every row in the install. Plaintext HTTP is
     # only tolerable to a loopback peer.
-    if not server_url.startswith("https://") and "127.0.0.1" not in server_url \
-            and "localhost" not in server_url:
-        raise HTTPException(400, detail="Refusing to mirror over plain HTTP to a non-local server.")
+    ok, why = config.is_trusted_transport(server_url)     # https / loopback / Tailscale (4.14.0)
+    if not ok:
+        raise HTTPException(400, detail=f"Refusing to mirror: {why}")
     return server_url, api_key
 
 
@@ -697,6 +697,14 @@ def mirror_restart():
     from posting.scheduler import detect_runtime_mode
 
     if detect_runtime_mode() == "server":
+        # 4.12.0: an installed (dockerless) server runs under a service unit that brings
+        # it straight back, so exiting IS the restart — and applies a staged snapshot too.
+        import server_updater
+        if server_updater.managed():
+            from pathlib import Path as _P
+            _pending = core.pending_snapshot_path(_P(config.DB_PATH)).exists()
+            server_updater.request_restart()
+            return {"status": "restarting", "pending_snapshot": _pending, "managed": True}
         raise HTTPException(409, detail=(
             "This install runs under Docker, which owns the process lifecycle. "
             "Restart it with `docker compose restart` instead."))
@@ -714,6 +722,78 @@ def mirror_restart():
     import os as _os
     threading.Timer(1.5, lambda: _os._exit(0)).start()
     return {"status": "restarting", "applying_database": pending}
+
+
+_SEED_TABLES = ("accounts", "submissions", "masterpieces", "posts")
+
+
+def _seed_would_replace() -> dict:
+    """Row counts of the tables a person would notice losing — what a seed overwrites (4.14.1)."""
+    from database.db import get_connection
+    conn = get_connection()
+    try:
+        out = {}
+        for table in _SEED_TABLES:
+            try:
+                out[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+            except Exception:  # noqa: BLE001 — a table missing on an old schema counts as empty
+                out[table] = 0
+        return out
+    finally:
+        conn.close()
+
+
+@mirror_router.post("/seed-from")
+async def mirror_seed_from(body: dict):
+    """A brand-new SERVER pulls everything a standalone desktop has — once (SYNCTRUTH §3.2, 4.14.0).
+
+    The normal ``/pull`` refuses on a server because a server pulling from a desktop would
+    overwrite the truth with a copy. A fresh server has no truth yet, so this runs that same pull
+    exactly once, from a desktop reachable over Tailscale, and then records ``mirror_seeded_at`` so
+    it can never run again by accident. Body: ``{server_url, api_key}`` — the DESKTOP's address and
+    an API key minted on the desktop.
+    """
+    from posting.scheduler import detect_runtime_mode
+    if detect_runtime_mode() != "server":
+        raise HTTPException(409, detail="Seeding is for a server; on a desktop use Sync now.")
+    settings = config.get_settings()
+    if settings.get("mirror_seeded_at"):
+        raise HTTPException(409, detail=f"This server was already seeded on {settings['mirror_seeded_at']}.")
+    if not body.get("server_url") or not body.get("api_key"):
+        raise HTTPException(400, detail="server_url (the desktop's address) and api_key are required.")
+    if _pull_state["running"]:
+        raise HTTPException(409, detail="A mirror pull is already running.")
+    # 4.14.1: "fresh server" is checked, not assumed. A server that already holds data only seeds
+    # when the body says so — the snapshot would replace every row here on the next restart.
+    held = _seed_would_replace()
+    if any(held.values()) and body.get("confirm") != "replace":
+        summary = ", ".join(f"{n} {t}" for t, n in held.items() if n)
+        raise HTTPException(409, detail=f"This server already holds {summary}; seeding would replace all of it "
+                                        f"with the desktop's copy. Send confirm: \"replace\" to do it anyway.")
+    source_url, api_key = _mirror_target(body)
+    config.save_settings({"mirror_seeded_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+
+    async def _task():
+        try:
+            result = await _run_pull(source_url, api_key, dry_run=False, include_db=True, include_media=True,
+                                     only=None, push_first=False, confirm_deletes=())
+            _pull_state["result"] = result
+        except Exception as e:
+            logger.error("Seed pull failed: %s", e, exc_info=True)
+            _set_phase("error", str(e))
+            _pull_state["result"] = {"error": str(e)}
+            config.save_settings({"mirror_seeded_at": ""})      # let them try again
+        finally:
+            _pull_state["running"] = False
+            _pull_state["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    async with _pull_lock:
+        if _pull_state["running"]:
+            raise HTTPException(409, detail="A mirror pull is already running.")
+        _pull_state.update({"running": True, "phase": "starting", "message": "",
+                            "started_at": time.strftime("%Y-%m-%d %H:%M:%S"), "finished_at": None, "result": None})
+    asyncio.get_running_loop().create_task(_task())
+    return {"status": "started", "source": source_url}
 
 
 @mirror_router.post("/pull")

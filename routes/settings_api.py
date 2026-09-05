@@ -222,7 +222,21 @@ async def set_setup_mode(req: SetupModeRequest):
         )
 
     update: dict = {"setup_mode": req.mode}
-    if req.mode == config.SETUP_MODE_PAIRED:
+    if req.mode == config.SETUP_MODE_CONNECTED:
+        # 4.13.0: same credentials as pairing, but nothing syncs — the desktop restarts as a
+        # window onto the server (main.run_connected) and keeps no settings of its own to push.
+        url = (req.posting_server_url or "").strip().rstrip("/")
+        api_key = (req.posting_server_api_key or "").strip()
+        if not url or not api_key:
+            raise HTTPException(status_code=400,
+                                detail="connected mode requires posting_server_url and posting_server_api_key")
+        ok, why = config.is_trusted_transport(url)
+        if not ok:
+            raise HTTPException(status_code=400, detail=f"Server URL: {why}")
+        update["posting_server_url"] = url
+        update["posting_server_api_key"] = api_key
+        update["auto_sync_enabled"] = False
+    elif req.mode == config.SETUP_MODE_PAIRED:
         url = (req.posting_server_url or "").strip().rstrip("/")
         api_key = (req.posting_server_api_key or "").strip()
         if not url or not api_key:
@@ -271,6 +285,114 @@ class PairingTestRequest(BaseModel):
     posting_server_api_key: str
 
 
+def tailscale_state(url: str, which=None, run=None) -> dict | None:
+    """For a *.ts.net / 100.x target: the local Tailscale CLI's view, or why it has none (4.14.0).
+
+    Returns None for non-Tailscale targets. Otherwise ``{"present": bool, "state": str, "self": str}`` —
+    state is Tailscale's BackendState ("Running", "Stopped", "NeedsLogin"…) or "not installed".
+    """
+    import json as _json
+    import shutil as _shutil
+    import subprocess as _sp
+    ok, reason = config.is_trusted_transport(url)
+    if not (ok and reason.startswith("tailscale")):
+        return None
+    which = which or _shutil.which
+    exe = which("tailscale") or which("/usr/bin/tailscale") or which("/Applications/Tailscale.app/Contents/MacOS/Tailscale")
+    if not exe:
+        return {"present": False, "state": "not installed", "self": ""}
+    run = run or (lambda cmd: _sp.run(cmd, capture_output=True, text=True, timeout=3))
+    try:
+        proc = run([exe, "status", "--json"])
+        data = _json.loads(proc.stdout or "{}")
+        return {"present": True, "state": str(data.get("BackendState") or "unknown"),
+                "self": str((data.get("Self") or {}).get("DNSName") or "").rstrip(".")}
+    except Exception as e:  # noqa: BLE001
+        return {"present": True, "state": f"error: {type(e).__name__}", "self": ""}
+
+
+def tailscale_hint(state: dict | None) -> str:
+    """The sentence appended to a failed Connect when the URL is a Tailscale one and the
+    tunnel on THIS machine is the likely reason. Empty when Tailscale is running or irrelevant."""
+    if not state:
+        return ""
+    if not state.get("present"):
+        return " Tailscale is not installed on this machine: install it, sign in, then try again."
+    st = str(state.get("state") or "")
+    if st == "Running":
+        return ""
+    return f" Tailscale on this machine is {st or 'not running'}: open Tailscale and sign in, then try again."
+
+
+class BrowserLoginResult(BaseModel):
+    platform: str
+    cookies: dict
+    account_id: int | None = None
+    extra_fields: dict | None = None
+
+
+@settings_router.post("/browser-login/result")
+async def browser_login_result(req: BrowserLoginResult):
+    """The connected desktop's agent hands over cookies it harvested locally (4.13.0).
+
+    Same storage path as the local popup route (`auth.browser_login._save_browser_creds`), so
+    the server ends up holding exactly what a desktop login would have stored on the desktop.
+    Auth: the ordinary API-key bearer check in dashboard.py (the pairing key).
+    """
+    from auth import browser_login as _bl
+    platform = (req.platform or "").strip().lower()
+    if platform not in _bl.PLATFORM_LOGIN:
+        raise HTTPException(status_code=400, detail=f"unknown platform: {platform}")
+    creds = dict(req.cookies or {})
+    if req.extra_fields:
+        creds.update({k: v for k, v in req.extra_fields.items() if isinstance(v, str)})
+    if not creds:
+        raise HTTPException(status_code=400, detail="no credentials in the result")
+    try:
+        written = _bl._save_browser_creds(platform, creds, req.account_id)
+    except (ValueError, LookupError) as e:
+        # e.g. "Account 5 is not a da account" — the desktop must drop this one, not retry it forever
+        raise HTTPException(status_code=400, detail=str(e))
+    logger.info("Browser login result received from a connected desktop for %s (account %s): %s",
+                platform, req.account_id if req.account_id is not None else "default", list(written.keys()))
+    return {"ok": True, "saved": sorted(written.keys())}
+
+
+@settings_router.post("/connect-migrate")
+async def connect_migrate(body: dict | None = None):
+    """A paired desktop → connected mode (SYNCTRUTH §3.1, 4.14.0).
+
+    1. Push whatever only this install originated (the SHR tables) to the server, so nothing is
+       lost when this copy stops being used. 2. Flip ``setup_mode`` to ``connected`` and stop
+       auto-sync. The database itself is retired (renamed, kept) on the next start, by
+       ``desktop_agent.retire_local_database`` — it cannot be moved while open.
+    Refused on a server (nothing to migrate) and on a standalone install (it has no server).
+    """
+    body = body or {}
+    from posting.scheduler import detect_runtime_mode
+    if detect_runtime_mode() == "server":
+        raise HTTPException(status_code=409, detail="This is the server; there is nothing to migrate here.")
+    settings = config.get_settings()
+    url = (settings.get("posting_server_url") or "").rstrip("/")
+    key = settings.get("posting_server_api_key") or ""
+    if not url or not key:
+        raise HTTPException(status_code=400, detail="No paired server: set the server URL and API key first.")
+    ok, why = config.is_trusted_transport(url)
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"Server URL: {why}")
+    from routes import mirror_api as _mirror
+    pushed: dict = {}
+    if not body.get("skip_push"):
+        try:
+            pushed = await _mirror._run_shr_push(url, key, confirm_deletes=body.get("confirm_deletes") or (), dry_run=False)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Could not push this install's changes to the server first: {e}")
+    config.save_settings({"setup_mode": config.SETUP_MODE_CONNECTED, "auto_sync_enabled": False})
+    logger.info("Migrated to connected mode (pushed=%s)", bool(pushed))
+    return {"ok": True, "setup_mode": config.SETUP_MODE_CONNECTED, "pushed": pushed,
+            "next": "Close and reopen PawPoller. It will open onto the server; the local database is kept as a .retired file."}
+
+
 @settings_router.post("/pair-test")
 async def pair_test(req: PairingTestRequest):
     """Validate pairing credentials by probing the remote server.
@@ -292,11 +414,11 @@ async def pair_test(req: PairingTestRequest):
         return {"ok": False, "error": "URL and API key are required"}
 
     is_loopback = "localhost" in url or "127.0.0.1" in url
-    if not is_loopback and not url.lower().startswith("https://"):
-        return {
-            "ok": False,
-            "error": "Server URL must use https:// (the API key is sent as a bearer token).",
-        }
+    tailscale = tailscale_state(url)          # 4.14.0: HOSTFREE §4 — say whether the tunnel is up
+    # 4.11.0: same rule as auto_sync, now shared — https, loopback, or Tailscale.
+    ok, why = config.is_trusted_transport(url)
+    if not ok:
+        return {"ok": False, "error": "Server URL: %s (the API key is sent as a bearer token)." % why}
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -305,7 +427,7 @@ async def pair_test(req: PairingTestRequest):
                 headers={"Authorization": f"Bearer {api_key}"},
             )
     except Exception as e:
-        return {"ok": False, "error": f"Could not reach server: {e}"}
+        return {"ok": False, "error": f"Could not reach server: {e}.{tailscale_hint(tailscale)}"}
 
     if resp.status_code == 401:
         return {"ok": False, "error": "API key rejected (HTTP 401). Check the key on the server."}
@@ -322,6 +444,7 @@ async def pair_test(req: PairingTestRequest):
         "remote_version": body.get("version"),
         "remote_timestamp": body.get("timestamp"),
         "local_version": config.APP_VERSION,
+        "tailscale": tailscale,
         "version_match": body.get("version") == config.APP_VERSION,
     }
 

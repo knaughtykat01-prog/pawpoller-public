@@ -2468,7 +2468,7 @@ const App = {
             if (runtimeMode === 'server') {
                 return ['welcome', 'archive', 'platforms', 'persona', 'tech', 'done'];
             }
-            if (selectedMode === 'paired_desktop') {
+            if (selectedMode === 'paired_desktop' || selectedMode === 'connected') {
                 // Paired installs read the server's data — personas live there.
                 return ['welcome', 'mode', 'pairing', 'tech', 'done'];
             }
@@ -2529,10 +2529,15 @@ const App = {
                             <div class="setup-mode-title">Just on this computer</div>
                             <div class="setup-mode-desc">PawPoller polls and posts from your laptop. Nothing else needed.</div>
                         </button>
-                        <button class="setup-mode-card ${selectedMode === 'paired_desktop' ? 'selected' : ''}" data-mode="paired_desktop">
+                        <button class="setup-mode-card ${selectedMode === 'connected' ? 'selected' : ''}" data-mode="connected">
                             <div class="setup-mode-emoji">&#9729;&#65039;</div>
-                            <div class="setup-mode-title">Pair with my server</div>
-                            <div class="setup-mode-desc">I already have a Docker container running. This app reads its settings.</div>
+                            <div class="setup-mode-title">Connect to my server</div>
+                            <div class="setup-mode-desc">I run a PawPoller server. This app becomes a window onto it — the server keeps everything.</div>
+                        </button>
+                        <button class="setup-mode-card ${selectedMode === 'paired_desktop' ? 'selected' : ''}" data-mode="paired_desktop" style="opacity:.8">
+                            <div class="setup-mode-emoji">&#128260;</div>
+                            <div class="setup-mode-title">Pair (mirror copy)</div>
+                            <div class="setup-mode-desc">The older way: this app keeps its own copy and syncs with the server.</div>
                         </button>
                     </div>
                     <div style="display:flex;gap:8px;margin-top:20px">
@@ -2638,6 +2643,7 @@ const App = {
                 const summaryByMode = {
                     'standalone': 'PawPoller is set up to run locally. It\'ll poll and post from this machine.',
                     'paired_desktop': 'Paired with your server. Settings will sync automatically; the server handles polling.',
+                    'connected': 'Connected. Close and reopen PawPoller: it will open straight onto your server, and this computer only handles browser logins and file picking.',
                     'server': 'Server is ready. Pair a desktop install with the API key generated in Settings.',
                 };
                 // First-poll offer (gap G2): only when at least one platform is
@@ -2796,7 +2802,7 @@ const App = {
                         // Soft warning — keep going.
                     }
                     await API.setSetupMode({
-                        mode: 'paired_desktop',
+                        mode: selectedMode === 'connected' ? 'connected' : 'paired_desktop',
                         posting_server_url: pairingUrl,
                         posting_server_api_key: pairingKey,
                     });
@@ -16171,6 +16177,31 @@ const App = {
                 <button class="btn btn-sm btn-primary" id="mirror-restart">Restart now</button>
             </div>` : '';
 
+        /* 4.14.0 — the two migration tools of the server-as-truth design. A desktop offers
+           to stop keeping a copy; a server offers to be seeded from a desktop, once. */
+        const isServer = this._runtimeMode === 'server';
+        const migrate = isServer ? `
+            <div class="settings-row" style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+                <div>
+                    <span class="settings-label">Seed this server from a desktop</span>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:2px">A brand-new server can pull everything a standalone desktop holds — once. Enter the desktop's address (Tailscale works) and an API key minted on that desktop.</div>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+                <input type="text" id="mirror-seed-url" class="search-input" placeholder="http://laptop.tail1234.ts.net:8420" style="flex:2;min-width:220px">
+                <input type="text" id="mirror-seed-key" class="search-input" placeholder="pp_…" style="flex:1;min-width:160px">
+                <button class="btn" id="mirror-seed-go">Seed now</button>
+            </div>
+            <div id="mirror-seed-msg" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>` : `
+            <div class="settings-row" style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+                <div>
+                    <span class="settings-label">Switch to connected mode</span>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Stop keeping a copy here. Anything only this install has is pushed to the server first; then PawPoller reopens as a window onto it. The old database is kept as a .retired file.</div>
+                </div>
+                <button class="btn" id="mirror-connect-migrate">Switch</button>
+            </div>
+            <div id="mirror-migrate-msg" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>`;
+
         return `
             <div class="settings-row">
                 <div>
@@ -16186,6 +16217,7 @@ const App = {
             <div id="mirror-drift-line" style="font-size:13px;color:var(--text-muted);margin:10px 0">Checking what is out of date…</div>
             <div id="mirror-progress" style="display:none;font-size:13px;margin:10px 0"></div>
             ${pending}
+            ${migrate}
 
             <details style="margin-top:10px">
                 <summary style="cursor:pointer;font-size:12px;color:var(--text-muted)">Where this install keeps its files</summary>
@@ -16288,6 +16320,49 @@ const App = {
             }
         });
 
+        document.getElementById('mirror-connect-migrate')?.addEventListener('click', async (e) => {
+            if (!confirm('Switch this install to connected mode?\n\nIts changes are pushed to the server first, then PawPoller reopens as a window onto the server. The local database is kept as a .retired file.')) return;
+            const btn = e.currentTarget, msg = document.getElementById('mirror-migrate-msg');
+            btn.disabled = true; btn.textContent = 'Pushing…';
+            try {
+                const r = await API.connectMigrate({});
+                if (msg) msg.textContent = r.next || 'Done. Close and reopen PawPoller.';
+                btn.textContent = 'Done — reopen PawPoller';
+            } catch (err) {
+                if (msg) msg.innerHTML = '<span style="color:var(--danger)">' + Utils.escapeHtml(err.message || String(err)) + '</span>';
+                btn.disabled = false; btn.textContent = 'Switch';
+            }
+        });
+        document.getElementById('mirror-seed-go')?.addEventListener('click', async (e) => {
+            const btn = e.currentTarget, msg = document.getElementById('mirror-seed-msg');
+            const server_url = document.getElementById('mirror-seed-url')?.value.trim();
+            const api_key = document.getElementById('mirror-seed-key')?.value.trim();
+            if (!server_url || !api_key) { if (msg) msg.textContent = 'Both fields are required.'; return; }
+            if (!confirm('Seed this server from ' + server_url + '?\n\nThis pulls the desktop\'s database and files here. It runs once.')) return;
+            btn.disabled = true; btn.textContent = 'Seeding…';
+            try {
+                try {
+                    await API.mirrorSeedFrom({ server_url, api_key });
+                } catch (first) {
+                    // 4.14.1: the server already holds data. It said what; ask before replacing it.
+                    const text = first.message || String(first);
+                    if (!/already holds/.test(text)) throw first;
+                    if (!confirm(text + '\n\nReplace everything on this server with the desktop\'s copy?')) {
+                        btn.disabled = false; btn.textContent = 'Seed now';
+                        if (msg) msg.textContent = 'Left as it was.';
+                        return;
+                    }
+                    await API.mirrorSeedFrom({ server_url, api_key, confirm: 'replace' });
+                }
+                const prog = document.getElementById('mirror-progress');
+                if (prog) { prog.style.display = 'block'; prog.textContent = 'Starting…'; }
+                await this._pollMirrorProgress();
+                if (msg) msg.textContent = 'Seeded. Restart the server to apply the database.';
+            } catch (err) {
+                if (msg) msg.innerHTML = '<span style="color:var(--danger)">' + Utils.escapeHtml(err.message || String(err)) + '</span>';
+                btn.disabled = false; btn.textContent = 'Seed now';
+            }
+        });
         document.getElementById('mirror-auto-check')?.addEventListener('change', async (e) => {
             const box = e.currentTarget;
             try {

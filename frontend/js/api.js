@@ -980,6 +980,9 @@ const API = {
     getMirrorPullStatus() { return this.get('/api/mirror/pull/status'); },
     mirrorRestart() { return this.post('/api/mirror/restart', {}); },
     setMirrorAutoCheck(enabled) { return this.post('/api/mirror/auto-check', { enabled }); },
+    // 4.14.0 (SYNCTRUTH phase 3): paired desktop → connected; fresh server ← standalone desktop.
+    connectMigrate(body) { return this.post('/api/settings/connect-migrate', body || {}); },
+    mirrorSeedFrom(body) { return this.post('/api/mirror/seed-from', body); },
 
     getApiKeys() { return this.get('/api/auth/api-keys'); },
     createApiKey(data) { return this.post('/api/auth/api-keys', data); },
