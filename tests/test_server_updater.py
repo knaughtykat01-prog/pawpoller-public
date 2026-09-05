@@ -24,11 +24,11 @@ import server_updater as su
 EXE = "PawPoller-Server.exe" if sys.platform == "win32" else "PawPoller-Server"
 
 
-def _archive(tmp: Path, version: str, tag: str, top_level: bool = True) -> Path:
+def _archive(tmp: Path, version: str, tag: str, top_level: bool = True, folder: str = "PawPoller-Server") -> Path:
     """A fake release archive: <top>/PawPoller-Server[.exe] + _internal/x."""
     name = su.asset_name(version, tag)
     path = tmp / name
-    prefix = f"PawPoller-Server/" if top_level else ""
+    prefix = f"{folder}/" if top_level else ""
     files = {f"{prefix}{EXE}": b"#!/bin/sh\necho " + version.encode(), f"{prefix}_internal/x": b"x"}
     if name.endswith(".zip"):
         with zipfile.ZipFile(path, "w") as z:
@@ -96,6 +96,18 @@ def test_stage_switch_prune(tmp_path):
     assert (su.releases_dir(root) / "4.12.2").is_dir()
     with pytest.raises(FileNotFoundError):
         su.switch(root, "9.9.9")
+
+
+def test_stage_flattens_a_folder_named_like_the_binary(tmp_path):
+    """4.14.2: the real archive is dist/PawPoller-Server/PawPoller-Server on Linux and macOS — the top
+    folder shares the binary's name, and moving the binary onto it raised 'Destination path already
+    exists' (the public CI's test job, so every build was skipped). Naming the folder after EXE
+    reproduces the clash on every platform, .exe included."""
+    root = tmp_path / "root"
+    root.mkdir()
+    d = su.stage(_archive(tmp_path, "4.14.2", su.platform_tag(), folder=EXE), "4.14.2", root)
+    assert (d / EXE).is_file() and (d / "_internal" / "x").is_file()
+    assert sorted(p.name for p in d.iterdir()) == sorted([EXE, "_internal"])     # no .flatten left behind
 
 
 def test_stage_rejects_escapes_and_missing_binary(tmp_path):

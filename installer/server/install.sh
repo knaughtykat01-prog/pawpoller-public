@@ -85,9 +85,12 @@ $SUDO mkdir -p "$ROOT/releases" "$DATA"
 STAGE="$ROOT/releases/$VERSION.staging"
 $SUDO rm -rf "$STAGE"; $SUDO mkdir -p "$STAGE"
 $SUDO tar -xzf "$ARCHIVE" -C "$STAGE"
-# a single top-level folder (dist/PawPoller-Server) is flattened
+# a single top-level folder (dist/PawPoller-Server) is flattened. It is named like the binary inside
+# it, so it is renamed out of the way first — `mv PawPoller-Server/PawPoller-Server .` onto a folder of
+# that name would fail.
 if [ "$(ls -A "$STAGE" | wc -l)" -eq 1 ] && [ -d "$STAGE/$(ls -A "$STAGE")" ]; then
-  INNER="$STAGE/$(ls -A "$STAGE")"; $SUDO sh -c "mv '$INNER'/* '$STAGE'/ && rmdir '$INNER'"
+  INNER="$STAGE/$(ls -A "$STAGE")"
+  $SUDO sh -c "mv '$INNER' '$STAGE/.flatten' && mv '$STAGE/.flatten'/* '$STAGE'/ && rmdir '$STAGE/.flatten'"
 fi
 [ -x "$STAGE/PawPoller-Server" ] || $SUDO chmod +x "$STAGE/PawPoller-Server" 2>/dev/null || die "PawPoller-Server binary not found in the archive"
 $SUDO rm -rf "$ROOT/releases/$VERSION"; $SUDO mv "$STAGE" "$ROOT/releases/$VERSION"

@@ -201,7 +201,10 @@ def stage(archive: Path, version: str, root: Path) -> Path:
             t.extractall(staging)
     entries = [p for p in staging.iterdir()]
     if len(entries) == 1 and entries[0].is_dir():
-        inner = entries[0]
+        # The folder is named like the binary (dist/PawPoller-Server/PawPoller-Server on Linux and
+        # macOS), so it is renamed out of the way first: moving the binary onto a directory of the
+        # same name was "Destination path already exists" (4.14.2; Windows never hit it, .exe).
+        inner = entries[0].rename(staging / ".flatten")
         for child in inner.iterdir():
             shutil.move(str(child), str(staging / child.name))
         inner.rmdir()
