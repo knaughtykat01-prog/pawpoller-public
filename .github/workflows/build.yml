@@ -268,10 +268,13 @@ jobs:
           if (-not $line) { throw 'APP_VERSION not found in config.py' }
           "version=$($line.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
 
+      # No `| Select-Object -First N` here: it closes the pipe after N lines and Windows PowerShell
+      # then reports the native process as failed (exit 1) even though --help printed fine (4.14.3).
       - name: Smoke-run the binary
         shell: powershell
         run: |
-          & dist\PawPoller-Server\PawPoller-Server.exe --help | Select-Object -First 3
+          & dist\PawPoller-Server\PawPoller-Server.exe --help
+          if ($LASTEXITCODE -ne 0) { throw "PawPoller-Server.exe --help exited $LASTEXITCODE" }
 
       # Flat zip (contents at the root), like the desktop zip, so install.ps1 and the
       # self-updater unpack it the same way on every platform.
