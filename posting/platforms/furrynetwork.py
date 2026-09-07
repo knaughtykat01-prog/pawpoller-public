@@ -29,7 +29,11 @@ class FurryNetworkPoster(PlatformPoster):
     supports_file_replace = False
     min_post_interval = 5
     max_file_size = 50 * 1024 * 1024
-    accepted_file_types = ["png", "jpg", "jpeg", "gif", "webp"]
+    # mp4 / mp3 → FurryNetwork's multimedia collection (MEDIATYPES phase 2, 4.19.4),
+    # ≤ 200 MB. ❓ mp4 is on the site's own list; which audio formats it takes is
+    # not — mp3 is the conservative choice until the first live upload says more.
+    max_media_size = 200 * 1024 * 1024
+    accepted_file_types = ["png", "jpg", "jpeg", "gif", "webp", "mp4", "mp3"]
     requires_mode = "any"              # OAuth API works from the server
 
     def __init__(self):
@@ -114,7 +118,9 @@ class FurryNetworkPoster(PlatformPoster):
             character = await self._resolve_character(client, package)
             if not character:
                 raise RuntimeError("Could not resolve a FurryNetwork character to post under")
-            result = await client.upload_artwork(
+            # 4.19.4: a video / audio piece goes into the multimedia collection.
+            upload = client.upload_multimedia if _is_media(package) else client.upload_artwork
+            result = await upload(
                 character=character,
                 file_path=package.file_path or "",
                 title=package.title or "",
@@ -142,14 +148,26 @@ class FurryNetworkPoster(PlatformPoster):
     def validate(self, package: StoryUploadPackage) -> list[str]:
         errors: list[str] = []
         if not package.file_path:
-            errors.append("FurryNetwork requires an image file")
+            errors.append("FurryNetwork requires an image, video or audio file")
         if not package.title:
             errors.append("Title is required")
         if package.file_path:
             import os
             if os.path.isfile(package.file_path):
                 size = os.path.getsize(package.file_path)
-                if size > self.max_file_size:
+                if _is_media(package):
+                    if size > self.max_media_size:
+                        errors.append(f"{package.media_kind.capitalize() or 'Media'} is {size / 1024 / 1024:.0f} MB — "
+                                      f"FurryNetwork takes multimedia up to 200 MB")
+                elif size > self.max_file_size:
                     errors.append(f"File too large: {size / 1024 / 1024:.1f}MB "
                                   f"(max {self.max_file_size / 1024 / 1024:.0f}MB)")
         return errors
+
+
+_FN_MEDIA_TYPES = ("mp4", "mp3")
+
+
+def _is_media(package: StoryUploadPackage) -> bool:
+    """A package for the multimedia collection (4.19.4): the Library's kind or the extension."""
+    return package.media_kind in ("video", "audio") or (package.file_type or "").lower() in _FN_MEDIA_TYPES

@@ -405,6 +405,14 @@ _RULES += [
         "that left THIS database; sending it as data would replay one install's "
         "outbox as the other's.",
     ),
+    TableRule(
+        "promos", LOC,
+        "Saved promo cards (4.16.0). A row names PNG / photo files under "
+        "DATA_DIR/promos that the mirror does not carry, so a synced row would "
+        "point at images the other box does not have. A card is a generated "
+        "teaser, not truth about the story; it is remade from its spec where it "
+        "is needed.",
+    ),
 ]
 
 REGISTRY: dict[str, TableRule] = {r.name: r for r in _RULES}

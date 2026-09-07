@@ -47,6 +47,12 @@ window.Masterpieces = {
         return (window.PLATFORMS || []).find(p => p.code === code)
             || { code, label: code, emoji: '', color: '#888' };
     },
+    /* 4.18.0: the file inputs on the detail page take the piece's own kind only. */
+    _acceptForKind() {
+        const kind = ((this._detail || {}).media_kind || 'image').toUpperCase();
+        const list = window.MediaKinds && MediaKinds[kind];
+        return list ? list.map(e => '.' + e).join(',') : 'image/png,image/jpeg,image/gif,image/webp';
+    },
     /* Route platform thumbnails through the backend relays (FA/IB/Pixiv); others
        are hotlinkable. Identical to collections.js._thumbSrc / artwork.js. */
     _thumbSrc(platform, url) {
@@ -728,7 +734,13 @@ window.Masterpieces = {
     /* The values several renderers share: which render is selected, its URL,
      * the rating that drives the SFW blur. Computed once. */
     _detailView(name, m) {
-        const heroUrl = this._canonUrl(name, m.image);
+        // 4.18.0 (MEDIATYPES): a video / audio piece shows its POSTER as the picture and plays the
+        // file itself; chips carry the render to play in data-mp-media.
+        const kind = m.media_kind || 'image';
+        const posterUrl = (kind !== 'image' && m.thumbnail) ? this._canonUrl(name, m.thumbnail) : '';
+        const mediaOf = f => (kind !== 'image' && window.MediaKinds) ? MediaKinds.mediaUrl(name, f) : '';
+        const heroUrl = kind !== 'image' ? posterUrl : this._canonUrl(name, m.image);
+        const mediaUrl = mediaOf(m.image);
         const rating = this.esc((m.rating || '').toLowerCase());  // drives SFW blur
         const imgs = m.images || [];
         const variants = m.variants || [];
@@ -737,12 +749,13 @@ window.Masterpieces = {
         // variants fall back to the 2.152 unlabeled gallery of folder images.
         const chips = variants.length
             ? variants.map(v => ({
-                u: this._canonUrl(name, v.image),
+                u: kind !== 'image' ? posterUrl : this._canonUrl(name, v.image),
+                media: mediaOf(v.image),
                 label: v.label || v.key || 'Primary',
                 st: `👁 ${this._fmt((v.totals || {}).views)} · ❤ ${this._fmt((v.totals || {}).favorites)}`
                     + ` · 💬 ${this._fmt((v.totals || {}).comments)} · ${v.member_count || 0} site${(v.member_count || 0) === 1 ? '' : 's'}`,
             }))
-            : imgs.map((f, i) => ({ u: this._canonUrl(name, f), label: i === 0 ? 'Primary' : `Alt ${i}`, st: '' }));
+            : imgs.map((f, i) => ({ u: kind !== 'image' ? posterUrl : this._canonUrl(name, f), media: mediaOf(f), label: i === 0 ? 'Primary' : `Alt ${i}`, st: '' }));
         // Which chip opens selected (2.193.0). A '?v=<key>' from a Library variant
         // tile preselects that render; otherwise the hero (index 0) as before.
         const wantKey = this._variantFromHash();
@@ -753,7 +766,8 @@ window.Masterpieces = {
         }
         const mainUrl = (chips[selIdx] && chips[selIdx].u) || heroUrl;
         const selLabel = selIdx > 0 && chips[selIdx] ? chips[selIdx].label : '';
-        return { heroUrl, rating, imgs, variants, chips, selIdx, mainUrl, selLabel, isJunk: m.status === 'junk' };
+        return { heroUrl, rating, imgs, variants, chips, selIdx, mainUrl, selLabel, isJunk: m.status === 'junk',
+                 kind, posterUrl, mediaUrl: (chips[selIdx] && chips[selIdx].media) || mediaUrl };
     },
 
     /* Canonical tags = core + auxiliary, in that order (core carries the 20-25
@@ -825,18 +839,34 @@ window.Masterpieces = {
     /* ── Hero (§5.2) ─────────────────────────────────────────────────────── */
     _heroHtml(name, m, v) {
         const t = m.totals || {};
-        const hero = v.heroUrl
-            ? `<img class="mp-hero-img" id="mp-hero-img" data-rating="${v.rating}" src="${this.esc(v.heroUrl)}" alt="${this.esc(m.alt_text || m.title || name)}">`
-            : `<div class="mp-hero-ph">🖼️</div>`;
-        // The tile is a BUTTON so the full-size render is reachable without a
-        // mouse (§13). The lightbox reads the CURRENT hero src, so it follows
-        // the selected variant.
-        const tile = v.heroUrl
-            ? `<button type="button" class="board-hero-tile" data-mp-lightbox title="Open full size">${hero}</button>`
-            : `<div class="board-hero-tile">${hero}</div>`;
+        const alt = this.esc(m.alt_text || m.title || name);
+        let hero, tile;
+        if (v.kind === 'video') {
+            // 4.18.0: the file plays in place; the poster is what the shelf / publish thumb read.
+            hero = `<video class="mp-hero-video" id="mp-hero-video" controls preload="metadata" playsinline data-rating="${v.rating}"
+                        poster="${this.esc(v.posterUrl)}" src="${this.esc(v.mediaUrl)}"></video>
+                    <img class="mp-hero-img" id="mp-hero-img" data-rating="${v.rating}" src="${this.esc(v.heroUrl)}" alt="${alt}" hidden>`;
+            tile = `<div class="board-hero-tile board-hero-tile--video">${hero}</div>`;
+        } else if (v.kind === 'audio') {
+            hero = `<img class="mp-hero-img" id="mp-hero-img" data-rating="${v.rating}" src="${this.esc(v.heroUrl)}" alt="${alt}">`;
+            tile = `<div class="board-hero-tile board-hero-tile--audio">${hero}
+                        <audio class="mp-hero-audio" id="mp-hero-audio" controls preload="metadata" src="${this.esc(v.mediaUrl)}"></audio></div>`;
+        } else {
+            hero = v.heroUrl
+                ? `<img class="mp-hero-img" id="mp-hero-img" data-rating="${v.rating}" src="${this.esc(v.heroUrl)}" alt="${alt}">`
+                : `<div class="mp-hero-ph">🖼️</div>`;
+            // The tile is a BUTTON so the full-size render is reachable without a
+            // mouse (§13). The lightbox reads the CURRENT hero src, so it follows
+            // the selected variant.
+            tile = v.heroUrl
+                ? `<button type="button" class="board-hero-tile" data-mp-lightbox title="Open full size">${hero}</button>`
+                : `<div class="board-hero-tile">${hero}</div>`;
+        }
+        const mediaBadge = (v.kind !== 'image' && window.MediaKinds)
+            ? ` <span class="mp-media-badge" title="${v.kind} piece">${this.esc(MediaKinds.badge(m.media, v.kind))} ${v.kind}</span>` : '';
         const gallery = v.chips.length > 1
             ? `<div class="mp-alts" data-rating="${v.rating}">${v.chips.map((c, i) => `
-                <div class="mp-altwrap${i === v.selIdx ? ' is-active' : ''}" data-mp-img="${this.esc(c.u)}"
+                <div class="mp-altwrap${i === v.selIdx ? ' is-active' : ''}" data-mp-img="${this.esc(c.u)}" data-mp-media="${this.esc(c.media || '')}"
                      data-vstats="${this.esc(c.st)}" role="button" tabindex="0" title="${this.esc(c.label)}">
                     <img class="mp-alt" src="${this.esc(c.u)}" alt="" loading="lazy">
                     <div class="mp-alt-label">${this.esc(c.label)}</div>
@@ -864,7 +894,7 @@ window.Masterpieces = {
                 ${v.heroUrl ? `<img class="mp-stage-bg board-hero-bg" id="mp-stage-bg" src="${this.esc(v.heroUrl)}" alt="" aria-hidden="true">` : ''}
                 ${tile}
                 <div class="board-hero-mid">
-                    <h1 class="mp-title">${this.esc(m.title || name)}${v.selLabel
+                    <h1 class="mp-title">${this.esc(m.title || name)}${mediaBadge}${v.selLabel
                         ? ` <span class="muted mp-selvariant" style="font-weight:400;font-size:.75em">— ${this.esc(v.selLabel)}</span>`
                         : ''}</h1>
                     ${this._artistLineHtml(m)}
@@ -1173,11 +1203,11 @@ window.Masterpieces = {
                     <div class="renders-acts">
                         <label class="btn btn-sm" title="Swap in a better/higher-res version — keeps this record, its tags and every site link. The old file stays as a gallery alternate.">
                             ⇪ Replace image
-                            <input type="file" id="mp-replace-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+                            <input type="file" id="mp-replace-file" accept="${this._acceptForKind()}" hidden>
                         </label>
                         <label class="btn btn-sm" title="Upload another render (SFW/NSFW/rough…) straight in as a labeled variant of this piece.">
                             ＋ Add variant
-                            <input type="file" id="mp-addvariant-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+                            <input type="file" id="mp-addvariant-file" accept="${this._acceptForKind()}" hidden>
                         </label>
                         <span id="mp-replace-msg" class="muted"></span>
                     </div>
@@ -1259,6 +1289,22 @@ window.Masterpieces = {
     /* The hero tile's full-size view (§5.2). Carries the hero's class and
      * data-rating so SFW mode blurs it exactly as it blurs the tile. */
     _openLightbox() {
+        // 4.18.0: a video opens its own full-size player; audio has nothing bigger to show.
+        if (document.getElementById('mp-hero-audio')) return;
+        const vid = document.getElementById('mp-hero-video');
+        if (vid) {
+            const ov = document.createElement('div');
+            ov.className = 'modal-overlay open mp-lightbox';
+            ov.setAttribute('role', 'dialog');
+            ov.setAttribute('aria-label', 'Full-size video');
+            ov.innerHTML = `<video class="mp-lightbox-video" controls autoplay playsinline src="${this.esc(vid.currentSrc || vid.src)}"></video>`;
+            const close = () => { document.removeEventListener('keydown', onKey); ov.remove(); };
+            const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+            ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+            document.addEventListener('keydown', onKey);
+            document.body.appendChild(ov);
+            return;
+        }
         const img = document.getElementById('mp-hero-img');
         if (!img || !img.src) return;
         const ov = document.createElement('div');
@@ -1308,6 +1354,7 @@ window.Masterpieces = {
                 live: _live.filter(c => c !== code) };
         });
         window.Artwork._renderPlatformRows(host, optsByCode, extraByCode);
+        if (window.Artwork._applyMediaGating) window.Artwork._applyMediaGating('#mp-detail-platforms', (this._detail || {}).image || '');   // 4.18.0
 
         // Dim + disable platforms this piece is already posted to. Both the
         // publications list and the resolved member locations count as "posted",
@@ -1681,6 +1728,9 @@ window.Masterpieces = {
                 e.preventDefault();
                 const heroImg = document.getElementById('mp-hero-img');
                 if (heroImg) heroImg.src = alt.dataset.mpImg;
+                // 4.18.0: a video / audio piece switches the player to the chosen render.
+                const player = document.getElementById('mp-hero-video') || document.getElementById('mp-hero-audio');
+                if (player && alt.dataset.mpMedia) { player.src = alt.dataset.mpMedia; player.load(); }
                 // The giant ambient backdrop follows the focused variant (2.158.0).
                 const bg = document.getElementById('mp-stage-bg');
                 if (bg) bg.src = alt.dataset.mpImg;

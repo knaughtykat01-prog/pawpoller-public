@@ -50,6 +50,7 @@ from routes.masterpieces_api import masterpieces_router
 from routes.whatsnew_api import whatsnew_router
 from routes.tech_api import tech_router
 from routes.media_api import media_router
+from routes.promos_api import promos_router
 from routes.backup_api import backup_router
 from routes.mirror_api import mirror_router
 from routes.discord_api import discord_router
@@ -343,6 +344,12 @@ def _build_csp() -> str:
         # CSP-blocked (renders as a broken "attachment preview"). Matches the
         # relaxed epub-viewer CSP, which already allows them.
         "img-src 'self' blob: data: https:; "
+        # media-src has no explicit entry by default and falls back to default-src,
+        # which forbids blob: — and 4.18.0 (MEDIATYPES) measures a picked video /
+        # audio file through a <video>/<audio> on URL.createObjectURL() before it
+        # is uploaded (that is where the poster comes from; the server never
+        # decodes media). 'self' covers /api/artwork/media for the players.
+        "media-src 'self' blob:; "
         "connect-src 'self'; "
         # PWA: the service worker (worker-src) and web app manifest (manifest-src)
         # are same-origin. Explicit so registration isn't left to fallback ambiguity.
@@ -579,6 +586,7 @@ app.include_router(media_router) # Connected-desktop uploads into the inbox (/ap
 app.include_router(posting_router)  # Posting module routes (/api/posting/*)
 app.include_router(artwork_router)  # Artwork hub routes (/api/artwork/*)
 app.include_router(posts_router)    # Posts (microblog) module routes (/api/posts/*)
+app.include_router(promos_router)   # Saved promo cards (/api/promos/*), Promo Maker v2 (4.16.0)
 app.include_router(works_router)    # Unified Submissions hub (/api/works)
 app.include_router(collections_router)  # Collections (master container) routes (/api/collections/*)
 app.include_router(commissions_router)  # Commissions (client tracker) routes (/api/commissions/*)
@@ -608,6 +616,7 @@ app.mount("/css", StaticFiles(directory=str(frontend_dir / "css")), name="css")
 app.mount("/js", StaticFiles(directory=str(frontend_dir / "js")), name="js")
 app.mount("/vendor", StaticFiles(directory=str(frontend_dir / "vendor")), name="vendor")
 app.mount("/img", StaticFiles(directory=str(frontend_dir / "img")), name="img")
+app.mount("/fonts", StaticFiles(directory=str(frontend_dir / "fonts")), name="fonts")   # Lora for the Promo Maker (4.15.0)
 
 
 # Browsers request /favicon.ico at the document root regardless of <link> tags;

@@ -108,7 +108,7 @@ def test_the_uploader_actually_uses_it():
 
     from clients.fn import client as fn_client
 
-    src = inspect.getsource(fn_client.FnClient.upload_artwork)
+    src = inspect.getsource(fn_client.FnClient.upload_submission)
     assert "sanitize_tags" in src
     assert '"tags": fn_tags' in src, "the PATCH must send the sanitised list"
 
@@ -120,5 +120,5 @@ def test_dropped_tags_are_reported_not_swallowed():
 
     from clients.fn import client as fn_client
 
-    src = inspect.getsource(fn_client.FnClient.upload_artwork)
+    src = inspect.getsource(fn_client.FnClient.upload_submission)
     assert "logger.warning" in src and "dropped" in src

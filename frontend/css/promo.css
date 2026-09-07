@@ -4,6 +4,23 @@
  * self-contained (its colours come from the JS presets, not CSS).
  * ──────────────────────────────────────────────────────────────────────── */
 
+/* Lora (SIL Open Font License 1.1, frontend/fonts/OFL.txt) — the bundled book face,
+ * so the card renders identically on the desktop app, a phone and the server (4.15.0). */
+@font-face {
+    font-family: 'Lora';
+    src: url('/fonts/Lora[wght].ttf') format('truetype');
+    font-weight: 400 700;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Lora';
+    src: url('/fonts/Lora-Italic[wght].ttf') format('truetype');
+    font-weight: 400 700;
+    font-style: italic;
+    font-display: swap;
+}
+
 .promo-layout {
     display: grid;
     grid-template-columns: minmax(320px, 420px) 1fr;
@@ -50,7 +67,7 @@
 }
 .promo-src {
     margin-top: .8rem;
-    font-family: Georgia, 'Times New Roman', serif;
+    font-family: Lora, Georgia, 'Times New Roman', serif;
     line-height: 1.6;
     resize: vertical;
 }
@@ -68,6 +85,27 @@
 }
 .promo-swatch:hover { transform: scale(1.12); }
 .promo-swatch.is-active { border-color: var(--text-primary); box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--accent); }
+/* Text-style toolbar (4.15.0): bold / italic / underline / strike over the selection. */
+.promo-styles { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: .6rem; }
+.promo-styles .promo-style { min-width: 34px; font-family: Lora, Georgia, serif; font-size: 15px; }
+.promo-size-custom { margin-top: .4rem; }
+.promo-handle-row { margin-top: .4rem; }
+.promo-handle { max-width: 100%; font-size: 12.5px; }
+.promo-handle[hidden] { display: none; }
+
+/* Save card (4.16.0) + the story board's Promos section. */
+.promo-save-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-top: .4rem; }
+.promo-save-note { font-size: 12px; margin-top: .4rem; }
+.sb-promos { display: flex; flex-direction: column; gap: 10px; }
+.sb-promo { display: grid; grid-template-columns: 96px 1fr; gap: 12px; align-items: start; }
+.sb-promo-thumb img { width: 96px; height: auto; border-radius: 8px; border: 1px solid var(--border); display: block; }
+.sb-promo-title { font-weight: 600; font-size: 13.5px; }
+.sb-promo-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.sb-promo-badge { font-size: 11.5px; font-weight: 600; color: var(--accent); margin-left: 6px; }
+/* Page strip (4.17.0) */
+.promo-pages { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: .6rem; }
+.promo-pages .promo-page.is-active { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+
 /* Censor = a blackout bar over the words rather than a colour wash behind them. */
 .promo-swatch--censor {
     background: repeating-linear-gradient(45deg, #12100f 0 6px, #2b2725 6px 12px);

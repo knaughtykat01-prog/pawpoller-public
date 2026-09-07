@@ -1369,6 +1369,12 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             if "duplicate column" not in str(e).lower():
                 raise
 
+    # Migration (4.16.0): saved promo cards (Promo Maker v2 release 2). The table
+    # and its index live in database/promos.py so the routes can ensure them too;
+    # the index is created after the table, here, never from a *_schema.sql.
+    from database import promos as _promos
+    _promos.ensure(conn)
+
     # Migration (3.29.0): re-key the DeviantArt rows that stored the wrong id.
     # DA has two identifiers per deviation — the integer in every public URL and
     # the API's GUID. The integer is what PawPoller speaks everywhere: the

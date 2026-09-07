@@ -533,12 +533,12 @@ window.Artwork = {
                     <div id="art-drop" class="artwork-drop">
                         <div class="artwork-drop-inner" id="art-drop-inner">
                             <div class="artwork-drop-icon">&#128444;</div>
-                            <p>Drag an image here, or</p>
-                            <label class="btn btn-primary">Choose image
-                                <input type="file" id="art-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+                            <p>Drag an image, video or audio file here, or</p>
+                            <label class="btn btn-primary">Choose file
+                                <input type="file" id="art-file" accept="${window.MediaKinds ? MediaKinds.ACCEPT : 'image/png,image/jpeg,image/gif,image/webp'}" hidden>
                             </label>
                             ${desktopBtn}
-                            <p class="muted artwork-drop-hint">PNG, JPG, GIF or WebP</p>
+                            <p class="muted artwork-drop-hint">${window.MediaKinds ? MediaKinds.HINT : 'PNG, JPG, GIF or WebP'}</p>
                         </div>
                         <img id="art-preview" class="artwork-preview" alt="preview" hidden>
                     </div>
@@ -641,7 +641,10 @@ window.Artwork = {
             const p = (window.platformByCode && window.platformByCode(code)) || { label: code, emoji: '' };
             const sel = document.querySelector(`${scope} .art-acct-select[data-platform="${code}"]`);
             const account = sel ? (sel.dataset.accountLabel || ((sel.options && sel.options[sel.selectedIndex]) || {}).text || '') : '';
-            return { code, label: p.label, emoji: p.emoji, account };
+            // 4.18.0: a site that does not take this media kind is listed as skipped, with its sentence.
+            const g = (this._gate && this._gate.kind && this._gate.kind !== 'image' && this._gate.support && window.MediaKinds)
+                ? MediaKinds.acceptance(this._gate.support, code, this._gate.kind, this._gate.ext) : { ok: true, reason: '' };
+            return { code, label: p.label, emoji: p.emoji, account, disabled: !g.ok, reason: g.reason };
         });
     },
 
@@ -730,16 +733,68 @@ window.Artwork = {
         titleInput.addEventListener('input', () => { titleInput.dataset.touched = '1'; });
     },
 
-    _setFile(file) {
-        if (!/\.(png|jpe?g|gif|webp)$/i.test(file.name)) {
-            this._toast('error', 'Please choose a PNG, JPG, GIF or WebP image.');
+    async _setFile(file) {
+        // 4.18.0 (MEDIATYPES): an image, a video or an audio file. A video / audio file is
+        // measured here and gets its poster here — the server never decodes media.
+        const kind = window.MediaKinds ? MediaKinds.kindOf(file.name) : (/\.(png|jpe?g|gif|webp)$/i.test(file.name) ? 'image' : null);
+        if (!kind) {
+            this._toast('error', 'Please choose an image, a video or an audio file (' + (window.MediaKinds ? MediaKinds.HINT : 'PNG, JPG, GIF or WebP') + ').');
             return;
         }
         this._pendingFile = file;
         this._pendingPath = null;
+        this._pendingMedia = null;
+        this._pendingPoster = null;
         if (this._previewUrl) URL.revokeObjectURL(this._previewUrl);
-        this._previewUrl = URL.createObjectURL(file);
-        this._showPreview(this._previewUrl, file.name);
+        this._applyMediaGating('#art-platforms', file.name);
+        if (kind === 'image') {
+            this._previewUrl = URL.createObjectURL(file);
+            this._showPreview(this._previewUrl, file.name);
+            return;
+        }
+        this._showPreview('', file.name);
+        const m = await MediaKinds.measure(file, file.name);
+        if (this._pendingFile !== file) return;                 // something else was picked meanwhile
+        this._pendingMedia = m.media;
+        this._pendingPoster = m.poster;
+        if (m.posterUrl) { this._previewUrl = m.posterUrl; this._showPreview(m.posterUrl, file.name); }
+        const hint = document.querySelector('#art-drop-inner .artwork-drop-hint');
+        if (hint) hint.textContent = (MediaKinds.badge(m.media) + ' · ' + file.name) + (m.poster ? '' : ' — no poster could be made; pick one below');
+        if (!m.poster) this._toast('error', 'Could not read that ' + kind + ' file to make a poster' + (m.error ? ': ' + m.error : ''));
+    },
+
+    /* 4.18.0: a desktop-picked video / audio file was copied by the server with a placeholder
+     * poster; fetch it back, measure it here and send the real poster + measurements. */
+    async _posterAfterCreate(created) {
+        if (!created || !created.poster_pending || !window.MediaKinds) return;
+        try {
+            const url = MediaKinds.mediaUrl(created.name, created.file);
+            const blob = await (await fetch(url, { credentials: 'same-origin' })).blob();
+            const file = new File([blob], created.file, { type: blob.type });
+            const m = await MediaKinds.measure(file, created.file);
+            if (m.poster) await API.setArtworkPoster(created.name, m.poster, m.media);
+        } catch (e) {
+            this._toast('error', 'Saved, but no poster could be made: ' + (e.message || e));
+        }
+    },
+
+    /* 4.18.0: grey out the sites that do not take this file's kind, with the site's own sentence. */
+    async _applyMediaGating(scope, filename) {
+        if (!window.MediaKinds) return;
+        const kind = MediaKinds.kindOf(filename), ext = MediaKinds.extOf(filename);
+        this._gate = { kind, ext, support: null };
+        const rows = () => document.querySelectorAll(`${scope} .artwork-plat-row[data-platform]`);
+        if (!kind || kind === 'image') { rows().forEach(r => this._gateRow(r, true, '')); return; }
+        const support = await MediaKinds.support();
+        if (!this._gate || this._gate.ext !== ext) return;
+        this._gate.support = support;
+        rows().forEach(r => { const a = MediaKinds.acceptance(support, r.dataset.platform, kind, ext); this._gateRow(r, a.ok, a.reason); });
+    },
+    _gateRow(row, ok, reason) {
+        row.classList.toggle('is-media-refused', !ok);
+        const cb = row.querySelector('.art-plat-check');
+        if (cb) { cb.disabled = !ok; if (!ok) cb.checked = false; }
+        row.title = ok ? '' : reason;
     },
 
     async _pickDesktopFile() {
@@ -866,12 +921,14 @@ window.Artwork = {
         msg.textContent = 'Saving…';
 
         let name;
+        if (this._pendingMedia) meta.media = this._pendingMedia;   // 4.18.0: what the browser measured
         try {
             if (this._pendingPath) {
                 const r = await API.createArtworkFromPath({ path: this._pendingPath, metadata: meta });
                 name = r.name;
+                await this._posterAfterCreate(r);
             } else {
-                const r = await API.uploadArtwork(this._pendingFile, meta, null,
+                const r = await API.uploadArtwork(this._pendingFile, meta, this._pendingPoster || null,
                     pct => { msg.textContent = `Uploading… ${pct}%`; });
                 name = r.name;
             }
@@ -1531,9 +1588,9 @@ window.Artwork = {
                             <div class="artwork-drop-ico">🖼️</div>
                             <div>Drop an image here or <label for="qp-file" style="text-decoration:underline;cursor:pointer;color:var(--accent);">choose a file</label>
                                 ${this._isDesktop() ? '· <button type="button" class="btn btn-sm" id="qp-pick-local">Pick from computer</button>' : ''}</div>
-                            <div class="artwork-drop-hint muted">PNG, JPG, GIF or WebP</div>
+                            <div class="artwork-drop-hint muted">${window.MediaKinds ? MediaKinds.HINT : 'PNG, JPG, GIF or WebP'}</div>
                         </div>
-                        <input type="file" id="qp-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+                        <input type="file" id="qp-file" accept="${window.MediaKinds ? MediaKinds.ACCEPT : 'image/png,image/jpeg,image/gif,image/webp'}" hidden>
                     </div>
                     <button type="button" class="btn btn-sm" id="qp-remove" hidden style="margin-top:.5rem;">Remove image</button>
                     <label class="field" style="margin-top:.6rem;">Title
@@ -1622,14 +1679,27 @@ window.Artwork = {
         title.addEventListener('input', () => { title.dataset.touched = '1'; });
     },
 
-    _qpSetFile(f) {
-        if (!/\.(png|jpe?g|gif|webp)$/i.test(f.name)) {
-            this._toast('error', 'Please choose a PNG, JPG, GIF or WebP image.'); return;
+    async _qpSetFile(f) {
+        const kind = window.MediaKinds ? MediaKinds.kindOf(f.name) : (/\.(png|jpe?g|gif|webp)$/i.test(f.name) ? 'image' : null);
+        if (!kind) {
+            this._toast('error', 'Please choose an image, a video or an audio file (' + (window.MediaKinds ? MediaKinds.HINT : 'PNG, JPG, GIF or WebP') + ').'); return;
         }
-        this._pendingFile = f; this._pendingPath = null;
+        this._pendingFile = f; this._pendingPath = null; this._pendingMedia = null; this._pendingPoster = null;
         if (this._previewUrl) URL.revokeObjectURL(this._previewUrl);
-        this._previewUrl = URL.createObjectURL(f);
-        this._qpShowPreview(this._previewUrl, f.name);
+        this._qpApplyMediaGating(f.name);                          // 4.18.0: grey the chips of sites that can't take it
+        if (kind === 'image') {
+            this._previewUrl = URL.createObjectURL(f);
+            this._qpShowPreview(this._previewUrl, f.name);
+            return;
+        }
+        this._qpShowPreview('', f.name);
+        const m = await MediaKinds.measure(f, f.name);           // 4.18.0: measure + poster in the browser
+        if (this._pendingFile !== f) return;
+        this._pendingMedia = m.media; this._pendingPoster = m.poster;
+        if (m.posterUrl) { this._previewUrl = m.posterUrl; this._qpShowPreview(m.posterUrl, f.name); }
+        const hint = document.querySelector('#qp-drop-inner .artwork-drop-hint');
+        if (hint) hint.textContent = MediaKinds.badge(m.media) + ' · ' + f.name;
+        if (!m.poster) this._toast('error', 'Could not read that ' + kind + ' file to make a poster' + (m.error ? ': ' + m.error : ''));
     },
     async _qpPickDesktop() {
         try {
@@ -1663,10 +1733,32 @@ window.Artwork = {
         if (inner) {
             inner.style.display = '';
             const h = inner.querySelector('.artwork-drop-hint');
-            if (h) h.textContent = 'PNG, JPG, GIF or WebP';
+            if (h) h.textContent = window.MediaKinds ? MediaKinds.HINT : 'PNG, JPG, GIF or WebP';
         }
         document.getElementById('qp-file').value = '';
         document.getElementById('qp-remove').hidden = true;
+        this._qpApplyMediaGating('');
+    },
+
+    /* 4.18.0 (MEDIATYPES): a chip for a site that cannot take this file's kind is switched
+     * off and locked, with the site's own sentence as its tooltip — the manager would
+     * refuse it before any network call anyway; this says so before the tap. */
+    async _qpApplyMediaGating(filename) {
+        if (!window.MediaKinds) return;
+        const kind = MediaKinds.kindOf(filename), ext = MediaKinds.extOf(filename);
+        this._qpGate = { kind, ext };
+        const chips = () => document.querySelectorAll('#qp-platforms .qp-plat-chip');
+        const set = (chip, ok, reason) => {
+            chip.classList.toggle('is-media-refused', !ok);
+            if (!ok && chip.dataset.on === '1') chip.click();      // before disabling: a disabled button drops clicks
+            chip.disabled = !ok;
+            chip.title = ok ? '' : reason;
+            if (!ok) chip.style.opacity = '.35';
+        };
+        if (!kind || kind === 'image') { chips().forEach(c => set(c, true, '')); return; }
+        const support = await MediaKinds.support();
+        if (!this._qpGate || this._qpGate.ext !== ext) return;
+        chips().forEach(c => { const a = MediaKinds.acceptance(support, c.dataset.plat, kind, ext); set(c, a.ok, a.reason); });
     },
 
     async _loadQuickPresets() {
@@ -1775,6 +1867,7 @@ window.Artwork = {
                 chip.style.background = on ? 'color-mix(in srgb, var(--accent) 16%, var(--surface))' : 'var(--surface)';
                 chip.style.opacity = on ? '1' : '.5';
             }));
+        if (this._pendingFile) this._qpApplyMediaGating(this._pendingFile.name);   // 4.18.0
     },
 
     _qpCheckedPlatforms() {
@@ -1848,11 +1941,14 @@ window.Artwork = {
         msg.textContent = scheduledIso ? 'Scheduling…' : 'Publishing…';
 
         let name;
+        if (this._pendingMedia) meta.media = this._pendingMedia;   // 4.18.0
         try {
             if (this._pendingPath) {
-                name = (await API.createArtworkFromPath({ path: this._pendingPath, metadata: meta })).name;
+                const cr = await API.createArtworkFromPath({ path: this._pendingPath, metadata: meta });
+                name = cr.name;
+                await this._posterAfterCreate(cr);
             } else {
-                name = (await API.uploadArtwork(this._pendingFile, meta, null,
+                name = (await API.uploadArtwork(this._pendingFile, meta, this._pendingPoster || null,
                     pct => { msg.textContent = `Uploading… ${pct}%`; })).name;
             }
         } catch (err) {

@@ -201,6 +201,8 @@ window.Submissions = {
             ? `<div class="story-card-cover" style="background-image:url('${_cover}')"></div>`
             : `<div class="story-card-cover" style="display:flex;align-items:center;justify-content:center;color:var(--text-muted);">no image</div>`;
         const typeChip = `<span class="chip" style="text-transform:capitalize;">${this.esc(w.content_type)}</span>`;
+        const mediaChip = (window.MediaKinds && w.media_kind && w.media_kind !== 'image')
+            ? `<span class="chip mp-media-badge">${this.esc(MediaKinds.badge(w.media, w.media_kind))}</span>` : '';   // 4.18.0
         const rating = w.rating ? `<span class="chip">${this.esc(w.rating)}</span>` : '';
         const plats = (w.platforms || []).map(c =>
             `<span title="${this.esc(this._plat(c).label)}">${this._plat(c).emoji || c}</span>`).join(' ');
@@ -218,7 +220,7 @@ window.Submissions = {
                 ${cover}
                 <div class="story-card-body">
                     <div class="story-card-title">${this.esc(w.title || w.name)}</div>
-                    <div class="story-card-meta">${typeChip}${rating}</div>
+                    <div class="story-card-meta">${typeChip}${mediaChip}${rating}</div>
                     ${meta}
                     <div class="story-card-platforms" style="margin-top:.4rem;">${plats}</div>
                     ${persona}

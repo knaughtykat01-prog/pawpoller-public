@@ -38,7 +38,7 @@ def test_caption_body_plus_hashtags():
 def test_validate_requires_image(upload_file):
     config.save_settings({"ig_public_base_url": "https://pp.example"})
     p = InstagramPoster()
-    assert any("image file" in e for e in p.validate(_pkg(file_path="")))
+    assert any("image or video file" in e for e in p.validate(_pkg(file_path="")))
     assert p.validate(_pkg(file_path=upload_file)) == []
 
 

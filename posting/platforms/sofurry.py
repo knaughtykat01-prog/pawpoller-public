@@ -96,7 +96,11 @@ class SoFurryPoster(PlatformPoster):
     supports_file_replace = True
     min_post_interval = 5
     max_file_size = 512 * 1024  # 512 KB
-    accepted_file_types = ["txt", "html", "png", "jpg", "jpeg", "gif", "webp", "mp3"]
+    # mp3 (Music → Track) and mp4 / webm (Video → Other) are SoFurry's media kinds
+    # (MEDIATYPES phase 2, 4.19.3); the official API caps a file at 100 MB. The
+    # API has no thumbnail route, so a media piece's poster cannot be sent — SF
+    # shows its own placeholder until one is set in its UI.
+    accepted_file_types = ["txt", "html", "png", "jpg", "jpeg", "gif", "webp", "mp3", "mp4", "webm"]
 
     def __init__(self):
         self._client: SoFurryClient | None = None
@@ -258,6 +262,10 @@ class SoFurryPoster(PlatformPoster):
             # post the image directly as a SoFurry Artwork submission.
             if package.file_type in ("png", "jpg", "jpeg", "gif", "webp"):
                 return await self._post_image(client, package, _t)
+            # Music / video (4.19.3) — the same single-item flow under SoFurry's
+            # Music or Video category.
+            if _media_kind(package):
+                return await self._post_media(client, package, _t)
 
             # Resolve chapter 1 file (if chaptered) or full-story file
             story = story_reader.load_story(package.story_name)
@@ -696,8 +704,56 @@ class SoFurryPoster(PlatformPoster):
             duration_seconds=self._elapsed(_t),
         )
 
+    # The official API's maxFileSize for a music / video content item.
+    _MEDIA_MAX = 100 * 1024 * 1024
+
+    async def _post_media(self, client, package: StoryUploadPackage, _t) -> PostResult:
+        """Post a single mp3 / mp4 / webm as a SoFurry Music or Video submission (4.19.3).
+
+        Same three-step create flow as artwork, with the category / type SoFurry
+        files media under: 40 / 41 "Music → Track" for audio, 50 / 59 "Video →
+        Other" for video (PostyBirb's defaults — a piece can name its own
+        `sub_type`). The poster is NOT sent: the official API has no thumbnail
+        route (create_submission logs and skips it).
+        """
+        if not package.file_path:
+            return PostResult(success=False, error="No media file for SoFurry upload",
+                              duration_seconds=self._elapsed(_t))
+        kind = _media_kind(package)
+        rating = _rating_to_sf(package.rating)
+        draft_mode = bool(package.extra.get("draft", False))
+        explicit_privacy = _normalize_privacy(package.extra.get("privacy"))
+        if explicit_privacy is not None:
+            privacy = explicit_privacy
+        elif draft_mode:
+            privacy = _PRIVACY_PRIVATE
+        else:
+            privacy = _PRIVACY_PUBLIC
+        category, default_type = _SF_MEDIA_CATEGORY[kind]
+        try:
+            sub_type = int(package.extra.get("sub_type") or default_type)
+        except (TypeError, ValueError):
+            sub_type = default_type
+        result = await client.create_submission(
+            package.file_path,
+            title=package.title,
+            description=package.description,
+            tags=package.tags,
+            category=category,
+            sub_type=sub_type,
+            rating=rating,
+            privacy=privacy,
+        )
+        return PostResult(
+            success=True,
+            external_id=result.get("submission_id", ""),
+            external_url=result.get("url", ""),
+            duration_seconds=self._elapsed(_t),
+        )
+
     def validate(self, package: StoryUploadPackage) -> list[str]:
         is_image = package.file_type in ("png", "jpg", "jpeg", "gif", "webp")
+        is_media = bool(_media_kind(package))
         errors = []
         if not package.title:
             errors.append("Title is required")
@@ -709,11 +765,29 @@ class SoFurryPoster(PlatformPoster):
                 errors.append(f"File not found: {package.file_path}")
             else:
                 size = os.path.getsize(package.file_path)
-                cap = self._IMAGE_MAX if is_image else self.max_file_size
+                cap = self._MEDIA_MAX if is_media else (self._IMAGE_MAX if is_image else self.max_file_size)
                 if size > cap:
-                    label = "30MB" if is_image else "512KB"
+                    label = "100MB" if is_media else ("30MB" if is_image else "512KB")
                     errors.append(f"SoFurry max file size is {label} (got {size / 1024:.0f}KB)")
         return errors
+
+
+# SoFurry's (category, type) for a media piece: 40 / 41 = Music → Track, 50 / 59 =
+# Video → Other (the codes PostyBirb files them under). ❓ Confirm on the first live post.
+_SF_MEDIA_CATEGORY = {"audio": (40, 41), "video": (50, 59)}
+_SF_AUDIO_TYPES = ("mp3",)
+_SF_VIDEO_TYPES = ("mp4", "webm")
+
+
+def _media_kind(package: StoryUploadPackage) -> str:
+    """'audio' / 'video' for a media piece SoFurry takes, '' otherwise (4.19.3) —
+    by the Library's media_kind or by extension, so an older package still routes."""
+    ft = (package.file_type or "").lower()
+    if package.media_kind == "audio" or ft in _SF_AUDIO_TYPES:
+        return "audio"
+    if package.media_kind == "video" or ft in _SF_VIDEO_TYPES:
+        return "video"
+    return ""
 
 
 def _rating_to_sf(rating: str) -> int:

@@ -414,10 +414,18 @@ class IgClient:
 
     async def _create_container(self, caption: str | None = None, image_url: str | None = None,
                                 is_carousel_item: bool = False, media_type: str | None = None,
-                                children: list[str] | None = None) -> str:
+                                children: list[str] | None = None, video_url: str | None = None,
+                                cover_url: str | None = None, share_to_feed: bool | None = None) -> str:
         data: dict[str, str] = {}
         if image_url:
             data["image_url"] = image_url
+        # 4.20.1: a Reel — Meta cURLs `video_url` (and `cover_url` for the poster frame).
+        if video_url:
+            data["video_url"] = video_url
+        if cover_url:
+            data["cover_url"] = cover_url
+        if share_to_feed is not None:
+            data["share_to_feed"] = "true" if share_to_feed else "false"
         if caption is not None:
             data["caption"] = caption
         if is_carousel_item:
@@ -458,6 +466,24 @@ class IgClient:
         except Exception:
             pass
         return {"id": media_id, "url": permalink}
+
+    # A Reel is transcoded by Meta after the container is created; that takes
+    # minutes for a long clip, where an image is instant. Poll longer, not faster.
+    REEL_READY_TRIES = 90
+
+    async def create_video_post(self, caption: str, video_url: str, cover_url: str | None = None) -> dict:
+        """Publish one video as a Reel (4.20.1): a REELS container from a public
+        ``video_url`` (+ the poster as ``cover_url``), shared to the feed, waited
+        on until Meta has processed it, then published. Returns {id, url}."""
+        if not await self.ensure_logged_in():
+            raise RuntimeError("Instagram auth failed — reconnect the account")
+        if not video_url:
+            raise RuntimeError("Instagram requires a public video URL for a Reel")
+        container = await self._create_container(caption=caption, media_type="REELS",
+                                                 video_url=video_url, cover_url=cover_url or None,
+                                                 share_to_feed=True)
+        await self._wait_container_ready(container, tries=self.REEL_READY_TRIES)
+        return await self._publish_container(container)
 
     async def create_post(self, caption: str, image_urls: list[str]) -> dict:
         """Publish a photo (or 2-10 photo carousel) with a caption. Returns

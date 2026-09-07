@@ -29,8 +29,11 @@ from posting.platforms.base import StoryUploadPackage
 
 logger = logging.getLogger(__name__)
 
-# Image extensions accepted as a primary artwork file (and as a thumbnail).
-IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+# Image extensions accepted as a thumbnail / poster. The primary file may be any media kind
+# since 4.18.0 (MEDIATYPES): posting/media_kinds.py is the source of truth for all three.
+from posting import media_kinds
+IMAGE_EXTENSIONS = media_kinds.IMAGE_EXTENSIONS
+MEDIA_EXTENSIONS = media_kinds.MEDIA_EXTENSIONS
 
 # Metadata filename. The Masterpiece era (Phase 0) writes `masterpiece.json`;
 # legacy folders have `artwork.json`. `masterpiece.json` is a back-compatible
@@ -201,6 +204,10 @@ class ArtworkInfo:
     # support per-image alt (Bluesky today); falls back to the title at post
     # time so alt is never regressed to empty.
     alt_text: str = ""
+    # 4.18.0 (MEDIATYPES): what the browser measured at upload for a video / audio primary —
+    # {kind, bytes, duration_s?, width?, height?}. Empty for an image; the kind itself is always
+    # re-derived from the file name (media_kinds.kind_of), never trusted from here.
+    media: dict = field(default_factory=dict)
 
     # Declared variants (2.190.0): one entry per alternate render, each with
     # key/label/image/rating and — since 3.2.0 — optionally its own `tags`.
@@ -240,6 +247,11 @@ class ArtworkInfo:
     def thumbnail_path(self) -> str | None:
         return str(self.path / self.thumbnail) if self.thumbnail else None
 
+    @property
+    def media_kind(self) -> str:
+        """image / video / audio, from the primary file's extension (4.18.0)."""
+        return media_kinds.kind_of(self.image) or "image"
+
 
 def list_artworks() -> list[dict]:
     """List all artworks in the archive (folders containing artwork.json)."""
@@ -272,6 +284,9 @@ def list_artworks() -> list[dict]:
             # Declared variants (2.190.0) so the gallery can show a tile per render,
             # not just the master. Empty for a plain single-image piece.
             "variants": data.get("variants", []),
+            # 4.18.0: the media block + the kind derived from the file name
+            "media": data.get("media") or {},
+            "media_kind": media_kinds.kind_of(data.get("image", "")) or "image",
             "import_source": data.get("import_source", {}),
             "created_at": data.get("created_at", ""),
             "original_posted_at": data.get("original_posted_at", ""),
@@ -364,6 +379,7 @@ def load_artwork(name: str) -> ArtworkInfo:
         original_posted_at=data.get("original_posted_at", ""),
         alt_text=data.get("alt_text", ""),
         variants=list(data.get("variants", []) or []),
+        media=dict(data.get("media") or {}),
         artist=_clean_artist(data.get("artist")),
         artist_status=_clean_artist_status(data.get("artist_status")),
         people=_clean_people(data.get("people")),
@@ -576,6 +592,10 @@ def build_artwork_package(
             logger.warning("%s: variant %r image %s missing, using the primary render",
                            artwork.name, variant_key, variant["image"])
     file_type = Path(image_path).suffix.lstrip(".").lower() if image_path else ""
+    # 4.18.0: the kind + the browser's measurements ride on the package so a poster can check a
+    # site's duration / size cap without decoding anything.
+    media_kind = (media_kinds.kind_of(image_path) or "image") if image_path else ""
+    media_block = (variant.get("media") if variant and isinstance(variant.get("media"), dict) else None) or artwork.media or {}
 
     return StoryUploadPackage(
         story_name=artwork.name,
@@ -590,10 +610,18 @@ def build_artwork_package(
         file_type=file_type,
         word_count=0,
         thumbnail_path=artwork.thumbnail_path,
+        media_kind=media_kind,
+        duration_s=media_block.get("duration_s"),
+        width=int(media_block.get("width") or 0),
+        height=int(media_block.get("height") or 0),
         # Categories are the platform's submission params; alt_text rides along
         # for posters that support per-image alt (bluesky.py reads it, G6).
         extra={**dict(artwork.categories_by_platform.get(platform, {})),
                **({"alt_text": artwork.alt_text} if artwork.alt_text else {}),
+               # 4.19.0: the credited artist's name, for players that show a performer
+               # line (Telegram's sendAudio). The credit TEXT still comes from artist_credit.
+               **({"artist_name": artwork.artist["name"]}
+                  if isinstance(artwork.artist, dict) and artwork.artist.get("name") else {}),
                # Where this piece is already live, for the announcement to link
                # to (4.3.0). Only the announcing platform pays the query.
                **(_artwork_links(artwork.name, exclude=platform) if platform in _ANNOUNCERS else {})},
@@ -753,13 +781,13 @@ def _unique_dir(archive: Path, slug: str) -> Path:
 def _safe_filename(filename: str, default: str) -> str:
     """Sanitise an uploaded filename to a bare, safe image basename.
 
-    Preserves a valid image extension; falls back to ``default`` when the
-    extension isn't an accepted image type (the endpoint validates too).
+    Preserves a valid media extension (image, video or audio since 4.18.0); falls back to
+    ``default`` when the extension isn't an accepted type (the endpoint validates too).
     """
     base = os.path.basename(filename or "").strip()
     base = re.sub(r"[^\w.\-]", "_", base)
     ext = Path(base).suffix.lower()
-    if ext not in IMAGE_EXTENSIONS:
+    if ext not in MEDIA_EXTENSIONS:
         return default
     if not base or base.startswith("."):
         return f"image{ext}"
@@ -786,6 +814,7 @@ def create_artwork(
     alt_text: str = "",
     artist: dict | None = None,
     original_posted_at: str = "",
+    media: dict | None = None,
 ) -> str:
     """Create a new artwork folder (image + masterpiece.json). Returns its name.
 
@@ -799,6 +828,12 @@ def create_artwork(
     folder.mkdir(parents=True)
 
     image_name = _safe_filename(image_filename, default="image.png")
+    kind = media_kinds.kind_of(image_name) or "image"
+    # 4.18.0: a video or audio piece needs a poster — the shelf, the hero, the hashing and the
+    # sites that want a preview all read it. The browser makes one at upload; refuse without.
+    if kind != "image" and not (thumbnail_bytes and thumbnail_filename):
+        folder.rmdir()
+        raise ValueError(f"A {kind} piece needs a poster image (thumbnail) — the browser makes one at upload")
     (folder / image_name).write_bytes(image_bytes)
 
     thumb_name = ""
@@ -820,6 +855,8 @@ def create_artwork(
         "characters": characters or [],
         "platforms": platforms or [],
         "alt_text": alt_text,
+        # 4.18.0: only for a video / audio primary (an image reads back as an image without it)
+        **({"media": media_kinds.normalise_media(media, kind, len(image_bytes))} if kind != "image" else {}),
         "import_source": source or {},
         "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         # Only written when known — an absent key reads back as "never posted

@@ -71,7 +71,10 @@ class FurAffinityPoster(PlatformPoster):
     # "server only". What is gone is the routing that stopped the server trying.
     requires_mode = "any"
     max_file_size = 10 * 1024 * 1024  # 10 MB
-    accepted_file_types = ["pdf", "doc", "docx", "rtf", "txt", "odt", "jpg", "jpeg", "png", "gif"]
+    # mp3 / wav (MEDIATYPES phase 2, 4.19.2): FA's "music" submission kind, filed
+    # under category 16 with the poster as the thumbnail. FA's only video is Flash,
+    # which the Library does not hold, so no video here.
+    accepted_file_types = ["pdf", "doc", "docx", "rtf", "txt", "odt", "jpg", "jpeg", "png", "gif", "mp3", "wav"]
 
     def __init__(self, account_id: int | None = None):
         self._client: FAClient | None = None
@@ -146,7 +149,27 @@ class FurAffinityPoster(PlatformPoster):
             settings = config.get_settings()
 
             is_image = package.file_type in ("png", "jpg", "jpeg", "gif", "webp")
-            if is_image:
+            is_audio = _is_audio(package)
+            if is_audio:
+                # 4.19.2: a music submission — FA's third upload kind. Category 16 is
+                # "Music" (PostyBirb files audio the same way); species / gender /
+                # theme come from the artwork defaults like a picture, and the
+                # Library's poster is the thumbnail FA shows in the gallery.
+                cat = package.extra.get("cat", "16")
+                atype = package.extra.get("atype", settings.get("artwork_fa_theme", "1"))
+                species = package.extra.get("species", settings.get("artwork_fa_species", "1"))
+                gender = package.extra.get("gender", settings.get("artwork_fa_gender", "0"))
+                result = await client.submit_story(
+                    package.file_path,
+                    title=package.title[:60],
+                    description=package.description,
+                    keywords=keywords,
+                    rating=rating,
+                    cat=cat, atype=atype, species=species, gender=gender,
+                    thumbnail_path=package.thumbnail_path,
+                    submission_type="music",
+                )
+            elif is_image:
                 # Visual-art submission. The category/species/gender come from
                 # the artwork_fa_* settings — the story defaults (cat="13"=Story)
                 # are wrong for art. package.extra wins if the artwork set them.
@@ -345,6 +368,14 @@ class FurAffinityPoster(PlatformPoster):
         if len(tag_str) > 500:
             errors.append(f"FA tag string max 500 chars (got {len(tag_str)})")
         return errors
+
+
+_FA_AUDIO_TYPES = ("mp3", "wav")
+
+
+def _is_audio(package: StoryUploadPackage) -> bool:
+    """A package FA files as music (4.19.2): the Library's media_kind or the extension."""
+    return package.media_kind == "audio" or (package.file_type or "").lower() in _FA_AUDIO_TYPES
 
 
 def _rating_to_fa(rating: str) -> str:

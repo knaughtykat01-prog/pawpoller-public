@@ -332,6 +332,28 @@ _PLATFORM_HEALTH_CONFIG = [
 ]
 
 
+@router.get("/platforms/media")
+def platforms_media():
+    """What each posting site takes per media kind (4.18.0, MEDIATYPES §6) — the pickers grey
+    sites out with the site's own list; the manager refuses the same way before any network call."""
+    from database.accounts import PLATFORM_NAMES
+    from posting import media_kinds
+    from posting.manager import _get_poster as get_poster
+    out = {}
+    for code in PLATFORM_NAMES:
+        try:
+            poster = get_poster(code)
+        except Exception:
+            continue
+        acc = poster.media_accepts()
+        out[code] = {"accepts": acc, "label": media_kinds.accepts_label(acc),
+                     "refusals": {k: media_kinds.refusal(poster.platform_name or code, acc, k, "")
+                                  for k in media_kinds.KINDS if not acc.get(k)}}
+    return {"platforms": out, "kinds": list(media_kinds.KINDS),
+            "extensions": {"image": list(media_kinds.IMAGE_EXTENSIONS), "video": list(media_kinds.VIDEO_EXTENSIONS),
+                           "audio": list(media_kinds.AUDIO_EXTENSIONS)}}
+
+
 @router.get("/platforms/health")
 def get_platforms_health():
     """Per-platform health snapshot.

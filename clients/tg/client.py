@@ -26,6 +26,8 @@ API_BASE = "https://api.telegram.org"
 CAPTION_LIMIT = 1024        # Telegram media-caption cap (messages allow 4096).
 MESSAGE_LIMIT = 4096
 HTTP_TIMEOUT = 60.0         # uploads can be slow
+# 4.19.0: a 50 MB video on a home uplink takes minutes; the photo timeout would cut it off.
+MEDIA_HTTP_TIMEOUT = 600.0
 
 
 class TgClient:
@@ -167,6 +169,176 @@ class TgClient:
             logger.warning("Telegram post failed (%s)", e)
             raise
 
+    # 4.19.0 (MEDIATYPES phase 2): the Bot API's own caps for a multipart upload. A
+    # photo is re-encoded and capped at 10 MB; a video / audio / document upload is
+    # capped at 50 MB. Larger files need a local Bot API server, which PawPoller
+    # does not run — validate() refuses before the bytes leave the machine.
+    MEDIA_UPLOAD_CAP = 50 * 1024 * 1024
+    # Telegram's rules for the `thumbnail` field: JPEG, ≤ 320 px on either side,
+    # ≤ 200 kB, and it must be uploaded as multipart (never a file_id / URL).
+    THUMB_MAX_PX = 320
+    THUMB_MAX_BYTES = 200 * 1024
+
+    async def create_media_post(self, text: str, path: str, kind: str, *,
+                                poster: str | None = None, meta: dict | None = None,
+                                spoiler: bool = False, silent: bool = False,
+                                protect: bool = False, as_document: bool = False,
+                                pin: bool = False, title: str = "",
+                                performer: str = "") -> dict | None:
+        """Post ONE video or audio file to the channel (4.19.0).
+
+        ``kind`` is ``"video"`` or ``"audio"`` (from posting.media_kinds — the
+        caller has already refused anything else). Dispatch:
+
+        - video → ``sendVideo`` (inline player, streams), or ``sendDocument``
+          when ``as_document`` — Telegram re-encodes a sendVideo upload the way
+          sendPhoto re-encodes a picture; the document path keeps the bytes.
+        - audio → ``sendAudio`` (inline player with title / performer), or
+          ``sendDocument`` when ``as_document``.
+
+        ``poster`` is the piece's poster image; it becomes the message's
+        ``thumbnail`` after being fitted to Telegram's rules (see
+        ``_thumbnail_for``). ``meta`` is the Library's ``media`` block — the
+        browser's ``duration_s`` / ``width`` / ``height`` go straight through,
+        which is what lets the client show a correct player before the file is
+        fully processed. Nothing is decoded here.
+        """
+        if not self.token or not self.channel:
+            raise ValueError("Telegram bot token and channel are both required")
+        if kind not in ("video", "audio"):
+            raise ValueError(f"create_media_post takes video or audio, not {kind!r}")
+        if not path or not os.path.isfile(path):
+            raise ValueError("Media file not found")
+        common = {}
+        if silent:
+            common["disable_notification"] = "true"
+        if protect:
+            common["protect_content"] = "true"
+        meta = meta or {}
+        thumb = self._thumbnail_for(poster)
+        try:
+            try:
+                async with httpx.AsyncClient(timeout=MEDIA_HTTP_TIMEOUT) as client:
+                    if as_document:
+                        res = await self._send_document(client, text, path, common, thumb=thumb)
+                    elif kind == "video":
+                        res = await self._send_video(client, text, path, spoiler, common, thumb, meta)
+                    else:
+                        res = await self._send_audio(client, text, path, common, thumb, meta,
+                                                     title=title, performer=performer)
+                    if res and pin:
+                        await self._pin(client, res.get("id"))
+                    return res
+            except httpx.HTTPError as e:
+                logger.warning("Telegram media post failed (%s)", e)
+                raise
+        finally:
+            if thumb and thumb != poster:
+                try:
+                    os.unlink(thumb)
+                except OSError:
+                    pass
+
+    def _thumbnail_for(self, poster: str | None) -> str | None:
+        """Fit the poster to Telegram's ``thumbnail`` rules: JPEG, ≤ 320 px, ≤ 200 kB.
+
+        Returns the poster's own path when it already complies, a temp file
+        (deleted by the caller) when it had to be resized / re-encoded, or None
+        when there is no poster or Pillow cannot read it — a media post without
+        a thumbnail is still a valid post, so this never raises.
+        """
+        if not poster or not os.path.isfile(poster):
+            return None
+        try:
+            from PIL import Image
+        except ImportError:                                   # pragma: no cover
+            return None
+        try:
+            with Image.open(poster) as im:
+                w, h = im.size
+                ok_jpeg = (im.format or "").upper() == "JPEG"
+                if (ok_jpeg and max(w, h) <= self.THUMB_MAX_PX
+                        and os.path.getsize(poster) <= self.THUMB_MAX_BYTES):
+                    return poster
+                im = im.convert("RGB")
+                scale = min(1.0, self.THUMB_MAX_PX / float(max(w, h, 1)))
+                if scale < 1.0:
+                    im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))))
+                import tempfile
+                fd, out = tempfile.mkstemp(prefix="pp-tg-thumb-", suffix=".jpg")
+                os.close(fd)
+                quality = 85
+                while True:
+                    im.save(out, format="JPEG", quality=quality, optimize=True)
+                    if os.path.getsize(out) <= self.THUMB_MAX_BYTES or quality <= 40:
+                        break
+                    quality -= 15
+                return out
+        except Exception as e:                                # unreadable poster: post without one
+            logger.warning("Telegram: poster unusable as a thumbnail (%s)", e)
+            return None
+
+    @staticmethod
+    def _media_fields(meta: dict, kind: str) -> dict:
+        """The measurement fields Telegram accepts, from the Library's media block."""
+        out = {}
+        d = meta.get("duration_s")
+        if isinstance(d, (int, float)) and d > 0:
+            out["duration"] = str(int(round(d)))
+        if kind == "video":
+            for k in ("width", "height"):
+                v = meta.get(k)
+                if isinstance(v, int) and v > 0:
+                    out[k] = str(v)
+        return out
+
+    async def _send_video(self, client, caption, path, spoiler, common, thumb, meta) -> dict | None:
+        data = {"chat_id": self.channel, "caption": (caption or "")[:CAPTION_LIMIT],
+                "supports_streaming": "true", **self._media_fields(meta, "video"), **(common or {})}
+        if spoiler:
+            data["has_spoiler"] = "true"
+        files = {"video": (os.path.basename(path), open(path, "rb"))}
+        if thumb:
+            files["thumbnail"] = ("thumb.jpg", open(thumb, "rb"), "image/jpeg")
+        try:
+            r = await client.post(self._url("sendVideo"), data=data, files=files)
+        finally:
+            for f in files.values():
+                try:
+                    f[1].close()
+                except Exception:
+                    pass
+        res = self._ok(r.json())
+        if not res:
+            return None
+        mid = res.get("message_id")
+        return {"id": str(mid), "url": self._public_url(mid)}
+
+    async def _send_audio(self, client, caption, path, common, thumb, meta, *,
+                          title="", performer="") -> dict | None:
+        data = {"chat_id": self.channel, "caption": (caption or "")[:CAPTION_LIMIT],
+                **self._media_fields(meta, "audio"), **(common or {})}
+        if title:
+            data["title"] = title[:64]
+        if performer:
+            data["performer"] = performer[:64]
+        files = {"audio": (os.path.basename(path), open(path, "rb"))}
+        if thumb:
+            files["thumbnail"] = ("thumb.jpg", open(thumb, "rb"), "image/jpeg")
+        try:
+            r = await client.post(self._url("sendAudio"), data=data, files=files)
+        finally:
+            for f in files.values():
+                try:
+                    f[1].close()
+                except Exception:
+                    pass
+        res = self._ok(r.json())
+        if not res:
+            return None
+        mid = res.get("message_id")
+        return {"id": str(mid), "url": self._public_url(mid)}
+
     async def _send_message(self, client, text, common=None, preview=True) -> dict | None:
         r = await client.post(self._url("sendMessage"), data={
             "chat_id": self.channel,
@@ -194,7 +366,7 @@ class TgClient:
         mid = res.get("message_id")
         return {"id": str(mid), "url": self._public_url(mid)}
 
-    async def _send_document(self, client, caption, path, common=None) -> dict | None:
+    async def _send_document(self, client, caption, path, common=None, thumb=None) -> dict | None:
         """Send the ORIGINAL file, uncompressed.
 
         ``sendPhoto`` re-encodes: Telegram strips the image down for fast
@@ -209,8 +381,17 @@ class TgClient:
         with open(path, "rb") as fh:
             data = {"chat_id": self.channel, "caption": (caption or "")[:CAPTION_LIMIT],
                     **(common or {})}
-            r = await client.post(self._url("sendDocument"), data=data,
-                                  files={"document": (os.path.basename(path), fh)})
+            files = {"document": (os.path.basename(path), fh)}
+            # 4.19.0: a video / audio sent as a document still gets its poster as the
+            # thumbnail, so the attachment shows a picture instead of a file icon.
+            th = open(thumb, "rb") if thumb else None
+            if th:
+                files["thumbnail"] = ("thumb.jpg", th, "image/jpeg")
+            try:
+                r = await client.post(self._url("sendDocument"), data=data, files=files)
+            finally:
+                if th:
+                    th.close()
         res = self._ok(r.json())
         if not res:
             return None

@@ -455,11 +455,15 @@ class E621Client:
             else:
                 data["upload[direct_url]"] = direct_url
 
+            # 4.19.1 (MEDIATYPES phase 2): a webm goes through this same field —
+            # e621 takes video as webm only (no mp4). A 100 MB upload on a home
+            # uplink is minutes, so a video gets the long timeout.
+            timeout = 900.0 if (files and str(mime).startswith("video/")) else 120.0
             url = f"{_API_BASE}/uploads.json"
             resp = await self._http.post(
                 url, data=data, files=files,
                 headers=self._headers(), auth=self._auth(),
-                timeout=120.0,
+                timeout=timeout,
             )
         finally:
             if fh is not None:

@@ -48,6 +48,13 @@ class TwitterPoster(PlatformPoster):
     min_post_interval = 10
     max_file_size = _IMAGE_LIMIT
     accepted_file_types = list(announce.IMAGE_TYPES)
+    # 4.18.0: an announcer — an audio piece goes out as its poster + caption + links.
+    # 4.19.4: a VIDEO piece is uploaded itself (mp4 / mov — X's own formats — through
+    # the chunked media/upload, ≤ 512 MB, ≤ 140 s); webm / m4v are not X formats and
+    # are refused before the network rather than announced with a still.
+    accepted_media = {"image": list(announce.IMAGE_TYPES),
+                      "video": ["mp4", "mov"],
+                      "audio": ["mp3", "wav", "flac", "ogg", "m4a", "aac", "opus"]}
 
     def _creds(self, settings: dict | None = None) -> tuple[str, str, str]:
         """(auth_token, ct0, target_user) for THIS poster's account.
@@ -108,13 +115,17 @@ class TwitterPoster(PlatformPoster):
                               error="X isn't connected for this account — Settings → X, or Browser login")
 
         opts = _resolve_options(package)
+        is_video = _is_video(package)
         is_art = bool(package.file_path
-                      and package.file_type.lower() in announce.IMAGE_TYPES)
-        image = package.file_path if is_art else package.thumbnail_path
+                      and (package.file_type.lower() in announce.IMAGE_TYPES or package.media_kind in ("video", "audio")))
+        # An image is the tweet's media; a video is uploaded itself (4.19.4); audio is
+        # announced with its poster (4.18.0).
+        image = None if is_video else (
+            package.file_path if (is_art and package.file_type.lower() in announce.IMAGE_TYPES) else package.thumbnail_path)
         text = (announce.compose(package, is_art=is_art, with_tags=opts["tags"],
                                  limit=announce.TWEET_LIMIT, measure=announce.tweet_length)
                 if opts["caption"] else "")
-        if not text and not image:
+        if not text and not image and not is_video:
             return PostResult(success=False, duration_seconds=self._elapsed(_t),
                               error="Nothing to post: no image and the caption is switched off")
 
@@ -130,7 +141,14 @@ class TwitterPoster(PlatformPoster):
                 logger.warning("TW: %s", refusal)
                 return PostResult(success=False, duration_seconds=self._elapsed(_t), error=refusal)
             media_ids: list[str] = []
-            if image:
+            if is_video:
+                mid = await client.upload_video(package.file_path)
+                if not mid:
+                    return PostResult(success=False, duration_seconds=self._elapsed(_t),
+                                      error=client.last_error or
+                                      "X rejected the video upload (check logs)")
+                media_ids.append(mid)
+            elif image:
                 mid = await client.upload_media(image)
                 if not mid:
                     return PostResult(success=False, duration_seconds=self._elapsed(_t),
@@ -172,8 +190,21 @@ class TwitterPoster(PlatformPoster):
         auth_token, ct0, _ = self._creds()
         if not (auth_token and ct0):
             errors.append("X isn't connected (Settings → X, or Browser login)")
-        is_art = bool(package.file_path and package.file_type.lower() in announce.IMAGE_TYPES)
-        image = package.file_path if is_art else package.thumbnail_path
+        is_art = bool(package.file_path and (package.file_type.lower() in announce.IMAGE_TYPES or package.media_kind in ("video", "audio")))
+        if _is_video(package):
+            # 4.19.4: the video itself — X's caps, checked here from the Library's
+            # measurements so nothing is uploaded that X would reject at FINALIZE.
+            from clients.tw.client import TWClient
+            if not os.path.isfile(package.file_path):
+                errors.append(f"File not found: {package.file_path}")
+            else:
+                if os.path.getsize(package.file_path) > TWClient.VIDEO_MAX_BYTES:
+                    mb = os.path.getsize(package.file_path) / (1024 * 1024)
+                    errors.append(f"Video is {mb:.0f} MB — X takes videos up to 512 MB")
+                if package.duration_s and package.duration_s > TWClient.VIDEO_MAX_SECONDS:
+                    errors.append(f"Video runs {package.duration_s:.0f} s — X takes videos up to 140 s (2 min 20 s)")
+            return errors
+        image = package.file_path if (is_art and package.file_type.lower() in announce.IMAGE_TYPES) else package.thumbnail_path
         if package.file_path and not is_art:
             errors.append(f"X takes {', '.join(announce.IMAGE_TYPES)} images — not {package.file_type or 'this file'}")
         if image and not os.path.isfile(image):
@@ -182,6 +213,16 @@ class TwitterPoster(PlatformPoster):
             mb = os.path.getsize(image) / (1024 * 1024)
             errors.append(f"Image is {mb:.1f} MB — X's limit here is 5 MB")
         return errors
+
+
+_X_VIDEO_TYPES = ("mp4", "mov")
+
+
+def _is_video(package: StoryUploadPackage) -> bool:
+    """A package whose video X uploads itself (4.19.4): kind video AND one of X's formats
+    (the 4.18.0 gate refuses the other video formats before this is reached)."""
+    return bool(package.file_path) and package.media_kind == "video" \
+        and (package.file_type or "").lower() in _X_VIDEO_TYPES
 
 
 def _resolve_options(package: StoryUploadPackage) -> dict:

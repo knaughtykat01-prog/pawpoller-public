@@ -575,12 +575,16 @@ class SoFurryClient:
             content_type = {
                 "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
                 "gif": "image/gif", "webp": "image/webp",
+                # 4.19.3 (MEDIATYPES phase 2): music and video content items.
+                "mp3": "audio/mpeg", "mp4": "video/mp4", "webm": "video/webm",
             }.get(ext, "text/html")
 
+        # A 100 MB media item on a home uplink is minutes; text and images keep 120 s.
+        timeout = 900.0 if content_type.startswith(("audio/", "video/")) else 120.0
         resp = await self._api.post(
             f"/v1/submission/{submission_id}/content",
             files={"file": (filename, file_data, content_type)},
-            timeout=120.0,
+            timeout=timeout,
         )
         body = self._check(resp, f"upload content to {submission_id}")
         return body.get("contentId")

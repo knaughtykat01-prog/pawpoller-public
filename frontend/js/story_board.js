@@ -76,6 +76,7 @@
             this._paint(name, d, meta);
             this._loadTagPreview();
             this._loadChart(d);
+            this._loadPromos();
         },
 
         /* ── Composition (spec §5.7) ─────────────────────────────────────── */
@@ -88,7 +89,7 @@
                     ${this._heroHtml(name, d, v)}
                     <div class="board">
                         <div class="board-col">${this._canonicalHtml(name, d, meta)}${this._tagsHtml(d, meta)}${this._budgetHtml()}</div>
-                        <div class="board-col">${this._chaptersHtml(name, d, v)}${this._publishHtml(name, d)}${this._linkHtml()}</div>
+                        <div class="board-col">${this._chaptersHtml(name, d, v)}${this._publishHtml(name, d)}${this._promosHtml(name)}${this._linkHtml()}</div>
                         <div class="board-col board-col--3">${this._locationsHtml(name, d, v)}${this._growthHtml()}${this._attentionHtml(d)}${this._laurelsHtml(d, v)}${this._moreHtml(name, d)}</div>
                     </div>
                 </div>`;
@@ -280,6 +281,87 @@
                     <p class="sec-note">Sites this story isn't on yet. Publishing runs from the check, chapter by chapter.</p>
                     <div class="plat-lines">${rows}</div>
                 </section>`;
+        },
+
+        /* ── Promos (Promo Maker v2 release 2, 4.16.0; spec §3.4) ──────────
+         * Excerpt cards saved against this story. Data on the board, not a new
+         * page: the maker opens with the story preloaded, and a card reopens as
+         * its editable spec. */
+        _promosHtml(name) {
+            return `
+                <section class="card" aria-labelledby="sb-sec-promos">
+                    <div class="sec-title"><h2 id="sb-sec-promos">Promos</h2>
+                        <a class="btn btn-sm btn-primary" href="#/promo/new?story=${encodeURIComponent(name)}">✨ New promo</a></div>
+                    <p class="sec-note">Excerpt cards made from this story. Reopen one to edit it; Send puts it in the post composer.</p>
+                    <div id="sb-promos" class="sb-promos"><div class="muted" style="font-size:12.5px">Loading…</div></div>
+                </section>`;
+        },
+
+        async _loadPromos() {
+            const box = document.getElementById('sb-promos');
+            if (!box) return;
+            let rows = [];
+            try {
+                rows = (await API.listPromos(this._name)).promos || [];
+            } catch (e) {
+                box.innerHTML = `<div class="muted" style="font-size:12.5px">Couldn't load promos: ${esc(e.message || String(e))}</div>`;
+                return;
+            }
+            if (!rows.length) {
+                box.innerHTML = `<div class="muted" style="font-size:12.5px">No promos yet — make one from a passage.</div>`;
+                return;
+            }
+            box.innerHTML = rows.map(p => `
+                <div class="sb-promo" data-promo-id="${p.promo_id}">
+                    <a class="sb-promo-thumb" href="#/promo/${p.promo_id}" title="Reopen">
+                        <img src="${p.image_url}?t=${encodeURIComponent(p.updated_at || '')}" alt="" loading="lazy"></a>
+                    <div class="sb-promo-meta">
+                        <div class="sb-promo-title">${esc(p.title || 'Untitled')}${p.announce ? ' <span class="sb-promo-badge" title="Telegram, X and Bluesky announcements of this story carry this card instead of the cover">★ Announcement image</span>' : ''}</div>
+                        <div class="muted" style="font-size:12px">${p.width}×${p.height}${p.pages > 1 ? ` · ${p.pages} pages` : ''} · ${esc(String(p.updated_at || '').slice(0, 10))}</div>
+                        <div class="sb-promo-actions">
+                            <a class="btn btn-sm" href="#/promo/${p.promo_id}">Reopen</a>
+                            <button class="btn btn-sm" type="button" data-sb-promo-download="${p.promo_id}">Download</button>
+                            <button class="btn btn-sm" type="button" data-sb-promo-send="${p.promo_id}">💬 Send to Posts</button>
+                            ${p.announce
+                                ? `<button class="btn btn-sm" type="button" data-sb-promo-unannounce="${p.promo_id}">Stop using for announcements</button>`
+                                : `<button class="btn btn-sm" type="button" data-sb-promo-announce="${p.promo_id}" title="Telegram, X and Bluesky announcements of this story carry this card instead of the cover">★ Use for announcements</button>`}
+                            <button class="btn btn-sm" type="button" data-sb-promo-del="${p.promo_id}">Delete</button>
+                        </div>
+                    </div>
+                </div>`).join('');
+        },
+
+        async _promoBlob(id) {
+            const r = await fetch(`/api/promos/${id}/image?t=${Date.now()}`, { credentials: 'same-origin' });
+            if (!r.ok) throw new Error('Image not found');
+            return r.blob();
+        },
+
+        async _promoDownload(id) {
+            const b = await this._promoBlob(id);
+            const url = URL.createObjectURL(b);
+            const a = document.createElement('a');
+            a.href = url; a.download = `pawpoller-promo-${id}.png`;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        },
+
+        async _promoSend(id) {
+            if (!window.Posts) return;
+            const b = await this._promoBlob(id);
+            window.Posts._handoffFiles = [new File([b], `pawpoller-promo-${id}.png`, { type: 'image/png' })];
+            window.location.hash = '#/posts/new';
+        },
+
+        async _promoAnnounce(id, on) {
+            try { await API.setPromoAnnounce(id, on); } catch (e) { alert(e.message || String(e)); return; }
+            this._loadPromos();
+        },
+
+        async _promoDelete(id) {
+            if (!confirm('Delete this promo card? The image and its editable copy are removed.')) return;
+            try { await API.deletePromo(id); } catch (e) { alert(e.message || String(e)); return; }
+            this._loadPromos();
         },
 
         _linkHtml() {
@@ -687,6 +769,11 @@
                 if ((el = t.closest('[data-sb-budget-retry]'))) { e.preventDefault(); this._loadTagPreview(); return; }
                 if ((el = t.closest('[data-sb-link-preview]'))) { e.preventDefault(); this._linkPreviewRun(); return; }
                 if ((el = t.closest('[data-sb-link-confirm]'))) { e.preventDefault(); this._linkConfirm(); return; }
+                if ((el = t.closest('[data-sb-promo-download]'))) { e.preventDefault(); this._promoDownload(el.dataset.sbPromoDownload).catch(err => alert(err.message || err)); return; }
+                if ((el = t.closest('[data-sb-promo-send]')))     { e.preventDefault(); this._promoSend(el.dataset.sbPromoSend).catch(err => alert(err.message || err)); return; }
+                if ((el = t.closest('[data-sb-promo-del]')))      { e.preventDefault(); this._promoDelete(el.dataset.sbPromoDel); return; }
+                if ((el = t.closest('[data-sb-promo-announce]')))   { e.preventDefault(); this._promoAnnounce(el.dataset.sbPromoAnnounce, true); return; }
+                if ((el = t.closest('[data-sb-promo-unannounce]'))) { e.preventDefault(); this._promoAnnounce(el.dataset.sbPromoUnannounce, false); return; }
             });
             document.addEventListener('keydown', (e) => {
                 const inp = e.target && e.target.id === 'sb-tag-add' ? e.target : null;

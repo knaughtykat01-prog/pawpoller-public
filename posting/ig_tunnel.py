@@ -173,7 +173,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         self.send_response(200)
-        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Type", ig_media.mime_for(p))   # 4.20.1: a Reel video by its own type
         self.send_header("Content-Length", str(p.stat().st_size))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -191,7 +191,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         data = p.read_bytes()
         self.send_response(200)
-        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Type", ig_media.mime_for(p))   # 4.20.1: a Reel video by its own type
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()

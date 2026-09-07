@@ -21,6 +21,7 @@ e621 / Itaku) — no sync-in-place.
 from __future__ import annotations
 
 import logging
+import os
 
 import config
 from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
@@ -41,7 +42,13 @@ class InstagramPoster(PlatformPoster):
     # re-encodes JPEG q88 before hosting, so the stashed image is always in range.
     # We therefore don't reject a large source in validate() — it'll be shrunk.
     max_file_size = 0
-    accepted_file_types = ["jpg", "jpeg", "png", "webp"]
+    # mp4 / mov (MEDIATYPES phase 3, 4.20.1): published as a Reel. Meta fetches the
+    # video from a public URL exactly like an image, so the same hosting ladder
+    # carries it — and the ladder's caps (100 MB through the relay / a paired
+    # host) are the practical limit, said in the ladder's own error.
+    max_video_size = 1024 * 1024 * 1024
+    max_video_seconds = 15 * 60
+    accepted_file_types = ["jpg", "jpeg", "png", "webp", "mp4", "mov"]
     requires_mode = "any"     # works everywhere: the image-host ladder (4.7.0) finds Meta a URL
 
     async def post(self, package: StoryUploadPackage) -> PostResult:
@@ -64,18 +71,26 @@ class InstagramPoster(PlatformPoster):
             from clients.ig.client import IgClient
 
             path = package.file_path or ""
+            is_video = _is_video(package)
+            # A Reel hosts the video AND its poster (the cover frame) — 4.20.1.
+            to_host = [path] + ([package.thumbnail_path] if is_video and package.thumbnail_path
+                                and os.path.isfile(package.thumbnail_path) else [])
             try:
-                hosted = await ig_host.host_images([path], settings)
+                hosted = await ig_host.host_images(to_host, settings)
             except ig_host.NoPublicHost as e:
                 return PostResult(success=False, error=str(e), duration_seconds=self._elapsed(_t))
             stashed.append(hosted)
             image_urls = hosted.urls
-            logger.info("Instagram: image hosted via %s", hosted.how)
+            logger.info("Instagram: %s hosted via %s", "video" if is_video else "image", hosted.how)
 
             caption = _build_caption(package)
             client = IgClient(access_token=token, user_id=creds.get("ig_user_id", ""))
             try:
-                r = await client.create_post(caption, image_urls)
+                if is_video:
+                    r = await client.create_video_post(caption, image_urls[0],
+                                                       cover_url=image_urls[1] if len(image_urls) > 1 else None)
+                else:
+                    r = await client.create_post(caption, image_urls)
             finally:
                 await client.close()
 
@@ -105,11 +120,16 @@ class InstagramPoster(PlatformPoster):
     def validate(self, package: StoryUploadPackage) -> list[str]:
         errors: list[str] = []
         if not package.file_path:
-            errors.append("Instagram requires an image file")
+            errors.append("Instagram requires an image or video file")
         else:
-            import os
             if not os.path.isfile(package.file_path):
                 errors.append(f"File not found: {package.file_path}")
+            elif _is_video(package):
+                # 4.20.1: Reels' own caps, from the Library's measurements.
+                if os.path.getsize(package.file_path) > self.max_video_size:
+                    errors.append("Video is over 1 GB — Instagram Reels take up to 1 GB")
+                if package.duration_s and package.duration_s > self.max_video_seconds:
+                    errors.append(f"Video runs {package.duration_s / 60:.1f} min — Instagram Reels take up to 15 minutes")
         # Fail fast (before any stash) when no public host is configured.
         s = config.get_settings()
         if not s.get("ig_public_base_url", "").strip() and not s.get("posting_server_url", "").strip():
@@ -117,6 +137,14 @@ class InstagramPoster(PlatformPoster):
                           "server, or pair the desktop app with your server (Settings → Posting)")
         return errors
 
+
+_IG_VIDEO_TYPES = ("mp4", "mov")
+
+
+def _is_video(package: StoryUploadPackage) -> bool:
+    """A package Instagram publishes as a Reel (4.20.1): kind video and mp4 / mov."""
+    return bool(package.file_path) and package.media_kind == "video" \
+        and (package.file_type or "").lower() in _IG_VIDEO_TYPES
 
 def _build_caption(package: StoryUploadPackage) -> str:
     """Instagram caption: the description (or title) + hashtagged tags below it."""

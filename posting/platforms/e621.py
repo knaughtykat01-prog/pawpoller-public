@@ -53,6 +53,8 @@ class E621Poster(PlatformPoster):
     supports_file_replace = False
     min_post_interval = 5
     max_file_size = 100 * 1024 * 1024  # e621 accepts large files (100 MB)
+    # webm is e621's one video format (no mp4 — PostyBirb declares the same); it
+    # goes through the same upload[file] field as an image (MEDIATYPES phase 2, 4.19.1).
     accepted_file_types = ["png", "jpg", "jpeg", "gif", "webp", "webm"]
     requires_mode = "any"              # official API works from the server
 
@@ -172,7 +174,7 @@ class E621Poster(PlatformPoster):
     def validate(self, package: StoryUploadPackage) -> list[str]:
         errors: list[str] = []
         if not package.file_path:
-            errors.append("e621 requires an image file")
+            errors.append("e621 requires an image or webm file")
         if len(package.tags) < _MIN_TAGS:
             errors.append(f"e621 expects a real tag set - add at least "
                           f"{_MIN_TAGS} tags (got {len(package.tags)})")

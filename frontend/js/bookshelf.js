@@ -510,9 +510,12 @@ window.Bookshelf = {
         // data-rating drives the SFW/safe-mode blur (safe_mode.css). Lower-cased
         // so "General" matches; missing/unknown → blurred by default in safe mode.
         const rAttr = ` data-rating="${this.esc((w.rating || '').toLowerCase())}"`;
+        // 4.18.0 (MEDIATYPES): a video / audio piece shows its kind + length on the cover (its poster).
+        const mediaBadge = (window.MediaKinds && w.media_kind && w.media_kind !== 'image')
+            ? `<span class="book-media-badge" title="${this.esc(w.media_kind)}">${this.esc(MediaKinds.badge(w.media, w.media_kind))}</span>` : '';
         const cover = w.thumb_url
-            ? `<div class="book-cover"${rAttr} style="background-image:url('${this.esc(w.thumb_url)}')">${ribbon}</div>`
-            : `<div class="book-cover book-cover--blank"${rAttr}><span class="book-initial">${initials}</span>${ribbon}</div>`;
+            ? `<div class="book-cover"${rAttr} style="background-image:url('${this.esc(w.thumb_url)}')">${ribbon}${mediaBadge}</div>`
+            : `<div class="book-cover book-cover--blank"${rAttr}><span class="book-initial">${initials}</span>${ribbon}${mediaBadge}</div>`;
         const rating = w.rating ? `<span class="book-rating">${this.esc(w.rating)}</span>` : '';
         // The date "Recently posted" sorts by, on the card — a sort key nobody
         // can see cannot be checked (4.3.1). ≈ = matched to an upload by title;

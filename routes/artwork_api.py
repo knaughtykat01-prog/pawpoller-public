@@ -56,6 +56,25 @@ def _parse_metadata(raw: str) -> dict:
         raise HTTPException(400, detail="metadata must be a JSON object")
 
 
+def _validate_media_name(filename: str) -> str:
+    """4.18.0: the primary may be an image, a video or an audio file. Returns the kind."""
+    from posting import media_kinds
+    kind = media_kinds.kind_of(filename or "")
+    if not kind:
+        raise HTTPException(415, detail=(
+            f"Unsupported file type: {Path(filename or '').suffix.lower() or '(none)'}. "
+            f"Images: {', '.join(media_kinds.IMAGE_EXTENSIONS)} · video: {', '.join(media_kinds.VIDEO_EXTENSIONS)} "
+            f"· audio: {', '.join(media_kinds.AUDIO_EXTENSIONS)}"))
+    return kind
+
+
+def _cap_check(data: bytes, filename: str, what: str = "File") -> None:
+    from posting import media_kinds
+    cap = media_kinds.max_bytes_for(filename)
+    if len(data) > cap:
+        raise HTTPException(413, detail=f"{what} exceeds the {cap // (1024 * 1024)} MB archive cap for {media_kinds.kind_of(filename) or 'image'}")
+
+
 def _validate_image_name(filename: str) -> None:
     ext = Path(filename or "").suffix.lower()
     if ext not in artwork_reader.IMAGE_EXTENSIONS:
@@ -160,12 +179,11 @@ async def upload_artwork(
     The image bytes are written into a new archive folder along with an
     artwork.json built from the metadata blob. Returns the new artwork name.
     """
-    _validate_image_name(file.filename or "")
+    kind = _validate_media_name(file.filename or "")
     image_bytes = await file.read()
-    if len(image_bytes) > _MAX_UPLOAD_BYTES:
-        raise HTTPException(413, detail="Image exceeds the 50 MB archive cap")
+    _cap_check(image_bytes, file.filename or "")
     if not image_bytes:
-        raise HTTPException(400, detail="Empty image upload")
+        raise HTTPException(400, detail="Empty upload")
 
     thumb_bytes = None
     thumb_name = None
@@ -177,7 +195,10 @@ async def upload_artwork(
         thumb_name = thumbnail.filename
 
     meta = _parse_metadata(metadata)
-    name = artwork_reader.create_artwork(
+    if kind != "image" and not thumb_bytes:
+        raise HTTPException(400, detail=f"A {kind} piece needs a poster image — the page makes one when you pick the file")
+    try:
+        name = artwork_reader.create_artwork(
         title=meta.get("title", ""),
         image_filename=file.filename or "image.png",
         image_bytes=image_bytes,
@@ -192,8 +213,12 @@ async def upload_artwork(
         thumbnail_filename=thumb_name,
         thumbnail_bytes=thumb_bytes,
         alt_text=meta.get("alt_text", ""),
-    )
-    return {"status": "created", "name": name}
+        media=meta.get("media") if isinstance(meta.get("media"), dict) else None,
+        )
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+    art = artwork_reader.load_artwork(name)
+    return {"status": "created", "name": name, "file": art.image, "media_kind": art.media_kind}
 
 
 @artwork_router.post("/create-from-path")
@@ -217,13 +242,12 @@ def create_artwork_from_path(body: dict):
     src = Path(path)
     if not src.is_file():
         raise HTTPException(404, detail=f"File not found: {path}")
-    _validate_image_name(src.name)
+    kind = _validate_media_name(src.name)
     try:
         image_bytes = src.read_bytes()
     except OSError as e:
         raise HTTPException(500, detail=f"Cannot read file: {e}")
-    if len(image_bytes) > _MAX_UPLOAD_BYTES:
-        raise HTTPException(413, detail="Image exceeds the 50 MB archive cap")
+    _cap_check(image_bytes, src.name)
 
     meta = body.get("metadata") or {}
     if not isinstance(meta, dict):
@@ -239,7 +263,12 @@ def create_artwork_from_path(body: dict):
             raise HTTPException(413, detail="Thumbnail exceeds the 50 MB archive cap")
         thumb_name = Path(thumb_path).name
 
-    name = artwork_reader.create_artwork(
+    # 4.18.0: the desktop path cannot measure in the browser; a video / audio primary gets a
+    # placeholder poster here and the page replaces it (POST /poster) once it has measured the file.
+    if kind != "image" and not thumb_bytes:
+        thumb_bytes, thumb_name = _PLACEHOLDER_POSTER, "poster-pending.png"
+    try:
+        name = artwork_reader.create_artwork(
         title=meta.get("title", "") or src.stem.replace("_", " "),
         image_filename=src.name,
         image_bytes=image_bytes,
@@ -254,8 +283,91 @@ def create_artwork_from_path(body: dict):
         thumbnail_filename=thumb_name,
         thumbnail_bytes=thumb_bytes,
         alt_text=meta.get("alt_text", ""),
+        media=meta.get("media") if isinstance(meta.get("media"), dict) else None,
+        )
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+    art = artwork_reader.load_artwork(name)
+    return {"status": "created", "name": name, "file": art.image, "media_kind": art.media_kind,
+            "poster_pending": art.media_kind != "image" and art.thumbnail == "poster-pending.png"}
+
+
+# A 1×1 transparent PNG: the poster a desktop-picked video / audio piece carries until the page
+# has measured the file and sent the real one (4.18.0).
+_PLACEHOLDER_POSTER = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ff"
+    "ff3f0300050001fea3d3c60000000049454e44ae426082")
+
+
+@artwork_router.post("/poster/{name:path}")
+async def set_poster(name: str, file: UploadFile = File(...), media: str = Form("{}")):
+    """Set (or replace) a piece's poster image and, when sent, its measured ``media`` block (4.18.0).
+
+    The desktop create-from-path route cannot measure a video in the browser, so the page fetches
+    the file back through /media, measures it, renders a poster and posts both here. Also the way
+    a person swaps the generated poster for a picture of their own.
+    """
+    from posting import media_kinds
+    _validate_image_name(file.filename or "")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, detail="Empty poster upload")
+    _cap_check(data, file.filename or "", "Poster")
+    try:
+        art = artwork_reader.load_artwork(name)
+    except FileNotFoundError:
+        raise HTTPException(404, detail=f"Artwork not found: {name}")
+    folder = Path(art.path)
+    ext = Path(file.filename or "").suffix.lower()
+    target = folder / f"poster{ext}"
+    n = 1
+    while target.exists():
+        target = folder / f"poster_v{n}{ext}"
+        n += 1
+    target.write_bytes(data)
+    updates = {"thumbnail": target.name}
+    meta = _parse_metadata(media)
+    if art.media_kind != "image":
+        size = (folder / art.image).stat().st_size if (folder / art.image).is_file() else 0
+        updates["media"] = media_kinds.normalise_media({**(art.media or {}), **meta}, art.media_kind, size)
+    artwork_reader.save_artwork_metadata(name, updates)
+    if art.thumbnail == "poster-pending.png" and (folder / "poster-pending.png").is_file():
+        try:
+            (folder / "poster-pending.png").unlink()
+        except OSError:
+            pass
+    return {"status": "ok", "name": name, "thumbnail": target.name, "media": updates.get("media", art.media)}
+
+
+@artwork_router.get("/media")
+def get_artwork_media(name: str = Query(...), file: str = Query(...)):
+    """Serve any media file from an artwork folder — image, video or audio (4.18.0).
+
+    Same guarding as /image; the MIME comes from media_kinds, and FileResponse honours Range so a
+    <video> can seek. /image stays image-only so nothing that links to it changes.
+    """
+    from posting import media_kinds
+    if not name or not file:
+        raise HTTPException(400, detail="name and file query params are required")
+    try:
+        artwork = artwork_reader.load_artwork(name)
+    except FileNotFoundError:
+        raise HTTPException(404, detail=f"Artwork not found: {name}")
+    root = artwork.path.resolve()
+    requested = (root / file).resolve()
+    try:
+        requested.relative_to(root)
+    except ValueError:
+        raise HTTPException(403, detail="Path escapes artwork directory")
+    if not requested.is_file():
+        raise HTTPException(404, detail="File not found")
+    if not media_kinds.kind_of(requested.name):
+        raise HTTPException(415, detail="Unsupported media type")
+    return FileResponse(
+        path=str(requested),
+        media_type=media_kinds.mime_for(requested.name),
+        headers={"Cache-Control": "public, max-age=3600", "Accept-Ranges": "bytes"},
     )
-    return {"status": "created", "name": name}
 
 
 @artwork_router.patch("/images/{name:path}")

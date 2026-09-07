@@ -410,8 +410,28 @@ class IKClient:
 
     # ── Posting / Upload ────────────────────────────────────────
 
-    async def upload_image(
+    # 4.19.1 (MEDIATYPES phase 2): a video is its own DRF collection on Itaku —
+    # `POST /api/galleries/videos/` with the file in a `video` field, the same
+    # metadata fields as an image, the same token. PostyBirb posts exactly this
+    # (its itaku.website.ts switches `images` / `videos` and `image` / `video` on
+    # the file type); Itaku makes its own preview, so no poster is sent. The web
+    # URL of a video (`/video/{id}` here) is the one thing still to confirm on
+    # the site with a real upload — the API answer carries the id either way.
+    _COLLECTIONS = {"image": ("images", "image", "image"), "video": ("videos", "video", "video")}
+
+    async def upload_video(self, file_path: str, **kw) -> dict:
+        """Upload a video (mp4 / webm / mov) to the Itaku gallery — same keyword
+        arguments as :meth:`upload_image`."""
+        return await self._upload_media("video", file_path, **kw)
+
+    async def upload_image(self, file_path: str, **kw) -> dict:
+        """Upload an image (PNG, JPG, GIF, WEBP) to the Itaku gallery — see
+        :meth:`_upload_media` for the arguments."""
+        return await self._upload_media("image", file_path, **kw)
+
+    async def _upload_media(
         self,
+        kind: str,
         file_path: str,
         *,
         title: str = "",
@@ -423,7 +443,7 @@ class IKClient:
         share_on_feed: bool = True,
         token: str = "",
     ) -> dict:
-        """Upload an image to Itaku gallery.
+        """Upload an image or a video to the Itaku gallery.
 
         Args:
             file_path: Path to image file (PNG, JPG, GIF, WEBP).
@@ -443,6 +463,9 @@ class IKClient:
 
         if not token:
             raise RuntimeError("Itaku auth token required for uploads")
+        if kind not in self._COLLECTIONS:
+            raise RuntimeError(f"Itaku takes images and videos, not {kind!r}")
+        collection, field, web_seg = self._COLLECTIONS[kind]
 
         with open(file_path, "rb") as f:
             file_data = f.read()
@@ -452,7 +475,7 @@ class IKClient:
 
         # Build multipart form
         import json
-        files = {"image": (filename, file_data)}
+        files = {field: (filename, file_data)}
         data = {
             "title": title,
             "description": description[:5000],
@@ -464,23 +487,25 @@ class IKClient:
         if sections:
             data["sections"] = json.dumps(sections)
 
+        # A 500 MB video on a home uplink is minutes; the image timeout would cut it off.
+        timeout = 60.0 if kind == "image" else 900.0
         resp = await self._http.post(
-            f"{_API_BASE}/galleries/images/",
+            f"{_API_BASE}/galleries/{collection}/",
             data=data,
             files=files,
             headers=_auth_header(token),
-            timeout=60.0,
+            timeout=timeout,
         )
 
         if resp.status_code == 429:
             logger.warning("IK: Rate limited on upload, waiting 30s...")
             await asyncio.sleep(30)
             resp = await self._http.post(
-                f"{_API_BASE}/galleries/images/",
+                f"{_API_BASE}/galleries/{collection}/",
                 data=data,
                 files=files,
                 headers=_auth_header(token),
-                timeout=60.0,
+                timeout=timeout,
             )
 
         if resp.status_code not in (200, 201):
@@ -488,8 +513,8 @@ class IKClient:
 
         result = resp.json()
         image_id = result.get("id", "")
-        logger.info("IK: Uploaded image %s — %s", image_id, title[:40])
-        return {"id": str(image_id), "url": f"{_WEB_BASE}/image/{image_id}"}
+        logger.info("IK: Uploaded %s %s — %s", kind, image_id, title[:40])
+        return {"id": str(image_id), "url": f"{_WEB_BASE}/{web_seg}/{image_id}"}
 
 
     async def edit_image(
@@ -503,8 +528,9 @@ class IKClient:
         visibility: str | None = None,
         sections: list[int] | None = None,
         token: str = "",
+        kind: str = "image",
     ) -> dict:
-        """Edit an existing gallery image's metadata.
+        """Edit an existing gallery image's (or, 4.19.1, video's) metadata.
 
         ``PATCH /api/galleries/images/{id}/`` — the DRF sibling of the
         ``POST /api/galleries/images/`` used by :meth:`upload_image`, taking the
@@ -559,11 +585,16 @@ class IKClient:
         if sections is not None:
             data["sections"] = json.dumps(sections)
 
+        if kind not in self._COLLECTIONS:
+            raise RuntimeError(f"Itaku takes images and videos, not {kind!r}")
+        collection, _field, web_seg = self._COLLECTIONS[kind]
         if not data:
             return {"id": str(image_id), "unchanged": True,
-                    "url": f"{_WEB_BASE}/image/{image_id}"}
+                    "url": f"{_WEB_BASE}/{web_seg}/{image_id}"}
 
-        url = f"{_API_BASE}/galleries/images/{image_id}/"
+        # 4.19.1: a video lives under /galleries/videos/ — its PATCH is the DRF
+        # sibling of the image one, same fields, same token.
+        url = f"{_API_BASE}/galleries/{collection}/{image_id}/"
         resp = await self._http.patch(
             url, data=data, headers=_auth_header(token), timeout=60.0,
         )
@@ -580,7 +611,7 @@ class IKClient:
             )
 
         logger.info("IK: Edited image %s (%d fields)", image_id, len(data))
-        return {"id": str(image_id), "url": f"{_WEB_BASE}/image/{image_id}"}
+        return {"id": str(image_id), "url": f"{_WEB_BASE}/{web_seg}/{image_id}"}
 
     async def create_post(
         self,

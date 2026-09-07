@@ -99,6 +99,9 @@ def masterpiece_duplicates():
                     "title": art.title or name,
                     "image": art.image,
                     "thumbnail": art.thumbnail or "",
+                    # 4.18.0: the kind + measurements, so the hero can be a player and tiles can badge
+                    "media_kind": art.media_kind,
+                    "media": art.media or {},
                     "cover_thumb": s.get("cover_thumb", ""),
                     "cover_platform": s.get("cover_platform", ""),
                     "views": (s.get("totals") or {}).get("views", 0),
@@ -541,9 +544,9 @@ def declare_variant(name: str, body: dict):
         raise HTTPException(404, detail="Masterpiece not found")
     from pathlib import Path
     target = (Path(art.path) / image)
-    if not image or not target.is_file() or \
-            target.suffix.lower() not in artwork_reader.IMAGE_EXTENSIONS:
-        raise HTTPException(422, detail="image must be an existing image file in this folder")
+    from posting import media_kinds
+    if not image or not target.is_file() or media_kinds.kind_of(target.name) != art.media_kind:
+        raise HTTPException(422, detail=f"image must be an existing {art.media_kind} file in this folder (a variant is the same kind as the primary)")
     variants = _raw_variants(name)
     if any(v["key"] == key for v in variants):
         raise HTTPException(409, detail=f"variant key '{key}' already exists")
@@ -565,21 +568,22 @@ async def upload_variant(name: str, file: UploadFile = File(...),
     takes a brand-new file. The key is derived from the label (the user never
     types one) and uniquified, so it can't collide (mirrors merge's behaviour)."""
     from pathlib import Path
+    from posting import media_kinds
     ext = Path(file.filename or "").suffix.lower()
-    if ext not in artwork_reader.IMAGE_EXTENSIONS:
-        raise HTTPException(415, detail=(
-            f"Unsupported image type: {ext or '(none)'}. "
-            f"Allowed: {', '.join(artwork_reader.IMAGE_EXTENSIONS)}"))
-    data = await file.read()
-    if not data:
-        raise HTTPException(400, detail="Empty image upload")
-    if len(data) > _MAX_IMAGE_BYTES:
-        raise HTTPException(413, detail="Image exceeds the 50 MB archive cap")
-
     try:
         art = artwork_reader.load_artwork(name)
     except FileNotFoundError:
         raise HTTPException(404, detail="Masterpiece not found")
+    # 4.18.0: a variant is the same kind as the primary (a video's variants are videos)
+    if media_kinds.kind_of(ext and ("x" + ext)) != art.media_kind:
+        raise HTTPException(415, detail=(
+            f"Unsupported type: {ext or '(none)'}. A variant of this {art.media_kind} piece must be "
+            f"{art.media_kind} too: {', '.join(e for e in media_kinds.MEDIA_EXTENSIONS if media_kinds.kind_of('x' + e) == art.media_kind)}"))
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, detail="Empty upload")
+    if len(data) > media_kinds.max_bytes_for(file.filename or ""):
+        raise HTTPException(413, detail=f"File exceeds the archive cap for {art.media_kind}")
 
     folder = Path(art.path)
     stem = re.sub(r"[^\w.\-]", "_", Path(file.filename or "variant").stem) or "variant"
@@ -952,21 +956,22 @@ async def replace_masterpiece_image(name: str, file: UploadFile = File(...)):
     """Replace the canonical (hero) image. Keeps metadata, members and the old file."""
     from pathlib import Path
 
+    from posting import media_kinds
     ext = Path(file.filename or "").suffix.lower()
-    if ext not in artwork_reader.IMAGE_EXTENSIONS:
-        raise HTTPException(415, detail=(
-            f"Unsupported image type: {ext or '(none)'}. "
-            f"Allowed: {', '.join(artwork_reader.IMAGE_EXTENSIONS)}"))
-    data = await file.read()
-    if not data:
-        raise HTTPException(400, detail="Empty image upload")
-    if len(data) > _MAX_IMAGE_BYTES:
-        raise HTTPException(413, detail="Image exceeds the 50 MB archive cap")
-
     try:
         art = artwork_reader.load_artwork(name)
     except FileNotFoundError:
         raise HTTPException(404, detail="Masterpiece not found")
+    # 4.18.0: the replacement is the same kind as the piece (swap a video for a video)
+    if media_kinds.kind_of(ext and ("x" + ext)) != art.media_kind:
+        raise HTTPException(415, detail=(
+            f"Unsupported type: {ext or '(none)'}. This is a {art.media_kind} piece — replace it with "
+            f"{', '.join(e for e in media_kinds.MEDIA_EXTENSIONS if media_kinds.kind_of('x' + e) == art.media_kind)}"))
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, detail="Empty upload")
+    if len(data) > media_kinds.max_bytes_for(file.filename or ""):
+        raise HTTPException(413, detail=f"File exceeds the archive cap for {art.media_kind}")
 
     folder = Path(art.path)
     # Never clobber an existing file (least of all the current hero) — the old
@@ -1061,8 +1066,10 @@ def get_masterpiece(name: str):
     # sets and preserved SFW/NSFW variants live beside the hero as image_N.*;
     # the detail view renders them as a gallery strip via /api/artwork/image.
     from pathlib import Path
+    # 4.18.0: the strip lists files of the piece's own kind (a video piece's alternates are videos).
+    from posting import media_kinds as _mk
     images = sorted(f.name for f in Path(art.path).iterdir()
-                    if f.suffix.lower() in artwork_reader.IMAGE_EXTENSIONS)
+                    if _mk.kind_of(f.name) == art.media_kind)
     if art.image in images:
         images.remove(art.image)
         images.insert(0, art.image)
@@ -1110,6 +1117,9 @@ def get_masterpiece(name: str):
             "rating": art.rating,
             "image": art.image,
             "thumbnail": art.thumbnail,
+            # 4.18.0 (MEDIATYPES): the kind + what the browser measured, so the hero can be a player
+            "media_kind": art.media_kind,
+            "media": art.media or {},
             "characters": art.characters,
             "platforms": art.platforms,
             "created_at": art.created_at,

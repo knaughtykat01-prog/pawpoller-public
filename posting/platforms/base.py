@@ -38,6 +38,13 @@ class StoryUploadPackage:
     word_count: int = 0
     thumbnail_path: str | None = None
     extra: dict = field(default_factory=dict)
+    # 4.18.0 (MEDIATYPES): the primary's kind ('' for a story) and what the browser measured, so a
+    # poster can check a site's duration / size cap without decoding. The poster image of a
+    # video / audio piece travels as thumbnail_path, exactly like a story's cover.
+    media_kind: str = ""
+    duration_s: float | None = None
+    width: int = 0
+    height: int = 0
 
 
 class PlatformPoster(ABC):
@@ -64,6 +71,10 @@ class PlatformPoster(ABC):
     min_post_interval: int = 5      # Seconds between consecutive posts
     max_file_size: int = 0          # Bytes (0 = no limit)
     accepted_file_types: list[str] = []
+    # 4.18.0: what this site takes per media kind — {'image': [...], 'video': [...], 'audio': [...]}.
+    # Derived from accepted_file_types unless the poster declares it. Read by media_refusal()
+    # (the manager's pre-network gate) and by GET /api/platforms/media (the pickers grey out).
+    accepted_media: dict | None = None
     # "any", "desktop", or "server" — which instance may execute this platform's
     # posts. The scheduler filters on it in SQL (posting_queries.get_pending_queue),
     # and manager re-queues a job with requires='desktop' when the server can't do
@@ -202,9 +213,30 @@ class PlatformPoster(ABC):
         """
         return None
 
+    def media_accepts(self) -> dict:
+        from posting import media_kinds
+        return self.accepted_media or media_kinds.accepted_from_types(self.accepted_file_types)
+
+    def media_refusal(self, package: StoryUploadPackage) -> str | None:
+        """One sentence when this site does not take the package's media kind / extension, else
+        None. Stories (media_kind '') are never refused here. Checked by the manager BEFORE
+        validate() and before any network call (4.18.0)."""
+        from posting import media_kinds
+        kind = (package.media_kind or "").lower()
+        if not kind or not package.file_path:
+            return None
+        accepts = self.media_accepts()
+        ok = {str(t).lower() for t in accepts.get(kind, [])}
+        if (package.file_type or "").lower() in ok:
+            return None
+        return media_kinds.refusal(self.platform_name or self.platform_id, accepts, kind, (package.file_type or "").lower())
+
     def validate(self, package: StoryUploadPackage) -> list[str]:
         """Validate a package before posting. Returns list of errors (empty = OK)."""
         errors = []
+        refusal = self.media_refusal(package)
+        if refusal:
+            errors.append(refusal)
         if not package.title:
             errors.append("Title is required")
         if not package.tags:

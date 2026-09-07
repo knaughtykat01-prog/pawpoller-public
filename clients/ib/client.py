@@ -30,6 +30,13 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
+
+def _thumb_mime(path: str) -> str:
+    """MIME for a thumbnail upload by extension (4.19.2) — a JPEG poster used to be
+    labelled image/png."""
+    ext = os.path.splitext(path or "")[1].lower()
+    return {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}.get(ext, "image/png")
+
 class InkbunnyClient:
     """Async Inkbunny API client.
 
@@ -576,13 +583,19 @@ class InkbunnyClient:
         if thumbnail_path and os.path.isfile(thumbnail_path):
             with open(thumbnail_path, "rb") as tf:
                 thumb_data = tf.read()
-            files["uploadedthumbnail[0]"] = (os.path.basename(thumbnail_path), thumb_data, "image/png")
+            # 4.19.2: the Library's poster may be a JPEG (a video frame) — label it
+            # honestly rather than as image/png regardless.
+            files["uploadedthumbnail[0]"] = (os.path.basename(thumbnail_path), thumb_data,
+                                             _thumb_mime(thumbnail_path))
 
+        # 4.19.2 (MEDIATYPES phase 2): an mp4 / mp3 goes through the same field.
+        # 200 MB on a home uplink is minutes; give a media file the long timeout.
+        timeout = 900.0 if filename.lower().endswith((".mp4", ".mp3")) else 120.0
         resp = await self._http.post(
             f"{config.INKBUNNY_API_BASE}/api_upload.php",
             data={"sid": self.sid, "submission_type": submission_type},
             files=files,
-            timeout=120.0,
+            timeout=timeout,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -691,8 +704,14 @@ class InkbunnyClient:
         scraps: str | None = None,
         friends_only: str | None = None,
         guest_block: str | None = None,
+        type: str | None = None,
     ) -> dict:
         """Edit an existing Inkbunny submission's metadata and/or story text.
+
+        ``type`` (4.19.2) is Inkbunny's submission-type id — the "category" a
+        submission files under: 1 Picture/Pinup … 10 Video - Animation/3D/CGI,
+        11 Music - Single Track, 12 Music - Album, 13 Writing - Document (the
+        API's own list). Sent only when given, like every other field.
 
         Only fields that are explicitly provided (not None) are sent to the API.
         IB's API blanks any field included in the request, so omitting a field
@@ -734,6 +753,8 @@ class InkbunnyClient:
             data["friends_only"] = friends_only
         if guest_block is not None:
             data["guest_block"] = guest_block
+        if type is not None:
+            data["type"] = str(type)
 
         resp = await self._http.post(
             f"{config.INKBUNNY_API_BASE}/api_editsubmission.php",

@@ -668,6 +668,98 @@ class TWClient:
             logger.error("TW: media upload error: %s", e)
             return None
 
+    # ── chunked video upload (MEDIATYPES phase 2, 4.19.4) ────────────────────
+    # X's v1.1 media/upload takes a video in three commands — INIT (declares the
+    # size, MIME and `media_category=tweet_video`), APPEND (the bytes in ≤ 5 MB
+    # segments), FINALIZE — after which X transcodes it; STATUS is polled until
+    # `processing_info.state` is `succeeded` (or `failed`, with X's own reason).
+    # Same cookie / csrf / bearer / transaction-id auth as the simple upload.
+    VIDEO_SEGMENT = 4 * 1024 * 1024
+    VIDEO_MAX_BYTES = 512 * 1024 * 1024
+    VIDEO_MAX_SECONDS = 140
+    VIDEO_POLL_CAP_SECONDS = 300
+
+    async def upload_video(self, video_path: str) -> str | None:
+        """Chunked upload of one video; return its media_id (or None, with
+        ``last_error`` set to X's own words)."""
+        import asyncio as _asyncio
+        import mimetypes
+        import os
+        if not (self.auth_token and self.ct0):
+            return None
+        if not os.path.isfile(video_path):
+            self.last_error = f"File not found: {video_path}"
+            return None
+        size = os.path.getsize(video_path)
+        mime = mimetypes.guess_type(video_path)[0] or "video/mp4"
+        url = "https://upload.x.com/1.1/media/upload.json"
+        try:
+            # INIT
+            headers = await self._write_headers("POST", url)
+            resp = await self._http.post(url, data={
+                "command": "INIT", "total_bytes": str(size), "media_type": mime,
+                "media_category": "tweet_video"}, headers=headers, timeout=60.0)
+            if resp.status_code not in (200, 201, 202):
+                self.last_error = _http_reason("the video upload (INIT)", resp)
+                logger.error("TW: video INIT failed (%s): %s", resp.status_code, resp.text[:200])
+                return None
+            media_id = str((resp.json() or {}).get("media_id_string") or "")
+            if not media_id:
+                self.last_error = "X accepted the video INIT but returned no media id"
+                return None
+            # APPEND — one multipart request per segment.
+            with open(video_path, "rb") as fh:
+                index = 0
+                while True:
+                    blob = fh.read(self.VIDEO_SEGMENT)
+                    if not blob:
+                        break
+                    headers = await self._write_headers("POST", url)
+                    resp = await self._http.post(
+                        url, data={"command": "APPEND", "media_id": media_id, "segment_index": str(index)},
+                        files={"media": (os.path.basename(video_path), blob, "application/octet-stream")},
+                        headers=headers, timeout=600.0)
+                    if resp.status_code not in (200, 201, 204):
+                        self.last_error = _http_reason(f"the video upload (segment {index + 1})", resp)
+                        logger.error("TW: video APPEND %d failed (%s): %s", index, resp.status_code, resp.text[:200])
+                        return None
+                    index += 1
+            # FINALIZE
+            headers = await self._write_headers("POST", url)
+            resp = await self._http.post(url, data={"command": "FINALIZE", "media_id": media_id},
+                                         headers=headers, timeout=60.0)
+            if resp.status_code not in (200, 201):
+                self.last_error = _http_reason("the video upload (FINALIZE)", resp)
+                logger.error("TW: video FINALIZE failed (%s): %s", resp.status_code, resp.text[:200])
+                return None
+            info = (resp.json() or {}).get("processing_info") or {}
+            # STATUS — X transcodes after FINALIZE; wait as long as it asks, up to a cap.
+            waited = 0.0
+            while info and info.get("state") in ("pending", "in_progress"):
+                delay = float(info.get("check_after_secs") or 2)
+                if waited + delay > self.VIDEO_POLL_CAP_SECONDS:
+                    self.last_error = "X is still processing the video after five minutes — try again later"
+                    return None
+                await _asyncio.sleep(delay)
+                waited += delay
+                headers = await self._write_headers("GET", url)
+                resp = await self._http.get(url, params={"command": "STATUS", "media_id": media_id},
+                                            headers=headers, timeout=30.0)
+                if resp.status_code != 200:
+                    self.last_error = _http_reason("the video processing check", resp)
+                    return None
+                info = (resp.json() or {}).get("processing_info") or {}
+            if info and info.get("state") == "failed":
+                err = info.get("error") or {}
+                self.last_error = f"X could not process the video: {err.get('message') or err.get('name') or 'no reason given'}"
+                logger.error("TW: video processing failed: %s", err)
+                return None
+            return media_id
+        except Exception as e:
+            logger.error("TW: video upload error: %s", e)
+            self.last_error = f"Video upload error: {e}"
+            return None
+
     async def set_media_alt(self, media_id: str, text: str) -> bool:
         """Attach alt text to an uploaded image. Best-effort (4.3.7).
 

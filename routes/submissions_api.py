@@ -313,7 +313,9 @@ def assemble_works(
     if type in ("all", "artwork"):
         for a in artworks:
             platforms, count, pids, stats = enrich("artwork", a["name"])
-            img = a.get("image", "")
+            # 4.18.0 (MEDIATYPES): a video / audio piece's tile is its poster; the file itself is not an image.
+            _kind = a.get("media_kind", "image")
+            img = (a.get("thumbnail") or "") if _kind != "image" else a.get("image", "")
             # Non-primary variants (2.190.1) so the Library can show a tile per
             # render. Each carries a ready thumb_url (same shape as the master's).
             # detail_route carries ?v=<key> (2.193.0) so clicking a variant tile
@@ -325,7 +327,7 @@ def assemble_works(
                     "key": v.get("key", ""),
                     "label": v.get("label") or v.get("key") or "",
                     "rating": v.get("rating", "") or a.get("rating", ""),
-                    "thumb_url": f"/api/artwork/image?name={quote(a['name'])}&file={quote(v.get('image', ''))}",
+                    "thumb_url": f"/api/artwork/image?name={quote(a['name'])}&file={quote(v.get('image', '') if _kind == 'image' else (a.get('thumbnail') or ''))}",
                     "detail_route": (f"#/artwork/image/{quote(a['name'])}"
                                      f"?v={quote(v.get('key', ''))}"),
                 }
@@ -349,6 +351,8 @@ def assemble_works(
                     if img else ""
                 ),
                 "variants": variant_tiles,
+                "media_kind": _kind,
+                "media": a.get("media") or {},
                 "detail_route": f"#/artwork/image/{quote(a['name'])}",
                 "meta": "",
                 "created_at": a.get("created_at", ""),

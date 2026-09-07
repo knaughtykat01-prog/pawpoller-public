@@ -176,7 +176,7 @@ class TestSources:
     def test_the_header_is_generated_from_the_request_path_only(self):
         src = open("clients/tw/client.py", encoding="utf-8").read()
         assert "urlparse(url).path" in src
-        assert src.count("await self._write_headers(") == 3, "CreateTweet, media upload, alt text"
+        assert src.count("await self._write_headers(") == 7, "CreateTweet, media upload, alt text, and upload_video's four commands (4.19.4)"
         assert "headers=_WRITE_HEADERS" not in src, "no write bypasses the transaction id"
 
     def test_no_new_dependency(self):

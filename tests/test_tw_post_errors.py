@@ -132,8 +132,9 @@ class TestWriteHeaders:
         # 4.3.7 added set_media_alt (alt text on an uploaded image): a write.
         # 4.6.2: the three writes build their headers through _write_headers(),
         # which spreads _WRITE_HEADERS and adds the per-request transaction id.
-        assert src.count("await self._write_headers(") == 3, (
-            "create_tweet, upload_media and set_media_alt — the write path only")
+        # 4.19.4: upload_video adds INIT / APPEND / FINALIZE / STATUS — four more writes.
+        assert src.count("await self._write_headers(") == 7, (
+            "create_tweet, upload_media, set_media_alt and upload_video's four commands — the write path only")
         assert "headers = dict(_WRITE_HEADERS)" in src
         i = src.index("async def _get_json")
         assert "_WRITE_HEADERS" not in src[i:i + 1500], "reads must be left alone"

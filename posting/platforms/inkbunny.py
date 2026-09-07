@@ -38,6 +38,9 @@ class InkbunnyPoster(PlatformPoster):
     supports_file_replace = True
     min_post_interval = 5
     max_file_size = 200 * 1024 * 1024  # 200 MB
+    # mp4 (video) and mp3 (audio) are Inkbunny's media formats (MEDIATYPES phase 2,
+    # 4.19.2) — the poster rides as the custom thumbnail; the submission is filed
+    # under a media type (see _IB_MEDIA_TYPE). No webm / mov, no wav / flac.
     accepted_file_types = ["txt", "doc", "rtf", "pdf", "png", "jpg", "jpeg", "gif", "webp", "mp3", "mp4"]
 
     def __init__(self, account_id: int | None = None):
@@ -108,6 +111,9 @@ class InkbunnyPoster(PlatformPoster):
             sub_type = "4"  # writing (default for stories)
             if package.file_type in ("png", "jpg", "jpeg", "gif", "webp"):
                 sub_type = "1"  # picture (artwork upload)
+            media_kind = _media_kind(package)
+            if media_kind:
+                sub_type = "3" if media_kind == "audio" else "1"
 
             # Step 1: Upload file (+ thumbnail if available)
             submission_id = await client.upload_submission(
@@ -144,6 +150,10 @@ class InkbunnyPoster(PlatformPoster):
             }
             if visibility is not None:
                 edit_kwargs["visibility"] = visibility
+            if media_kind:
+                # 4.19.2: file a video / audio submission under Inkbunny's media type
+                # id (the piece's own `type` in categories_by_platform['ib'] wins).
+                edit_kwargs["type"] = str(package.extra.get("type") or _IB_MEDIA_TYPE[media_kind])
 
             await client.edit_submission(submission_id, **edit_kwargs)
 
@@ -283,6 +293,25 @@ class InkbunnyPoster(PlatformPoster):
         if len(package.tags) < 4:
             errors.append(f"Inkbunny requires at least 4 tags (got {len(package.tags)})")
         return errors
+
+
+# Inkbunny submission-type ids for a media piece (the API's list: 10 = Video -
+# Animation/3D/CGI, 11 = Music - Single Track; 9 = feature-length video, 12 = album).
+# ❓ To confirm on the site with the first live upload.
+_IB_MEDIA_TYPE = {"video": "10", "audio": "11"}
+_IB_VIDEO_TYPES = ("mp4",)
+_IB_AUDIO_TYPES = ("mp3",)
+
+
+def _media_kind(package: StoryUploadPackage) -> str:
+    """'video' / 'audio' for a media piece Inkbunny takes, '' otherwise (4.19.2).
+    By the Library's media_kind or by extension, so an older package still routes."""
+    ft = (package.file_type or "").lower()
+    if package.media_kind == "video" or ft in _IB_VIDEO_TYPES:
+        return "video"
+    if package.media_kind == "audio" or ft in _IB_AUDIO_TYPES:
+        return "audio"
+    return ""
 
 
 def _rating_to_tags(rating: str) -> dict:

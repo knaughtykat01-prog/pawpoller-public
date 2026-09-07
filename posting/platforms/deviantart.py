@@ -59,7 +59,12 @@ class DeviantArtPoster(PlatformPoster):
     supports_file_replace = False  # Update endpoint replaces body content
     min_post_interval = 5
     max_file_size = 0  # Literature has no file; Sta.sh caps images ~30 MB (unenforced here)
-    accepted_file_types = ["txt", "md", "png", "jpg", "jpeg", "gif", "webp"]
+    # mp4 / mov (MEDIATYPES phase 3, 4.20.1): DeviantArt "film", stashed and published
+    # through the same two Sta.sh calls as an image. ❓ Whether the OAuth stash/submit
+    # accepts a video at all is unverified — the site's uploader does; the first live
+    # attempt on the operator's word settles it. Capped at 200 MB here.
+    max_film_size = 200 * 1024 * 1024
+    accepted_file_types = ["txt", "md", "png", "jpg", "jpeg", "gif", "webp", "mp4", "mov"]
 
     def __init__(self):
         self._client: DAClient | None = None
@@ -233,8 +238,8 @@ class DeviantArtPoster(PlatformPoster):
             client, token = await self._ensure_client()
             is_mature, mature_level, mature_class = _rating_to_da(package.rating)
 
-            if package.file_type in _IMAGE_TYPES:
-                # Image: stash the file, then publish it to the gallery.
+            if package.file_type in _IMAGE_TYPES or _is_film(package):
+                # Image (or film, 4.20.1): stash the file, then publish it to the gallery.
                 # Fit ONCE and give the same list to both calls — tags are
                 # stash metadata on submit and a deviation field on publish,
                 # and computing them twice is how they drift apart.
@@ -511,7 +516,23 @@ class DeviantArtPoster(PlatformPoster):
         sent = tag_budget.fit(package.tags, self.platform_id)
         if len(sent) > 30:
             errors.append(f"DA max 30 tags (got {len(sent)})")
+        if _is_film(package):
+            import os
+            if not os.path.isfile(package.file_path):
+                errors.append(f"File not found: {package.file_path}")
+            elif os.path.getsize(package.file_path) > self.max_film_size:
+                mb = os.path.getsize(package.file_path) / (1024 * 1024)
+                errors.append(f"Video is {mb:.0f} MB — PawPoller sends DeviantArt film up to 200 MB")
         return errors
+
+
+_FILM_TYPES = ("mp4", "mov")
+
+
+def _is_film(package: StoryUploadPackage) -> bool:
+    """A package DeviantArt files as film (4.20.1): kind video and mp4 / mov."""
+    return bool(package.file_path) and package.media_kind == "video" \
+        and (package.file_type or "").lower() in _FILM_TYPES
 
 
 def _rating_to_da(rating: str) -> tuple[bool, str, list[str]]:

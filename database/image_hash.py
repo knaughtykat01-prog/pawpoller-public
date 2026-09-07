@@ -329,6 +329,9 @@ def hash_masterpieces(conn: sqlite3.Connection) -> dict:
         name = art.get("name")
         folder = art.get("path")
         image = art.get("image")
+        # 4.18.0: a video / audio piece is hashed by its poster (an image); no poster → skipped.
+        if art.get("media_kind", "image") != "image":
+            image = art.get("thumbnail") or ""
         if not name or not folder or not image or name in have:
             continue
         scanned += 1

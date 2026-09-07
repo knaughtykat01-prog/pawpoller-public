@@ -489,3 +489,16 @@ html[data-mobile="1"] #shelf-view-btn { display: none; }
 .ap-persona { display: inline-flex; align-items: center; gap: .4rem; margin: .35rem 0 .2rem; font-size: .8rem; }
 .ap-persona select { font: inherit; padding: .2rem .4rem; border-radius: var(--radius-sm); background: var(--bg-secondary);
     color: var(--text-primary); border: 1px solid var(--border); }
+
+/* ── Video / audio pieces (MEDIATYPES, 4.18.0) ─────────────────────────── */
+.mp-hero-video { width: 100%; height: 100%; max-height: 70vh; object-fit: contain; background: #000; border-radius: inherit; }
+.board-hero-tile--video, .board-hero-tile--audio { cursor: default; }
+.board-hero-tile--audio { display: flex; flex-direction: column; gap: 8px; }
+.board-hero-tile--audio .mp-hero-img { height: auto; max-height: 60vh; }
+.mp-hero-audio { width: 100%; }
+.mp-media-badge { font-size: .55em; font-weight: 600; vertical-align: middle; padding: 2px 8px; border-radius: 999px;
+                  background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap; }
+.mp-lightbox-video { max-width: 92vw; max-height: 88vh; background: #000; border-radius: 10px; }
+.artwork-plat-row.is-media-refused { opacity: .45; }
+.artwork-plat-row.is-media-refused .artwork-plat-toggle { cursor: not-allowed; }
+.qp-plat-chip.is-media-refused { cursor: not-allowed !important; }

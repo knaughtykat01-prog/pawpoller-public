@@ -96,7 +96,7 @@ def test_validate_requires_tag_floor():
 def test_validate_requires_file():
     p = E621Poster()
     errs = p.validate(_pkg(["wolf", "male", "solo", "canine"], file_path=""))
-    assert any("image file" in e for e in errs)
+    assert any("image or webm file" in e for e in errs)
 
 
 def test_validate_passes_with_enough_tags_and_file(upload_file):

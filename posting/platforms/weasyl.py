@@ -33,7 +33,10 @@ class WeasylPoster(PlatformPoster):
     supports_file_replace = False
     min_post_interval = 5
     max_file_size = 10 * 1024 * 1024  # 10 MB for text
-    accepted_file_types = ["pdf", "txt", "md", "png", "jpg", "jpeg", "gif", "webp"]
+    # mp3 (MEDIATYPES phase 2, 4.19.3): Weasyl's multimedia submission, ≤ 15 MB, the
+    # poster as cover + thumbnail. Weasyl takes no video files (embeds only).
+    max_audio_size = 15 * 1024 * 1024
+    accepted_file_types = ["pdf", "txt", "md", "png", "jpg", "jpeg", "gif", "webp", "mp3"]
 
     def __init__(self):
         self._client: WeasylClient | None = None
@@ -60,7 +63,23 @@ class WeasylPoster(PlatformPoster):
             tags_str = " ".join(package.tags)
 
             is_image = package.file_type in ("png", "jpg", "jpeg", "gif", "webp")
-            if is_image:
+            if _is_audio(package):
+                # 4.19.3: a multimedia submission — the piece's own subtype wins,
+                # else 3010 Original Music.
+                try:
+                    subtype = int(package.extra.get("subtype") or 3010)
+                except (TypeError, ValueError):
+                    subtype = 3010
+                result = await client.submit_multimedia(
+                    package.file_path,
+                    title=package.title,
+                    description=package.description,
+                    tags=tags_str,
+                    rating=rating,
+                    subtype=subtype,
+                    cover_path=package.thumbnail_path,
+                )
+            elif is_image:
                 settings = config.get_settings()
                 try:
                     subtype = int(package.extra.get("subtype")
@@ -146,7 +165,20 @@ class WeasylPoster(PlatformPoster):
         errors = super().validate(package)
         if len(package.tags) < 2:
             errors.append(f"Weasyl requires at least 2 tags (got {len(package.tags)})")
+        if _is_audio(package) and package.file_path:
+            import os
+            if os.path.isfile(package.file_path) and os.path.getsize(package.file_path) > self.max_audio_size:
+                mb = os.path.getsize(package.file_path) / (1024 * 1024)
+                errors.append(f"Audio is {mb:.1f} MB — Weasyl takes audio up to 15 MB")
         return errors
+
+
+_WS_AUDIO_TYPES = ("mp3",)
+
+
+def _is_audio(package: StoryUploadPackage) -> bool:
+    """A package Weasyl files as multimedia (4.19.3): the Library's media_kind or the extension."""
+    return package.media_kind == "audio" or (package.file_type or "").lower() in _WS_AUDIO_TYPES
 
 
 def _rating_to_ws(rating: str) -> int:

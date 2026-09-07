@@ -57,7 +57,7 @@ def test_class_counts_match_the_spec(conn):
     assert counts["SHR"] == 27
     assert counts["HANDOFF"] == 2
     assert counts["DER"] == 1
-    assert counts["LOC"] == 5  # + this stage's own outbox
+    assert counts["LOC"] == 6  # + this stage's own outbox, + promos (4.16.0)
 
 
 def test_unregistered_table_raises_rather_than_defaulting():

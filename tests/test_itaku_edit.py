@@ -191,18 +191,21 @@ async def test_a_text_package_does_not_reach_the_image_endpoint(monkeypatch):
     p = _poster(c, monkeypatch)
     result = await p.edit("123", _package(file_type="txt", file_path="/tmp/p.txt"))
     assert result.success is False
-    assert "gallery images only" in (result.error or "")
+    assert "gallery images and videos only" in (result.error or "")
     assert not c._http.calls
 
 
-def test_post_and_edit_share_one_image_test():
+def test_post_and_edit_share_one_gallery_test():
+    """post(), edit() and validate() all route through _gallery_kind (4.19.1) — one
+    place decides image / video / text, so the three can never disagree."""
     import inspect
 
     from posting.platforms import itaku
 
     src = inspect.getsource(itaku)
-    assert src.count("_IMAGE_TYPES") >= 3, "post() and edit() must test one constant"
+    assert src.count("_gallery_kind(package)") >= 3, "post(), edit() and validate() must share one test"
     assert itaku._IMAGE_TYPES == ("png", "jpg", "jpeg", "gif", "webp")
+    assert itaku._VIDEO_TYPES == ("mp4", "webm", "mov")
 
 
 # ── the happy path ───────────────────────────────────────────────────────────

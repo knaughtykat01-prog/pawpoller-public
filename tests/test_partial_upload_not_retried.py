@@ -79,7 +79,7 @@ def test_the_client_and_the_classifier_agree_on_the_phrase():
     from clients.fn import client as fn_client
     from posting import manager
 
-    assert "already uploaded" in inspect.getsource(fn_client.FnClient.upload_artwork)
+    assert "already uploaded" in inspect.getsource(fn_client.FnClient.upload_submission)
     assert "already uploaded" in inspect.getsource(manager._schedule_retry)
 
 
@@ -90,5 +90,5 @@ def test_the_client_carries_the_platforms_own_error_text():
 
     from clients.fn import client as fn_client
 
-    src = inspect.getsource(fn_client.FnClient.upload_artwork)
+    src = inspect.getsource(fn_client.FnClient.upload_submission)
     assert "pr.text" in src, "the PATCH response body must reach the error"

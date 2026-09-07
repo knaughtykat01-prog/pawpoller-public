@@ -173,6 +173,25 @@ const API = {
 
     /* ── Accounts registry (multi-account) ─────────────────────── */
     getAccounts(platform) { return this.get('/api/accounts', platform ? { platform } : {}); },
+
+    /* ── Saved promo cards (Promo Maker v2 release 2, 4.16.0) ───────────── */
+    listPromos(story) { return this.get('/api/promos', story ? { story } : {}); },
+    getPromo(id) { return this.get(`/api/promos/${id}`); },
+    createPromo(formData) { return this._sendForm('POST', '/api/promos', formData); },
+    updatePromo(id, formData) { return this._sendForm('PUT', `/api/promos/${id}`, formData); },
+    deletePromo(id) { return this._sendForm('DELETE', `/api/promos/${id}`); },
+    setPromoAnnounce(id, on) { return this._sendForm(on ? 'POST' : 'DELETE', `/api/promos/${id}/announce`); },   // 4.17.0
+    promoImageUrl(id) { return `/api/promos/${id}/image`; },
+
+    /* Multipart without progress, any method; a 204 resolves to {}. */
+    async _sendForm(method, path, formData) {
+        const r = await fetch(path, { method, body: formData || undefined, credentials: 'same-origin' });
+        if (r.status === 204) return {};
+        let body = null;
+        try { body = await r.json(); } catch { body = null; }
+        if (!r.ok) throw new Error((body && (body.detail || body.error)) || `${method} ${path} failed (${r.status})`);
+        return body || {};
+    },
     createAccount(body) { return this.post('/api/accounts', body); },
     updateAccount(id, body) { return this.patch(`/api/accounts/${id}`, body); },
     testAccountLogin(id) { return this.post(`/api/accounts/${id}/test-login`, {}); },
@@ -1095,6 +1114,14 @@ const API = {
         return this._upload('/api/artwork/upload', fd, onProgress);
     },
     createArtworkFromPath(data) { return this.post('/api/artwork/create-from-path', data); },
+    /* 4.18.0 (MEDIATYPES): a video / audio piece's poster image (+ the browser's measurements). */
+    setArtworkPoster(name, file, media) {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('media', JSON.stringify(media || {}));
+        return this._sendForm('POST', `/api/artwork/poster/${encodeURIComponent(name)}`, fd);
+    },
+    getPlatformsMedia() { return this.get('/api/platforms/media'); },
     publishArtwork(data) { return this.post('/api/artwork/publish', data); },
     /* Schedule an artwork to publish later. One call per platform.
        data = { artwork_name, platform, scheduled_at, account_id? }. */

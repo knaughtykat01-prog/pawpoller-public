@@ -109,7 +109,8 @@ def ig_pubmedia(token: str):
     p = ig_media.path_for(token)
     if not p:
         raise HTTPException(404, "Not found")
-    return FileResponse(str(p), media_type="image/jpeg")
+    # 4.20.1: a stashed Reel video is served by its own type; Meta ranges into it.
+    return FileResponse(str(p), media_type=ig_media.mime_for(p))
 
 
 @ig_router.post("/pubmedia")
@@ -126,16 +127,17 @@ async def ig_stash_pubmedia(file: UploadFile = File(...)):
     base = config.get_settings().get("ig_public_base_url", "").strip()
     if not base:
         raise HTTPException(503, "This server has no IG_PUBLIC_BASE_URL configured, so it can't host Instagram images.")
-    data = await file.read()
-    if not data:
-        raise HTTPException(400, "Empty image upload")
-    if len(data) > 12 * 1024 * 1024:
-        raise HTTPException(413, "Image too large (max 12 MB)")
     from posting import ig_media
+    data = await _read_capped(file, config.IG_RELAY_MAX_VIDEO_BYTES)
+    if not data:
+        raise HTTPException(400, "Empty upload")
+    # 4.20.1: a video (mp4 / mov, for a Reel) has its own, larger cap; an image keeps 12 MB.
+    if not ig_media.is_video_bytes(data) and len(data) > 12 * 1024 * 1024:
+        raise HTTPException(413, "Image too large (max 12 MB)")
     try:
         token = ig_media.stash_bytes(data)
     except Exception as e:
-        raise HTTPException(400, f"Could not process image: {e}")
+        raise HTTPException(400, f"Could not process the file: {e}")
     return {"token": token, "url": ig_media.public_url(base, token)}
 
 
@@ -207,16 +209,22 @@ async def ig_relay(request: Request, file: UploadFile = File(...)):
     from posting import ig_media
     if ig_media.pending_count() >= config.IG_RELAY_MAX_PENDING:
         raise HTTPException(503, "The relay is busy hosting other images right now — try again in a few minutes.")
-    data = await _read_capped(file, config.IG_RELAY_MAX_BYTES)
+    data = await _read_capped(file, config.IG_RELAY_MAX_VIDEO_BYTES)
     if not data:
-        raise HTTPException(400, "Empty image upload")
-    if not data.startswith(_IMAGE_MAGIC):
-        raise HTTPException(400, "Not an image")
+        raise HTTPException(400, "Empty upload")
+    # 4.20.1: the open relay also hosts a Reel's video (mp4 / mov by its `ftyp` box) —
+    # kept byte-for-byte, so the type check is the container signature, and the
+    # larger cap applies only to it; anything else must still be pixels under 12 MB.
+    is_video = ig_media.is_video_bytes(data)
+    if not is_video and len(data) > config.IG_RELAY_MAX_BYTES:
+        raise HTTPException(413, f"Image too large (max {config.IG_RELAY_MAX_BYTES // (1024 * 1024)} MB)")
+    if not is_video and not data.startswith(_IMAGE_MAGIC):
+        raise HTTPException(400, "Not an image or an mp4 / mov video")
     try:
         token = ig_media.stash_bytes(data)
     except Exception as e:
-        raise HTTPException(400, f"Could not process image: {e}")
-    logger.info("IG relay: hosting one image (%d KB) for a remote install", len(data) // 1024)
+        raise HTTPException(400, f"Could not process the file: {e}")
+    logger.info("IG relay: hosting one %s (%d KB) for a remote install", "video" if is_video else "image", len(data) // 1024)
     return {"url": ig_media.public_url(base, token), "expires_in": ig_media.TTL_SECONDS}
 
 

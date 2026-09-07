@@ -30,6 +30,22 @@ _HEADERS = {
 }
 
 
+def _pds_host_from(did_doc: Any) -> str:
+    """The account's PDS hostname from a session's DID document (the
+    ``#atproto_pds`` service), or "" when absent (4.20.0)."""
+    if not isinstance(did_doc, dict):
+        return ""
+    for svc in did_doc.get("service") or []:
+        if not isinstance(svc, dict):
+            continue
+        if str(svc.get("id", "")).endswith("#atproto_pds") or svc.get("type") == "AtprotoPersonalDataServer":
+            from urllib.parse import urlparse
+            host = urlparse(str(svc.get("serviceEndpoint", ""))).hostname
+            if host:
+                return host
+    return ""
+
+
 def _safe_int(val: Any) -> int:
     """Safely convert a value to int, handling None, comma-formatted strings, etc."""
     if val is None:
@@ -78,6 +94,8 @@ class BskyClient:
         self._access_jwt: str = ""
         self._refresh_jwt: str = ""
         self._did: str = ""
+        self._pds_host: str = "bsky.social"     # 4.20.0: the account's own PDS (from login)
+        self.last_error: str = ""                # 4.20.0: the video path's reason on failure
         self._handle: str = ""
         self._logged_in = False
 
@@ -142,6 +160,10 @@ class BskyClient:
             self._refresh_jwt = data.get("refreshJwt", "")
             self._did = data.get("did", "")
             self._handle = data.get("handle", "")
+            # 4.20.0: the account's own PDS host, from the session's DID document
+            # — the video service wants a token whose audience is THAT host, not
+            # bsky.social (which is only the entryway).
+            self._pds_host = _pds_host_from(data.get("didDoc")) or "bsky.social"
             self._logged_in = True
             logger.info("BSKY: Login successful for %s (did=%s)", self._handle, self._did)
             return True
@@ -640,6 +662,120 @@ class BskyClient:
             logger.warning("BSKY: image downscale failed (%s); using original", e)
             return path, None
 
+    # ── video (MEDIATYPES phase 3, 4.20.0) ──────────────────────────────────
+    # Bluesky video is not an uploadBlob: the file goes to a separate service,
+    # video.bsky.app, which transcodes it and stores the blob on the account's PDS
+    # while the caller polls a job. The service takes a *service-auth* token
+    # minted by the PDS (com.atproto.server.getServiceAuth) with the audience
+    # `did:web:<pds host>` and the method `com.atproto.repo.uploadBlob`; the
+    # upload-limits check wants `did:web:video.bsky.app`. This is what the web
+    # client does (PostyBirb's note: the SDK's own video methods were unusable —
+    # wrong host, wrong lexicon validation). The result is a blob ref for an
+    # `app.bsky.embed.video` embed on the post record.
+    VIDEO_HOST = "https://video.bsky.app/xrpc"
+    VIDEO_MAX_BYTES = 300 * 1024 * 1024        # per Bluesky (Aug 2026): 300 MB
+    VIDEO_MAX_SECONDS = 600                    # 10 minutes
+    VIDEO_POLL_SECONDS = 4.0
+    VIDEO_POLL_CAP_SECONDS = 600.0
+
+    async def get_service_auth(self, aud: str, lxm: str, ttl: int = 300) -> str | None:
+        """A short-lived token the PDS mints for another service (``aud``) to
+        accept on one method (``lxm``). None when the PDS refuses."""
+        if not await self.ensure_logged_in():
+            return None
+        import time
+        data = await self._get_json(f"{_API_BASE}/com.atproto.server.getServiceAuth",
+                                    params={"aud": aud, "lxm": lxm, "exp": int(time.time()) + ttl})
+        token = (data or {}).get("token") if isinstance(data, dict) else None
+        if not token:
+            logger.error("BSKY: service auth for %s/%s refused: %s", aud, lxm, data)
+        return token or None
+
+    async def get_video_upload_limits(self) -> dict | None:
+        """``app.bsky.video.getUploadLimits`` — whether this account may upload a
+        video right now (daily count / byte allowance). None when unreachable."""
+        token = await self.get_service_auth("did:web:video.bsky.app", "app.bsky.video.getUploadLimits")
+        if not token:
+            return None
+        try:
+            resp = await self._http.get(f"{self.VIDEO_HOST}/app.bsky.video.getUploadLimits",
+                                        headers={"Authorization": f"Bearer {token}"}, timeout=30.0)
+            if resp.status_code != 200:
+                logger.error("BSKY: getUploadLimits %s: %s", resp.status_code, resp.text[:200])
+                return None
+            return resp.json()
+        except Exception as e:
+            logger.error("BSKY: getUploadLimits failed: %s", e)
+            return None
+
+    async def upload_video(self, file_path: str, mime_type: str = "video/mp4") -> dict | None:
+        """Upload a video through video.bsky.app and wait for it to be processed.
+        Returns the blob ref for the embed, or None (``last_error`` says why)."""
+        import asyncio as _asyncio
+        import os
+        import secrets
+        from urllib.parse import quote
+        self.last_error = ""
+        if not await self.ensure_logged_in():
+            self.last_error = "Bluesky login failed"
+            return None
+        if not os.path.isfile(file_path):
+            self.last_error = f"File not found: {file_path}"
+            return None
+        token = await self.get_service_auth(f"did:web:{self._pds_host}", "com.atproto.repo.uploadBlob")
+        if not token:
+            self.last_error = "Bluesky refused to mint a token for the video service"
+            return None
+        name = secrets.token_urlsafe(9) + os.path.splitext(file_path)[1].lower()
+        url = f"{self.VIDEO_HOST}/app.bsky.video.uploadVideo?did={quote(self._did)}&name={quote(name)}"
+        try:
+            with open(file_path, "rb") as fh:
+                data = fh.read()
+            resp = await self._http.post(url, content=data,
+                                         headers={"Authorization": f"Bearer {token}", "Content-Type": mime_type},
+                                         timeout=900.0)
+        except Exception as e:
+            self.last_error = f"Video upload error: {e}"
+            logger.error("BSKY: uploadVideo failed: %s", e)
+            return None
+        # 409 = this exact video was processed before; the body still carries the job.
+        if resp.status_code not in (200, 201, 409):
+            self.last_error = f"Bluesky's video service refused the upload ({resp.status_code}): {resp.text[:200]}"
+            logger.error("BSKY: uploadVideo %s: %s", resp.status_code, resp.text[:200])
+            return None
+        body = resp.json() or {}
+        job = body.get("jobStatus") if isinstance(body.get("jobStatus"), dict) else body
+        job_id = job.get("jobId")
+        if not job_id:
+            self.last_error = "Bluesky's video service returned no job id"
+            return None
+        # Already done (a 409 for a video processed earlier comes back complete).
+        if job.get("state") == "JOB_STATE_COMPLETED" and job.get("blob"):
+            return job["blob"]
+        waited = 0.0
+        while True:
+            await _asyncio.sleep(self.VIDEO_POLL_SECONDS)
+            waited += self.VIDEO_POLL_SECONDS
+            try:
+                resp = await self._http.get(f"{self.VIDEO_HOST}/app.bsky.video.getJobStatus",
+                                            params={"jobId": job_id}, timeout=30.0)
+                status = (resp.json() or {}).get("jobStatus") or {}
+            except Exception as e:
+                self.last_error = f"Checking the video job failed: {e}"
+                return None
+            state = status.get("state", "")
+            if state == "JOB_STATE_COMPLETED":
+                if status.get("blob"):
+                    return status["blob"]
+                self.last_error = "Bluesky processed the video but returned no blob"
+                return None
+            if state == "JOB_STATE_FAILED":
+                self.last_error = f"Bluesky could not process the video: {status.get('message') or status.get('error') or 'no reason given'}"
+                return None
+            if waited >= self.VIDEO_POLL_CAP_SECONDS:
+                self.last_error = "Bluesky is still processing the video after ten minutes — try again later"
+                return None
+
     async def upload_blob(self, file_path: str, mime_type: str = "image/jpeg") -> dict | None:
         """Upload a blob (image/video) and return the blob reference.
 
@@ -689,6 +825,9 @@ class BskyClient:
         labels: list[str] | None = None,
         mention_handles: list[str] | None = None,
         reply: dict | None = None,
+        video_path: str | None = None,
+        video_alt: str = "",
+        video_aspect: tuple[int, int] | None = None,
     ) -> dict | None:
         """Create a new Bluesky post.
 
@@ -758,6 +897,19 @@ class BskyClient:
                 "$type": "app.bsky.embed.images",
                 "images": images,
             }
+        # 4.20.0: a video embed (a post carries images OR one video, never both;
+        # the video wins because the caller sent it deliberately).
+        if video_path:
+            import mimetypes as _mt
+            mime = _mt.guess_type(video_path)[0] or "video/mp4"
+            blob = await self.upload_video(video_path, mime)
+            if not blob:
+                logger.error("BSKY: video upload failed: %s", self.last_error)
+                return None
+            embed: dict = {"$type": "app.bsky.embed.video", "video": blob, "alt": video_alt or ""}
+            if video_aspect and video_aspect[0] > 0 and video_aspect[1] > 0:
+                embed["aspectRatio"] = {"width": int(video_aspect[0]), "height": int(video_aspect[1])}
+            record["embed"] = embed
 
         # Content labels (NSFW self-labelling)
         if labels:

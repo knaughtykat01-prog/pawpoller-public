@@ -38,6 +38,13 @@ class BlueskyPoster(PlatformPoster):
     min_post_interval = 3
     max_file_size = 1 * 1024 * 1024  # 1 MB for images
     accepted_file_types = ["png", "jpg", "jpeg", "gif"]
+    # 4.18.0: an announcer — an audio piece goes out as its poster + caption + links.
+    # 4.20.0: a VIDEO piece is uploaded itself through video.bsky.app (mp4 / mov /
+    # webm — what the service transcodes; ≤ 300 MB, ≤ 10 min) as an
+    # app.bsky.embed.video. m4v is not on its list and is refused with the reason.
+    accepted_media = {"image": ["png", "jpg", "jpeg", "gif", "webp"],
+                      "video": ["mp4", "mov", "webm"],
+                      "audio": ["mp3", "wav", "flac", "ogg", "m4a", "aac", "opus"]}
 
     def __init__(self):
         self._client: BskyClient | None = None
@@ -67,7 +74,8 @@ class BlueskyPoster(PlatformPoster):
 
             opts = _resolve_options(package)
             is_art = bool(package.file_path
-                          and package.file_type in ("png", "jpg", "jpeg", "gif", "webp"))
+                          and (package.file_type in ("png", "jpg", "jpeg", "gif", "webp")
+                               or package.media_kind in ("video", "audio")))   # 4.18.0: media announces as art
             # Announcement text: body + links to where the piece already lives +
             # hashtags, fitted to 300 graphemes (4.3.7). Until now this was the
             # description cut at 295 characters with no links and no tags.
@@ -79,17 +87,26 @@ class BlueskyPoster(PlatformPoster):
                     if opts["caption"] else "")
             labels = opts["labels"]
 
+            # 4.20.0: a video piece is uploaded itself (no image embed at all).
+            is_video = _is_video(package)
             # Pick the image to embed: an artwork post uses the primary image
             # (the art itself); a story announcement uses the cover thumbnail.
             is_image_post = bool(
                 package.file_path
                 and package.file_type in ("png", "jpg", "jpeg", "gif", "webp"))
-            source_image = package.file_path if is_image_post else package.thumbnail_path
+            source_image = None if is_video else (package.file_path if is_image_post else package.thumbnail_path)
 
             # Bluesky's blob cap is ~1 MB; downscale/re-encode if needed.
             image_path, tmp_image = (None, None)
             if source_image:
                 image_path, tmp_image = _prepare_bsky_image(source_image)
+
+            if is_video:
+                limits = await client.get_video_upload_limits()
+                if isinstance(limits, dict) and limits.get("canUpload") is False:
+                    return PostResult(success=False, duration_seconds=self._elapsed(_t),
+                                      error="Bluesky won't take a video from this account right now: "
+                                            + str(limits.get("message") or "daily video allowance used up"))
 
             try:
                 result = await client.create_post(
@@ -99,7 +116,13 @@ class BlueskyPoster(PlatformPoster):
                     # the title stays the fallback so alt never regresses to "".
                     image_alt=package.extra.get("alt_text") or package.title,
                     labels=labels,
+                    video_path=package.file_path if is_video else None,
+                    video_alt=(package.extra.get("alt_text") or package.title) if is_video else "",
+                    video_aspect=(package.width, package.height) if is_video else None,
                 )
+                if is_video and not result and getattr(client, "last_error", ""):
+                    return PostResult(success=False, duration_seconds=self._elapsed(_t),
+                                      error=client.last_error)
             finally:
                 if tmp_image:
                     try:
@@ -153,6 +176,18 @@ class BlueskyPoster(PlatformPoster):
 
     def validate(self, package: StoryUploadPackage) -> list[str]:
         errors = []
+        if _is_video(package):
+            # 4.20.0: the service's caps, from the Library's measurements, before a byte moves.
+            from clients.bsky.client import BskyClient
+            if not os.path.isfile(package.file_path):
+                errors.append(f"File not found: {package.file_path}")
+            else:
+                if os.path.getsize(package.file_path) > BskyClient.VIDEO_MAX_BYTES:
+                    mb = os.path.getsize(package.file_path) / (1024 * 1024)
+                    errors.append(f"Video is {mb:.0f} MB — Bluesky takes videos up to 300 MB")
+                if package.duration_s and package.duration_s > BskyClient.VIDEO_MAX_SECONDS:
+                    errors.append(f"Video runs {package.duration_s / 60:.1f} min — Bluesky takes videos up to 10 minutes")
+            return errors
         # A post needs text OR an image. Story announcements always carry
         # description text; artwork posts may be image-only (no caption).
         has_image = bool(
@@ -171,6 +206,16 @@ class BlueskyPoster(PlatformPoster):
 # Bluesky's self-labels. "sexual" and "nudity" are what the rating maps to;
 # the other two are only ever chosen on the piece.
 _LABELS = ("nudity", "sexual", "porn", "graphic-media")
+
+
+_BSKY_VIDEO_TYPES = ("mp4", "mov", "webm")
+
+
+def _is_video(package: StoryUploadPackage) -> bool:
+    """A package whose video Bluesky uploads itself (4.20.0): kind video AND a format
+    the video service takes (the 4.18.0 gate refuses the rest before this)."""
+    return bool(package.file_path) and package.media_kind == "video" \
+        and (package.file_type or "").lower() in _BSKY_VIDEO_TYPES
 
 
 def _resolve_options(package: StoryUploadPackage) -> dict:

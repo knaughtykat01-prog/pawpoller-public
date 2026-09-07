@@ -197,7 +197,7 @@ class TestRelayRoute:
     def test_rejects_non_images_and_oversize(self, relay_client, monkeypatch):
         c, _ = relay_client
         r = c.post("/api/ig/relay", files={"file": ("a.txt", b"hello there", "text/plain")})
-        assert r.status_code == 400 and r.json()["detail"] == "Not an image"
+        assert r.status_code == 400 and r.json()["detail"] == "Not an image or an mp4 / mov video"
         monkeypatch.setattr(config, "IG_RELAY_MAX_BYTES", 100)
         r = c.post("/api/ig/relay", files={"file": ("a.png", _png_bytes(400, 400), "image/png")})
         assert r.status_code == 413

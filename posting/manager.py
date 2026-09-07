@@ -449,7 +449,8 @@ async def post_story(
                 package.extra["run_links"] = _run_links(results, ch_idx)
 
             # Validate
-            errors = poster.validate(package)
+            refusal = poster.media_refusal(package) if hasattr(poster, "media_refusal") else None
+            errors = [refusal] if refusal else poster.validate(package)
             if errors:
                 result_dict = {
                     "platform": platform,
@@ -614,7 +615,8 @@ async def post_artwork(
             _wm_temps.append(_wm_tmp)
 
         # Validate
-        errors = poster.validate(package)
+        refusal = poster.media_refusal(package) if hasattr(poster, "media_refusal") else None
+        errors = [refusal] if refusal else poster.validate(package)
         if errors:
             results.append({
                 "platform": platform,

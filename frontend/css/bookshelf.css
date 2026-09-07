@@ -254,3 +254,12 @@
     }
     .shelf-sort { margin-left: 0; }
 }
+
+/* 4.18.0 (MEDIATYPES): kind + length pill on a video / audio piece's cover. */
+.book-media-badge {
+    position: absolute; right: .4rem; bottom: .4rem;
+    padding: .1rem .45rem; border-radius: 999px;
+    background: rgba(0, 0, 0, .68); color: #fff;
+    font-size: .68rem; font-weight: 600; letter-spacing: .02em;
+    pointer-events: none;
+}

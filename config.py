@@ -606,6 +606,7 @@ IG_REQUEST_DELAY_SECONDS = 1.0  # Instagram Graph API — one /insights call per
 # a tiny local image server (posting/ig_tunnel.py).
 IG_RELAY_DEFAULT_URL = "https://pawpoller.syncopates.app/api/ig/relay"
 IG_RELAY_MAX_BYTES = 12 * 1024 * 1024
+IG_RELAY_MAX_VIDEO_BYTES = 100 * 1024 * 1024   # 4.20.1: a Reel's video through the relay / paired host
 IG_RELAY_PER_IP = (10, 600)        # uploads per window (seconds) from one address
 IG_RELAY_MAX_PENDING = 300         # hosted images at once, all callers — then 503
 # The tunnel helper is downloaded on request, pinned by version AND digest; a
@@ -1207,7 +1208,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.14.3"
+APP_VERSION = "4.20.1"
 
 # ── Inkbunny API settings ──
 INKBUNNY_API_BASE = "https://inkbunny.net"     # Inkbunny API root URL

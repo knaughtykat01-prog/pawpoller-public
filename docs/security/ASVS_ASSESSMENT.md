@@ -233,6 +233,10 @@ are grouped where a whole family doesn't apply.
 - **V3.4.4 (L2) — PASS.** `X-Content-Type-Options: nosniff`.
 - **V3.4.5 (L2) — PASS.** `Referrer-Policy: strict-origin-when-cross-origin`.
 - **V3.4.6 (L2) — PASS.** CSP `frame-ancestors 'none'` on every response.
+- _4.18.0:_ the dashboard CSP gained `media-src 'self' blob:` (MEDIATYPES — a picked video / audio file is
+  measured through a `<video>`/`<audio>` on its object URL before upload; the players read same-origin
+  `/api/artwork/media`). `blob:` media is same-document data the page itself created; no remote media source
+  is allowed. No other directive changed.
 - **V3.5.1, V3.5.2 (L1) — PASS.** State-changing requests use JSON bodies
   (`Content-Type: application/json` is not a CORS-safelisted value → cross-origin requests
   trigger a preflight, which the empty CORS allowlist rejects). Combined with `SameSite=Lax`,

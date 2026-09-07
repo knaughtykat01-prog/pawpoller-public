@@ -363,6 +363,31 @@ class FnClient:
 
         Built to CrosspostSharp's flow; verify live before trusting in prod.
         """
+        return await self.upload_submission("artwork", character=character, file_path=file_path,
+                                            title=title, description=description, tags=tags,
+                                            rating=rating, status=status)
+
+    async def upload_multimedia(self, *, character: str, file_path: str, title: str,
+                                description: str = "", tags: list[str] | None = None,
+                                rating: str = "general", status: str = "public") -> dict:
+        """Upload one video / audio file under `character` into FurryNetwork's
+        **multimedia** collection (MEDIATYPES phase 2, 4.19.4) — the same
+        resumable upload and metadata PATCH as artwork, on the sibling paths.
+        ❓ Built by analogy with the artwork flow (FN's collections are artwork /
+        story / multimedia and the artwork routes take the collection name);
+        verify on the site with the first live upload."""
+        return await self.upload_submission("multimedia", character=character, file_path=file_path,
+                                            title=title, description=description, tags=tags,
+                                            rating=rating, status=status)
+
+    async def upload_submission(self, collection: str, *, character: str, file_path: str, title: str,
+                                description: str = "", tags: list[str] | None = None,
+                                rating: str = "general", status: str = "public") -> dict:
+        """The shared flow behind upload_artwork / upload_multimedia: chunked
+        upload to ``/submission/{character}/{collection}/upload``, then
+        ``PATCH /{collection}/{id}`` with the metadata."""
+        if collection not in ("artwork", "multimedia"):
+            return {"success": False, "error": f"unknown FurryNetwork collection {collection!r}"}
         if not os.path.isfile(file_path):
             return {"success": False, "error": f"file not found: {file_path}"}
         await self._ensure_token()
@@ -370,10 +395,11 @@ class FnClient:
         filename = os.path.basename(file_path)
         total_chunks = max(1, (size + UPLOAD_CHUNK - 1) // UPLOAD_CHUNK)
         identifier = f"{size}-{filename.replace('.', '')}"
-        upload_path = f"{API_BASE}/submission/{character}/artwork/upload"
+        upload_path = f"{API_BASE}/submission/{character}/{collection}/upload"
         headers = {"Authorization": f"Bearer {self.access_token}"}
 
         new_id = ""
+        # A 200 MB video is ~400 chunks; the per-request timeout covers one chunk.
         async with httpx.AsyncClient(timeout=UPLOAD_TIMEOUT) as up:
             with open(file_path, "rb") as fh:
                 for chunk_no in range(1, total_chunks + 1):
@@ -418,7 +444,7 @@ class FnClient:
             "status": status if status in ("draft", "unlisted", "public") else "public",
         }
         pr = await self._http().patch(
-            f"{API_BASE}/artwork/{new_id}", json=patch,
+            f"{API_BASE}/{collection}/{new_id}", json=patch,
             headers={**headers, "Content-Type": "application/json"})
         if pr.status_code >= 400:
             # Carry FN's own words. A bare "HTTP 422" says only that some field
@@ -438,7 +464,7 @@ class FnClient:
                     # the PATCH, only multiply the orphans.
                     "error": f"already uploaded (id {new_id}) but metadata PATCH failed "
                              f"(HTTP {pr.status_code}): {detail}"}
-        url = f"{SITE_BASE}/{character}/artwork/{new_id}"
+        url = f"{SITE_BASE}/{character}/{collection}/{new_id}"
         return {"success": True, "id": new_id, "url": url}
 
 

@@ -1018,7 +1018,9 @@ class DAClient:
         filename = os.path.basename(file_path)
         ext = os.path.splitext(filename)[1].lstrip(".").lower()
         mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
-                "gif": "image/gif", "webp": "image/webp"}.get(ext, "application/octet-stream")
+                "gif": "image/gif", "webp": "image/webp",
+                # 4.20.1 (MEDIATYPES phase 3): film through the same Sta.sh submit.
+                "mp4": "video/mp4", "mov": "video/quicktime"}.get(ext, "application/octet-stream")
 
         data = {"title": title[:50], "access_token": access_token}
         if artist_comments:
@@ -1040,7 +1042,8 @@ class DAClient:
             "https://www.deviantart.com/api/v1/oauth2/stash/submit",
             data=data,
             files={"file": (filename, file_data, mime)},
-            timeout=120.0,
+            # A film is minutes on a home uplink; an image keeps the short wait.
+            timeout=900.0 if mime.startswith("video/") else 120.0,
         )
         if resp.status_code == 401:
             raise RuntimeError("DA: OAuth token expired or invalid (401)")
@@ -1222,80 +1225,6 @@ class DAClient:
         return data
 
 
-def _extract_stat_int(text: str, key: str) -> int:
-    """Extract an integer stat value from a JSON-like string."""
-    m = re.search(rf'"{key}"\s*:\s*(\d+)', text)
-    return int(m.group(1)) if m else 0
-
-
-# ── Official-API helpers ──────────────────────────────────────
-
-_URL_ID_RE = re.compile(r"-(\d+)/?$")
-
-
-def _int_id_from_url(url: str) -> int | None:
-    """Parse the trailing integer deviation id from a deviation URL.
-
-    e.g. ``https://www.deviantart.com/user/art/Some-Title-1351251437`` -> 1351251437.
-    Returns None if no trailing id is present (e.g. status updates).
-    """
-    if not url:
-        return None
-    m = _URL_ID_RE.search(url)
-    return int(m.group(1)) if m else None
-
-
-def _pick_thumb(dev: dict) -> str:
-    """Pick a thumbnail URL from a gallery/all deviation object.
-
-    Prefers the largest ``thumbs`` entry, then ``content.src``, then ``preview.src``.
-    """
-    thumbs = dev.get("thumbs") or []
-    if thumbs:
-        # thumbs are ordered small→large; take the last (largest) with a src.
-        for t in reversed(thumbs):
-            if isinstance(t, dict) and t.get("src"):
-                return t["src"]
-    for key in ("content", "preview"):
-        node = dev.get(key) or {}
-        if isinstance(node, dict) and node.get("src"):
-            return node["src"]
-    return ""
-
-
-def _unix_to_iso(ts) -> str:
-    """Convert a Unix timestamp (int or digit-string) to 'YYYY-MM-DD HH:MM:SS' UTC.
-
-    Passes through anything already non-numeric (or empty) as a best-effort string.
-    """
-    if ts is None or ts == "":
-        return ""
-    try:
-        return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    except (ValueError, TypeError, OSError):
-        return str(ts)
-
-
-def _strip_html(s: str, limit: int = 2000) -> str:
-    """Reduce an HTML description to plain text.
-
-    Unescape entities FIRST, then strip tags — so escaped markup like
-    ``&lt;script&gt;`` can't be un-escaped back into a live tag after the strip
-    pass. Defence-in-depth: DA descriptions aren't rendered in the dashboard
-    today, but the stored value stays tag-free regardless.
-    """
-    if not s:
-        return ""
-    text = unescape(s)                    # entities -> literal chars first
-    text = re.sub(r"<[^>]+>", "", text)   # then strip any (now-literal) tags
-    return text.strip()[:limit]
-
-
-def _chunks(lst: list, n: int):
-    """Yield successive n-sized chunks from *lst*."""
-    for i in range(0, len(lst), n):
-        yield lst[i:i + n]
-
     # ── Editing a published deviation ────────────────────────────────────────
 
     async def oauth_edit_deviation(
@@ -1407,3 +1336,78 @@ def _chunks(lst: list, n: int):
                 f"DA: description update failed ({resp.status_code}): {resp.text[:200]}")
         logger.info("DA: set description on %s (%d chars)", deviation_id, len(text or ""))
         return resp.json() if resp.content else {}
+
+
+def _extract_stat_int(text: str, key: str) -> int:
+    """Extract an integer stat value from a JSON-like string."""
+    m = re.search(rf'"{key}"\s*:\s*(\d+)', text)
+    return int(m.group(1)) if m else 0
+
+
+# ── Official-API helpers ──────────────────────────────────────
+
+_URL_ID_RE = re.compile(r"-(\d+)/?$")
+
+
+def _int_id_from_url(url: str) -> int | None:
+    """Parse the trailing integer deviation id from a deviation URL.
+
+    e.g. ``https://www.deviantart.com/user/art/Some-Title-1351251437`` -> 1351251437.
+    Returns None if no trailing id is present (e.g. status updates).
+    """
+    if not url:
+        return None
+    m = _URL_ID_RE.search(url)
+    return int(m.group(1)) if m else None
+
+
+def _pick_thumb(dev: dict) -> str:
+    """Pick a thumbnail URL from a gallery/all deviation object.
+
+    Prefers the largest ``thumbs`` entry, then ``content.src``, then ``preview.src``.
+    """
+    thumbs = dev.get("thumbs") or []
+    if thumbs:
+        # thumbs are ordered small→large; take the last (largest) with a src.
+        for t in reversed(thumbs):
+            if isinstance(t, dict) and t.get("src"):
+                return t["src"]
+    for key in ("content", "preview"):
+        node = dev.get(key) or {}
+        if isinstance(node, dict) and node.get("src"):
+            return node["src"]
+    return ""
+
+
+def _unix_to_iso(ts) -> str:
+    """Convert a Unix timestamp (int or digit-string) to 'YYYY-MM-DD HH:MM:SS' UTC.
+
+    Passes through anything already non-numeric (or empty) as a best-effort string.
+    """
+    if ts is None or ts == "":
+        return ""
+    try:
+        return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError, OSError):
+        return str(ts)
+
+
+def _strip_html(s: str, limit: int = 2000) -> str:
+    """Reduce an HTML description to plain text.
+
+    Unescape entities FIRST, then strip tags — so escaped markup like
+    ``&lt;script&gt;`` can't be un-escaped back into a live tag after the strip
+    pass. Defence-in-depth: DA descriptions aren't rendered in the dashboard
+    today, but the stored value stays tag-free regardless.
+    """
+    if not s:
+        return ""
+    text = unescape(s)                    # entities -> literal chars first
+    text = re.sub(r"<[^>]+>", "", text)   # then strip any (now-literal) tags
+    return text.strip()[:limit]
+
+
+def _chunks(lst: list, n: int):
+    """Yield successive n-sized chunks from *lst*."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]

@@ -78,7 +78,8 @@ async def upload_to_host(endpoint: str, path: str, api_key: str = "", http=None)
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     own = http is None
-    client = http or httpx.AsyncClient(timeout=90.0)
+    # A video for a Reel (4.20.1) can be tens of MB; the image timeout would cut it off.
+    client = http or httpx.AsyncClient(timeout=600.0 if Path(path).suffix.lower() in ig_media.VIDEO_EXTS else 90.0)
     try:
         resp = await client.post(endpoint, files={"file": (Path(path).name, data, "application/octet-stream")},
                                  headers=headers)
@@ -99,6 +100,14 @@ async def upload_to_host(endpoint: str, path: str, api_key: str = "", http=None)
     if not url:
         raise RuntimeError(f"{_host_of(endpoint)} gave no image URL back")
     return url
+
+
+def _stash(path: str) -> str:
+    """Stash one file for hosting: a video as it is (4.20.1), an image normalised."""
+    from pathlib import Path as _P
+    if _P(path).suffix.lower() in ig_media.VIDEO_EXTS:
+        return ig_media.stash_file(path)
+    return ig_media.stash_image(path)
 
 
 def _host_of(url: str) -> str:
@@ -125,7 +134,7 @@ async def host_images(paths: list[str], settings: dict | None = None) -> Hosted:
     # 1. this instance is public
     local_base = (s.get("ig_public_base_url") or "").strip()
     if local_base:
-        toks = [ig_media.stash_image(p) for p in paths]
+        toks = [_stash(p) for p in paths]
         urls = [ig_media.public_url(local_base, t) for t in toks]
         return Hosted(urls, "local", [lambda: [ig_media.cleanup(t) for t in toks]])
 
@@ -164,8 +173,8 @@ async def host_images(paths: list[str], settings: dict | None = None) -> Hosted:
             except Exception as e:
                 tried.append(f"a temporary tunnel ({_short(e)})")
             else:
-                toks = [ig_media.stash_image(p) for p in paths]
-                urls = [f"{host.base_url}/{t}.jpg" for t in toks]
+                toks = [_stash(p) for p in paths]
+                urls = [f"{host.base_url}/{t}{ig_media.ext_for(t)}" for t in toks]
 
                 async def _close(host=host, toks=toks):
                     await host.close()

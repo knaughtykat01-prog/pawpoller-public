@@ -1237,7 +1237,8 @@ const App = {
             // Story name may contain slashes (e.g. My_Story/Nice_Version)
             Editor.renderEditor(parts.slice(1).join('/'));
         } else if (parts[0] === 'promo') {
-            if (window.Promo) window.Promo.render();
+            // #/promo · #/promo/new[?story=<name>] · #/promo/<id>  (4.16.0)
+            if (window.Promo) window.Promo.render(parts[1] || null, this._routeQuery || '');
         } else if (parts[0] === 'imagetool') {
             if (window.ImageTool) window.ImageTool.render();
         } else if (parts[0] === 'artwork' && !parts[1]) {

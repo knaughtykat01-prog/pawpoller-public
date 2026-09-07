@@ -28,6 +28,12 @@ logger = logging.getLogger(__name__)
 WEASYL_API_BASE = "https://www.weasyl.com/api"
 
 
+
+def _image_mime(path: str) -> str:
+    """MIME for a cover / thumbnail upload by extension (4.19.3)."""
+    ext = os.path.splitext(path or "")[1].lower()
+    return {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}.get(ext, "image/png")
+
 class WeasylClient:
     """Weasyl REST API client using API key authentication."""
 
@@ -416,6 +422,78 @@ class WeasylClient:
             return {"submission_id": submission_id, "url": url}
 
         raise RuntimeError(f"Weasyl visual submission failed — status {resp.status_code}, url={final_url}")
+
+    async def submit_multimedia(
+        self,
+        file_path: str,
+        *,
+        title: str = "",
+        description: str = "",
+        tags: str = "",
+        rating: int = 40,
+        subtype: int = 3010,
+        folder_id: int | None = None,
+        cover_path: str | None = None,
+    ) -> dict:
+        """Submit a multimedia work (mp3) to Weasyl — MEDIATYPES phase 2, 4.19.3.
+
+        ``/submit/multimedia`` is the third submit form beside visual and
+        literary, with the same fields: ``submitfile`` is the audio, and the
+        poster goes as BOTH ``coverfile`` (shown on the submission page) and
+        ``thumbfile`` (the gallery thumbnail), which is what PostyBirb sends for
+        an audio file. ``subtype`` is Weasyl's multimedia subtype code:
+        3010 Original Music, 3020 Cover Version, 3030 Remix / Mashup, 3040
+        Speech / Reading, 3999 Other.
+        """
+        csrf = await self._get_csrf_token("https://www.weasyl.com/submit/multimedia")
+
+        with open(file_path, "rb") as f:
+            file_data = f.read()
+
+        filename = os.path.basename(file_path)
+        form_data = {
+            "title": title,
+            "rating": str(rating),
+            "content": description,
+            "tags": tags,
+            "subtype": str(subtype),
+        }
+        if csrf:
+            form_data["token"] = csrf
+        if folder_id:
+            form_data["folderid"] = str(folder_id)
+
+        files = {"submitfile": (filename, file_data, "audio/mpeg")}
+        if cover_path and os.path.isfile(cover_path):
+            with open(cover_path, "rb") as cf:
+                cover = cf.read()
+            mime = _image_mime(cover_path)
+            files["coverfile"] = (os.path.basename(cover_path), cover, mime)
+            files["thumbfile"] = (os.path.basename(cover_path), cover, mime)
+
+        resp = await self._http.post(
+            "https://www.weasyl.com/submit/multimedia",
+            data=form_data,
+            files=files,
+            timeout=600.0,
+            follow_redirects=True,
+        )
+
+        final_url = str(resp.url)
+        sid_match = re.search(r'/submission/(\d+)', final_url)
+        if sid_match:
+            submission_id = sid_match.group(1)
+            logger.info("WS: Submitted multimedia work — id=%s url=%s", submission_id, final_url)
+            return {"submission_id": submission_id, "url": final_url}
+
+        body_match = re.search(r'/submission/(\d+)', resp.text[:2000])
+        if body_match:
+            submission_id = body_match.group(1)
+            url = f"https://www.weasyl.com/submission/{submission_id}"
+            logger.info("WS: Submitted multimedia work (from body) — id=%s", submission_id)
+            return {"submission_id": submission_id, "url": url}
+
+        raise RuntimeError(f"Weasyl multimedia submission failed — status {resp.status_code}, url={final_url}")
 
     async def edit_submission(
         self,

@@ -19,6 +19,7 @@ from pathlib import Path
 
 import config
 from posting.platforms.base import StoryUploadPackage
+from posting.announce import ANNOUNCERS as _ANNOUNCERS
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,9 @@ class StoryInfo:
     work_skin_path: Path | None = None                # path to Work_Skin.css if present
     series: str = ""                                  # series name (gap-wave-5 §2), display grouping
     series_index: int = 0                             # position within the series (1-based; 0 = unset)
+    # A saved promo card (4.17.0): story.json `images.promo` names a promo id whose PNG the
+    # announcers (Telegram / X / Bluesky) carry instead of the cover. Hosting sites keep the cover.
+    announcement_image: str | None = None
 
     def __post_init__(self):
         if self.descriptions is None:
@@ -385,6 +389,18 @@ def _iso_mtime(mtime: float) -> str:
     return datetime.fromtimestamp(mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _promo_image(promo_id) -> str | None:
+    """The PNG of a saved promo card (4.17.0), when story.json's ``images.promo`` names one
+    that exists under ``DATA_DIR/promos``. Anything else — missing, deleted, not a number — is
+    None, and the announcers fall back to the cover."""
+    try:
+        pid = int(promo_id)
+    except (TypeError, ValueError):
+        return None
+    p = config.DATA_DIR / "promos" / f"{pid}.png"
+    return str(p) if p.is_file() else None
+
+
 def _load_from_story_json(story_name: str, story_path: Path, json_path: Path) -> StoryInfo:
     """Load story metadata from story.json."""
     data = json.loads(json_path.read_text(encoding="utf-8"))
@@ -490,6 +506,7 @@ def _load_from_story_json(story_name: str, story_path: Path, json_path: Path) ->
             thumbnail_path = str(story_path / detected)
     for ch_idx, ch_path in images.get("chapter_thumbnails", {}).items():
         chapter_thumbnails[int(ch_idx)] = str(story_path / ch_path)
+    announcement_image = _promo_image(images.get("promo"))
 
     # OTW Archive metadata fields
     raw_warnings = data.get("warnings", [])
@@ -533,6 +550,7 @@ def _load_from_story_json(story_name: str, story_path: Path, json_path: Path) ->
         descriptions=data.get("descriptions", {}),
         thumbnail_path=thumbnail_path,
         chapter_thumbnails=chapter_thumbnails,
+        announcement_image=announcement_image,
         rating=data.get("rating", ""),
         fandom=data.get("fandom", "Original Work"),
         category=data.get("category", ""),
@@ -747,6 +765,10 @@ def build_package(
         thumbnail = story.chapter_thumbnails[chapter_index]
     elif story.thumbnail_path:
         thumbnail = story.thumbnail_path
+    # 4.17.0: the announcers show the story's chosen promo card; hosting sites keep the cover.
+    # The card is a teaser, not a thumbnail — an FA/SoFurry listing must not carry it.
+    if platform in _ANNOUNCERS and getattr(story, "announcement_image", None):
+        thumbnail = story.announcement_image
 
     return StoryUploadPackage(
         story_name=story.name,

@@ -74,6 +74,14 @@ class TelegramPoster(PlatformPoster):
     # this is enforced in validate() rather than silently absorbed.
     max_file_size = 10 * 1024 * 1024
     accepted_file_types = list(_IMAGE_TYPES)
+    # 4.18.0: an announcer. A video / audio piece is announced with its poster image + caption + links
+    # (phase 1 of MEDIATYPES); sending the media itself is phase 2.
+    # 4.19.0 (MEDIATYPES phase 2): the media itself is sent — sendVideo / sendAudio
+    # (or sendDocument for the original bytes) with the poster as the thumbnail.
+    # ≤ 50 MB per the Bot API's multipart cap (validate() refuses larger files).
+    accepted_media = {"image": list(_IMAGE_TYPES),
+                      "video": ["mp4", "webm", "mov", "m4v"],
+                      "audio": ["mp3", "wav", "flac", "ogg", "m4a", "aac", "opus"]}
     # api.telegram.org is reachable from the VM. Overriding this to "desktop"
     # would strand jobs in the queue — see the base-class warning about FA.
     requires_mode = "any"
@@ -115,21 +123,35 @@ class TelegramPoster(PlatformPoster):
                 return PostResult(success=False, error=str(e),
                                   duration_seconds=self._elapsed(_t))
 
+            is_media = bool(package.file_path and package.media_kind in ("video", "audio")
+                            and os.path.isfile(package.file_path))
             is_art = bool(package.file_path
-                          and package.file_type.lower() in _IMAGE_TYPES)
-            image = package.file_path if is_art else package.thumbnail_path
+                          and (package.file_type.lower() in _IMAGE_TYPES or is_media))
+            # An image announces itself; since 4.19.0 a video / audio piece is SENT
+            # (sendVideo / sendAudio) with its poster as the thumbnail — 4.18.0 only
+            # announced it with the poster.
+            image = package.file_path if (is_art and not is_media) else package.thumbnail_path
             opts = _resolve_options(package, settings)
-            text = _build_caption(package, has_image=bool(image), is_art=is_art,
+            text = _build_caption(package, has_image=bool(image) or is_media, is_art=is_art,
                                   with_tags=opts["tags"]) if opts["caption"] else ""
 
-            images = [image] if image and os.path.isfile(image) else []
-            result = await client.create_post(
-                text, image_paths=images, spoiler=opts["spoiler"],
-                silent=opts["silent"], protect=opts["protect"],
-                # Sending as a document only makes sense with a real image;
-                # a text announcement has no file whose quality to preserve.
-                as_document=opts["document"] and bool(images),
-                preview=opts["preview"], pin=opts["pin"])
+            if is_media:
+                result = await client.create_media_post(
+                    text, package.file_path, package.media_kind,
+                    poster=package.thumbnail_path if package.thumbnail_path and os.path.isfile(package.thumbnail_path) else None,
+                    meta={"duration_s": package.duration_s, "width": package.width, "height": package.height},
+                    spoiler=opts["spoiler"], silent=opts["silent"], protect=opts["protect"],
+                    as_document=opts["document"], pin=opts["pin"],
+                    title=package.title or "", performer=_performer(package))
+            else:
+                images = [image] if image and os.path.isfile(image) else []
+                result = await client.create_post(
+                    text, image_paths=images, spoiler=opts["spoiler"],
+                    silent=opts["silent"], protect=opts["protect"],
+                    # Sending as a document only makes sense with a real image;
+                    # a text announcement has no file whose quality to preserve.
+                    as_document=opts["document"] and bool(images),
+                    preview=opts["preview"], pin=opts["pin"])
             if not result:
                 # client._ok() keeps Telegram's own description; a bare "failed"
                 # is what sent a user chasing admin rights that were already
@@ -204,23 +226,37 @@ class TelegramPoster(PlatformPoster):
         if not channel:
             errors.append("No Telegram channel set (Settings → Telegram)")
 
-        is_art = bool(package.file_path and package.file_type.lower() in _IMAGE_TYPES)
-        image = package.file_path if is_art else package.thumbnail_path
-        if image and not os.path.isfile(image):
+        is_media = bool(package.file_path and package.media_kind in ("video", "audio"))
+        is_art = bool(package.file_path and (package.file_type.lower() in _IMAGE_TYPES or is_media))
+        image = package.thumbnail_path if is_media else (package.file_path if is_art else package.thumbnail_path)
+        if is_media:
+            # 4.19.0: the media file itself is sent. The Bot API takes at most 50 MB
+            # in a multipart upload — beyond that only a self-hosted Bot API server
+            # helps, which PawPoller does not run. Refuse here, before the bytes move.
+            from clients.tg.client import TgClient
+            if not os.path.isfile(package.file_path):
+                errors.append(f"File not found: {package.file_path}")
+            elif os.path.getsize(package.file_path) > TgClient.MEDIA_UPLOAD_CAP:
+                mb = os.path.getsize(package.file_path) / (1024 * 1024)
+                errors.append(f"{package.media_kind.capitalize()} is {mb:.1f} MB — a Telegram bot can upload "
+                              f"at most 50 MB. Shorten or compress it, or post the file elsewhere and announce it here.")
+        elif image and not os.path.isfile(image):
             errors.append(f"File not found: {image}")
         elif image and os.path.getsize(image) > self.max_file_size:
             mb = os.path.getsize(image) / (1024 * 1024)
             errors.append(f"Image is {mb:.1f} MB — Telegram's limit is 10 MB")
+        if is_media:
+            image = image if image and os.path.isfile(image) else None
 
         # A post with neither text nor image would be an empty broadcast.
-        if not image and not _build_caption(package, has_image=False, is_art=is_art).strip():
+        if not image and not is_media and not _build_caption(package, has_image=False, is_art=is_art).strip():
             errors.append("Nothing to post — no image and no text")
 
         # ⚠ Warn rather than truncate silently. The caption cap is 1,024 and an
         # artwork description clears it easily; slicing without a word is how a
         # broadcast goes out mangled to real subscribers.
-        limit = CAPTION_LIMIT if image else MESSAGE_LIMIT
-        body = _build_caption(package, has_image=bool(image), is_art=is_art)
+        limit = CAPTION_LIMIT if (image or is_media) else MESSAGE_LIMIT
+        body = _build_caption(package, has_image=bool(image) or is_media, is_art=is_art)
         if len(body) > limit:
             errors.append(
                 f"Text is {len(body)} characters — Telegram's limit "
@@ -232,6 +268,17 @@ class TelegramPoster(PlatformPoster):
 # Moved to posting/announce.py in 4.3.7 when X and Bluesky grew the same
 # options; kept under the old name so nothing that reads this module changes.
 _flag = announce.flag
+
+
+def _performer(package: StoryUploadPackage) -> str:
+    """The `performer` line of a Telegram audio player: the credited artist when
+    the package carries one, else nothing (Telegram shows the title alone)."""
+    x = package.extra or {}
+    for key in ("artist_name", "artist", "performer"):
+        v = x.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
 
 
 def _resolve_options(package: StoryUploadPackage, settings: dict) -> dict:

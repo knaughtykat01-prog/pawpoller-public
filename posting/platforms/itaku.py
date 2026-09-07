@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # post() and edit() MUST agree — a disagreement here is the DeviantArt
 # 3.34.0 crash in a different costume.
 _IMAGE_TYPES = ("png", "jpg", "jpeg", "gif", "webp")
+_VIDEO_TYPES = ("mp4", "webm", "mov")          # 4.19.1: the videos collection
 # Itaku rejects an image carrying fewer tags; its own dialog says so.
 _MIN_TAGS = 5
 
@@ -54,6 +55,10 @@ class ItakuPoster(PlatformPoster):
     supports_file_replace = False
     min_post_interval = 5
     max_file_size = 10 * 1024 * 1024  # 10 MB for images
+    # 4.19.1 (MEDIATYPES phase 2): Itaku takes video at 500 MB (PostyBirb's declared
+    # cap; the site's own page to confirm live) through its own collection — see
+    # IKClient.upload_video. No audio.
+    max_video_size = 500 * 1024 * 1024
     accepted_file_types = ["png", "jpg", "jpeg", "gif", "webp", "mp4", "webm", "mov"]
 
     def __init__(self):
@@ -80,9 +85,11 @@ class ItakuPoster(PlatformPoster):
 
             rating = _rating_to_ik(package.rating)
 
-            # If file is an image, upload to gallery
-            if package.file_path and package.file_type in _IMAGE_TYPES:
-                result = await client.upload_image(
+            # An image → the images collection; a video (4.19.1) → the videos one.
+            kind = _gallery_kind(package)
+            if kind:
+                upload = client.upload_video if kind == "video" else client.upload_image
+                result = await upload(
                     package.file_path,
                     title=package.title,
                     description=package.description[:5000],
@@ -139,11 +146,12 @@ class ItakuPoster(PlatformPoster):
         """
         _t = self._start_timer()
         try:
-            if package.file_type not in _IMAGE_TYPES:
+            kind = _gallery_kind(package)
+            if not kind:
                 return PostResult(
                     success=False,
                     external_id=external_id,
-                    error=("Itaku edit covers gallery images only — a text post's "
+                    error=("Itaku edit covers gallery images and videos only — a text post's "
                            "edit endpoint has not been verified."),
                     duration_seconds=self._elapsed(_t),
                 )
@@ -170,6 +178,7 @@ class ItakuPoster(PlatformPoster):
                 tags=tags,
                 maturity_rating=_rating_to_ik(package.rating),
                 token=token,
+                kind=kind,
             )
 
             return PostResult(
@@ -196,9 +205,26 @@ class ItakuPoster(PlatformPoster):
             import os
             if os.path.isfile(package.file_path):
                 size = os.path.getsize(package.file_path)
-                if size > self.max_file_size:
+                if _gallery_kind(package) == "video":
+                    if size > self.max_video_size:
+                        errors.append(f"Video is {size / 1024 / 1024:.0f} MB — Itaku takes videos up to 500 MB")
+                elif size > self.max_file_size:
                     errors.append(f"File too large: {size / 1024 / 1024:.1f}MB (max 10MB)")
         return errors
+
+
+def _gallery_kind(package: StoryUploadPackage) -> str:
+    """'image' / 'video' for a package that goes to the gallery, '' for a text post.
+    A video is recognised by the Library's media_kind OR by its extension, so a package
+    built before 4.18.0 (no media_kind) still routes right."""
+    if not package.file_path:
+        return ""
+    ft = (package.file_type or "").lower()
+    if ft in _IMAGE_TYPES:
+        return "image"
+    if (package.media_kind or "") == "video" or ft in _VIDEO_TYPES:
+        return "video"
+    return ""
 
 
 def _rating_to_ik(rating: str) -> str:
