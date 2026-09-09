@@ -72,6 +72,20 @@ async def sync_settings(req: SyncRequest) -> SyncResponse:
     )
 
 
+def _require_paired() -> None:
+    """Settings sync needs a paired (mirror-copy) install. 4.24.1: connected mode saves the
+    same URL + key but switches sync off on purpose, and used to answer "not paired" here —
+    which read as "the setup did not take" (it had; the app just had not been restarted)."""
+    import auto_sync
+    if config.get_settings().get("setup_mode") == config.SETUP_MODE_CONNECTED:
+        raise HTTPException(400, "This install is in connected mode: it keeps nothing of its own to sync. "
+                                 "Close and reopen PawPoller to open onto the server "
+                                 "(Settings → Setup Mode → Restart now).")
+    if auto_sync._sync_target() is None:
+        raise HTTPException(
+            400, "Not paired with a server. Set the server URL + API key in Setup → pairing first.")
+
+
 @settings_router.post("/sync/pull-now")
 async def sync_pull_now():
     """Manually pull settings from the PAIRED SERVER — the real remote pull.
@@ -83,10 +97,8 @@ async def sync_pull_now():
     over the pairing URL + key and merging them, with ``force=True`` so an
     explicit click always applies the server's copy (bypassing the background
     loop's last-writer-wins mtime guard)."""
+    _require_paired()
     import auto_sync
-    if auto_sync._sync_target() is None:
-        raise HTTPException(
-            400, "Not paired with a server. Set the server URL + API key in Setup → pairing first.")
     try:
         applied = auto_sync.pull_once(force=True)
     except Exception as e:
@@ -98,10 +110,8 @@ async def sync_pull_now():
 async def sync_push_now():
     """Manually push local settings to the PAIRED SERVER — the real remote push.
     (Companion to /sync/pull-now; the old button pushed local→local.)"""
+    _require_paired()
     import auto_sync
-    if auto_sync._sync_target() is None:
-        raise HTTPException(
-            400, "Not paired with a server. Set the server URL + API key in Setup → pairing first.")
     try:
         merged = auto_sync.push_now()
     except Exception as e:

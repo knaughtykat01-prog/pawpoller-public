@@ -38,7 +38,7 @@ from database.db import get_connection, init_db
 from database import (
     queries, fa_queries, ws_queries, sf_queries, sqw_queries, ao3_queries,
     da_queries, wp_queries, ik_queries, bsky_queries, tw_queries, mast_queries, tum_queries, pix_queries, thr_queries, ig_queries,
-    e621_queries, fn_queries, fbr_queries, tg_queries,
+    e621_queries, fn_queries, fbr_queries, tg_queries, sc_queries, ng_queries, yt_queries,
     group_queries, analytics_queries, platform_metrics,
     accounts as accounts_db,
 )
@@ -329,6 +329,9 @@ _PLATFORM_HEALTH_CONFIG = [
     ("fn",  fn_queries,  "get_fn_last_poll",  "fn_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["fn"]),
     ("fbr", fbr_queries, "get_fbr_last_poll", "fbr_poll_interval_minutes", accounts_db.DEFAULT_CRED_CHECKS["fbr"]),
     ("tg",  tg_queries,  "get_tg_last_poll",  "tg_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["tg"]),
+    ("sc",  sc_queries,  "get_sc_last_poll",  "sc_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["sc"]),
+    ("ng",  ng_queries,  "get_ng_last_poll",  "ng_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["ng"]),
+    ("yt",  yt_queries,  "get_yt_last_poll",  "yt_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["yt"]),
 ]
 
 
@@ -346,10 +349,18 @@ def platforms_media():
         except Exception:
             continue
         acc = poster.media_accepts()
+        from posting.platforms.base import RATING_WORD, rating_rank
+        max_rating = str(getattr(poster, "max_rating", "adult") or "adult")
+        allowed = rating_rank(max_rating)
         out[code] = {"accepts": acc, "label": media_kinds.accepts_label(acc),
                      "refusals": {k: media_kinds.refusal(poster.platform_name or code, acc, k, "")
-                                  for k in media_kinds.KINDS if not acc.get(k)}}
-    return {"platforms": out, "kinds": list(media_kinds.KINDS),
+                                  for k in media_kinds.KINDS if not acc.get(k)},
+                     # 4.21.0: the rating ceiling and the sentence for each rating above it.
+                     "max_rating": RATING_WORD[allowed],
+                     "rating_refusals": {RATING_WORD[r]: f"{poster.platform_name or code} doesn't take {RATING_WORD[r]} work — "
+                                                          f"this piece is rated {RATING_WORD[r]}; it takes work up to {RATING_WORD[allowed]}."
+                                         for r in range(allowed + 1, 3)}}
+    return {"platforms": out, "kinds": list(media_kinds.KINDS), "ratings": list(RATING_WORD),
             "extensions": {"image": list(media_kinds.IMAGE_EXTENSIONS), "video": list(media_kinds.VIDEO_EXTENSIONS),
                            "audio": list(media_kinds.AUDIO_EXTENSIONS)}}
 

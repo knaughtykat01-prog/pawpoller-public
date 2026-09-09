@@ -12,7 +12,7 @@
 window.Artwork = {
 
     /* Image-capable platforms the hub posts to (v1), in display order. */
-    _PLATFORMS: ['ib', 'fa', 'sf', 'bsky', 'tw', 'ik', 'ws', 'da', 'e621', 'ig', 'fn', 'tg'],
+    _PLATFORMS: ['ib', 'fa', 'sf', 'bsky', 'tw', 'ik', 'ws', 'da', 'e621', 'ig', 'fn', 'tg', 'pod', 'sc', 'ng', 'yt'],
     /* The announcing platforms — a caption, links to where the piece already
      * lives, hashtags — and therefore the ones whose row carries the per-piece
      * options panel (Telegram since 4.0.10; X and Bluesky since 4.3.7). Mirrors
@@ -641,9 +641,10 @@ window.Artwork = {
             const p = (window.platformByCode && window.platformByCode(code)) || { label: code, emoji: '' };
             const sel = document.querySelector(`${scope} .art-acct-select[data-platform="${code}"]`);
             const account = sel ? (sel.dataset.accountLabel || ((sel.options && sel.options[sel.selectedIndex]) || {}).text || '') : '';
-            // 4.18.0: a site that does not take this media kind is listed as skipped, with its sentence.
-            const g = (this._gate && this._gate.kind && this._gate.kind !== 'image' && this._gate.support && window.MediaKinds)
-                ? MediaKinds.acceptance(this._gate.support, code, this._gate.kind, this._gate.ext) : { ok: true, reason: '' };
+            // 4.18.0: a site that does not take this media kind is listed as skipped, with its sentence;
+            // 4.21.0: the same for a rating above what the site takes.
+            const g = (this._gate && this._gate.support && window.MediaKinds)
+                ? MediaKinds.acceptance(this._gate.support, code, this._gate.kind, this._gate.ext, this._gate.rating) : { ok: true, reason: '' };
             return { code, label: p.label, emoji: p.emoji, account, disabled: !g.ok, reason: g.reason };
         });
     },
@@ -697,6 +698,10 @@ window.Artwork = {
     },
 
     _wireUpload() {
+        // 4.21.0: a rating change re-gates the rows (an SFW-only site greys out for adult work).
+        const ratingSel = document.getElementById('art-rating');
+        if (ratingSel) ratingSel.addEventListener('change', () =>
+            this._applyMediaGating('#art-platforms', (this._pendingFile && this._pendingFile.name) || this._pendingPath || ''));
         const fileInput = document.getElementById('art-file');
         const drop = document.getElementById('art-drop');
         fileInput.addEventListener('change', () => {
@@ -779,16 +784,21 @@ window.Artwork = {
     },
 
     /* 4.18.0: grey out the sites that do not take this file's kind, with the site's own sentence. */
-    async _applyMediaGating(scope, filename) {
+    /* 4.21.0: also by rating — an SFW-only site is greyed with the reason (MEDIAPLATS §2). `rating`
+     * defaults to the form's own select; the masterpiece page passes the piece's. */
+    async _applyMediaGating(scope, filename, rating) {
         if (!window.MediaKinds) return;
         const kind = MediaKinds.kindOf(filename), ext = MediaKinds.extOf(filename);
-        this._gate = { kind, ext, support: null };
+        if (rating == null) {
+            const sel = document.getElementById('art-rating');
+            rating = sel ? sel.value : null;
+        }
+        this._gate = { kind, ext, rating, support: null };
         const rows = () => document.querySelectorAll(`${scope} .artwork-plat-row[data-platform]`);
-        if (!kind || kind === 'image') { rows().forEach(r => this._gateRow(r, true, '')); return; }
         const support = await MediaKinds.support();
-        if (!this._gate || this._gate.ext !== ext) return;
+        if (!this._gate || this._gate.ext !== ext || this._gate.rating !== rating) return;
         this._gate.support = support;
-        rows().forEach(r => { const a = MediaKinds.acceptance(support, r.dataset.platform, kind, ext); this._gateRow(r, a.ok, a.reason); });
+        rows().forEach(r => { const a = MediaKinds.acceptance(support, r.dataset.platform, kind, ext, rating); this._gateRow(r, a.ok, a.reason); });
     },
     _gateRow(row, ok, reason) {
         row.classList.toggle('is-media-refused', !ok);
@@ -1663,6 +1673,9 @@ window.Artwork = {
         document.getElementById('qp-remove').addEventListener('click', () => this._qpClearFile());
         document.getElementById('qp-tag-browse').addEventListener('click', () => this._openTagLibrary('qp-tags'));
         document.getElementById('qp-go').addEventListener('click', () => this._qpPublish(null));
+        // 4.21.0: a rating change re-gates the chips.
+        document.getElementById('qp-rating').addEventListener('change', () =>
+            this._qpApplyMediaGating((this._pendingFile && this._pendingFile.name) || this._pendingPath || ''));
 
         const sform = document.getElementById('qp-schedule-form');
         const sdt = document.getElementById('qp-schedule-dt');
@@ -1746,7 +1759,9 @@ window.Artwork = {
     async _qpApplyMediaGating(filename) {
         if (!window.MediaKinds) return;
         const kind = MediaKinds.kindOf(filename), ext = MediaKinds.extOf(filename);
-        this._qpGate = { kind, ext };
+        const ratingSel = document.getElementById('qp-rating');
+        const rating = ratingSel ? ratingSel.value : null;                 // 4.21.0: rating gates too
+        this._qpGate = { kind, ext, rating };
         const chips = () => document.querySelectorAll('#qp-platforms .qp-plat-chip');
         const set = (chip, ok, reason) => {
             chip.classList.toggle('is-media-refused', !ok);
@@ -1755,10 +1770,9 @@ window.Artwork = {
             chip.title = ok ? '' : reason;
             if (!ok) chip.style.opacity = '.35';
         };
-        if (!kind || kind === 'image') { chips().forEach(c => set(c, true, '')); return; }
         const support = await MediaKinds.support();
-        if (!this._qpGate || this._qpGate.ext !== ext) return;
-        chips().forEach(c => { const a = MediaKinds.acceptance(support, c.dataset.plat, kind, ext); set(c, a.ok, a.reason); });
+        if (!this._qpGate || this._qpGate.ext !== ext || this._qpGate.rating !== rating) return;
+        chips().forEach(c => { const a = MediaKinds.acceptance(support, c.dataset.plat, kind, ext, rating); set(c, a.ok, a.reason); });
     },
 
     async _loadQuickPresets() {

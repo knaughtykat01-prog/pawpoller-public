@@ -226,11 +226,11 @@ window.Tour = (function () {
 
         'settings': [
             { target: null, title: 'Welcome to Settings', body: 'This is where PawPoller is configured — connect platforms, tune polling, secure your dashboard and more.' },
-            { target: '#save-all-settings-btn', title: 'Save Settings', body: 'Changes on any tab are only kept once you hit <em>Save Settings</em> here — it saves the whole page at once.' },
-            { target: '#settings-tabs', title: 'Settings tabs', body: 'Everything is grouped into tabs along this strip — click any one to jump to that group.' },
-            { target: '[data-stab="platforms"]', title: 'Platforms', body: 'Start here — connect each site you post to (FurAffinity, Inkbunny, Bluesky and the rest).' },
-            { target: '[data-stab="polling"]', title: 'Polling', body: 'Set how often each platform is checked for new favourites and comments, and pause or resume polling.' },
-            { target: '[data-stab="security"]', title: 'Security', body: 'Lock down your dashboard — change your password, turn on two-factor login and manage API keys.' },
+            { target: '#settings-rail', title: 'Settings pages', body: 'Everything is grouped into four sections down this rail — Account, Publishing, Monitoring, System. Search at the top finds a setting on any page.' },
+            { target: '[data-spage="platforms"]', title: 'Platforms', body: 'Start here — connect each site you post to (FurAffinity, Inkbunny, Bluesky and the rest).' },
+            { target: '[data-spage="notifications"]', title: 'Notifications', body: 'Every site\'s desktop-alert switch in one table, then Telegram, Discord and the weekly email. Everything in Settings saves the moment you change it.' },
+            { target: '[data-spage="polling"]', title: 'Polling', body: 'Set how often each platform is checked for new favourites and comments, and pause or resume polling.' },
+            { target: '[data-spage="security"]', title: 'Security', body: 'Lock down your dashboard — change your password, turn on two-factor login and manage API keys.' },
         ],
     };
 

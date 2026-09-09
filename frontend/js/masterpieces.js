@@ -1354,7 +1354,7 @@ window.Masterpieces = {
                 live: _live.filter(c => c !== code) };
         });
         window.Artwork._renderPlatformRows(host, optsByCode, extraByCode);
-        if (window.Artwork._applyMediaGating) window.Artwork._applyMediaGating('#mp-detail-platforms', (this._detail || {}).image || '');   // 4.18.0
+        if (window.Artwork._applyMediaGating) window.Artwork._applyMediaGating('#mp-detail-platforms', (this._detail || {}).image || '', (this._detail || {}).rating || '');   // 4.18.0 kind, 4.21.0 rating
 
         // Dim + disable platforms this piece is already posted to. Both the
         // publications list and the resolved member locations count as "posted",
@@ -2017,7 +2017,7 @@ window.Masterpieces = {
 
     _PLATFORM_LABELS: {
         fa: 'FurAffinity', ib: 'Inkbunny', e621: 'e621', sf: 'SoFurry',
-        ws: 'Weasyl', da: 'DeviantArt', fn: 'FurryNetwork', ik: 'Itaku', fbr: 'Furbooru',
+        ws: 'Weasyl', da: 'DeviantArt', fn: 'FurryNetwork', ik: 'Itaku', fbr: 'Furbooru', sc: 'SoundCloud', ng: 'Newgrounds', yt: 'YouTube',
     },
 
     async _loadTagBudget() {

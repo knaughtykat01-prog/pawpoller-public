@@ -95,11 +95,11 @@ def test_every_wizard_platform_has_a_credential_form_to_link_to(app_js: str):
 
 def test_the_deep_link_handler_exists(app_js: str):
     """The href is inert without something to open the accordion it names."""
-    assert "_focusPlatformFromHash" in app_js, "the deep-link handler is gone"
-    assert "settings/platforms" in app_js
-    assert app_js.count("_focusPlatformFromHash") >= 2, (
-        "handler is defined but never called — the link would land on the "
-        "Platforms tab with all nineteen accordions still collapsed"
+    # 4.26.0: the list + detail builder reads the hash and selects the row.
+    assert "_buildPlatformsListDetail(pane, platforms)" in app_js, "the deep-link handler is gone"
+    assert "#\/settings\/platforms\/" in app_js, (
+        "nothing reads the wizard's hash — the link would land on the "
+        "Platforms page with the overview selected"
     )
 
 

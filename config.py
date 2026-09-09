@@ -667,6 +667,12 @@ CREDENTIAL_FIELDS = frozenset({
     "e621_api_key",
     # FurryNetwork (OAuth password grant; login email stays plaintext identity)
     "fn_password", "fn_refresh_token", "fn_access_token",
+    # SoundCloud (4.22.0): the app secret and the OAuth pair; client id, expiry and handle stay plaintext
+    "sc_client_secret", "sc_refresh_token", "sc_access_token",
+    # Newgrounds (4.23.0): the browser session's cookie string; the username stays plaintext identity
+    "ng_cookie",
+    # YouTube (4.24.0): the Google project's secret and the OAuth pair; client id, expiry, handle stay plaintext
+    "yt_client_secret", "yt_refresh_token", "yt_access_token",
     # Furbooru (Philomena) — optional API key; username stays plaintext identity
     "fbr_api_key",
     # CF proxy
@@ -783,8 +789,19 @@ PLATFORM_CREDENTIAL_FIELDS = {
     "e621": ["e621_username", "e621_api_key"],
     # Telegram channel (Posts-module broadcast target; post-only, not polled).
     "tg": ["tg_bot_token", "tg_channel"],
+    "pod": ["pod_feed_slug"],                     # 4.21.1: the feed this account publishes to (not a secret)
     # FurryNetwork (poll+post gallery). Email + password → OAuth token/refresh.
     "fn": ["fn_username", "fn_password", "fn_refresh_token", "fn_access_token"],
+    # SoundCloud (4.22.0, MEDIAPLATS §3). The operator's registered app + the OAuth 2.1 pair
+    # from the browser approval; sc_username is the approved handle (identity, not a secret).
+    "sc": ["sc_client_id", "sc_client_secret", "sc_access_token", "sc_refresh_token",
+           "sc_token_expires_at", "sc_username"],
+    # Newgrounds (4.23.0, MEDIAPLATS §5). No API: the browser session's cookie string + the username.
+    "ng": ["ng_username", "ng_cookie"],
+    # YouTube (4.24.0, MEDIAPLATS §6). The operator's Google project + the OAuth pair; the channel handle
+    # and its long-uploads status are identity, not secrets.
+    "yt": ["yt_client_id", "yt_client_secret", "yt_access_token", "yt_refresh_token",
+           "yt_token_expires_at", "yt_username", "yt_long_uploads"],
     # Furbooru (Philomena booru; poll-only). Username + optional API key.
     "fbr": ["fbr_username", "fbr_api_key"],
 }
@@ -1208,7 +1225,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.20.1"
+APP_VERSION = "4.27.0"
 
 # ── Inkbunny API settings ──
 INKBUNNY_API_BASE = "https://inkbunny.net"     # Inkbunny API root URL

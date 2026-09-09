@@ -26,6 +26,9 @@ import sqlite3
 # Platform codes whose client can fetch a follower count for the polled account.
 # Keep in sync with the FOLLOWER_FETCHERS registry in polling/followers.py.
 FOLLOWER_PLATFORMS = {"ws", "da", "wp", "ik", "bsky", "tw", "mast", "pix", "fn",
+                      "sc",   # SoundCloud: followers_count on /me (4.22.0)
+                      "ng",   # Newgrounds: the profile page's FANS count (4.23.0)
+                      "yt",   # YouTube: the channel's subscriberCount, unless hidden (4.24.0)
                       # Telegram: a channel's subscriber count. The only
                       # per-channel number the Bot API exposes.
                       "tg"}

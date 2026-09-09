@@ -158,6 +158,26 @@ PLATFORM_LOGIN: dict[str, dict] = {
         "extract": lambda cookies, url: {},
         "fields": [],
     },
+    # Newgrounds (4.23.0, MEDIAPLATS §5): no API, so the browser session is the credential.
+    # The full cookie string is kept (the DA pattern) — the site's session cookie name is
+    # opaque and can change; the client sends them all. Success = we left the login page
+    # on newgrounds.com with at least one cookie set. ❓ Whose session it is gets checked
+    # by the client (`activeuser` + "name" on any signed-in page) before the first post.
+    "ng": {
+        "name": "Newgrounds",
+        "url": "https://www.newgrounds.com/passport",
+        "success_check": lambda cookies, url: (
+            bool(cookies) and "newgrounds.com" in (url or "")
+            and "/passport" not in (url or "") and "/login" not in (url or "")
+        ),
+        "extract": lambda cookies, url: {
+            "ng_cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
+        },
+        "fields": [
+            # The id IS the settings key (the 4.3.3 lesson): the canonical field.
+            {"id": "ng_username", "label": "Newgrounds username", "placeholder": "Your Newgrounds username", "required": True},
+        ],
+    },
 }
 
 

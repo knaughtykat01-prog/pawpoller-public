@@ -38,6 +38,9 @@ from routes.thr_api import thr_router
 from routes.ig_api import ig_router
 from routes.e621_api import e621_router
 from routes.fn_api import fn_router
+from routes.sc_api import sc_router
+from routes.ng_api import ng_router
+from routes.yt_api import yt_router
 from routes.fbr_api import fbr_router
 from routes.tg_api import tg_router
 from routes.posting_api import posting_router
@@ -51,6 +54,7 @@ from routes.whatsnew_api import whatsnew_router
 from routes.tech_api import tech_router
 from routes.media_api import media_router
 from routes.promos_api import promos_router
+from routes.podcast_api import podcast_router, feed_router
 from routes.backup_api import backup_router
 from routes.mirror_api import mirror_router
 from routes.discord_api import discord_router
@@ -387,6 +391,11 @@ async def security_headers_middleware(request: Request, call_next):
     elif request.url.path.startswith("/share/"):
         # Public beta-share draft preview — script-free CSP (see _build_share_csp).
         response.headers["Content-Security-Policy"] = _build_share_csp()
+    elif request.url.path.startswith("/feed/"):
+        # Public podcast surface (4.21.1): the same script-free policy plus same-origin
+        # media, for the episode page's <audio>. The RSS and the files carry it harmlessly.
+        response.headers["Content-Security-Policy"] = _build_share_csp().replace(
+            "img-src 'self' data: https:; ", "img-src 'self' data: https:; media-src 'self'; ")
     else:
         response.headers["Content-Security-Policy"] = _build_csp()
     return response
@@ -472,7 +481,7 @@ _AUTH_EXEMPT_PATHS = frozenset({
     # by `ig_relay_open`, a size cap, an image check and a per-address rate limit.
     "/api/ig/relay",
 })
-_AUTH_EXEMPT_PREFIXES = ("/css/", "/js/", "/vendor/", "/img/", "/api/ig/pubmedia/", "/share/")
+_AUTH_EXEMPT_PREFIXES = ("/css/", "/js/", "/vendor/", "/img/", "/api/ig/pubmedia/", "/share/", "/feed/")
 
 # Endpoints that return stored credentials / full data backups or perform
 # destructive actions. On an UNCONFIGURED (no-password) instance these must
@@ -579,6 +588,9 @@ app.include_router(thr_router)   # Threads routes (/api/thr/*)
 app.include_router(ig_router)    # Instagram routes (/api/ig/*)
 app.include_router(e621_router)  # e621 routes (/api/e621/*)
 app.include_router(fn_router)    # FurryNetwork routes (/api/fn/*)
+app.include_router(sc_router)    # SoundCloud routes (/api/sc/*), MEDIAPLATS (4.22.0)
+app.include_router(ng_router)    # Newgrounds routes (/api/ng/*), MEDIAPLATS (4.23.0)
+app.include_router(yt_router)    # YouTube routes (/api/yt/*), MEDIAPLATS (4.24.0)
 app.include_router(fbr_router)   # Furbooru routes (/api/fbr/*)
 app.include_router(tg_router)    # Telegram channel analytics (/api/tg/*)
 app.include_router(tech_router)  # Tech Centre consent/status/reports (/api/tech/*)
@@ -587,6 +599,8 @@ app.include_router(posting_router)  # Posting module routes (/api/posting/*)
 app.include_router(artwork_router)  # Artwork hub routes (/api/artwork/*)
 app.include_router(posts_router)    # Posts (microblog) module routes (/api/posts/*)
 app.include_router(promos_router)   # Saved promo cards (/api/promos/*), Promo Maker v2 (4.16.0)
+app.include_router(podcast_router)  # Podcast feeds (/api/podcasts/*), MEDIAPLATS (4.21.1)
+app.include_router(feed_router)     # The public feed surface (/feed/*) — auth-exempt, see _AUTH_EXEMPT_PREFIXES
 app.include_router(works_router)    # Unified Submissions hub (/api/works)
 app.include_router(collections_router)  # Collections (master container) routes (/api/collections/*)
 app.include_router(commissions_router)  # Commissions (client tracker) routes (/api/commissions/*)

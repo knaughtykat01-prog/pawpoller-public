@@ -56,14 +56,37 @@
             }
             return this._support;
         },
-        /* Does site `code` take this kind + extension? {ok, reason} (reason = the site's own sentence). */
-        acceptance(support, code, kind, ext) {
+        /* 4.21.0: the three-step rating ladder (mirrors posting/platforms/base.py rating_rank). */
+        RATING_WORD: ['general', 'mature', 'adult'],
+        ratingRank(r) {
+            const k = String(r || '').trim().toLowerCase();
+            if (['general', 'safe', 'sfw', 'g', 's', 'e', 'everyone', ''].includes(k)) return 0;
+            if (['mature', 'questionable', 'm', 'q', 'teen', 't'].includes(k)) return 1;
+            return 2;
+        },
+        /* Does site `code` take this kind + extension at this rating? {ok, reason} (reason = the site's own sentence).
+         * `kind` may be null (no file picked yet): only the rating is checked then. */
+        acceptance(support, code, kind, ext, rating) {
             const p = support && support.platforms && support.platforms[code];
             if (!p) return { ok: true, reason: '' };
-            const list = (p.accepts && p.accepts[kind]) || [];
-            if (list.map(x => String(x).toLowerCase()).includes(String(ext || '').toLowerCase())) return { ok: true, reason: '' };
-            const label = (window.platformByCode && window.platformByCode(code) || {}).label || code;
-            return { ok: false, reason: `${label} doesn't take ${ext ? ext + ' ' : ''}${kind} — it takes ${p.label || 'other kinds'}.` };
+            const byCode = (typeof window !== 'undefined' && window.platformByCode) ? window.platformByCode : null;
+            const label = (byCode && byCode(code) || {}).label || code;
+            if (kind) {
+                const list = (p.accepts && p.accepts[kind]) || [];
+                if (!list.map(x => String(x).toLowerCase()).includes(String(ext || '').toLowerCase())) {
+                    return { ok: false, reason: `${label} doesn't take ${ext ? ext + ' ' : ''}${kind} — it takes ${p.label || 'other kinds'}.` };
+                }
+            }
+            if (rating != null && p.max_rating) {
+                const have = this.ratingRank(rating), allowed = this.ratingRank(p.max_rating);
+                if (have > allowed) {
+                    const word = this.RATING_WORD[have];
+                    const sentence = (p.rating_refusals && p.rating_refusals[word])
+                        || `${label} doesn't take ${word} work — this piece is rated ${word}; it takes work up to ${this.RATING_WORD[allowed]}.`;
+                    return { ok: false, reason: sentence };
+                }
+            }
+            return { ok: true, reason: '' };
         },
 
         /* Measure a File: {media: {kind, duration_s, width, height, bytes}, poster: File|null, posterUrl}. */

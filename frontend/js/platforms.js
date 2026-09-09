@@ -33,6 +33,14 @@
         // view counter and never will (not in the Bot API at all), which the
         // "engagement" metric family already handles — same as Bluesky/Tumblr.
         { code: 'tg',   label: 'Telegram',     emoji: '\u{1F4E3}', color: '#2AABEE',               pollOnly: false },
+        // 4.21.1 (MEDIAPLATS): a podcast feed PawPoller serves — post-only (RSS has no listener counts).
+        { code: 'pod',  label: 'Podcast feed', emoji: '\u{1F399}', color: '#8e44ad',               pollOnly: false, postOnly: true },
+        // 4.22.0 (MEDIAPLATS): SoundCloud — audio, OAuth 2.1; plays / likes / comments.
+        { code: 'sc',   label: 'SoundCloud',   emoji: '\u{1F3B5}', color: '#ff5500',               pollOnly: false },
+        // 4.23.0 (MEDIAPLATS): Newgrounds — audio + movie portals, cookie session; Listens / Faves / score.
+        { code: 'ng',   label: 'Newgrounds',   emoji: '\u{1F3AC}', color: '#f5a623',               pollOnly: false },
+        // 4.24.0 (MEDIAPLATS): YouTube — video, Google OAuth; views / likes / comments (private until audited).
+        { code: 'yt',   label: 'YouTube',      emoji: '\u{1F4FA}', color: '#ff0000',               pollOnly: false },
     ];
 
     /* ── Metric metadata ──────────────────────────────────────────────────
@@ -81,6 +89,9 @@
         da:   V(),
         pix:  V(),
         fn:   V(),
+        sc:   V(),
+        ng:   V({ faves: 'Faves' }),
+        yt:   V({ faves: 'Likes' }),
         wp:   M('views', 'total_reads', 'total_votes', 'total_comments',
                 'reads', 'views', { views: 'Reads', faves: 'Votes' }),
         ik:   M('engagement', null, 'total_likes', 'total_comments',
@@ -122,7 +133,7 @@
     const _svgLogos = ['ik', 'ws', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'tg'];
     // Platforms with no bundled logo asset fall back to their emoji (the tile
     // renderer treats a null logo that way). Keeps a broken <img> off the hub.
-    const _noLogo = ['fn', 'fbr'];
+    const _noLogo = ['fn', 'fbr', 'pod', 'sc', 'ng', 'yt'];
     PLATFORMS.forEach(p => {
         p.logo = _noLogo.includes(p.code)
             ? null

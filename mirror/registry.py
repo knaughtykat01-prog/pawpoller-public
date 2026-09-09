@@ -58,12 +58,12 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, field
 
-# The 19 platforms that own a submissions/snapshots/poll_log trio. Inkbunny is
+# The 22 platforms that own a submissions/snapshots/poll_log trio. Inkbunny is
 # the unprefixed one — the app began as an Inkbunny analytics tool and those
 # tables kept their original names.
 PLATFORM_PREFIXES = (
     "", "ao3_", "bsky_", "da_", "e621_", "fa_", "fbr_", "fn_", "ig_", "ik_",
-    "mast_", "pix_", "sf_", "sqw_", "thr_", "tum_", "tw_", "wp_", "ws_",
+    "mast_", "ng_", "pix_", "sc_", "sf_", "sqw_", "thr_", "tum_", "tw_", "wp_", "ws_", "yt_",
 )
 
 SRV = "SRV"
@@ -404,6 +404,21 @@ _RULES += [
         "This install's outbox of deletes awaiting delivery. It describes rows "
         "that left THIS database; sending it as data would replay one install's "
         "outbox as the other's.",
+    ),
+    TableRule(
+        "podcast_feeds", LOC,
+        "A podcast feed PawPoller serves at a public address (4.21.1). The feed "
+        "lives where it is served — the server — and the desktop reaches it "
+        "through the paired connection, so the rows are local to the box that "
+        "hosts them. (The spec wanted SHR; that waits for the mirror to key an "
+        "episode through its feed's slug the way collection members go through "
+        "their collection's name.)",
+    ),
+    TableRule(
+        "podcast_episodes", LOC,
+        "One audio piece listed in one feed (4.21.1); keyed by a GUID minted once "
+        "so directories never see an episode change identity. Local for the same "
+        "reason as podcast_feeds.",
     ),
     TableRule(
         "promos", LOC,

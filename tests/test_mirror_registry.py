@@ -38,14 +38,14 @@ def test_every_live_table_is_registered(conn):
 
 def test_class_counts_match_the_spec(conn):
     counts = registry.audit(conn)["counts"]
-    # 19 platforms x (submissions, snapshots, poll_log) = 57, plus the 11
+    # 22 platforms x (submissions, snapshots, poll_log) = 66, plus the 11
     # cross-platform telemetry tables the spec enumerates.
     # +2 in 4.0.10: tg_snapshots and tg_poll_log. Telegram cannot join the
     # PLATFORM_PREFIXES loop that generates the other trios, because its
     # submissions table is SHR rather than SRV - PawPoller sends every
     # Telegram post itself, so unlike a polled platform the DESKTOP can
     # originate one. See the registry entries for the full reasoning.
-    assert counts["SRV"] == 70
+    assert counts["SRV"] == 79
     # The spec's §1 says 25 but enumerates 26; two of those (posting_queue,
     # posting_log) are reclassified HANDOFF here for the reasons in the module
     # docstring, leaving 24 that actually travel as shared rows.
@@ -57,7 +57,7 @@ def test_class_counts_match_the_spec(conn):
     assert counts["SHR"] == 27
     assert counts["HANDOFF"] == 2
     assert counts["DER"] == 1
-    assert counts["LOC"] == 6  # + this stage's own outbox, + promos (4.16.0)
+    assert counts["LOC"] == 8  # + this stage's own outbox, + promos (4.16.0), + podcast feeds / episodes (4.21.1)
 
 
 def test_unregistered_table_raises_rather_than_defaulting():

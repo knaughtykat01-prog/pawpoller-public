@@ -1582,6 +1582,48 @@ const Components = {
         return `<ul class="top-list">${lis}</ul>`;
     },
 
+    /* SoundCloud (4.22.0): the same list, routed to /sc/submission/. */
+    scTopList(items, valueKey, labelKey = 'title', idKey = 'submission_id') {
+        if (!items || items.length === 0) {
+            return '<p style="color:var(--text-muted);font-size:13px">No data yet</p>';
+        }
+        const lis = items.map(item => `
+            <li>
+                <span class="top-title" data-nav="/sc/submission/${encodeURIComponent(item[idKey])}">${Utils.escapeHtml(Utils.truncate(item[labelKey], 30))}</span>
+                <span class="top-value">${Utils.formatCompact(item[valueKey])}</span>
+            </li>
+        `).join('');
+        return `<ul class="top-list">${lis}</ul>`;
+    },
+
+    /* Newgrounds (4.23.0): the same list, routed to /ng/submission/. */
+    ngTopList(items, valueKey, labelKey = 'title', idKey = 'submission_id') {
+        if (!items || items.length === 0) {
+            return '<p style="color:var(--text-muted);font-size:13px">No data yet</p>';
+        }
+        const lis = items.map(item => `
+            <li>
+                <span class="top-title" data-nav="/ng/submission/${encodeURIComponent(item[idKey])}">${Utils.escapeHtml(Utils.truncate(item[labelKey], 30))}</span>
+                <span class="top-value">${Utils.formatCompact(item[valueKey])}</span>
+            </li>
+        `).join('');
+        return `<ul class="top-list">${lis}</ul>`;
+    },
+
+    /* YouTube (4.24.0): the same list, routed to /yt/submission/. */
+    ytTopList(items, valueKey, labelKey = 'title', idKey = 'submission_id') {
+        if (!items || items.length === 0) {
+            return '<p style="color:var(--text-muted);font-size:13px">No data yet</p>';
+        }
+        const lis = items.map(item => `
+            <li>
+                <span class="top-title" data-nav="/yt/submission/${encodeURIComponent(item[idKey])}">${Utils.escapeHtml(Utils.truncate(item[labelKey], 30))}</span>
+                <span class="top-value">${Utils.formatCompact(item[valueKey])}</span>
+            </li>
+        `).join('');
+        return `<ul class="top-list">${lis}</ul>`;
+    },
+
     /**
      * e621-specific submissions table.
      * Columns: Title, Type, Score, Favorites, Comments, Posted. e621 has no
@@ -1714,6 +1756,90 @@ const Components = {
     fnPollLogTable(polls) {
         if (!polls || polls.length === 0) {
             return '<p style="color:var(--text-muted)">No FurryNetwork polls recorded yet.</p>';
+        }
+        const rows = polls.map(p => `
+            <tr>
+                <td>${Utils.formatDateTime(p.started_at)}</td>
+                <td><span style="color:${p.status === 'success' ? 'var(--success)' : p.status === 'error' ? 'var(--danger)' : 'var(--warning)'}">${p.status}</span></td>
+                <td>${p.submissions_found || 0}</td>
+                <td>${p.snapshots_inserted || 0}</td>
+                <td>${p.duration_seconds ? p.duration_seconds.toFixed(1) + 's' : '--'}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(p.error_message || '')}</td>
+            </tr>
+        `).join('');
+
+        return `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Time</th><th>Status</th><th>Subs</th><th>Snaps</th><th>Duration</th><th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    },
+
+    /* SoundCloud's poll log (4.22.0) — the same columns as fn / fbr. */
+    scPollLogTable(polls) {
+        if (!polls || polls.length === 0) {
+            return '<p style="color:var(--text-muted)">No SoundCloud polls recorded yet.</p>';
+        }
+        const rows = polls.map(p => `
+            <tr>
+                <td>${Utils.formatDateTime(p.started_at)}</td>
+                <td><span style="color:${p.status === 'success' ? 'var(--success)' : p.status === 'error' ? 'var(--danger)' : 'var(--warning)'}">${p.status}</span></td>
+                <td>${p.submissions_found || 0}</td>
+                <td>${p.snapshots_inserted || 0}</td>
+                <td>${p.duration_seconds ? p.duration_seconds.toFixed(1) + 's' : '--'}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(p.error_message || '')}</td>
+            </tr>
+        `).join('');
+
+        return `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Time</th><th>Status</th><th>Subs</th><th>Snaps</th><th>Duration</th><th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    },
+
+    /* Newgrounds' poll log (4.23.0) — the same columns as sc / fn / fbr. */
+    ngPollLogTable(polls) {
+        if (!polls || polls.length === 0) {
+            return '<p style="color:var(--text-muted)">No Newgrounds polls recorded yet.</p>';
+        }
+        const rows = polls.map(p => `
+            <tr>
+                <td>${Utils.formatDateTime(p.started_at)}</td>
+                <td><span style="color:${p.status === 'success' ? 'var(--success)' : p.status === 'error' ? 'var(--danger)' : 'var(--warning)'}">${p.status}</span></td>
+                <td>${p.submissions_found || 0}</td>
+                <td>${p.snapshots_inserted || 0}</td>
+                <td>${p.duration_seconds ? p.duration_seconds.toFixed(1) + 's' : '--'}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(p.error_message || '')}</td>
+            </tr>
+        `).join('');
+
+        return `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Time</th><th>Status</th><th>Subs</th><th>Snaps</th><th>Duration</th><th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    },
+
+    /* YouTube's poll log (4.24.0) — the same columns as ng / sc / fn. */
+    ytPollLogTable(polls) {
+        if (!polls || polls.length === 0) {
+            return '<p style="color:var(--text-muted)">No YouTube polls recorded yet.</p>';
         }
         const rows = polls.map(p => `
             <tr>

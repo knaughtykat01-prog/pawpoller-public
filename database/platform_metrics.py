@@ -229,6 +229,24 @@ _REGISTRY: tuple[PlatformMetrics, ...] = (
         code="fn", label="FurryNetwork", table="fn_submissions", snapshots="fn_snapshots",
         family="views", views="views", faves="favorites_count", comments="comments_count",
     ),
+    # SoundCloud (4.22.0): plays / likes / comments in the standard triple's columns.
+    PlatformMetrics(
+        code="sc", label="SoundCloud", table="sc_submissions", snapshots="sc_snapshots",
+        family="views", views="views", faves="favorites_count", comments="comments_count",
+    ),
+    # Newgrounds (4.23.0): Listens / Views, Faves, reviews (not counted — 0); the site's own
+    # score (x / 5.00), votes and downloads ride along as extras.
+    PlatformMetrics(
+        code="ng", label="Newgrounds", table="ng_submissions", snapshots="ng_snapshots",
+        family="views", views="views", faves="favorites_count", comments="comments_count",
+        extra=("score", "votes", "downloads_count"), labels={"faves": "Faves"},
+    ),
+    # YouTube (4.24.0): views / likes / comments from videos.list statistics.
+    PlatformMetrics(
+        code="yt", label="YouTube", table="yt_submissions", snapshots="yt_snapshots",
+        family="views", views="views", faves="favorites_count", comments="comments_count",
+        labels={"faves": "Likes"},
+    ),
     PlatformMetrics(
         code="fbr", label="Furbooru", table="fbr_submissions", snapshots="fbr_snapshots",
         family="score", score="score", faves="favorites_count", comments="comments_count",

@@ -279,6 +279,17 @@ def test_setup_mode_connected(api, monkeypatch):
     assert saved["auto_sync_enabled"] is False
 
 
+def test_sync_buttons_name_connected_mode(api, monkeypatch):
+    """4.24.1: connected mode saved but not yet applied used to answer "not paired"."""
+    monkeypatch.setattr(config, "get_settings", lambda: {"setup_mode": config.SETUP_MODE_CONNECTED,
+                                                         "posting_server_url": "https://box.example", "posting_server_api_key": "pp_x"})
+    for path in ("/api/settings/sync/pull-now", "/api/settings/sync/push-now"):
+        r = api.post(path)
+        assert r.status_code == 400 and "connected mode" in r.json()["detail"] and "Restart now" in r.json()["detail"]
+    monkeypatch.setattr(config, "get_settings", lambda: {"setup_mode": config.SETUP_MODE_STANDALONE})
+    assert "Not paired" in api.post("/api/settings/sync/pull-now").json()["detail"]
+
+
 # ── migration (phase 3, 4.14.0) ──────────────────────────────────────────────
 
 def test_retire_local_database(tmp_path):

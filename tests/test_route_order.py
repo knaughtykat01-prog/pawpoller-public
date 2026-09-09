@@ -44,6 +44,9 @@ SNAPSHOT_PATHS = {
     "fn": "/api/fn/submissions/1/snapshots",
     "fbr": "/api/fbr/submissions/1/snapshots",
     "tg": "/api/tg/submissions/1/snapshots",
+    "sc": "/api/sc/submissions/1/snapshots",
+    "ng": "/api/ng/submissions/1/snapshots",
+    "yt": "/api/yt/submissions/1/snapshots",
 }
 
 

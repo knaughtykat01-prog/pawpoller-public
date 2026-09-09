@@ -174,6 +174,22 @@ const API = {
     /* ── Accounts registry (multi-account) ─────────────────────── */
     getAccounts(platform) { return this.get('/api/accounts', platform ? { platform } : {}); },
 
+    /* ── Podcast feeds (MEDIAPLATS §4, 4.21.1) ─────────────────────────────── */
+    getPodcasts() { return this.get('/api/podcasts'); },
+    getPodcast(feedId) { return this.get(`/api/podcasts/${feedId}`); },
+    createPodcast(body) { return this.post('/api/podcasts', body); },
+    updatePodcast(feedId, body) { return this.patch(`/api/podcasts/${feedId}`, body); },
+    deletePodcast(feedId) { return this.delete(`/api/podcasts/${feedId}`); },
+    addPodcastEpisode(feedId, body) { return this.post(`/api/podcasts/${feedId}/episodes`, body); },
+    updatePodcastEpisode(episodeId, body) { return this.patch(`/api/podcasts/episodes/${episodeId}`, body); },
+    removePodcastEpisode(episodeId) { return this.delete(`/api/podcasts/episodes/${episodeId}`); },
+    getPieceEpisodes(name) { return this.get(`/api/podcasts/piece/${encodeURIComponent(name)}`); },
+    uploadPodcastArt(feedId, file) {
+        const fd = new FormData();
+        fd.append('file', file, file.name);
+        return this._sendForm('POST', `/api/podcasts/${feedId}/artwork`, fd);
+    },
+
     /* ── Saved promo cards (Promo Maker v2 release 2, 4.16.0) ───────────── */
     listPromos(story) { return this.get('/api/promos', story ? { story } : {}); },
     getPromo(id) { return this.get(`/api/promos/${id}`); },
@@ -723,6 +739,60 @@ const API = {
     triggerE621Poll() { return this.post('/api/e621/poll/trigger'); },
     fullE621Resync() { return this.post('/api/e621/poll/full-resync'); },
     getE621PollProgress() { return this.get('/api/e621/poll/progress'); },
+    /* ── YouTube (MEDIAPLATS §6, 4.24.0) ──────────────────────────── */
+    getYTAuthStatus(accountId) { return this.get('/api/yt/auth/status', accountId ? { account_id: accountId } : undefined); },
+    /* Saves the Google project's client id + secret and returns { url, redirect_uri }. */
+    ytConnect(data) { return this.post('/api/yt/auth/connect', data); },
+    getYTAuthorizeUrl(accountId) { return this.get('/api/yt/auth/authorize-url', accountId ? { account_id: accountId } : undefined); },
+    ytDisconnect(accountId) { return this.post('/api/yt/auth/disconnect' + (accountId ? `?account_id=${accountId}` : '')); },
+    getYTStatus() { return this.get('/api/yt/status'); },
+    getYTSummary(params) { return this.get('/api/yt/summary', params); },
+    getYTSubmissions(params) { return this.get('/api/yt/submissions', params); },
+    getYTSubmission(id) { return this.get(`/api/yt/submissions/${encodeURIComponent(id)}`); },
+    getYTSnapshots(id, params) { return this.get(`/api/yt/submissions/${encodeURIComponent(id)}/snapshots`, params); },
+    getYTAggregate(params) { return this.get('/api/yt/aggregate', params); },
+    getYTComparison(ids, params) { return this.get('/api/yt/comparison', { ids: ids.join(','), ...params }); },
+    getYTPollLog(limit) { return this.get('/api/yt/poll_log', { limit }); },
+    triggerYTPoll() { return this.post('/api/yt/poll/trigger'); },
+    fullYTResync() { return this.post('/api/yt/poll/full-resync'); },
+    getYTPollProgress() { return this.get('/api/yt/poll/progress'); },
+
+    /* ── Newgrounds (MEDIAPLATS §5, 4.23.0) ───────────────────────── */
+    getNGAuthStatus(accountId) { return this.get('/api/ng/auth/status', accountId ? { account_id: accountId } : undefined); },
+    /* A pasted cookie string + username; the route refuses a session signed in as someone else. */
+    ngConnect(data) { return this.post('/api/ng/auth/connect', data); },
+    ngDisconnect(accountId) { return this.post('/api/ng/auth/disconnect' + (accountId ? `?account_id=${accountId}` : '')); },
+    getNGStatus() { return this.get('/api/ng/status'); },
+    getNGSummary(params) { return this.get('/api/ng/summary', params); },
+    getNGSubmissions(params) { return this.get('/api/ng/submissions', params); },
+    getNGSubmission(id) { return this.get(`/api/ng/submissions/${encodeURIComponent(id)}`); },
+    getNGSnapshots(id, params) { return this.get(`/api/ng/submissions/${encodeURIComponent(id)}/snapshots`, params); },
+    getNGAggregate(params) { return this.get('/api/ng/aggregate', params); },
+    getNGComparison(ids, params) { return this.get('/api/ng/comparison', { ids: ids.join(','), ...params }); },
+    getNGPollLog(limit) { return this.get('/api/ng/poll_log', { limit }); },
+    triggerNGPoll() { return this.post('/api/ng/poll/trigger'); },
+    fullNGResync() { return this.post('/api/ng/poll/full-resync'); },
+    getNGPollProgress() { return this.get('/api/ng/poll/progress'); },
+
+    /* ── SoundCloud (MEDIAPLATS §3, 4.22.0) ───────────────────────── */
+    getSCAuthStatus(accountId) { return this.get('/api/sc/auth/status', accountId ? { account_id: accountId } : undefined); },
+    /* Saves the app's client id + secret and returns { url, redirect_uri } — the browser
+     * approval at SoundCloud is the one authorisation for both polling and posting. */
+    scConnect(data) { return this.post('/api/sc/auth/connect', data); },
+    getSCAuthorizeUrl(accountId) { return this.get('/api/sc/auth/authorize-url', accountId ? { account_id: accountId } : undefined); },
+    scDisconnect(accountId) { return this.post('/api/sc/auth/disconnect' + (accountId ? `?account_id=${accountId}` : '')); },
+    getSCStatus() { return this.get('/api/sc/status'); },
+    getSCSummary(params) { return this.get('/api/sc/summary', params); },
+    getSCSubmissions(params) { return this.get('/api/sc/submissions', params); },
+    getSCSubmission(id) { return this.get(`/api/sc/submissions/${encodeURIComponent(id)}`); },
+    getSCSnapshots(id, params) { return this.get(`/api/sc/submissions/${encodeURIComponent(id)}/snapshots`, params); },
+    getSCAggregate(params) { return this.get('/api/sc/aggregate', params); },
+    getSCComparison(ids, params) { return this.get('/api/sc/comparison', { ids: ids.join(','), ...params }); },
+    getSCPollLog(limit) { return this.get('/api/sc/poll_log', { limit }); },
+    triggerSCPoll() { return this.post('/api/sc/poll/trigger'); },
+    fullSCResync() { return this.post('/api/sc/poll/full-resync'); },
+    getSCPollProgress() { return this.get('/api/sc/poll/progress'); },
+
     /* ── FurryNetwork convenience methods ─────────────────────────── */
     getFNAuthStatus() { return this.get('/api/fn/auth/status'); },
     fnConnect(data) { return this.post('/api/fn/auth/connect', data); },

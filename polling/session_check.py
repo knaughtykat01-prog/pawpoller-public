@@ -34,13 +34,14 @@ _lock = asyncio.Lock()
 
 # Platforms with a real validate_session() network check. Order = check order.
 CHECKABLE: tuple[str, ...] = ("ao3", "sf", "sqw", "bsky", "mast", "tum", "pix",
-                              "thr", "ig", "e621", "fn", "fbr", "tg")
+                              "thr", "ig", "e621", "fn", "fbr", "tg", "sc", "ng", "yt")
 
 # Human labels for log/UI fallback (the frontend has its own map too).
 LABELS = {
     "ao3": "AO3", "sf": "SoFurry", "sqw": "SquidgeWorld", "bsky": "Bluesky",
     "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads",
-    "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru",
+    "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "sc": "SoundCloud",
+    "ng": "Newgrounds", "yt": "YouTube",
     "tg": "Telegram",
 }
 
@@ -81,6 +82,12 @@ def _configured(code: str, s: dict) -> bool:
         return bool(s.get("e621_username") and s.get("e621_api_key"))
     if code == "fn":
         return bool(s.get("fn_username") and (s.get("fn_password") or s.get("fn_refresh_token")))
+    if code == "sc":
+        return bool(s.get("sc_client_id") and s.get("sc_client_secret") and s.get("sc_refresh_token"))
+    if code == "ng":
+        return bool(s.get("ng_cookie"))
+    if code == "yt":
+        return bool(s.get("yt_client_id") and s.get("yt_client_secret") and s.get("yt_refresh_token"))
     if code == "fbr":
         return bool(s.get("fbr_username"))   # public read API — username is enough
     if code == "tg":
@@ -174,8 +181,22 @@ async def _validate(code: str, s: dict):
     elif code == "fbr":
         from polling.fbr_poller import _get_or_create_client
         c = _get_or_create_client(s, s.get("fbr_username", ""), s.get("fbr_api_key", ""))
+    elif code == "sc":
+        from polling.sc_poller import _get_or_create_client
+        c = _get_or_create_client({k: s.get(k, "") for k in (
+            "sc_client_id", "sc_client_secret", "sc_access_token", "sc_refresh_token", "sc_token_expires_at")})
+    elif code == "yt":
+        from polling.yt_poller import _get_or_create_client
+        c = _get_or_create_client({k: s.get(k, "") for k in (
+            "yt_client_id", "yt_client_secret", "yt_access_token", "yt_refresh_token", "yt_token_expires_at")})
     elif code == "tg":
         c = _TgSessionProbe(s)
+    elif code == "ng":
+        # The Newgrounds client answers the FA-shaped dict; only `ok` (signed in AND the
+        # right account) counts as valid here.
+        from polling.ng_poller import _get_or_create_client
+        c = _get_or_create_client({"ng_username": s.get("ng_username", ""), "ng_cookie": s.get("ng_cookie", "")})
+        return bool((await c.validate_session()).get("ok"))
     else:
         raise ValueError(f"unknown platform {code}")
     return await c.validate_session()

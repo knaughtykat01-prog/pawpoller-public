@@ -32,7 +32,7 @@
     const PLATFORMS = (window.PLATFORMS || []).map(p => p.code).length
         ? window.PLATFORMS.map(p => p.code)
         : ['ib', 'fa', 'ws', 'sf', 'sqw', 'ao3', 'da', 'wp', 'ik', 'bsky', 'tw',
-           'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg'];
+           'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt'];
     const LABELS = (window.PLATFORMS || []).reduce(
         (acc, p) => { acc[p.code] = p.label; return acc; },
         {
@@ -40,7 +40,7 @@
             sqw: 'SquidgeWorld', ao3: 'AO3', da: 'DeviantArt', wp: 'Wattpad',
             ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon',
             tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram',
-            e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru', tg: 'Telegram',
+            e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru', tg: 'Telegram', sc: 'SoundCloud', ng: 'Newgrounds', yt: 'YouTube',
         });
 
     let _data = {};

@@ -47,6 +47,26 @@ class StoryUploadPackage:
     height: int = 0
 
 
+# The three-step rating ladder every poster maps its own vocabulary onto (4.21.0). The
+# words are the app's canonical ratings; the aliases are what packages have carried
+# historically (each poster's _rating_to_* accepts the same set).
+RATING_WORD = ("general", "mature", "adult")
+_RATING_ALIASES = {
+    "general": 0, "safe": 0, "sfw": 0, "g": 0, "s": 0, "e": 0, "everyone": 0, "": 0,
+    "mature": 1, "questionable": 1, "m": 1, "q": 1, "teen": 1, "t": 1,
+    "adult": 2, "explicit": 2, "nsfw": 2, "x": 2, "a": 2, "porn": 2,
+}
+
+
+def rating_rank(rating: str | None) -> int:
+    """0 general · 1 mature · 2 adult; an unknown word is treated as adult (never leaks
+    something explicit onto an SFW site by mislabelling)."""
+    key = str(rating or "").strip().lower()
+    if key in _RATING_ALIASES:
+        return _RATING_ALIASES[key]
+    return 2
+
+
 class PlatformPoster(ABC):
     """Base class for all platform posting implementations."""
 
@@ -75,6 +95,12 @@ class PlatformPoster(ABC):
     # Derived from accepted_file_types unless the poster declares it. Read by media_refusal()
     # (the manager's pre-network gate) and by GET /api/platforms/media (the pickers grey out).
     accepted_media: dict | None = None
+    # 4.21.0 (MEDIAPLATS §2): the highest rating this site takes — "general", "mature" or
+    # "adult". A piece rated above it is refused by rating_refusal() before the network and
+    # greyed in the pickers with the reason, which is what makes an SFW-only site (YouTube,
+    # SoundCloud) honest rather than hidden. Every art site takes adult work, so the default
+    # changes nothing for the existing posters.
+    max_rating: str = "adult"
     # "any", "desktop", or "server" — which instance may execute this platform's
     # posts. The scheduler filters on it in SQL (posting_queries.get_pending_queue),
     # and manager re-queues a job with requires='desktop' when the server can't do
@@ -231,10 +257,25 @@ class PlatformPoster(ABC):
             return None
         return media_kinds.refusal(self.platform_name or self.platform_id, accepts, kind, (package.file_type or "").lower())
 
+    def rating_refusal(self, package: StoryUploadPackage) -> str | None:
+        """One sentence when the package's rating is above what this site takes (4.21.0),
+        else None. Checked by the manager beside media_refusal(), before any network call."""
+        have = rating_rank(package.rating)
+        allowed = rating_rank(self.max_rating)
+        if have <= allowed:
+            return None
+        return (f"{self.platform_name or self.platform_id} doesn't take {RATING_WORD[have]} work — "
+                f"this piece is rated {RATING_WORD[have]}; it takes work up to {RATING_WORD[allowed]}.")
+
+    def refusal(self, package: StoryUploadPackage) -> str | None:
+        """The pre-network gate the manager runs (4.21.0): the media-kind refusal, else the
+        rating refusal, else None."""
+        return self.media_refusal(package) or self.rating_refusal(package)
+
     def validate(self, package: StoryUploadPackage) -> list[str]:
         """Validate a package before posting. Returns list of errors (empty = OK)."""
         errors = []
-        refusal = self.media_refusal(package)
+        refusal = self.media_refusal(package) or self.rating_refusal(package)
         if refusal:
             errors.append(refusal)
         if not package.title:

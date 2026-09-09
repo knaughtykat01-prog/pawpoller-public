@@ -125,9 +125,13 @@ class TestClientContract:
         from clients.weasyl.client import WeasylClient
         from clients.da.client import DAClient
         from clients.pix.client import PixClient
+        from clients.sc.client import ScClient
+        from clients.ng.client import NgClient
+        from clients.yt.client import YtClient
         classes = {
             "bsky": BskyClient, "mast": MastClient, "tw": TWClient, "wp": WPClient,
             "ik": IKClient, "weasyl": WeasylClient, "da": DAClient, "pix": PixClient,
+            "sc": ScClient, "ng": NgClient, "yt": YtClient,
         }
         for name, cls in classes.items():
             fn = getattr(cls, "get_follower_count", None)
@@ -139,7 +143,10 @@ class TestClientContract:
         # `tg` is a channel's SUBSCRIBER count — the only per-channel number the
         # Bot API exposes, and the only stat Telegram can be polled for at all.
         assert followers.FOLLOWER_PLATFORMS == {
-            "ws", "da", "wp", "ik", "bsky", "tw", "mast", "pix", "fn", "tg"}
+            "ws", "da", "wp", "ik", "bsky", "tw", "mast", "pix", "fn", "tg",
+            "sc",   # SoundCloud: followers_count on /me (4.22.0)
+            "ng",   # Newgrounds: the profile's FANS count (4.23.0)
+            "yt"}   # YouTube: the channel's subscriberCount (4.24.0)
 
 
 # ── API endpoint ──────────────────────────────────────────────

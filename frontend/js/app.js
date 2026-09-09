@@ -91,6 +91,15 @@ const App = {
     _fnSortState: { field: 'views', order: 'desc' },
     _fnCompareIds: new Set(),
     _fnCompareMetric: 'views',
+    _scSortState: { field: 'views', order: 'desc' },
+    _scCompareIds: new Set(),
+    _scCompareMetric: 'views',
+    _ngSortState: { field: 'views', order: 'desc' },
+    _ngCompareIds: new Set(),
+    _ngCompareMetric: 'views',
+    _ytSortState: { field: 'views', order: 'desc' },
+    _ytCompareIds: new Set(),
+    _ytCompareMetric: 'views',
     _fbrSortState: { field: 'score', order: 'desc' },
     _fbrCompareIds: new Set(),
     _fbrCompareMetric: 'score',
@@ -1168,6 +1177,30 @@ const App = {
             this.renderFNDetail(parts[2]);
         } else if (parts[0] === 'fn' && parts[1] === 'compare') {
             this.renderFNCompare();
+        } else if (parts[0] === 'sc' && (!parts[1] || parts[1] === '')) {
+            this.renderSCDashboard();
+        } else if (parts[0] === 'sc' && parts[1] === 'submissions' && !parts[2]) {
+            this.renderSCSubmissions();
+        } else if (parts[0] === 'sc' && parts[1] === 'submission' && parts[2]) {
+            this.renderSCDetail(parts[2]);
+        } else if (parts[0] === 'sc' && parts[1] === 'compare') {
+            this.renderSCCompare();
+        } else if (parts[0] === 'ng' && (!parts[1] || parts[1] === '')) {
+            this.renderNGDashboard();
+        } else if (parts[0] === 'ng' && parts[1] === 'submissions' && !parts[2]) {
+            this.renderNGSubmissions();
+        } else if (parts[0] === 'ng' && parts[1] === 'submission' && parts[2]) {
+            this.renderNGDetail(parts[2]);
+        } else if (parts[0] === 'ng' && parts[1] === 'compare') {
+            this.renderNGCompare();
+        } else if (parts[0] === 'yt' && (!parts[1] || parts[1] === '')) {
+            this.renderYTDashboard();
+        } else if (parts[0] === 'yt' && parts[1] === 'submissions' && !parts[2]) {
+            this.renderYTSubmissions();
+        } else if (parts[0] === 'yt' && parts[1] === 'submission' && parts[2]) {
+            this.renderYTDetail(parts[2]);
+        } else if (parts[0] === 'yt' && parts[1] === 'compare') {
+            this.renderYTCompare();
         } else if (parts[0] === 'fbr' && (!parts[1] || parts[1] === '')) {
             this.renderFBRDashboard();
         } else if (parts[0] === 'fbr' && parts[1] === 'submissions' && !parts[2]) {
@@ -1239,6 +1272,9 @@ const App = {
         } else if (parts[0] === 'promo') {
             // #/promo · #/promo/new[?story=<name>] · #/promo/<id>  (4.16.0)
             if (window.Promo) window.Promo.render(parts[1] || null, this._routeQuery || '');
+        } else if (parts[0] === 'podcasts') {
+            // #/podcasts · #/podcasts/<feed_id>  (4.21.1, MEDIAPLATS §4)
+            if (window.Podcasts) window.Podcasts.render(parts[1] || null);
         } else if (parts[0] === 'imagetool') {
             if (window.ImageTool) window.ImageTool.render();
         } else if (parts[0] === 'artwork' && !parts[1]) {
@@ -1624,6 +1660,9 @@ const App = {
                 { key: 'tw', auth: auth.twAuth?.has_credentials, name: 'Twitter', statusFn: 'getTWStatus', logFn: 'getTWPollLog', tableFn: 'twPollLogTable' },
                 { key: 'e621', auth: auth.e621Auth?.has_credentials, name: 'e621', statusFn: 'getE621Status', logFn: 'getE621PollLog', tableFn: 'e621PollLogTable' },
                 { key: 'fn', auth: auth.fnAuth?.has_credentials, name: 'FurryNetwork', statusFn: 'getFNStatus', logFn: 'getFNPollLog', tableFn: 'fnPollLogTable' },
+                { key: 'sc', auth: auth.scAuth?.has_credentials, name: 'SoundCloud', statusFn: 'getSCStatus', logFn: 'getSCPollLog', tableFn: 'scPollLogTable' },
+                { key: 'ng', auth: auth.ngAuth?.has_credentials, name: 'Newgrounds', statusFn: 'getNGStatus', logFn: 'getNGPollLog', tableFn: 'ngPollLogTable' },
+                { key: 'yt', auth: auth.ytAuth?.has_credentials, name: 'YouTube', statusFn: 'getYTStatus', logFn: 'getYTPollLog', tableFn: 'ytPollLogTable' },
                 { key: 'fbr', auth: auth.fbrAuth?.has_credentials, name: 'Furbooru', statusFn: 'getFBRStatus', logFn: 'getFBRPollLog', tableFn: 'fbrPollLogTable' },
                 // Telegram's auth lives in the channel settings, not an
                 // /auth/status route, so its gate reads the health endpoint's
@@ -1778,7 +1817,7 @@ const App = {
     _platformLabels: {
         ib: 'Inkbunny', fa: 'FurAffinity', ws: 'Weasyl', sf: 'SoFurry',
         sqw: 'SquidgeWorld', ao3: 'AO3', da: 'DeviantArt', wp: 'Wattpad',
-        ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon', tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram', e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru',
+        ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon', tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram', e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru', sc: 'SoundCloud', ng: 'Newgrounds', yt: 'YouTube',
         tg: 'Telegram',
     },
 
@@ -1790,7 +1829,7 @@ const App = {
         // Mirrors polling/session_check.py::CHECKABLE. Telegram's bot token
         // does not expire, but the bot can be removed from the channel — the
         // check catches that, which is otherwise invisible until a post fails.
-        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg'];
+        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt'];
         const LABELS = (window.PlatformHealth && window.PlatformHealth.LABELS) || {};
         const DOT = { valid: 'connected', expired: 'disconnected', error: 'warn', unconfigured: 'muted' };
         const WORD = { valid: 'Valid', expired: 'Expired', error: 'Unverified', unconfigured: 'Not configured' };
@@ -1890,7 +1929,7 @@ const App = {
      * Falls back to the cached snapshot only if the health fetch fails/empty. */
     async _configuredPollCodes() {
         const ALL = ['ib', 'fa', 'ws', 'sf', 'sqw', 'ao3', 'da', 'wp', 'ik',
-            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg'];
+            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt'];
         try {
             const health = await API.getPlatformsHealth();
             if (health && typeof health === 'object') {
@@ -1905,7 +1944,7 @@ const App = {
             bsky: a.bskyAuth?.has_credentials, tw: a.twAuth?.has_credentials, mast: a.mastAuth?.has_credentials,
             tum: a.tumAuth?.has_credentials, pix: a.pixAuth?.has_credentials, thr: a.thrAuth?.has_credentials,
             ig: a.igAuth?.has_credentials, e621: a.e621Auth?.has_credentials,
-            fn: a.fnAuth?.has_credentials, fbr: a.fbrAuth?.has_credentials,
+            fn: a.fnAuth?.has_credentials, fbr: a.fbrAuth?.has_credentials, sc: a.scAuth?.has_credentials, ng: a.ngAuth?.has_credentials, yt: a.ytAuth?.has_credentials,
             // No tgAuth snapshot exists — Telegram is configured through the
             // channel settings rather than an /auth route — so this fallback
             // asks PlatformHealth, which reads the same server-side gate.
@@ -1945,7 +1984,7 @@ const App = {
         if (!confirm(`Full resync re-fetches every ${label} submission from scratch. This can take several minutes and will hit ${label}'s rate limits hard. Continue?`)) return;
         btn.disabled = true;
         btn.textContent = 'Syncing...';
-        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync' };
+        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync' };
         try {
             await API[fns[platform]]();
             btn.textContent = 'Done!';
@@ -1999,6 +2038,122 @@ const App = {
      * match; an empty query restores the normal active-tab-only view. Lazy
      * tabs (Polling / Logs) are eager-loaded the first time a search runs so
      * their content is searchable too. */
+    /* ── Settings pages (4.25.0, SETTINGSNAV phase 1) ──────────────────────
+     * Four groups, twelve pages, a left rail. The render still builds the old
+     * eleven panels (their markup and every id / handler are untouched); the
+     * blocks are then moved into pages: a block's own data-page wins, else the
+     * whole panel goes to the page its old tab maps to. The old tab names keep
+     * deep-linking through _settingsPageFor. Phase 2 (Platforms list + detail)
+     * and phase 3 (the notifications matrix) build on these containers. */
+    SETTINGS_PAGES: [
+        { key: 'connection', group: 'Account', label: 'Connection', blurb: 'This install, its server, and what syncs between them.' },
+        { key: 'preferences', group: 'Account', label: 'Preferences', blurb: '' },
+        { key: 'appearance', group: 'Account', label: 'Appearance', blurb: '' },
+        { key: 'platforms', group: 'Publishing', label: 'Platforms', blurb: 'Connect a site once; it then shows up in the publish pickers and polls on the Polling schedule.' },
+        { key: 'publishing', group: 'Publishing', label: 'Publishing defaults', blurb: '' },
+        { key: 'polling', group: 'Monitoring', label: 'Polling', blurb: 'How often the numbers come in.' },
+        { key: 'notifications', group: 'Monitoring', label: 'Notifications', blurb: 'Who gets told, and about what.' },
+        { key: 'security', group: 'System', label: 'Security', blurb: '' },
+        { key: 'data', group: 'System', label: 'Data & backups', blurb: '' },
+        { key: 'logs', group: 'System', label: 'Logs & diagnostics', blurb: '' },
+        { key: 'about', group: 'System', label: 'About & updates', blurb: '' },
+    ],
+    /* Where each OLD tab's blocks live now (a block's own data-page overrides). */
+    SETTINGS_TAB_PAGE: {
+        general: 'connection', appearance: 'appearance', platforms: 'platforms', polling: 'polling',
+        telegram: 'notifications', digest: 'notifications', data: 'data', logs: 'logs',
+        about: 'about', security: 'security', diagnostics: 'logs', publishing: 'publishing',
+    },
+    /* ── Notifications matrix (4.27.0, SETTINGSNAV phase 3) ────────────────
+     * The per-site "desktop notifications" rows lived inside twenty platform
+     * cards, with the two master switches under App Preferences. They are the
+     * same rows here — moved, not copied, so their ids keep working — laid out
+     * as one table on the Notifications page: masters first, then sites A→Z.
+     * One delegated listener saves a site switch as `<code>_notifications_enabled`
+     * (or `<code>_watcher_notifications_enabled`) the moment it is flipped; it
+     * replaced twenty-one copies of the same block. */
+    _buildNotificationMatrix() {
+        const page = document.querySelector('.settings-page[data-page="notifications"]');
+        if (!page || page.querySelector('.notif-matrix')) return;
+        const rowOf = (input) => input?.closest('.settings-row');
+        const masters = ['pref-notifications', 'pref-watcher-notif'].map(id => rowOf(document.getElementById(id))).filter(Boolean);
+        const sites = Array.from(document.querySelectorAll('input[id^="pref-"][id$="-notifications"], input[id^="pref-"][id$="-watcher-notif"]'))
+            .filter(i => i.id !== 'pref-notifications' && i.id !== 'pref-watcher-notif')
+            .map(i => {
+                const code = i.id.replace(/^pref-/, '').replace(/-(watcher-notif|notifications)$/, '');
+                const p = (window.PLATFORMS || []).find(x => x.code === code);
+                return { row: rowOf(i), code, label: p ? p.label : code.toUpperCase(), watcher: i.id.endsWith('watcher-notif') };
+            })
+            .filter(o => o.row);
+        if (!masters.length && !sites.length) return;
+        sites.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }) || (a.watcher ? 1 : -1));
+        const section = document.createElement('div');
+        section.className = 'settings-section notif-matrix';
+        section.dataset.page = 'notifications';
+        section.innerHTML = '<h3>Desktop alerts</h3>'
+            + '<p style="font-size:12px;color:var(--text-muted);margin:0 0 6px">The two master switches, then one per site. '
+            + 'Each saves the moment you flip it. Telegram, Discord and the weekly email have their own sections below.</p>'
+            + '<div class="notif-masters"></div><div class="notif-sites"></div>';
+        masters.forEach(r => section.querySelector('.notif-masters').appendChild(r));
+        const grid = section.querySelector('.notif-sites');
+        sites.forEach(o => {
+            const lbl = o.row.querySelector('.settings-label');
+            if (lbl) lbl.textContent = o.watcher ? `${o.label} watchers` : o.label;
+            grid.appendChild(o.row);
+        });
+        grid.addEventListener('change', async (e) => {
+            const i = e.target;
+            if (!i.id || !i.id.startsWith('pref-')) return;
+            const key = i.id.slice(5).replace(/-watcher-notif$/, '_watcher_notifications_enabled').replace(/-notifications$/, '_notifications_enabled');
+            try { await API.savePreferences({ [key]: i.checked }); }
+            catch (err) { i.checked = !i.checked; alert('Failed to save preference: ' + err.message); }
+        });
+        const head = page.querySelector('.settings-page-head');
+        if (head && head.nextSibling) page.insertBefore(section, head.nextSibling);
+        else page.appendChild(section);
+    },
+
+    _settingsPageFor(name) {
+        if (!name) return 'connection';
+        if (this.SETTINGS_PAGES.some(p => p.key === name)) return name;
+        return this.SETTINGS_TAB_PAGE[name] || 'connection';
+    },
+    _settingsRailHtml(active, status) {
+        const groups = [];
+        this.SETTINGS_PAGES.forEach(p => {
+            if (!groups.includes(p.group)) groups.push(p.group);
+        });
+        return groups.map(g => `
+            <div class="settings-nav-group">${g}</div>
+            ${this.SETTINGS_PAGES.filter(p => p.group === g).map(p => `
+            <button class="settings-nav-item ${p.key === active ? 'active' : ''}" data-spage="${p.key}">
+                <span>${p.label}</span>${status && status[p.key] ? `<span class="settings-nav-status">${Utils.escapeHtml(String(status[p.key]))}</span>` : ''}
+            </button>`).join('')}`).join('');
+    },
+    _layoutSettingsPages() {
+        const pages = {};
+        document.querySelectorAll('.settings-page').forEach(p => { pages[p.dataset.page] = p; });
+        // Processing order = the order blocks land on a shared page: About before General
+        // puts the Danger zone last, Polling before General puts the actions above the
+        // interval table, General before Appearance / Data puts Setup Mode first on Connection.
+        const order = ['about', 'polling', 'general', 'appearance', 'data', 'telegram', 'digest', 'platforms', 'logs', 'diagnostics', 'security'];
+        const panels = Array.from(document.querySelectorAll('.settings-tab-content'))
+            .sort((a, b) => order.indexOf(a.dataset.tabContent) - order.indexOf(b.dataset.tabContent));
+        panels.forEach(panel => {
+            const tab = panel.dataset.tabContent;
+            const home = pages[this.SETTINGS_TAB_PAGE[tab] || 'connection'];
+            // Blocks with their own destination leave first.
+            panel.querySelectorAll(':scope > [data-page]').forEach(unit => {
+                const dest = pages[unit.dataset.page];
+                if (dest) dest.appendChild(unit);
+            });
+            // The rest travel as the panel (so panel-scoped CSS such as the Platforms grid survives).
+            panel.style.display = '';
+            if (panel.children.length && home) home.appendChild(panel);
+            else panel.remove();
+        });
+    },
+
     _wireSettingsSearch(tabBar) {
         const input = document.getElementById('settings-search');
         const info = document.getElementById('settings-search-info');
@@ -2015,13 +2170,14 @@ const App = {
         };
 
         const restore = () => {
-            const active = tabBar.querySelector('.settings-tab.active')?.dataset.stab || 'general';
-            tabBar.style.display = '';
-            document.querySelectorAll('.settings-tab-content').forEach(p => {
-                p.style.display = p.dataset.tabContent === active ? '' : 'none';
+            const active = tabBar.querySelector('.settings-nav-item.active')?.dataset.spage || 'connection';
+            tabBar.classList.remove('searching');
+            document.querySelectorAll('.settings-page').forEach(p => {
+                p.style.display = p.dataset.page === active ? '' : 'none';
             });
-            document.querySelectorAll('.settings-tab-content .settings-section, .settings-tab-content .settings-accordion')
+            document.querySelectorAll('.settings-page .settings-section, .settings-page .settings-accordion')
                 .forEach(u => { u.style.display = ''; });
+            document.querySelector('.pset-layout')?.classList.remove('searching');
             if (info) info.textContent = '';
         };
 
@@ -2036,9 +2192,10 @@ const App = {
                 // Re-run shortly so freshly-loaded async content is filtered too.
                 setTimeout(run, 400);
             }
-            tabBar.style.display = 'none';
+            tabBar.classList.add('searching');
+            document.querySelector('.pset-layout')?.classList.add('searching');
             let matches = 0;
-            document.querySelectorAll('.settings-tab-content').forEach(panel => {
+            document.querySelectorAll('.settings-page').forEach(panel => {
                 const units = unitsIn(panel);
                 let panelHit = false;
                 if (units.length) {
@@ -2055,7 +2212,7 @@ const App = {
                 panel.style.display = panelHit ? '' : 'none';
             });
             if (info) info.textContent = matches
-                ? `${matches} match${matches === 1 ? '' : 'es'} across all tabs`
+                ? `${matches} match${matches === 1 ? '' : 'es'} across all pages`
                 : 'No matching settings';
         };
 
@@ -2644,7 +2801,7 @@ const App = {
                 const summaryByMode = {
                     'standalone': 'PawPoller is set up to run locally. It\'ll poll and post from this machine.',
                     'paired_desktop': 'Paired with your server. Settings will sync automatically; the server handles polling.',
-                    'connected': 'Connected. Close and reopen PawPoller: it will open straight onto your server, and this computer only handles browser logins and file picking.',
+                    'connected': 'Connected. PawPoller has to reopen to become a window onto your server; this computer then only handles browser logins and file picking.',
                     'server': 'Server is ready. Pair a desktop install with the API key generated in Settings.',
                 };
                 // First-poll offer (gap G2): only when at least one platform is
@@ -2672,7 +2829,10 @@ const App = {
                     </ul>
                     ${firstPoll}
                     ${syncOffer}
-                    <button class="btn btn-primary login-btn" id="setup-finish">Go to Dashboard</button>`;
+                    ${selectedMode === 'connected' ? `
+                    <button class="btn btn-primary login-btn" id="setup-restart-connected">Restart PawPoller now</button>
+                    <div id="setup-restart-msg" style="font-size:12px;color:var(--text-muted);margin-top:8px"></div>` : `
+                    <button class="btn btn-primary login-btn" id="setup-finish">Go to Dashboard</button>`}`;
             }
 
             this._setContent(`
@@ -2815,6 +2975,8 @@ const App = {
                     renderStep();
                 }
             });
+
+            document.getElementById('setup-restart-connected')?.addEventListener('click', (ev) => App._restartIntoConnected(ev.currentTarget, 'setup-restart-msg'));
 
             document.getElementById('setup-sync-now')?.addEventListener('click', async (ev) => {
                 const btn = ev.currentTarget;
@@ -3113,7 +3275,7 @@ const App = {
             bsky: () => API.getBSKYSummary(), tw: () => API.getTWSummary(),
             mast: () => API.getMASTSummary(), tum: () => API.getTUMSummary(),
             pix: () => API.getPIXSummary(), thr: () => API.getTHRSummary(), ig: () => API.getIGSummary(),
-            e621: () => API.getE621Summary(), fn: () => API.getFNSummary(), fbr: () => API.getFBRSummary(),
+            e621: () => API.getE621Summary(), fn: () => API.getFNSummary(), fbr: () => API.getFBRSummary(), sc: () => API.getSCSummary(), ng: () => API.getNGSummary(), yt: () => API.getYTSummary(),
             tg: () => API.getTGSummary(),
         };
         const [results, health] = await Promise.all([
@@ -3613,6 +3775,7 @@ const App = {
             { nav: '#/artwork/new', icon: '\u{1F5BC}️', label: 'New artwork' },
             { nav: '#/posts/new', icon: '\u{1F4AC}', label: 'New post' },
             { nav: '#/library', icon: '\u{1F4DA}', label: 'Library' },
+            { nav: '#/podcasts', icon: '\u{1F399}', label: 'Podcasts' },
         ];
         return `<div class="dash-quicklinks">` + links.map(l =>
             `<a class="dash-ql" data-nav="${l.nav}"><span class="dash-ql-ico">${l.icon}</span>`
@@ -8478,6 +8641,24 @@ const App = {
         }
     },
 
+    /* 4.24.1: connected mode only takes effect at launch, so the wizard and the Setup Mode
+       panel offer the restart the mirror already had (POST /api/mirror/restart → the app
+       quits and comes straight back, opening onto the server). A dev build cannot restart
+       itself; its refusal is shown and the "close and reopen" sentence stays true. */
+    async _restartIntoConnected(btn, msgId) {
+        const msg = document.getElementById(msgId);
+        if (btn) { btn.disabled = true; btn.textContent = 'Restarting…'; }
+        if (msg) { msg.textContent = 'PawPoller is closing and will reopen onto your server.'; msg.style.color = 'var(--text-muted)'; }
+        try {
+            await API.mirrorRestart();
+        } catch (err) {
+            let detail = (err.message || String(err)).replace(/^API \d+:\s*/, '');
+            try { detail = JSON.parse(detail).detail || detail; } catch {}
+            if (msg) { msg.textContent = detail + ' Close and reopen PawPoller to finish.'; msg.style.color = 'var(--danger)'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Restart PawPoller now'; }
+        }
+    },
+
     async _loadFNComparisonChart() {
         try {
             if (this._fnCompareIds.size < 2) return;
@@ -8488,6 +8669,690 @@ const App = {
             Charts.comparisonLine('chart-compare', data.series, data.titles, this._fnCompareMetric);
         } catch (e) {
             console.error('Failed to load FN comparison chart:', e);
+        }
+    },
+
+    // ── SoundCloud Dashboard / Tracks / Detail / Compare (4.22.0, cloned from FurryNetwork's) ──
+
+    async renderSCDashboard() {
+        this._loading();
+        try {
+            const [summary, agg, pins, goals] = await Promise.all([
+                API.getSCSummary({ account_id: this._acctId('sc') }),
+                API.getSCAggregate({ ...Utils.getDateRange(this._dateRange), account_id: this._acctId('sc') }),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getGoals().catch(() => ({ goals: [] })),
+            ]);
+            const scPins = (pins.pins || []).filter(p => p.platform === 'sc');
+            const scGoals = (goals.goals || []).filter(g => g.platform === 'sc' || g.platform === 'all');
+            const scHealth = window.PlatformHealth && window.PlatformHealth.get('sc');
+            const isUnconfigured = scHealth && scHealth.configured === false;
+            if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                this._setContent(`
+                    ${this._refreshIndicatorHtml()}
+                    <div class="page-header"><h2>SoundCloud Dashboard</h2></div>
+                    ${Components.platformEmptyState('sc', isUnconfigured ? {} : { reason: 'SoundCloud is configured but no tracks have been polled yet. The first poll may still be running.' })}
+                `);
+                return;
+            }
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h2>SoundCloud Dashboard</h2>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" data-poll="sc">Poll Now</button>
+                        <button class="btn btn-secondary" data-resync="sc">Full Resync</button>
+                        <button class="btn btn-secondary" data-export="sc">Export CSV</button>
+                    </div>
+                </div>
+                ${scPins.length ? Components.pinnedSubmissions(scPins, 'sc') : ''}
+                ${scGoals.length ? `<div class="goals-section"><h3>Goals</h3>${Components.goalProgressCards(scGoals)}</div>` : ''}
+                <div class="stats-grid">
+                    ${Components.statCard('Total Tracks', summary.total_submissions, null, '#/sc/submissions')}
+                    ${Components.statCard('Total Plays', summary.total_views || 0)}
+                    ${Components.statCard('Total Likes', summary.total_favorites || 0)}
+                    ${Components.statCard('Total Comments', summary.total_comments || 0)}
+                </div>
+                ${summary.growth_rates ? Components.growthRateCards(summary.growth_rates, { views: 'plays/day', faves: 'likes/day', comments: 'comments/day' }) : ''}
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-container">
+                    <h3>Plays Over Time (Aggregate)</h3>
+                    <div class="chart-wrap"><canvas id="chart-agg-views"></canvas></div>
+                </div>
+                <div class="chart-row">
+                    <div class="chart-container"><h3>Top Played</h3>${Components.scTopList(summary.top_viewed, 'views', 'title', 'submission_id')}</div>
+                    <div class="chart-container"><h3>Top Liked</h3>${Components.scTopList(summary.top_faved, 'favorites_count', 'title', 'submission_id')}</div>
+                </div>
+                <div class="chart-row">
+                    <div class="chart-container"><h3>Fastest Growing (24h)</h3>${Components.scTopList(summary.fastest_growing, 'views_gained', 'title', 'submission_id')}</div>
+                </div>
+            `;
+            this._setContent(html);
+            if (agg.snapshots && agg.snapshots.length > 0) {
+                Charts.aggregateLine('chart-agg-views', agg.snapshots, ['views']);
+            }
+            this._bindDateRange(() => this.renderSCDashboard());
+            this._bindPinAndGoalActions(() => this.renderSCDashboard());
+            this._startAutoRefresh(() => this.renderSCDashboard());
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error loading SoundCloud dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderSCSubmissions() {
+        this._loading();
+        try {
+            const data = await API.getSCSubmissions({
+                sort_by: this._scSortState.field, order: this._scSortState.order, account_id: this._acctId('sc'),
+            });
+            const gridRenderer = (subs) => Components.submissionCardGrid(subs, {
+                idKey: 'submission_id', titleKey: 'title', thumbKey: 'artwork_url', proxyThumb: false,
+                detailRoute: '/sc/submission', dateKey: 'posted_at',
+                stats: [
+                    { key: 'views', deltaKey: 'views_delta', label: 'plays' },
+                    { key: 'favorites_count', deltaKey: 'favorites_delta', label: 'likes' },
+                    { key: 'comments_count', deltaKey: 'comments_delta', label: 'comments' },
+                ],
+            });
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header"><h2>SoundCloud Tracks</h2></div>
+                <div class="toolbar">
+                    <input type="text" class="search-input" id="search-input" placeholder="Search tracks...">
+                    <select class="filter-select" id="sc-sort">
+                        <option value="views" ${this._scSortState.field === 'views' ? 'selected' : ''}>Most played</option>
+                        <option value="favorites_count" ${this._scSortState.field === 'favorites_count' ? 'selected' : ''}>Most liked</option>
+                        <option value="comments_count" ${this._scSortState.field === 'comments_count' ? 'selected' : ''}>Most comments</option>
+                        <option value="posted_at" ${this._scSortState.field === 'posted_at' ? 'selected' : ''}>Newest</option>
+                    </select>
+                </div>
+                <div id="grid-container">${gridRenderer(data.submissions)}</div>
+            `;
+            this._setContent(html);
+            const sortSel = document.getElementById('sc-sort');
+            if (sortSel) sortSel.addEventListener('change', () => { this._scSortState.field = sortSel.value; this.renderSCSubmissions(); });
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) searchInput.addEventListener('input', () => {
+                const q = searchInput.value.toLowerCase();
+                document.getElementById('grid-container').innerHTML =
+                    gridRenderer(data.submissions.filter(s => (s.title || '').toLowerCase().includes(q)));
+            });
+            this._startAutoRefresh(() => this.renderSCSubmissions());
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error loading SoundCloud tracks</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderSCDetail(postId) {
+        this._loading();
+        try {
+            const [data, pins, allTags] = await Promise.all([
+                API.getSCSubmission(postId),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getTags().catch(() => ({ tags: [] })),
+            ]);
+            const sub = data.submission;
+            const fullId = sub.submission_id;
+            const isPinned = (pins.pins || []).some(p => p.platform === 'sc' && String(p.submission_id) === String(fullId));
+            const currentTags = sub.tags || [];
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <a href="#/sc/submissions" class="back-link">&larr; Back to SoundCloud Tracks</a>
+                <div class="detail-header">
+                    ${sub.artwork_url ? `<img class="detail-thumb" src="${Utils.escapeHtml(Utils.safeUrl(sub.artwork_url) || '')}" alt="" style="max-width:160px;border-radius:8px;margin-right:16px">` : ''}
+                    <div class="detail-info">
+                        <h2>${Utils.escapeHtml(sub.title)}</h2>
+                        <div class="detail-meta">by ${Utils.escapeHtml(sub.username)} &middot; ${Utils.formatDate(sub.posted_at)}${sub.genre ? ' &middot; ' + Utils.escapeHtml(sub.genre) : ''}</div>
+                        <div class="detail-meta"><a href="${Utils.escapeHtml(Utils.safeUrl(sub.link) || '#')}" target="_blank">View on SoundCloud</a></div>
+                        <div class="detail-stats">
+                            <div class="detail-stat">${Utils.formatNumber(sub.views || 0)} <span class="lbl">plays</span></div>
+                            <div class="detail-stat">${Utils.formatNumber(sub.favorites_count || 0)} <span class="lbl">likes</span></div>
+                            <div class="detail-stat">${Utils.formatNumber(sub.comments_count || 0)} <span class="lbl">comments</span></div>
+                        </div>
+                        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <button class="btn ${isPinned ? 'btn-danger' : 'btn-secondary'} btn-pin" data-platform="sc" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">${isPinned ? 'Unpin' : 'Pin'}</button>
+                            ${currentTags.map(t => Components.tagBadge(t)).join('')}
+                            <button class="btn btn-secondary btn-add-tag" data-platform="sc" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">+ Tag</button>
+                        </div>
+                        <div style="margin-top:8px;font-size:12px;color:var(--text-muted)">${Utils.escapeHtml(sub.tag_list || '')}</div>
+                    </div>
+                </div>
+                ${Components.growthRateCards(data.growth_rates, { views: 'plays/day', faves: 'likes/day', comments: 'comments/day' })}
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-container"><h3>Stats Over Time</h3><div class="chart-wrap"><canvas id="chart-detail"></canvas></div></div>
+            `;
+            this._setContent(html);
+            if (data.snapshots && data.snapshots.length > 0) {
+                Charts.submissionLine('chart-detail', data.snapshots, ['views', 'favorites_count', 'comments_count']);
+            }
+            this._bindDateRange(async () => {
+                const range = Utils.getDateRange(this._dateRange);
+                const snaps = await API.getSCSnapshots(postId, range);
+                Charts.submissionLine('chart-detail', snaps.snapshots, ['views', 'favorites_count', 'comments_count']);
+            });
+            this._bindDetailPinTag('sc', fullId, allTags.tags || [], () => this.renderSCDetail(postId));
+            this._startAutoRefresh(() => this.renderSCDetail(postId));
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error loading SoundCloud track</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderSCCompare() {
+        this._loading();
+        try {
+            const data = await API.getSCSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('sc') });
+            const subs = data.submissions;
+            const chips = subs.map(s => `
+                <label class="compare-chip ${this._scCompareIds.has(String(s.submission_id)) ? 'selected' : ''}" data-id="${Utils.escapeHtml(String(s.submission_id))}">
+                    <input type="checkbox" ${this._scCompareIds.has(String(s.submission_id)) ? 'checked' : ''}>
+                    ${Utils.escapeHtml(Utils.truncate(s.title, 25))}
+                </label>`).join('');
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h2>Compare SoundCloud Tracks</h2>
+                    <div>
+                        <select class="filter-select" id="compare-metric">
+                            <option value="views" ${this._scCompareMetric === 'views' ? 'selected' : ''}>Plays</option>
+                            <option value="favorites_count" ${this._scCompareMetric === 'favorites_count' ? 'selected' : ''}>Likes</option>
+                            <option value="comments_count" ${this._scCompareMetric === 'comments_count' ? 'selected' : ''}>Comments</option>
+                        </select>
+                    </div>
+                </div>
+                <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Select 2-5 tracks to compare their trends over time.</p>
+                <div class="compare-select">${chips}</div>
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-container" id="compare-chart-container" style="${this._scCompareIds.size < 2 ? 'display:none' : ''}">
+                    <h3>Comparison</h3><div class="chart-wrap"><canvas id="chart-compare"></canvas></div>
+                </div>
+                ${this._scCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 tracks above to see their trends compared.</p></div>' : ''}
+            `;
+            this._setContent(html);
+            document.querySelectorAll('.compare-chip').forEach(chip => {
+                chip.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const id = chip.dataset.id;
+                    if (this._scCompareIds.has(id)) this._scCompareIds.delete(id);
+                    else if (this._scCompareIds.size < 5) this._scCompareIds.add(id);
+                    this.renderSCCompare();
+                });
+            });
+            const metricSelect = document.getElementById('compare-metric');
+            if (metricSelect) metricSelect.addEventListener('change', () => { this._scCompareMetric = metricSelect.value; this._loadSCComparisonChart(); });
+            this._bindDateRange(() => this._loadSCComparisonChart());
+            if (this._scCompareIds.size >= 2) await this._loadSCComparisonChart();
+            this._startAutoRefresh(() => this.renderSCCompare());
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async _loadSCComparisonChart() {
+        try {
+            if (this._scCompareIds.size < 2) return;
+            const range = Utils.getDateRange(this._dateRange);
+            const data = await API.getSCComparison([...this._scCompareIds], range);
+            const container = document.getElementById('compare-chart-container');
+            if (container) container.style.display = '';
+            Charts.comparisonLine('chart-compare', data.series, data.titles, this._scCompareMetric);
+        } catch (e) {
+            console.error('Failed to load SC comparison chart:', e);
+        }
+    },
+
+    // ── Newgrounds Dashboard / Submissions / Detail / Compare (4.23.0, cloned from SoundCloud's) ──
+
+    async renderNGDashboard() {
+        this._loading();
+        try {
+            const [summary, agg, pins, goals] = await Promise.all([
+                API.getNGSummary({ account_id: this._acctId('ng') }),
+                API.getNGAggregate({ ...Utils.getDateRange(this._dateRange), account_id: this._acctId('ng') }),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getGoals().catch(() => ({ goals: [] })),
+            ]);
+            const ngPins = (pins.pins || []).filter(p => p.platform === 'ng');
+            const ngGoals = (goals.goals || []).filter(g => g.platform === 'ng' || g.platform === 'all');
+            const ngHealth = window.PlatformHealth && window.PlatformHealth.get('ng');
+            const isUnconfigured = ngHealth && ngHealth.configured === false;
+            if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                this._setContent(`
+                    ${this._refreshIndicatorHtml()}
+                    <div class="page-header"><h2>Newgrounds Dashboard</h2></div>
+                    ${Components.platformEmptyState('ng', isUnconfigured ? {} : { reason: 'Newgrounds is configured but no submissions have been polled yet. The first poll may still be running.' })}
+                `);
+                return;
+            }
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h2>Newgrounds Dashboard</h2>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" data-poll="ng">Poll Now</button>
+                        <button class="btn btn-secondary" data-resync="ng">Full Resync</button>
+                        <button class="btn btn-secondary" data-export="ng">Export CSV</button>
+                    </div>
+                </div>
+                ${ngPins.length ? Components.pinnedSubmissions(ngPins, 'ng') : ''}
+                ${ngGoals.length ? `<div class="goals-section"><h3>Goals</h3>${Components.goalProgressCards(ngGoals)}</div>` : ''}
+                <div class="stats-grid">
+                    ${Components.statCard('Total Submissions', summary.total_submissions, null, '#/ng/submissions')}
+                    ${Components.statCard('Total Views / Listens', summary.total_views || 0)}
+                    ${Components.statCard('Total Faves', summary.total_favorites || 0)}
+                    ${Components.statCard('Total Comments', summary.total_comments || 0)}
+                </div>
+                ${summary.growth_rates ? Components.growthRateCards(summary.growth_rates, { views: 'views/day', faves: 'faves/day', comments: 'comments/day' }) : ''}
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-container">
+                    <h3>Views Over Time (Aggregate)</h3>
+                    <div class="chart-wrap"><canvas id="chart-agg-views"></canvas></div>
+                </div>
+                <div class="chart-row">
+                    <div class="chart-container"><h3>Top Viewed</h3>${Components.ngTopList(summary.top_viewed, 'views', 'title', 'submission_id')}</div>
+                    <div class="chart-container"><h3>Top Faved</h3>${Components.ngTopList(summary.top_faved, 'favorites_count', 'title', 'submission_id')}</div>
+                </div>
+                <div class="chart-row">
+                    <div class="chart-container"><h3>Fastest Growing (24h)</h3>${Components.ngTopList(summary.fastest_growing, 'views_gained', 'title', 'submission_id')}</div>
+                </div>
+            `;
+            this._setContent(html);
+            if (agg.snapshots && agg.snapshots.length > 0) {
+                Charts.aggregateLine('chart-agg-views', agg.snapshots, ['views']);
+            }
+            this._bindDateRange(() => this.renderNGDashboard());
+            this._bindPinAndGoalActions(() => this.renderNGDashboard());
+            this._startAutoRefresh(() => this.renderNGDashboard());
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error loading Newgrounds dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderNGSubmissions() {
+        this._loading();
+        try {
+            const data = await API.getNGSubmissions({
+                sort_by: this._ngSortState.field, order: this._ngSortState.order, account_id: this._acctId('ng'),
+            });
+            const gridRenderer = (subs) => Components.submissionCardGrid(subs, {
+                idKey: 'submission_id', titleKey: 'title', thumbKey: 'thumbnail_url', proxyThumb: false,
+                detailRoute: '/ng/submission', dateKey: 'posted_at',
+                stats: [
+                    { key: 'views', deltaKey: 'views_delta', label: 'views' },
+                    { key: 'favorites_count', deltaKey: 'favorites_delta', label: 'faves' },
+                    { key: 'comments_count', deltaKey: 'comments_delta', label: 'comments' },
+                ],
+            });
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header"><h2>Newgrounds Submissions</h2></div>
+                <div class="toolbar">
+                    <input type="text" class="search-input" id="search-input" placeholder="Search submissions...">
+                    <select class="filter-select" id="ng-sort">
+                        <option value="views" ${this._ngSortState.field === 'views' ? 'selected' : ''}>Most viewed</option>
+                        <option value="favorites_count" ${this._ngSortState.field === 'favorites_count' ? 'selected' : ''}>Most faved</option>
+                        <option value="comments_count" ${this._ngSortState.field === 'comments_count' ? 'selected' : ''}>Most comments</option>
+                        <option value="posted_at" ${this._ngSortState.field === 'posted_at' ? 'selected' : ''}>Newest</option>
+                    </select>
+                </div>
+                <div id="grid-container">${gridRenderer(data.submissions)}</div>
+            `;
+            this._setContent(html);
+            const sortSel = document.getElementById('ng-sort');
+            if (sortSel) sortSel.addEventListener('change', () => { this._ngSortState.field = sortSel.value; this.renderNGSubmissions(); });
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) searchInput.addEventListener('input', () => {
+                const q = searchInput.value.toLowerCase();
+                document.getElementById('grid-container').innerHTML =
+                    gridRenderer(data.submissions.filter(s => (s.title || '').toLowerCase().includes(q)));
+            });
+            this._startAutoRefresh(() => this.renderNGSubmissions());
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error loading Newgrounds submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderNGDetail(postId) {
+        this._loading();
+        try {
+            const [data, pins, allTags] = await Promise.all([
+                API.getNGSubmission(postId),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getTags().catch(() => ({ tags: [] })),
+            ]);
+            const sub = data.submission;
+            const fullId = sub.submission_id;
+            const isPinned = (pins.pins || []).some(p => p.platform === 'ng' && String(p.submission_id) === String(fullId));
+            const currentTags = sub.tags || [];
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <a href="#/ng/submissions" class="back-link">&larr; Back to Newgrounds Submissions</a>
+                <div class="detail-header">
+                    ${sub.thumbnail_url ? `<img class="detail-thumb" src="${Utils.escapeHtml(Utils.safeUrl(sub.thumbnail_url) || '')}" alt="" style="max-width:160px;border-radius:8px;margin-right:16px">` : ''}
+                    <div class="detail-info">
+                        <h2>${Utils.escapeHtml(sub.title)}</h2>
+                        <div class="detail-meta">by ${Utils.escapeHtml(sub.username)} &middot; ${Utils.formatDate(sub.posted_at)}${sub.portal ? ' &middot; ' + (sub.portal === 'movie' ? 'Movie Portal' : 'Audio Portal') : ''}${sub.genre ? ' &middot; ' + Utils.escapeHtml(sub.genre) : ''}${sub.rating ? ' &middot; rated ' + Utils.escapeHtml(String(sub.rating).toUpperCase()) : ''}</div>
+                        <div class="detail-meta"><a href="${Utils.escapeHtml(Utils.safeUrl(sub.link) || '#')}" target="_blank">View on Newgrounds</a></div>
+                        <div class="detail-stats">
+                            <div class="detail-stat">${Utils.formatNumber(sub.views || 0)} <span class="lbl">views</span></div>
+                            <div class="detail-stat">${Utils.formatNumber(sub.favorites_count || 0)} <span class="lbl">faves</span></div>
+                            <div class="detail-stat">${Utils.formatNumber(sub.comments_count || 0)} <span class="lbl">comments</span></div>
+                        </div>
+                        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <button class="btn ${isPinned ? 'btn-danger' : 'btn-secondary'} btn-pin" data-platform="ng" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">${isPinned ? 'Unpin' : 'Pin'}</button>
+                            ${currentTags.map(t => Components.tagBadge(t)).join('')}
+                            <button class="btn btn-secondary btn-add-tag" data-platform="ng" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">+ Tag</button>
+                        </div>
+                        <div style="margin-top:8px;font-size:12px;color:var(--text-muted)">Score ${Number(sub.score || 0).toFixed(2)} / 5.00 &middot; ${Utils.formatNumber(sub.votes || 0)} votes${sub.portal === 'audio' ? ' &middot; ' + Utils.formatNumber(sub.downloads_count || 0) + ' downloads' : ''}</div>
+                    </div>
+                </div>
+                ${Components.growthRateCards(data.growth_rates, { views: 'views/day', faves: 'faves/day', comments: 'comments/day' })}
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-container"><h3>Stats Over Time</h3><div class="chart-wrap"><canvas id="chart-detail"></canvas></div></div>
+            `;
+            this._setContent(html);
+            if (data.snapshots && data.snapshots.length > 0) {
+                Charts.submissionLine('chart-detail', data.snapshots, ['views', 'favorites_count', 'comments_count']);
+            }
+            this._bindDateRange(async () => {
+                const range = Utils.getDateRange(this._dateRange);
+                const snaps = await API.getNGSnapshots(postId, range);
+                Charts.submissionLine('chart-detail', snaps.snapshots, ['views', 'favorites_count', 'comments_count']);
+            });
+            this._bindDetailPinTag('ng', fullId, allTags.tags || [], () => this.renderNGDetail(postId));
+            this._startAutoRefresh(() => this.renderNGDetail(postId));
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error loading Newgrounds submission</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderNGCompare() {
+        this._loading();
+        try {
+            const data = await API.getNGSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('ng') });
+            const subs = data.submissions;
+            const chips = subs.map(s => `
+                <label class="compare-chip ${this._ngCompareIds.has(String(s.submission_id)) ? 'selected' : ''}" data-id="${Utils.escapeHtml(String(s.submission_id))}">
+                    <input type="checkbox" ${this._ngCompareIds.has(String(s.submission_id)) ? 'checked' : ''}>
+                    ${Utils.escapeHtml(Utils.truncate(s.title, 25))}
+                </label>`).join('');
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h2>Compare Newgrounds Submissions</h2>
+                    <div>
+                        <select class="filter-select" id="compare-metric">
+                            <option value="views" ${this._ngCompareMetric === 'views' ? 'selected' : ''}>Views</option>
+                            <option value="favorites_count" ${this._ngCompareMetric === 'favorites_count' ? 'selected' : ''}>Faves</option>
+                            <option value="comments_count" ${this._ngCompareMetric === 'comments_count' ? 'selected' : ''}>Comments</option>
+                        </select>
+                    </div>
+                </div>
+                <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Select 2-5 submissions to compare their trends over time.</p>
+                <div class="compare-select">${chips}</div>
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-container" id="compare-chart-container" style="${this._ngCompareIds.size < 2 ? 'display:none' : ''}">
+                    <h3>Comparison</h3><div class="chart-wrap"><canvas id="chart-compare"></canvas></div>
+                </div>
+                ${this._ngCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 submissions above to see their trends compared.</p></div>' : ''}
+            `;
+            this._setContent(html);
+            document.querySelectorAll('.compare-chip').forEach(chip => {
+                chip.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const id = chip.dataset.id;
+                    if (this._ngCompareIds.has(id)) this._ngCompareIds.delete(id);
+                    else if (this._ngCompareIds.size < 5) this._ngCompareIds.add(id);
+                    this.renderNGCompare();
+                });
+            });
+            const metricSelect = document.getElementById('compare-metric');
+            if (metricSelect) metricSelect.addEventListener('change', () => { this._ngCompareMetric = metricSelect.value; this._loadNGComparisonChart(); });
+            this._bindDateRange(() => this._loadNGComparisonChart());
+            if (this._ngCompareIds.size >= 2) await this._loadNGComparisonChart();
+            this._startAutoRefresh(() => this.renderNGCompare());
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async _loadNGComparisonChart() {
+        try {
+            if (this._ngCompareIds.size < 2) return;
+            const range = Utils.getDateRange(this._dateRange);
+            const data = await API.getNGComparison([...this._ngCompareIds], range);
+            const container = document.getElementById('compare-chart-container');
+            if (container) container.style.display = '';
+            Charts.comparisonLine('chart-compare', data.series, data.titles, this._ngCompareMetric);
+        } catch (e) {
+            console.error('Failed to load NG comparison chart:', e);
+        }
+    },
+
+    // ── YouTube Dashboard / Videos / Detail / Compare (4.24.0, cloned from Newgrounds') ──
+
+    async renderYTDashboard() {
+        this._loading();
+        try {
+            const [summary, agg, pins, goals] = await Promise.all([
+                API.getYTSummary({ account_id: this._acctId('yt') }),
+                API.getYTAggregate({ ...Utils.getDateRange(this._dateRange), account_id: this._acctId('yt') }),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getGoals().catch(() => ({ goals: [] })),
+            ]);
+            const ytPins = (pins.pins || []).filter(p => p.platform === 'yt');
+            const ytGoals = (goals.goals || []).filter(g => g.platform === 'yt' || g.platform === 'all');
+            const ytHealth = window.PlatformHealth && window.PlatformHealth.get('yt');
+            const isUnconfigured = ytHealth && ytHealth.configured === false;
+            if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                this._setContent(`
+                    ${this._refreshIndicatorHtml()}
+                    <div class="page-header"><h2>YouTube Dashboard</h2></div>
+                    ${Components.platformEmptyState('yt', isUnconfigured ? {} : { reason: 'YouTube is configured but no videos have been polled yet. The first poll may still be running.' })}
+                `);
+                return;
+            }
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h2>YouTube Dashboard</h2>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" data-poll="yt">Poll Now</button>
+                        <button class="btn btn-secondary" data-resync="yt">Full Resync</button>
+                        <button class="btn btn-secondary" data-export="yt">Export CSV</button>
+                    </div>
+                </div>
+                ${ytPins.length ? Components.pinnedSubmissions(ytPins, 'yt') : ''}
+                ${ytGoals.length ? `<div class="goals-section"><h3>Goals</h3>${Components.goalProgressCards(ytGoals)}</div>` : ''}
+                <div class="stats-grid">
+                    ${Components.statCard('Total Videos', summary.total_submissions, null, '#/yt/submissions')}
+                    ${Components.statCard('Total Views', summary.total_views || 0)}
+                    ${Components.statCard('Total Likes', summary.total_favorites || 0)}
+                    ${Components.statCard('Total Comments', summary.total_comments || 0)}
+                </div>
+                ${summary.growth_rates ? Components.growthRateCards(summary.growth_rates, { views: 'views/day', faves: 'likes/day', comments: 'comments/day' }) : ''}
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-container">
+                    <h3>Views Over Time (Aggregate)</h3>
+                    <div class="chart-wrap"><canvas id="chart-agg-views"></canvas></div>
+                </div>
+                <div class="chart-row">
+                    <div class="chart-container"><h3>Top Viewed</h3>${Components.ytTopList(summary.top_viewed, 'views', 'title', 'submission_id')}</div>
+                    <div class="chart-container"><h3>Top Liked</h3>${Components.ytTopList(summary.top_faved, 'favorites_count', 'title', 'submission_id')}</div>
+                </div>
+                <div class="chart-row">
+                    <div class="chart-container"><h3>Fastest Growing (24h)</h3>${Components.ytTopList(summary.fastest_growing, 'views_gained', 'title', 'submission_id')}</div>
+                </div>
+            `;
+            this._setContent(html);
+            if (agg.snapshots && agg.snapshots.length > 0) {
+                Charts.aggregateLine('chart-agg-views', agg.snapshots, ['views']);
+            }
+            this._bindDateRange(() => this.renderYTDashboard());
+            this._bindPinAndGoalActions(() => this.renderYTDashboard());
+            this._startAutoRefresh(() => this.renderYTDashboard());
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error loading YouTube dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderYTSubmissions() {
+        this._loading();
+        try {
+            const data = await API.getYTSubmissions({
+                sort_by: this._ytSortState.field, order: this._ytSortState.order, account_id: this._acctId('yt'),
+            });
+            const gridRenderer = (subs) => Components.submissionCardGrid(subs, {
+                idKey: 'submission_id', titleKey: 'title', thumbKey: 'thumbnail_url', proxyThumb: false,
+                detailRoute: '/yt/submission', dateKey: 'posted_at',
+                stats: [
+                    { key: 'views', deltaKey: 'views_delta', label: 'views' },
+                    { key: 'favorites_count', deltaKey: 'favorites_delta', label: 'likes' },
+                    { key: 'comments_count', deltaKey: 'comments_delta', label: 'comments' },
+                ],
+            });
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header"><h2>YouTube Videos</h2></div>
+                <div class="toolbar">
+                    <input type="text" class="search-input" id="search-input" placeholder="Search videos...">
+                    <select class="filter-select" id="yt-sort">
+                        <option value="views" ${this._ytSortState.field === 'views' ? 'selected' : ''}>Most viewed</option>
+                        <option value="favorites_count" ${this._ytSortState.field === 'favorites_count' ? 'selected' : ''}>Most liked</option>
+                        <option value="comments_count" ${this._ytSortState.field === 'comments_count' ? 'selected' : ''}>Most comments</option>
+                        <option value="posted_at" ${this._ytSortState.field === 'posted_at' ? 'selected' : ''}>Newest</option>
+                    </select>
+                </div>
+                <div id="grid-container">${gridRenderer(data.submissions)}</div>
+            `;
+            this._setContent(html);
+            const sortSel = document.getElementById('yt-sort');
+            if (sortSel) sortSel.addEventListener('change', () => { this._ytSortState.field = sortSel.value; this.renderYTSubmissions(); });
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) searchInput.addEventListener('input', () => {
+                const q = searchInput.value.toLowerCase();
+                document.getElementById('grid-container').innerHTML =
+                    gridRenderer(data.submissions.filter(s => (s.title || '').toLowerCase().includes(q)));
+            });
+            this._startAutoRefresh(() => this.renderYTSubmissions());
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error loading YouTube videos</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderYTDetail(postId) {
+        this._loading();
+        try {
+            const [data, pins, allTags] = await Promise.all([
+                API.getYTSubmission(postId),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getTags().catch(() => ({ tags: [] })),
+            ]);
+            const sub = data.submission;
+            const fullId = sub.submission_id;
+            const isPinned = (pins.pins || []).some(p => p.platform === 'yt' && String(p.submission_id) === String(fullId));
+            const currentTags = sub.tags || [];
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <a href="#/yt/submissions" class="back-link">&larr; Back to YouTube Videos</a>
+                <div class="detail-header">
+                    ${sub.thumbnail_url ? `<img class="detail-thumb" src="${Utils.escapeHtml(Utils.safeUrl(sub.thumbnail_url) || '')}" alt="" style="max-width:160px;border-radius:8px;margin-right:16px">` : ''}
+                    <div class="detail-info">
+                        <h2>${Utils.escapeHtml(sub.title)}</h2>
+                        <div class="detail-meta">by ${Utils.escapeHtml(sub.username)} &middot; ${Utils.formatDate(sub.posted_at)}${sub.privacy ? ' &middot; ' + Utils.escapeHtml(sub.privacy) : ''}${sub.duration ? ' &middot; ' + Utils.escapeHtml(sub.duration.replace('PT', '').toLowerCase()) : ''}</div>
+                        <div class="detail-meta"><a href="${Utils.escapeHtml(Utils.safeUrl(sub.link) || '#')}" target="_blank">View on YouTube</a></div>
+                        <div class="detail-stats">
+                            <div class="detail-stat">${Utils.formatNumber(sub.views || 0)} <span class="lbl">views</span></div>
+                            <div class="detail-stat">${Utils.formatNumber(sub.favorites_count || 0)} <span class="lbl">likes</span></div>
+                            <div class="detail-stat">${Utils.formatNumber(sub.comments_count || 0)} <span class="lbl">comments</span></div>
+                        </div>
+                        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <button class="btn ${isPinned ? 'btn-danger' : 'btn-secondary'} btn-pin" data-platform="yt" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">${isPinned ? 'Unpin' : 'Pin'}</button>
+                            ${currentTags.map(t => Components.tagBadge(t)).join('')}
+                            <button class="btn btn-secondary btn-add-tag" data-platform="yt" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">+ Tag</button>
+                        </div>
+                        <div style="margin-top:8px;font-size:12px;color:var(--text-muted)">${Utils.escapeHtml(sub.tags || '')}</div>
+                    </div>
+                </div>
+                ${Components.growthRateCards(data.growth_rates, { views: 'views/day', faves: 'likes/day', comments: 'comments/day' })}
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-container"><h3>Stats Over Time</h3><div class="chart-wrap"><canvas id="chart-detail"></canvas></div></div>
+            `;
+            this._setContent(html);
+            if (data.snapshots && data.snapshots.length > 0) {
+                Charts.submissionLine('chart-detail', data.snapshots, ['views', 'favorites_count', 'comments_count']);
+            }
+            this._bindDateRange(async () => {
+                const range = Utils.getDateRange(this._dateRange);
+                const snaps = await API.getYTSnapshots(postId, range);
+                Charts.submissionLine('chart-detail', snaps.snapshots, ['views', 'favorites_count', 'comments_count']);
+            });
+            this._bindDetailPinTag('yt', fullId, allTags.tags || [], () => this.renderYTDetail(postId));
+            this._startAutoRefresh(() => this.renderYTDetail(postId));
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error loading YouTube video</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderYTCompare() {
+        this._loading();
+        try {
+            const data = await API.getYTSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('yt') });
+            const subs = data.submissions;
+            const chips = subs.map(s => `
+                <label class="compare-chip ${this._ytCompareIds.has(String(s.submission_id)) ? 'selected' : ''}" data-id="${Utils.escapeHtml(String(s.submission_id))}">
+                    <input type="checkbox" ${this._ytCompareIds.has(String(s.submission_id)) ? 'checked' : ''}>
+                    ${Utils.escapeHtml(Utils.truncate(s.title, 25))}
+                </label>`).join('');
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h2>Compare YouTube Videos</h2>
+                    <div>
+                        <select class="filter-select" id="compare-metric">
+                            <option value="views" ${this._ytCompareMetric === 'views' ? 'selected' : ''}>Views</option>
+                            <option value="favorites_count" ${this._ytCompareMetric === 'favorites_count' ? 'selected' : ''}>Likes</option>
+                            <option value="comments_count" ${this._ytCompareMetric === 'comments_count' ? 'selected' : ''}>Comments</option>
+                        </select>
+                    </div>
+                </div>
+                <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Select 2-5 videos to compare their trends over time.</p>
+                <div class="compare-select">${chips}</div>
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-container" id="compare-chart-container" style="${this._ytCompareIds.size < 2 ? 'display:none' : ''}">
+                    <h3>Comparison</h3><div class="chart-wrap"><canvas id="chart-compare"></canvas></div>
+                </div>
+                ${this._ytCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 videos above to see their trends compared.</p></div>' : ''}
+            `;
+            this._setContent(html);
+            document.querySelectorAll('.compare-chip').forEach(chip => {
+                chip.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const id = chip.dataset.id;
+                    if (this._ytCompareIds.has(id)) this._ytCompareIds.delete(id);
+                    else if (this._ytCompareIds.size < 5) this._ytCompareIds.add(id);
+                    this.renderYTCompare();
+                });
+            });
+            const metricSelect = document.getElementById('compare-metric');
+            if (metricSelect) metricSelect.addEventListener('change', () => { this._ytCompareMetric = metricSelect.value; this._loadYTComparisonChart(); });
+            this._bindDateRange(() => this._loadYTComparisonChart());
+            if (this._ytCompareIds.size >= 2) await this._loadYTComparisonChart();
+            this._startAutoRefresh(() => this.renderYTCompare());
+        } catch (err) {
+            this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async _loadYTComparisonChart() {
+        try {
+            if (this._ytCompareIds.size < 2) return;
+            const range = Utils.getDateRange(this._dateRange);
+            const data = await API.getYTComparison([...this._ytCompareIds], range);
+            const container = document.getElementById('compare-chart-container');
+            if (container) container.style.display = '';
+            Charts.comparisonLine('chart-compare', data.series, data.titles, this._ytCompareMetric);
+        } catch (e) {
+            console.error('Failed to load YT comparison chart:', e);
         }
     },
 
@@ -10425,7 +11290,7 @@ const App = {
                 // Determine platform badge colour and the correct hash route prefix
                 const badgeMap = { fa: '<span class="platform-badge fa">FA</span>', ws: '<span class="platform-badge ws">WS</span>', sf: '<span class="platform-badge sf">SF</span>', sqw: '<span class="platform-badge sqw">SqW</span>', ao3: '<span class="platform-badge ao3">AO3</span>', da: '<span class="platform-badge da">DA</span>', wp: '<span class="platform-badge wp">WP</span>', ik: '<span class="platform-badge ik">IK</span>', bsky: '<span class="platform-badge bsky">BSKY</span>', tw: '<span class="platform-badge tw">TW</span>', ib: '<span class="platform-badge ib">IB</span>' };
                 const badge = badgeMap[m.platform] || badgeMap.ib;
-                const prefixMap = { fa: '/fa/submission/', ws: '/ws/submission/', sf: '/sf/submission/', sqw: '/sqw/submission/', ao3: '/ao3/submission/', da: '/da/submission/', wp: '/wp/submission/', ik: '/ik/submission/', bsky: '/bsky/submission/', tw: '/tw/submission/', mast: '/mast/submission/', tum: '/tum/submission/', pix: '/pix/submission/', thr: '/thr/submission/', ig: '/ig/submission/', e621: '/e621/submission/', fn: '/fn/submission/', fbr: '/fbr/submission/', ib: '/submission/' };
+                const prefixMap = { fa: '/fa/submission/', ws: '/ws/submission/', sf: '/sf/submission/', sqw: '/sqw/submission/', ao3: '/ao3/submission/', da: '/da/submission/', wp: '/wp/submission/', ik: '/ik/submission/', bsky: '/bsky/submission/', tw: '/tw/submission/', mast: '/mast/submission/', tum: '/tum/submission/', pix: '/pix/submission/', thr: '/thr/submission/', ig: '/ig/submission/', e621: '/e621/submission/', fn: '/fn/submission/', fbr: '/fbr/submission/', sc: '/sc/submission/', ng: '/ng/submission/', yt: '/yt/submission/', ib: '/submission/' };
                 const prefix = prefixMap[m.platform] || prefixMap.ib;
                 return `
                     <tr>
@@ -10799,8 +11664,104 @@ const App = {
                 this._decoratePlatformSummary(o.summary, o.p);
             });
             this._appendPlatformsFooter(pane);         // accounts link + trademark note, always last
-            this._focusPlatformFromHash(pane);         // deep link from the setup wizard
+            this._buildPlatformsListDetail(pane, platforms);   // 4.26.0: list + detail
         } catch (e) { /* cosmetic — never break Settings */ }
+    },
+
+    /* ── Platforms as list + detail (4.26.0, SETTINGSNAV phase 2) ──────────
+     * The twenty-odd accordions stop being a wall: a list column (filter chips,
+     * a row per platform with its status dot, logo and handle, the session
+     * check) and a detail column showing ONE accordion, opened. Nothing about
+     * the accordions changes — same markup, ids and handlers — they are only
+     * shown one at a time, so the credential forms and every wired button keep
+     * working. The Session-health card is the "overview" row and the default
+     * detail. Search shows every matching accordion regardless of selection. */
+    _buildPlatformsListDetail(pane, platforms) {
+        if (pane.querySelector('.pset-layout')) return;                    // idempotent per render
+        const health = pane.querySelector(':scope > details.settings-accordion:has(#session-health-dot)');
+        const footer = pane.querySelector('#pset-platforms-footer');
+        const layout = document.createElement('div');
+        layout.className = 'pset-layout';
+        const list = document.createElement('div');
+        list.className = 'pset-list';
+        const detail = document.createElement('div');
+        detail.className = 'pset-detail';
+        layout.append(list, detail);
+
+        const rows = platforms.map(o => {
+            const code = o.el.dataset.platform || '';
+            const dot = o.summary.querySelector('.status-dot');
+            const cls = dot ? Array.from(dot.classList).find(c => c !== 'status-dot') || 'muted' : 'muted';
+            const handle = o.summary.querySelector('.summary-meta')?.textContent.replace(/^\s*—\s*/, '').trim() || '';
+            const configured = !!handle || cls === 'connected' || cls === 'muted';
+            const attention = cls === 'warn' || (configured && cls === 'disconnected');
+            return { ...o, code, cls, handle, configured, attention };
+        });
+        const nConnected = rows.filter(r => r.configured).length;
+        const nAttention = rows.filter(r => r.attention).length;
+
+        const logoOf = (p) => p && p.logo
+            ? `<img class="pset-row-logo" src="${p.logo}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'pset-row-emoji',textContent:'${(p.emoji || '').replace(/'/g, '')}'}))">`
+            : `<span class="pset-row-emoji">${(p && p.emoji) || ''}</span>`;
+        list.innerHTML = `
+            <div class="pset-filters">
+                <button class="pset-chip active" data-pfilter="connected">Connected (${nConnected})</button>
+                <button class="pset-chip" data-pfilter="all">All (${rows.length})</button>
+                <button class="pset-chip ${nAttention ? 'pset-chip-warn' : ''}" data-pfilter="attention">Needs attention (${nAttention})</button>
+            </div>
+            <button class="pset-row pset-row-overview" data-pcode="__health"><span class="status-dot" id="pset-health-dot"></span><span class="pset-row-name">Session health</span><span class="pset-row-meta">overview</span></button>
+            ${rows.map(r => `
+            <button class="pset-row" data-pcode="${r.code}" data-configured="${r.configured ? 1 : 0}" data-attention="${r.attention ? 1 : 0}">
+                <span class="status-dot ${r.cls}"></span>${logoOf(r.p)}<span class="pset-row-name">${Utils.escapeHtml(r.name)}</span>
+                <span class="pset-row-meta">${Utils.escapeHtml(r.handle || (r.configured ? '' : 'not connected'))}</span>
+            </button>`).join('')}`;
+
+        if (health) detail.appendChild(health);
+        rows.forEach(r => detail.appendChild(r.el));
+        pane.insertBefore(layout, pane.firstChild);
+        if (footer) list.appendChild(footer);
+
+        const select = (code, { scroll = false } = {}) => {
+            list.querySelectorAll('.pset-row').forEach(b => b.classList.toggle('active', b.dataset.pcode === code));
+            detail.querySelectorAll(':scope > details').forEach(d => {
+                const mine = code === '__health' ? d === health : d.dataset.platform === code;
+                d.classList.toggle('pset-hidden', !mine);
+                if (mine) d.open = true;
+            });
+            layout.dataset.selected = code;
+            if (scroll && window.innerWidth < 900) detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+        const applyFilter = (f) => {
+            list.querySelectorAll('.pset-chip').forEach(c => c.classList.toggle('active', c.dataset.pfilter === f));
+            list.querySelectorAll('.pset-row:not(.pset-row-overview)').forEach(b => {
+                const show = f === 'all' || (f === 'connected' ? b.dataset.configured === '1' : b.dataset.attention === '1');
+                b.style.display = show ? '' : 'none';
+            });
+            layout.dataset.filter = f;
+        };
+        list.addEventListener('click', (e) => {
+            const chip = e.target.closest('.pset-chip');
+            if (chip) { applyFilter(chip.dataset.pfilter); return; }
+            const row = e.target.closest('.pset-row');
+            if (!row) return;
+            select(row.dataset.pcode, { scroll: true });
+            history.replaceState(null, '', row.dataset.pcode === '__health' ? '#/settings/platforms' : `#/settings/platforms/${row.dataset.pcode}`);
+        });
+        // The health card's dot mirrors onto the overview row.
+        const srcDot = pane.querySelector('#session-health-dot');
+        const dstDot = list.querySelector('#pset-health-dot');
+        if (srcDot && dstDot) {
+            const mirror = () => { dstDot.className = srcDot.className; };
+            mirror();
+            new MutationObserver(mirror).observe(srcDot, { attributes: true, attributeFilter: ['class'] });
+        }
+        this._psetSelect = select;
+
+        const fromHash = (window.location.hash.match(/^#\/settings\/platforms\/([\w-]+)/) || [])[1];
+        const initial = fromHash && rows.some(r => r.code === fromHash) ? fromHash : '__health';
+        applyFilter(nConnected ? 'connected' : 'all');
+        if (initial !== '__health' && !rows.find(r => r.code === initial).configured) applyFilter('all');
+        select(initial, { scroll: !!fromHash });
     },
 
     /* Open and scroll to one platform's accordion, from #/settings/platforms/<code>.
@@ -10813,26 +11774,6 @@ const App = {
      * Runs at the END of _enhancePlatformSettings because that method re-appends
      * the accordions in sorted order — scrolling before the sort would target
      * the element's old position. */
-    _focusPlatformFromHash(pane) {
-        const code = (window.location.hash.match(/^#\/settings\/platforms\/([\w-]+)/) || [])[1];
-        if (!code) return;
-        // No escaping needed, and CSS.escape would be WRONG here: it escapes for
-        // an identifier, so a digit-leading code becomes ` abc` — valid CSS
-        // that never matches inside a quoted attribute value. The regex above
-        // already limits `code` to [\w-]+, which cannot contain a quote or
-        // backslash, so interpolating it directly is safe.
-        const target = pane.querySelector(`details.settings-accordion[data-platform="${code}"]`);
-        if (!target) return;                            // unknown code — leave the page alone
-        target.open = true;
-        // rAF so the scroll happens after the browser has laid out the now-open
-        // accordion; otherwise it scrolls to where the collapsed element was.
-        requestAnimationFrame(() => {
-            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            target.classList.add('settings-accordion-flash');
-            setTimeout(() => target.classList.remove('settings-accordion-flash'), 2000);
-        });
-    },
-
     /* Footer under the platform accordions: a pointer to the Accounts page for
      * multi-account users (these creds = the primary account) + a trademark
      * disclaimer for the brand logos. Idempotent — re-appended last each paint. */
@@ -10893,7 +11834,7 @@ const App = {
         try {
             // Core settings: only fetch what General/Platforms/Telegram/Data/About tabs need.
             // Polling tab data is loaded lazily when the user clicks into it.
-            const [creds, prefs, telegram, tgFeatures, pollPausedState, faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, updateInfo, postingSettings, browserLoginInfo, setupStatus, digest, tgChannel, fnAuth, fbrAuth] = await Promise.all([
+            const [creds, prefs, telegram, tgFeatures, pollPausedState, faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, updateInfo, postingSettings, browserLoginInfo, setupStatus, digest, tgChannel, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth] = await Promise.all([
                 API.getCredentials(),
                 API.getPreferences(),
                 API.getTelegram(),
@@ -10923,6 +11864,9 @@ const App = {
                 API.getTelegramChannel().catch(() => ({ channel: '', has_own_token: false, uses_notification_bot: false, configured: false })),
                 API.getFNAuthStatus().catch(() => ({ has_credentials: false, username: '' })),
                 API.getFBRAuthStatus().catch(() => ({ has_credentials: false, username: '' })),
+                API.getSCAuthStatus().catch(() => ({ has_credentials: false, has_app: false, username: '' })),
+                API.getNGAuthStatus().catch(() => ({ has_credentials: false, username: '' })),
+                API.getYTAuthStatus().catch(() => ({ has_credentials: false, has_app: false, username: '' })),
             ]);
 
             // Resolve effective mode for hide/show logic. Falls back to inferred
@@ -10933,48 +11877,47 @@ const App = {
                     : (postingSettings.posting_server_url ? 'paired_desktop' : 'standalone'));
             const _isServer = _runtimeMode === 'server';
             const _isPaired = _setupMode === 'paired_desktop';
+            // 4.24.1: connected mode is saved by the wizard but only applied at launch — until the
+            // restart this page is still the local app, and used to call itself "Standalone".
+            const _isConnectedPending = _setupMode === 'connected' && !_isServer;
             const _pollingOwner = setupStatus.polling_owner || (_isServer ? 'local' : (_isPaired ? 'server' : 'local'));
 
             // Store auth state for lazy-loaded polling tab
-            this._pollingAuth = { faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth };
+            this._pollingAuth = { faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth };
 
             // Store browser login availability for platform connect forms
             const _browserLoginAvailable = browserLoginInfo.available;
 
-            let _settingsTab = (window.location.hash.match(/^#\/settings\/(\w+)/) || [])[1] || 'general';
-            // Publishing tab folded into General (2.116.0) — redirect old deep links.
-            if (_settingsTab === 'publishing') _settingsTab = 'general';
+            // 4.25.0 (SETTINGSNAV): twelve pages in four groups behind a left rail. The old
+            // eleven tab names still deep-link — they map onto the page their blocks moved to.
+            const _settingsPage = App._settingsPageFor((window.location.hash.match(/^#\/settings\/(\w+)/) || [])[1]);
+            const _settingsTab = _settingsPage;   // the panel markup below still keys on the OLD tab names; see _layoutSettingsPages
 
             const html = `
                 <div class="page-header">
                     <h2>Settings</h2>
-                    <div style="display:flex;gap:8px">
-                        <button class="btn btn-success" id="save-all-settings-btn" title="Save all settings on this page">Save Settings</button>
-                        <button class="btn btn-primary" id="poll-now-btn">Poll Now</button>
-                        <button class="btn btn-secondary" id="full-resync-btn" title="Re-scrape all faves and comments">Full Resync</button>
-                        <button class="btn btn-secondary" id="clear-session-btn" title="Clear cached API session">Clear Session</button>
+                </div>
+
+                <div class="settings-layout">
+                <aside class="settings-rail" id="settings-rail" aria-label="Settings pages">
+                    <div class="settings-search-bar">
+                        <input type="search" id="settings-search" class="settings-search-input"
+                               placeholder="🔍 Search settings…" autocomplete="off"
+                               aria-label="Search all settings">
+                        <span id="settings-search-info" class="settings-search-info"></span>
                     </div>
+                    ${App._settingsRailHtml(_settingsPage, {
+                        connection: _isServer ? 'server' : (_isPaired ? 'paired' : (_isConnectedPending ? 'restart' : (_setupMode === 'connected' ? 'connected' : 'standalone'))),
+                        platforms: `${[faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth].filter(a => a && (a.has_credentials || a.has_cookies || a.has_key)).length + (creds.username ? 1 : 0)} connected`,
+                        polling: pollPausedState.polling_paused ? 'paused' : (_pollingOwner === 'local' ? (_isServer ? 'this server' : 'this computer') : 'server'),
+                        about: updateInfo && updateInfo.current && updateInfo.current !== '?' ? updateInfo.current : '',
+                    })}
+                </aside>
+                <div class="settings-pages" id="settings-pages">
+                    ${App.SETTINGS_PAGES.map(pg => `<section class="settings-page" data-page="${pg.key}" ${pg.key !== _settingsPage ? 'style="display:none"' : ''}>
+                        <div class="settings-page-head"><h3>${pg.label}</h3>${pg.blurb ? `<p>${pg.blurb}</p>` : ''}</div>
+                    </section>`).join('')}
                 </div>
-
-                <div class="settings-search-bar">
-                    <input type="search" id="settings-search" class="settings-search-input"
-                           placeholder="🔍 Search settings…" autocomplete="off"
-                           aria-label="Search all settings">
-                    <span id="settings-search-info" class="settings-search-info"></span>
-                </div>
-
-                <div class="settings-tabs" id="settings-tabs">
-                    <button class="settings-tab ${_settingsTab === 'general' ? 'active' : ''}" data-stab="general">General</button>
-                    <button class="settings-tab ${_settingsTab === 'appearance' ? 'active' : ''}" data-stab="appearance">Appearance</button>
-                    <button class="settings-tab ${_settingsTab === 'platforms' ? 'active' : ''}" data-stab="platforms">Platforms</button>
-                    <button class="settings-tab ${_settingsTab === 'polling' ? 'active' : ''}" data-stab="polling">Polling</button>
-                    <button class="settings-tab ${_settingsTab === 'telegram' ? 'active' : ''}" data-stab="telegram">Telegram</button>
-                    <button class="settings-tab ${_settingsTab === 'digest' ? 'active' : ''}" data-stab="digest">Weekly digest</button>
-                    <button class="settings-tab ${_settingsTab === 'data' ? 'active' : ''}" data-stab="data">Data</button>
-                    <button class="settings-tab ${_settingsTab === 'logs' ? 'active' : ''}" data-stab="logs">Logs</button>
-                    <button class="settings-tab ${_settingsTab === 'about' ? 'active' : ''}" data-stab="about">About</button>
-                    <button class="settings-tab ${_settingsTab === 'security' ? 'active' : ''}" data-stab="security">Security</button>
-                    <button class="settings-tab ${_settingsTab === 'diagnostics' ? 'active' : ''}" data-stab="diagnostics">Diagnostics</button>
                 </div>
 
                 <!-- ═══ TAB: Diagnostics ═══ -->
@@ -11086,7 +12029,7 @@ const App = {
                     </div>
                 </div>
 
-                <div class="settings-section">
+                <div class="settings-section" data-page="connection">
                     <h3>Sync</h3>
                     <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
                         When enabled, this device pushes preference changes to your cloud server within seconds and pulls remote changes every 5 minutes. Browser tabs also refresh on focus. Credentials and your session secret are excluded.
@@ -11107,31 +12050,31 @@ const App = {
                 <!-- ═══ TAB: General ═══ -->
                 <div class="settings-tab-content" data-tab-content="general" ${_settingsTab !== 'general' ? 'style="display:none"' : ''}>
 
-                <details class="settings-accordion" open>
-                    <summary>Setup Mode <span class="summary-meta">— ${_isServer ? 'Server (Docker)' : (_isPaired ? 'Paired with server' : 'Standalone')}</span></summary>
+                <details class="settings-accordion" data-page="connection" open>
+                    <summary>Setup Mode <span class="summary-meta">— ${_isServer ? 'Server (Docker)' : (_isPaired ? 'Paired with server' : (_isConnectedPending ? 'Connected — restart to open the server' : 'Standalone'))}</span></summary>
                     <div class="accordion-body">
                     <div class="settings-row">
                         <div>
-                            <span class="settings-label">${_isServer ? 'This is the server.' : (_isPaired ? 'Paired with a remote server.' : 'Standalone — running locally only.')}</span>
+                            <span class="settings-label">${_isServer ? 'This is the server.' : (_isPaired ? 'Paired with a remote server.' : (_isConnectedPending ? 'Connected to your server — it takes effect when PawPoller reopens.' : 'Standalone — running locally only.'))}</span>
                             <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
                                 Polling owner: <strong>${_pollingOwner === 'local' ? (_isServer ? 'this server' : 'this computer') : 'remote server'}</strong>
                                 ${_isPaired && postingSettings.posting_server_url ? `&middot; Server: <code>${Utils.escapeHtml(postingSettings.posting_server_url)}</code>` : ''}
                             </div>
                         </div>
-                        ${_isServer ? '' : '<button class="btn btn-secondary" id="btn-rerun-wizard" title="Switch between standalone and paired modes">Re-run setup</button>'}
+                        ${_isServer ? '' : `${_isConnectedPending ? '<button class="btn btn-primary" id="btn-restart-connected" style="margin-right:8px">Restart now</button>' : ''}<button class="btn btn-secondary" id="btn-rerun-wizard" title="Switch between standalone and paired modes">Re-run setup</button>`}
                     </div>
                     </div>
                 </details>
 
                 ${_isPaired ? `
-                <details class="settings-accordion" open id="mirror-sync-section">
+                <details class="settings-accordion" data-page="connection" open id="mirror-sync-section">
                     <summary>Sync with server <span class="summary-meta" id="mirror-sync-badge">— checking…</span></summary>
                     <div class="accordion-body" id="mirror-sync-body">
                         <p style="color:var(--text-muted);font-size:13px">Loading sync status…</p>
                     </div>
                 </details>` : ''}
 
-                <details class="settings-accordion" open>
+                <details class="settings-accordion" data-page="preferences" open>
                     <summary>App Preferences</summary>
                     <div class="accordion-body">
                     ${_isServer ? '' : `
@@ -11189,7 +12132,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-page="polling">
                     <summary>Poll Intervals <span class="summary-meta">— controls how often each platform is checked</span></summary>
                     <div class="accordion-body">
                     <div class="settings-row" style="border-bottom:2px solid var(--border);padding-bottom:14px;margin-bottom:6px">
@@ -11532,7 +12475,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-page="notifications">
                     <summary>Notification Filters</summary>
                     <div class="accordion-body">
                     <div class="settings-row">
@@ -11592,7 +12535,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-page="notifications">
                     <summary>Milestone Thresholds</summary>
                     <div class="accordion-body">
                     <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Comma-separated numbers. Telegram will notify when a submission crosses any of these thresholds.</p>
@@ -11614,7 +12557,7 @@ const App = {
 
                 <!-- Publishing — relocated from its own tab into General (2.116.0).
                      All element IDs preserved so the Publishing handlers keep working. -->
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-page="publishing">
                     <summary>Publishing</summary>
                     <div class="accordion-body">
                     <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px">
@@ -11667,7 +12610,7 @@ const App = {
                     </div>
                 </details>
 
-                <details class="settings-accordion">
+                <details class="settings-accordion" data-page="connection">
                     <summary>Server Sync</summary>
                     <div class="accordion-body">
                     <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
@@ -11686,22 +12629,23 @@ const App = {
                         <label style="font-size:13px;color:var(--text-muted)">Local Archive Path (auto-detected if blank)</label>
                         <input type="text" id="posting-archive-path" class="search-input" value="${Utils.escapeHtml(postingSettings.posting_story_archive_path || '')}" placeholder="Auto-detect" style="max-width:500px">
                     </div>
+                    <div style="margin-top:12px"><button class="btn btn-primary" id="save-server-sync-btn" title="Saves the server URL, key and archive path (the same save as Publishing defaults)">Save</button></div>
                     </div>
                 </details>
 
-                <details class="settings-accordion" id="ig-host-accordion">
+                <details class="settings-accordion" data-page="publishing" id="ig-host-accordion">
                     <summary>Instagram image host <span class="summary-meta">— where Meta fetches your post images from</span></summary>
                     <div class="accordion-body" id="ig-host-body">
                         <p style="font-size:13px;color:var(--text-muted)">Loading…</p>
                     </div>
                 </details>
 
-                <div style="margin-top:16px;display:flex;gap:12px">
+                <div style="margin-top:16px;display:flex;gap:12px" data-page="publishing">
                     <button class="btn btn-primary" id="save-posting-settings-btn">Save Publishing Settings</button>
                     <span id="posting-settings-status" style="font-size:13px;color:var(--text-muted);align-self:center"></span>
                 </div>
 
-                <details class="settings-accordion" style="border-color:#a44;background:rgba(180,60,60,0.04)">
+                <details class="settings-accordion" data-page="about" style="border-color:#a44;background:rgba(180,60,60,0.04)">
                     <summary style="color:#c66">Danger zone <span class="summary-meta">— uninstall, factory reset</span></summary>
                     <div class="accordion-body">
                     <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">
@@ -11790,7 +12734,7 @@ const App = {
                     <span id="backup-msg" style="font-size:13px;margin-top:8px;display:block"></span>
                 </div>
 
-                <div class="settings-section">
+                <div class="settings-section" data-page="notifications">
                     <h3>Discord announcements</h3>
                     <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
                         Post an announcement to a Discord channel whenever you publish. Paste a channel
@@ -11817,7 +12761,7 @@ const App = {
                     <span id="discord-msg" style="font-size:12px;margin-top:6px;display:block"></span>
                 </div>
 
-                <div class="settings-section">
+                <div class="settings-section" data-page="connection">
                     <h3>Settings Sync</h3>
                     <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">
                         Sync credentials and settings between desktop and server.
@@ -13026,6 +13970,7 @@ const App = {
                             <li>Find <code>refresh_token</code> and copy its value. (Or: Network tab &rarr; the <code>oauth/token</code> response.)</li>
                         </ol>
                     </details>
+
                     <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
                         <input type="password" id="fn-refresh-token" class="search-input" placeholder="Refresh token (paste here)" autocomplete="off">
                         <div style="font-size:11px;color:var(--text-muted)">Optional — the email is only used as a label if the token doesn't carry a name:</div>
@@ -13035,6 +13980,169 @@ const App = {
                     <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
                         <button class="btn btn-primary" id="fn-connect-btn">Connect</button>
                         <span id="fn-msg" style="font-size:13px"></span>
+                    </div>
+                    `}
+                    </div>
+                </details>
+
+                <details class="settings-accordion" data-platform="sc">
+                    <summary><span class="status-dot ${scAuth.has_credentials ? this._credStatus('sc', scAuth.username).cls : 'disconnected'}"></span>SoundCloud${scAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(scAuth.username || '')}</span>` : ''}</summary>
+                    <div class="accordion-body">
+                    ${scAuth.has_credentials ? `
+                    <div class="settings-row">
+                        <div><span class="settings-label">Status</span></div>
+                        ${this._credStatus('sc', scAuth.username).html}
+                    </div>
+                    <div class="settings-row" style="margin-top:8px">
+                        <div>
+                            <span class="settings-label">SoundCloud desktop notifications</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Toast + Telegram alerts for SoundCloud activity</div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="pref-sc-notifications" ${prefs.sc_notifications_enabled ? 'checked' : ''}>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="sc-poll-btn">SoundCloud Poll Now</button>
+                        <button class="btn btn-secondary" id="sc-resync-btn">Full Resync</button>
+                        <button class="btn btn-secondary" id="sc-authorize-btn">Re-authorise</button>
+                        <button class="btn btn-danger" id="sc-disconnect-btn">Disconnect</button>
+                        <span id="sc-msg" style="font-size:13px"></span>
+                    </div>
+                    ` : `
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">
+                        Poll+post — your tracks' plays, likes and comments, and audio pieces published as tracks.
+                        SoundCloud only hands out API access on request: the account needs an
+                        <strong>Artist Pro</strong> subscription, and the app is registered through
+                        <a href="https://developers.soundcloud.com/" target="_blank" style="color:var(--accent)">SoundCloud's request form</a>
+                        (approval is case by case and can take weeks). Once you have the app's client id and secret,
+                        paste them here; Connect opens SoundCloud so you can approve PawPoller in your browser.
+                    </p>
+                    <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
+                        <input type="text" id="sc-client-id" class="search-input" placeholder="Client ID" autocomplete="off" value="${scAuth.has_app ? '(saved)' : ''}">
+                        <input type="password" id="sc-client-secret" class="search-input" placeholder="Client secret${scAuth.has_app ? ' (saved — leave blank to keep)' : ''}" autocomplete="off">
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="sc-connect-btn">Connect &amp; authorise</button>
+                        <span id="sc-msg" style="font-size:13px"></span>
+                    </div>
+                    <div id="sc-redirect-hint" style="display:none;margin-top:10px;padding:10px;background:var(--bg-input);border-radius:6px;font-size:12px;color:var(--text-muted)">
+                        SoundCloud only redirects back to an address registered on the app. Add this one as the app's redirect URI, then try again:
+                        <div style="margin-top:6px"><code id="sc-redirect-uri" style="user-select:all"></code></div>
+                    </div>
+                    `}
+                    </div>
+                </details>
+
+                <details class="settings-accordion" data-platform="ng">
+                    <summary><span class="status-dot ${ngAuth.has_credentials ? this._credStatus('ng', ngAuth.username).cls : 'disconnected'}"></span>Newgrounds${ngAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(ngAuth.username || '')}</span>` : ''}</summary>
+                    <div class="accordion-body">
+                    ${ngAuth.has_credentials ? `
+                    <div class="settings-row">
+                        <div><span class="settings-label">Status</span></div>
+                        ${this._credStatus('ng', ngAuth.username).html}
+                    </div>
+                    <div class="settings-row" style="margin-top:8px">
+                        <div>
+                            <span class="settings-label">Newgrounds desktop notifications</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Toast + Telegram alerts for Newgrounds activity</div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="pref-ng-notifications" ${prefs.ng_notifications_enabled ? 'checked' : ''}>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="ng-poll-btn">Newgrounds Poll Now</button>
+                        <button class="btn btn-secondary" id="ng-resync-btn">Full Resync</button>
+                        <button class="btn btn-danger" id="ng-disconnect-btn">Disconnect</button>
+                        <span id="ng-msg" style="font-size:13px"></span>
+                    </div>
+                    ` : `
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">
+                        Poll+post — your Audio Portal and Movie Portal submissions' listens, views, faves and score, and
+                        audio / video pieces published as new projects (they go <em>Under Judgment</em> first, as every
+                        Newgrounds submission does). Newgrounds has no API, so PawPoller uses your browser session.
+                        mp3 uploads must be sampled at 44.1 kHz.
+                    </p>
+                    ${_browserLoginAvailable ? `
+                    <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
+                        <input type="text" id="ng-browser-username" class="search-input" placeholder="Newgrounds username">
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="ng-browser-login-btn">Login via Browser</button>
+                        <button class="btn btn-outline" id="ng-manual-toggle" style="font-size:12px">Paste the cookie instead</button>
+                        <span id="ng-msg" style="font-size:13px"></span>
+                    </div>
+                    <div id="ng-manual-section" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+                    ` : `
+                    <div id="ng-manual-section">
+                    `}
+                        <p style="color:var(--text-muted);font-size:12px;margin-bottom:8px">Sign in at <a href="https://www.newgrounds.com/passport" target="_blank" style="color:var(--accent)">newgrounds.com</a>, then copy the whole cookie header for newgrounds.com from DevTools (F12 &rarr; Network &rarr; any request &rarr; Request Headers &rarr; <code style="background:var(--bg-tertiary);padding:2px 4px;border-radius:3px">cookie</code>).</p>
+                        <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
+                            <input type="text" id="ng-username" class="search-input" placeholder="Newgrounds username">
+                            <input type="password" id="ng-cookie" class="search-input" placeholder="Cookie string (name=value; name=value; …)" autocomplete="off">
+                        </div>
+                        <div style="margin-top:8px;display:flex;align-items:center;gap:8px"><button class="btn btn-primary" id="ng-connect-btn">Connect</button>${_browserLoginAvailable ? '' : '<span id="ng-msg" style="font-size:13px"></span>'}</div>
+                    </div>
+                    `}
+                    </div>
+                </details>
+
+                <details class="settings-accordion" data-platform="yt">
+                    <summary><span class="status-dot ${ytAuth.has_credentials ? this._credStatus('yt', ytAuth.username).cls : 'disconnected'}"></span>YouTube${ytAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(ytAuth.username || '')}</span>` : ''}</summary>
+                    <div class="accordion-body">
+                    ${ytAuth.has_credentials ? `
+                    <div class="settings-row">
+                        <div><span class="settings-label">Status</span></div>
+                        ${this._credStatus('yt', ytAuth.username).html}
+                    </div>
+                    <p style="color:var(--text-muted);font-size:12px;margin:8px 0 0">
+                        Uploads from an unverified Google project stay <strong>private</strong> until the project passes
+                        YouTube's API compliance audit — PawPoller uploads, sets the thumbnail, and you flip each one public in
+                        <a href="https://studio.youtube.com/" target="_blank" style="color:var(--accent)">Studio</a>.
+                        ${ytAuth.long_uploads && ytAuth.long_uploads !== 'allowed' ? 'This channel is not verified for videos over 15 minutes.' : ''}
+                        A consent screen left in <em>Testing</em> expires its tokens every 7 days — re-authorise when polling stops.
+                    </p>
+                    <div class="settings-row" style="margin-top:8px">
+                        <div>
+                            <span class="settings-label">YouTube desktop notifications</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Toast + Telegram alerts for YouTube activity</div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="pref-yt-notifications" ${prefs.yt_notifications_enabled ? 'checked' : ''}>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="yt-poll-btn">YouTube Poll Now</button>
+                        <button class="btn btn-secondary" id="yt-resync-btn">Full Resync</button>
+                        <button class="btn btn-secondary" id="yt-authorize-btn">Re-authorise</button>
+                        <button class="btn btn-danger" id="yt-disconnect-btn">Disconnect</button>
+                        <span id="yt-msg" style="font-size:13px"></span>
+                    </div>
+                    ` : `
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">
+                        Poll+post — your channel's views, likes and comments, and video pieces uploaded with the poster as the
+                        thumbnail. Bring your own Google project: in
+                        <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" style="color:var(--accent)">Google Cloud</a>
+                        enable the YouTube Data API v3, configure the OAuth consent screen (add yourself as a test user), make a
+                        <strong>Web application</strong> OAuth client with the redirect URI shown after Connect, and paste its
+                        client id and secret here. <strong>Uploads stay private</strong> until the project passes YouTube's
+                        API compliance audit; a consent screen left in Testing expires its tokens every 7 days.
+                    </p>
+                    <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
+                        <input type="text" id="yt-client-id" class="search-input" placeholder="Client ID" autocomplete="off" value="${ytAuth.has_app ? '(saved)' : ''}">
+                        <input type="password" id="yt-client-secret" class="search-input" placeholder="Client secret${ytAuth.has_app ? ' (saved — leave blank to keep)' : ''}" autocomplete="off">
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="yt-connect-btn">Connect &amp; authorise</button>
+                        <span id="yt-msg" style="font-size:13px"></span>
+                    </div>
+                    <div id="yt-redirect-hint" style="display:none;margin-top:10px;padding:10px;background:var(--bg-input);border-radius:6px;font-size:12px;color:var(--text-muted)">
+                        Google only redirects back to an address registered on the OAuth client. Add this one as an authorised redirect URI, then try again:
+                        <div style="margin-top:6px"><code id="yt-redirect-uri" style="user-select:all"></code></div>
                     </div>
                     `}
                     </div>
@@ -13083,6 +14191,15 @@ const App = {
                 <!-- ═══ TAB: Polling ═══ -->
                 <div class="settings-tab-content" data-tab-content="polling" ${_settingsTab !== 'polling' ? 'style="display:none"' : ''}>
 
+                <div class="settings-section settings-actions">
+                    <h3>Actions</h3>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="poll-now-btn">Poll Now</button>
+                        <button class="btn btn-secondary" id="full-resync-btn" title="Re-scrape all faves and comments">Full Resync</button>
+                        <button class="btn btn-secondary" id="clear-session-btn" title="Clear cached API session">Clear Session</button>
+                    </div>
+                </div>
+
                 <details class="settings-accordion" open>
                     <summary><span class="status-dot ${pollPausedState.polling_paused ? 'disconnected' : 'connected'}"></span>Polling Control <span class="summary-meta">— ${pollPausedState.polling_paused ? 'Paused' : 'Active'}</span></summary>
                     <div class="accordion-body">
@@ -13119,47 +14236,31 @@ const App = {
 
             this._setContent(html);
 
-            // ── Settings Tab Switching ───────────────────────────────
-            const tabBar = document.getElementById('settings-tabs');
-            if (tabBar) {
-                tabBar.addEventListener('click', (e) => {
-                    const btn = e.target.closest('.settings-tab');
-                    if (!btn) return;
-                    const tab = btn.dataset.stab;
-                    // Update active tab button
-                    tabBar.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
-                    btn.classList.add('active');
-                    // Show/hide tab content panels
-                    document.querySelectorAll('.settings-tab-content').forEach(panel => {
-                        panel.style.display = panel.dataset.tabContent === tab ? '' : 'none';
-                    });
-                    // Update URL hash without re-rendering
-                    const newHash = tab === 'general' ? '#/settings' : `#/settings/${tab}`;
-                    history.replaceState(null, '', newHash);
-                    // Auto-load lazy tabs when switching
-                    if (tab === 'logs') this._loadLogs();
-                    if (tab === 'polling') this._loadPollingTab();
-                    if (tab === 'diagnostics' && window.Diagnostics) {
-                        window.Diagnostics.mount(document.getElementById('diagnostics-mount'));
-                    }
+            // ── Settings pages behind the rail (4.25.0, SETTINGSNAV) ──────────
+            // The panels above are still keyed on the old tab names; this moves every
+            // block into the page it belongs to (data-page wins, else the tab's page).
+            this._layoutSettingsPages();
+            this._buildNotificationMatrix();           // 4.27.0: every site's alert switch in one place
+            const rail = document.getElementById('settings-rail');
+            const showSettingsPage = (page) => {
+                rail?.querySelectorAll('.settings-nav-item').forEach(t => t.classList.toggle('active', t.dataset.spage === page));
+                document.querySelectorAll('.settings-page').forEach(panel => {
+                    panel.style.display = panel.dataset.page === page ? '' : 'none';
                 });
-
-                // Scroll-aware edge fades + keep the active tab in view, so it's
-                // obvious on narrow screens that the strip scrolls to more tabs.
-                // Listener is on the (per-render) tabBar element, so it's GC'd
-                // with it — no accumulation across settings re-renders.
-                const updateTabFade = () => {
-                    const max = tabBar.scrollWidth - tabBar.clientWidth;
-                    tabBar.classList.toggle('of-start', tabBar.scrollLeft > 4);
-                    tabBar.classList.toggle('of-end', tabBar.scrollLeft < max - 4);
-                };
-                tabBar.addEventListener('scroll', updateTabFade, { passive: true });
-                requestAnimationFrame(() => {
-                    tabBar.querySelector('.settings-tab.active')
-                        ?.scrollIntoView({ inline: 'center', block: 'nearest' });
-                    updateTabFade();
-                });
-            }
+                history.replaceState(null, '', page === 'connection' ? '#/settings' : `#/settings/${page}`);
+                if (page === 'logs') {
+                    this._loadLogs();
+                    if (window.Diagnostics) window.Diagnostics.mount(document.getElementById('diagnostics-mount'));
+                }
+                if (page === 'polling') this._loadPollingTab();
+                window.scrollTo({ top: 0 });
+            };
+            rail?.addEventListener('click', (e) => {
+                const btn = e.target.closest('.settings-nav-item');
+                if (!btn) return;
+                showSettingsPage(btn.dataset.spage);
+            });
+            const tabBar = rail;   // the search wires against the rail now
 
             // ── Settings Search (2.103.0) ─────────────────────────────
             // Filters every settings tab at once. Typing reveals all panels
@@ -13167,14 +14268,14 @@ const App = {
             // clearing restores the normal single-tab view.
             this._wireSettingsSearch(tabBar);
 
-            // Load lazy tabs on initial render if active
+            // Load lazy pages on initial render if active
             this._pollingTabLoaded = false;
             this._settingsSearchLoadedLazy = false; // re-arm search's eager-load (2.103.0)
-            if (_settingsTab === 'logs') this._loadLogs();
-            if (_settingsTab === 'polling') this._loadPollingTab();
-            if (_settingsTab === 'diagnostics' && window.Diagnostics) {
-                window.Diagnostics.mount(document.getElementById('diagnostics-mount'));
+            if (_settingsPage === 'logs') {
+                this._loadLogs();
+                if (window.Diagnostics) window.Diagnostics.mount(document.getElementById('diagnostics-mount'));
             }
+            if (_settingsPage === 'polling') this._loadPollingTab();
 
             // Platforms pane: sort the platform accordions A→Z + give each a logo
             // and a centred title. Runs regardless of the active tab (the pane is
@@ -13315,112 +14416,6 @@ const App = {
             // platform session status list + wire the "Check sessions now" button.
             this._initSessionHealthCard();
 
-            document.getElementById('save-all-settings-btn')?.addEventListener('click', async (e) => {
-                const btn = e.target;
-                btn.disabled = true;
-                btn.textContent = 'Saving...';
-                try {
-                    // Collect all preferences from the form
-                    const prefs = {};
-                    const val = (id) => document.getElementById(id)?.value;
-                    const chk = (id) => document.getElementById(id)?.checked;
-
-                    // General toggles
-                    prefs.minimize_to_tray = !!chk('pref-tray');
-                    prefs.run_on_startup = !!chk('pref-startup');
-                    prefs.notifications_enabled = !!chk('pref-notifications');
-                    prefs.watcher_notifications_enabled = !!chk('pref-watcher-notif');
-                    if (document.getElementById('pref-logs-panel')) {
-                        prefs.logs_panel_enabled = !!chk('pref-logs-panel');
-                    }
-                    if (document.getElementById('pref-auto-sync')) {
-                        prefs.auto_sync_enabled = !!chk('pref-auto-sync');
-                    }
-
-                    // Poll intervals
-                    prefs.poll_interval_minutes = parseInt(val('pref-poll-interval')) || 60;
-                    prefs.fa_poll_interval_minutes = parseInt(val('pref-fa-poll-interval')) || 60;
-                    prefs.ws_poll_interval_minutes = parseInt(val('pref-ws-poll-interval')) || 60;
-                    prefs.sf_poll_interval_minutes = parseInt(val('pref-sf-poll-interval')) || 60;
-                    prefs.sqw_poll_interval_minutes = parseInt(val('pref-sqw-poll-interval')) || 60;
-                    prefs.ao3_poll_interval_minutes = parseInt(val('pref-ao3-poll-interval')) || 60;
-                    prefs.da_poll_interval_minutes = parseInt(val('pref-da-poll-interval')) || 60;
-                    prefs.wp_poll_interval_minutes = parseInt(val('pref-wp-poll-interval')) || 60;
-                    prefs.ik_poll_interval_minutes = parseInt(val('pref-ik-poll-interval')) || 60;
-                    prefs.bsky_poll_interval_minutes = parseInt(val('pref-bsky-poll-interval')) || 60;
-                    prefs.tw_poll_interval_minutes = parseInt(val('pref-tw-poll-interval')) || 60;
-                    prefs.mast_poll_interval_minutes = parseInt(val('pref-mast-poll-interval')) || 60;
-                    prefs.tum_poll_interval_minutes = parseInt(val('pref-tum-poll-interval')) || 60;
-                    prefs.pix_poll_interval_minutes = parseInt(val('pref-pix-poll-interval')) || 60;
-                    prefs.thr_poll_interval_minutes = parseInt(val('pref-thr-poll-interval')) || 60;
-                    prefs.ig_poll_interval_minutes = parseInt(val('pref-ig-poll-interval')) || 60;
-                    prefs.e621_poll_interval_minutes = parseInt(val('pref-e621-poll-interval')) || 60;
-
-                    // Timezone
-                    if (val('pref-timezone')) prefs.display_timezone = val('pref-timezone');
-
-                    // Notification filters
-                    prefs.notification_comments_only = !!chk('pref-notif-comments-only');
-                    prefs.fa_notification_comments_only = !!chk('pref-fa-notif-comments-only');
-                    prefs.ws_notification_comments_only = !!chk('pref-ws-notif-comments-only');
-                    prefs.sf_notification_comments_only = !!chk('pref-sf-notif-comments-only');
-                    prefs.notification_min_views_delta = parseInt(val('pref-min-views-delta')) || 0;
-                    prefs.notification_min_faves_delta = parseInt(val('pref-min-faves-delta')) || 0;
-
-                    // Milestones
-                    const parseList = (id) => (val(id) || '').split(',').map(s => parseInt(s.trim())).filter(n => n > 0);
-                    prefs.milestone_views = parseList('pref-milestone-views');
-                    prefs.milestone_faves = parseList('pref-milestone-faves');
-                    prefs.milestone_comments = parseList('pref-milestone-comments');
-
-                    // Platform notification toggles
-                    if (document.getElementById('pref-fa-notifications')) prefs.fa_notifications_enabled = !!chk('pref-fa-notifications');
-                    if (document.getElementById('pref-fa-watcher-notif')) prefs.fa_watcher_notifications_enabled = !!chk('pref-fa-watcher-notif');
-                    if (document.getElementById('pref-ws-notifications')) prefs.ws_notifications_enabled = !!chk('pref-ws-notifications');
-                    if (document.getElementById('pref-sf-notifications')) prefs.sf_notifications_enabled = !!chk('pref-sf-notifications');
-                    if (document.getElementById('pref-sqw-notifications')) prefs.sqw_notifications_enabled = !!chk('pref-sqw-notifications');
-                    if (document.getElementById('pref-ao3-notifications')) prefs.ao3_notifications_enabled = !!chk('pref-ao3-notifications');
-                    if (document.getElementById('pref-da-notifications')) prefs.da_notifications_enabled = !!chk('pref-da-notifications');
-                    if (document.getElementById('pref-wp-notifications')) prefs.wp_notifications_enabled = !!chk('pref-wp-notifications');
-                    if (document.getElementById('pref-ik-notifications')) prefs.ik_notifications_enabled = !!chk('pref-ik-notifications');
-                    if (document.getElementById('pref-bsky-notifications')) prefs.bsky_notifications_enabled = !!chk('pref-bsky-notifications');
-                    if (document.getElementById('pref-tw-notifications')) prefs.tw_notifications_enabled = !!chk('pref-tw-notifications');
-                    if (document.getElementById('pref-tw-save-tokens')) prefs.tw_roundrobin_save_tokens = !!chk('pref-tw-save-tokens');
-                    if (document.getElementById('pref-mast-notifications')) prefs.mast_notifications_enabled = !!chk('pref-mast-notifications');
-                    if (document.getElementById('pref-tum-notifications')) prefs.tum_notifications_enabled = !!chk('pref-tum-notifications');
-                    if (document.getElementById('pref-pix-notifications')) prefs.pix_notifications_enabled = !!chk('pref-pix-notifications');
-                    if (document.getElementById('pref-thr-notifications')) prefs.thr_notifications_enabled = !!chk('pref-thr-notifications');
-                    if (document.getElementById('pref-ig-notifications')) prefs.ig_notifications_enabled = !!chk('pref-ig-notifications');
-                    if (document.getElementById('pref-e621-notifications')) prefs.e621_notifications_enabled = !!chk('pref-e621-notifications');
-                    if (document.getElementById('pref-fn-notifications')) prefs.fn_notifications_enabled = !!chk('pref-fn-notifications');
-                    if (document.getElementById('pref-fbr-notifications')) prefs.fbr_notifications_enabled = !!chk('pref-fbr-notifications');
-
-                    await API.savePreferences(prefs);
-
-                    // Save credentials if username field has a value
-                    const username = val('cred-username');
-                    const password = document.getElementById('cred-password')?.value;
-                    if (username && password) {
-                        await API.saveCredentials({ username, password });
-                    }
-
-                    btn.textContent = 'Saved!';
-                    btn.style.background = 'var(--success)';
-                    setTimeout(() => {
-                        btn.textContent = 'Save Settings';
-                        btn.style.background = '';
-                        btn.disabled = false;
-                    }, 2000);
-                } catch (err) {
-                    btn.textContent = 'Error';
-                    alert('Save failed: ' + err.message);
-                    setTimeout(() => {
-                        btn.textContent = 'Save Settings';
-                        btn.disabled = false;
-                    }, 2000);
-                }
-            });
-
             document.getElementById('poll-now-btn')?.addEventListener('click', async (e) => {
                 const btn = e.target;
                 btn.disabled = true;
@@ -13434,7 +14429,7 @@ const App = {
                         wp: 'triggerWPPoll', ik: 'triggerIKPoll', bsky: 'triggerBSKYPoll', tw: 'triggerTWPoll',
                         mast: 'triggerMASTPoll', tum: 'triggerTUMPoll', pix: 'triggerPIXPoll',
                         thr: 'triggerTHRPoll', ig: 'triggerIGPoll', e621: 'triggerE621Poll',
-                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', tg: 'triggerTGPoll' };
+                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', tg: 'triggerTGPoll', sc: 'triggerSCPoll', ng: 'triggerNGPoll', yt: 'triggerYTPoll' };
                     const codes = await this._configuredPollCodes();
                     const triggers = codes.map(c => API[TRIGGERS[c]]());
                     const results = await Promise.allSettled(triggers);
@@ -13471,7 +14466,7 @@ const App = {
                         wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync',
                         mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync',
                         thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync',
-                        fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync' };
+                        fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync' };
                     const codes = await this._configuredPollCodes();
                     const resyncs = codes.map(c => API[RESYNCS[c]]());
                     const results = await Promise.allSettled(resyncs);
@@ -14091,19 +15086,6 @@ const App = {
                 }));
             }
 
-            // FA Notifications toggle: enables/disables FA desktop + Telegram alerts
-            const faNotifToggle = document.getElementById('pref-fa-notifications');
-            if (faNotifToggle) {
-                faNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ fa_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // WS poll interval dropdown (15/30/60/120/240 minutes)
             document.getElementById('pref-ws-poll-interval')?.addEventListener('change', async (e) => {
                 try {
@@ -14118,8 +15100,9 @@ const App = {
                 try { await API.savePreferences({ watcher_notifications_enabled: e.target.checked }); }
                 catch (err) { e.target.checked = !e.target.checked; alert('Failed: ' + err.message); }
             });
-            document.getElementById('pref-fa-watcher-notif')?.addEventListener('change', async (e) => {
-                try { await API.savePreferences({ fa_watcher_notifications_enabled: e.target.checked }); }
+            // The per-site desktop-alert switches save from the notifications matrix (4.27.0).
+            document.getElementById('pref-tw-save-tokens')?.addEventListener('change', async (e) => {
+                try { await API.savePreferences({ tw_roundrobin_save_tokens: e.target.checked }); }
                 catch (err) { e.target.checked = !e.target.checked; alert('Failed: ' + err.message); }
             });
 
@@ -14200,18 +15183,6 @@ const App = {
             }
 
             // WS: Notifications toggle
-            const wsNotifToggle = document.getElementById('pref-ws-notifications');
-            if (wsNotifToggle) {
-                wsNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ ws_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // SF poll interval dropdown
             document.getElementById('pref-sf-poll-interval')?.addEventListener('change', async (e) => {
                 try {
@@ -14452,18 +15423,6 @@ const App = {
             }
 
             // SF: Notifications toggle
-            const sfNotifToggle = document.getElementById('pref-sf-notifications');
-            if (sfNotifToggle) {
-                sfNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ sf_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // SQW: Connect
             const sqwConnectBtn = document.getElementById('sqw-connect-btn');
             if (sqwConnectBtn) {
@@ -14525,18 +15484,6 @@ const App = {
             }
 
             // SQW: Notifications toggle
-            const sqwNotifToggle = document.getElementById('pref-sqw-notifications');
-            if (sqwNotifToggle) {
-                sqwNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ sqw_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // AO3: Connect
             const ao3ConnectBtn = document.getElementById('ao3-connect-btn');
             if (ao3ConnectBtn) {
@@ -14605,18 +15552,6 @@ const App = {
             }
 
             // AO3: Notifications toggle
-            const ao3NotifToggle = document.getElementById('pref-ao3-notifications');
-            if (ao3NotifToggle) {
-                ao3NotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ ao3_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // DA Connect: sends client_id + client_secret + target_user (official OAuth2 API)
             const daConnectBtn = document.getElementById('da-connect-btn');
             if (daConnectBtn) {
@@ -14729,18 +15664,6 @@ const App = {
             }
 
             // DA: Notifications toggle
-            const daNotifToggle = document.getElementById('pref-da-notifications');
-            if (daNotifToggle) {
-                daNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ da_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // WP Connect: sends just target_user (username-only auth, no password/cookie)
             const wpConnectBtn = document.getElementById('wp-connect-btn');
             if (wpConnectBtn) {
@@ -14800,18 +15723,6 @@ const App = {
             }
 
             // WP: Notifications toggle
-            const wpNotifToggle = document.getElementById('pref-wp-notifications');
-            if (wpNotifToggle) {
-                wpNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ wp_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // IK Connect: sends just target_user (username-only auth, no password/cookie)
             const ikConnectBtn = document.getElementById('ik-connect-btn');
             if (ikConnectBtn) {
@@ -14894,18 +15805,6 @@ const App = {
             }
 
             // IK: Notifications toggle
-            const ikNotifToggle = document.getElementById('pref-ik-notifications');
-            if (ikNotifToggle) {
-                ikNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ ik_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // BSKY Connect: sends identifier + app_password
             const bskyConnectBtn = document.getElementById('bsky-connect-btn');
             if (bskyConnectBtn) {
@@ -14966,18 +15865,6 @@ const App = {
             }
 
             // BSKY: Notifications toggle
-            const bskyNotifToggle = document.getElementById('pref-bsky-notifications');
-            if (bskyNotifToggle) {
-                bskyNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ bsky_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // MAST Connect: sends instance_url + access_token
             const mastConnectBtn = document.getElementById('mast-connect-btn');
             if (mastConnectBtn) {
@@ -15038,18 +15925,6 @@ const App = {
             }
 
             // MAST: Notifications toggle
-            const mastNotifToggle = document.getElementById('pref-mast-notifications');
-            if (mastNotifToggle) {
-                mastNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ mast_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // TUM Connect: sends api_key + blog
             const tumConnectBtn = document.getElementById('tum-connect-btn');
             if (tumConnectBtn) {
@@ -15110,18 +15985,6 @@ const App = {
             }
 
             // TUM: Notifications toggle
-            const tumNotifToggle = document.getElementById('pref-tum-notifications');
-            if (tumNotifToggle) {
-                tumNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ tum_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // PIX Connect: sends refresh_token + optional user_id
             const pixConnectBtn = document.getElementById('pix-connect-btn');
             if (pixConnectBtn) {
@@ -15182,18 +16045,6 @@ const App = {
             }
 
             // PIX: Notifications toggle
-            const pixNotifToggle = document.getElementById('pref-pix-notifications');
-            if (pixNotifToggle) {
-                pixNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ pix_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // THR Connect: sends access_token + optional user_id
             const thrConnectBtn = document.getElementById('thr-connect-btn');
             if (thrConnectBtn) {
@@ -15254,18 +16105,6 @@ const App = {
             }
 
             // THR: Notifications toggle
-            const thrNotifToggle = document.getElementById('pref-thr-notifications');
-            if (thrNotifToggle) {
-                thrNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ thr_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // IG Connect: sends access_token + optional user_id
             const igConnectBtn = document.getElementById('ig-connect-btn');
             if (igConnectBtn) {
@@ -15326,18 +16165,6 @@ const App = {
             }
 
             // IG: Notifications toggle
-            const igNotifToggle = document.getElementById('pref-ig-notifications');
-            if (igNotifToggle) {
-                igNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ ig_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // TW Connect: sends auth_token + ct0 + target_user
             const twConnectBtn = document.getElementById('tw-connect-btn');
             if (twConnectBtn) {
@@ -15433,18 +16260,6 @@ const App = {
             }
 
             // TW: Notifications toggle
-            const twNotifToggle = document.getElementById('pref-tw-notifications');
-            if (twNotifToggle) {
-                twNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ tw_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // e621 Connect: sends username + api_key
             const e621ConnectBtn = document.getElementById('e621-connect-btn');
             if (e621ConnectBtn) {
@@ -15505,18 +16320,6 @@ const App = {
             }
 
             // e621: Notifications toggle
-            const e621NotifToggle = document.getElementById('pref-e621-notifications');
-            if (e621NotifToggle) {
-                e621NotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ e621_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // ── FurryNetwork connect / disconnect / poll / notifications ──
             const fnConnectBtn = document.getElementById('fn-connect-btn');
             if (fnConnectBtn) {
@@ -15574,18 +16377,248 @@ const App = {
                     btn: fnResyncBtn, msgId: 'fn-msg', platform: 'fn', apiMethod: 'fullFNResync',
                 }));
             }
-            const fnNotifToggle = document.getElementById('pref-fn-notifications');
-            if (fnNotifToggle) {
-                fnNotifToggle.addEventListener('change', async (e) => {
+            // ── Newgrounds browser login / cookie connect / disconnect / poll / notifications (4.23.0) ──
+            const ngBrowserLoginBtn = document.getElementById('ng-browser-login-btn');
+            if (ngBrowserLoginBtn) {
+                ngBrowserLoginBtn.addEventListener('click', async () => {
+                    const msg = document.getElementById('ng-msg');
+                    const username = document.getElementById('ng-browser-username')?.value.trim();
+                    if (!username) {
+                        if (msg) { msg.textContent = 'Username is required'; msg.style.color = 'var(--danger)'; }
+                        return;
+                    }
+                    ngBrowserLoginBtn.disabled = true;
+                    ngBrowserLoginBtn.textContent = 'Waiting for login...';
+                    if (msg) { msg.textContent = 'A login window will open. Log in to Newgrounds, then it will close automatically.'; msg.style.color = 'var(--text-muted)'; }
                     try {
-                        await API.savePreferences({ fn_notifications_enabled: e.target.checked });
+                        const result = await API.browserLogin('ng', { ng_username: username });
+                        if (result.ok) {
+                            if (msg) { msg.textContent = 'Connected!'; msg.style.color = 'var(--success)'; }
+                            setTimeout(() => this.renderSettings(), 1000);
+                        } else {
+                            if (msg) { msg.textContent = result.message || 'Login cancelled.'; msg.style.color = 'var(--text-muted)'; }
+                            ngBrowserLoginBtn.textContent = 'Login via Browser';
+                            ngBrowserLoginBtn.disabled = false;
+                        }
                     } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
+                        let detail = err.message.replace(/^API \d+:\s*/, '');
+                        try { detail = JSON.parse(detail).detail || detail; } catch {}
+                        if (msg) { msg.textContent = detail; msg.style.color = 'var(--danger)'; }
+                        ngBrowserLoginBtn.textContent = 'Login via Browser';
+                        ngBrowserLoginBtn.disabled = false;
                     }
                 });
             }
-
+            const ngManualToggle = document.getElementById('ng-manual-toggle');
+            if (ngManualToggle) {
+                ngManualToggle.addEventListener('click', () => {
+                    const sec = document.getElementById('ng-manual-section');
+                    if (sec) sec.style.display = sec.style.display === 'none' ? 'block' : 'none';
+                });
+            }
+            const ngConnectBtn = document.getElementById('ng-connect-btn');
+            if (ngConnectBtn) {
+                ngConnectBtn.addEventListener('click', async () => {
+                    const msg = document.getElementById('ng-msg');
+                    const username = (document.getElementById('ng-username')?.value || '').trim();
+                    const cookie = (document.getElementById('ng-cookie')?.value || '').trim();
+                    if (!cookie) {
+                        if (msg) { msg.textContent = 'Paste the cookie string'; msg.style.color = 'var(--danger)'; }
+                        return;
+                    }
+                    ngConnectBtn.disabled = true;
+                    ngConnectBtn.textContent = 'Checking...';
+                    try {
+                        const r = await API.ngConnect({ username, cookie });
+                        if (msg) { msg.textContent = r.message || 'Connected!'; msg.style.color = 'var(--success)'; }
+                        setTimeout(() => this.renderSettings(), 1000);
+                    } catch (err) {
+                        let detail = err.message.replace(/^API \d+:\s*/, '');
+                        try { detail = JSON.parse(detail).detail || detail; } catch {}
+                        if (msg) { msg.textContent = detail; msg.style.color = 'var(--danger)'; }
+                        ngConnectBtn.textContent = 'Connect';
+                        ngConnectBtn.disabled = false;
+                    }
+                });
+            }
+            const ngDisconnectBtn = document.getElementById('ng-disconnect-btn');
+            if (ngDisconnectBtn) {
+                ngDisconnectBtn.addEventListener('click', async () => {
+                    if (!confirm('Disconnect Newgrounds? This forgets the browser session.')) return;
+                    try {
+                        await API.ngDisconnect();
+                        this.renderSettings();
+                    } catch (err) {
+                        alert('Failed: ' + err.message);
+                    }
+                });
+            }
+            const ngPollBtn = document.getElementById('ng-poll-btn');
+            if (ngPollBtn) {
+                ngPollBtn.addEventListener('click', () => this._pollingTabPoll({
+                    btn: ngPollBtn, msgId: 'ng-msg', platform: 'ng', apiMethod: 'triggerNGPoll',
+                }));
+            }
+            const ngResyncBtn = document.getElementById('ng-resync-btn');
+            if (ngResyncBtn) {
+                ngResyncBtn.addEventListener('click', () => this._pollingTabResync({
+                    btn: ngResyncBtn, msgId: 'ng-msg', platform: 'ng', apiMethod: 'fullNGResync',
+                }));
+            }
+            // ── YouTube connect / authorise / disconnect / poll / notifications (4.24.0) — the SoundCloud block with yt names ──
+            // One approval covers polling and posting: Connect saves the app credentials and
+            // opens Google's consent page; the callback stores the token pair.
+            const ytOpenAuthorize = async (btn, msgId) => {
+                const msg = document.getElementById(msgId);
+                try {
+                    const info = await API.getYTAuthorizeUrl();
+                    const hint = document.getElementById('yt-redirect-hint');
+                    const uriEl = document.getElementById('yt-redirect-uri');
+                    if (hint && uriEl) { uriEl.textContent = info.redirect_uri; hint.style.display = 'block'; }
+                    window.open(info.url, '_blank', 'noopener');
+                    msg.textContent = 'Approve it in the new tab, then reopen this page.';
+                    msg.style.color = 'var(--text-muted)';
+                } catch (err) {
+                    let detail = err.message.replace(/^API \d+:\s*/, '');
+                    try { detail = JSON.parse(detail).detail || detail; } catch {}
+                    msg.textContent = detail;
+                    msg.style.color = 'var(--danger)';
+                } finally {
+                    if (btn) btn.disabled = false;
+                }
+            };
+            const ytConnectBtn = document.getElementById('yt-connect-btn');
+            if (ytConnectBtn) {
+                ytConnectBtn.addEventListener('click', async () => {
+                    const msg = document.getElementById('yt-msg');
+                    const rawId = document.getElementById('yt-client-id').value.trim();
+                    const client_id = rawId === '(saved)' ? '' : rawId;
+                    const client_secret = document.getElementById('yt-client-secret').value.trim();
+                    ytConnectBtn.disabled = true;
+                    msg.textContent = '';
+                    try {
+                        const info = await API.ytConnect({ client_id, client_secret });
+                        const hint = document.getElementById('yt-redirect-hint');
+                        const uriEl = document.getElementById('yt-redirect-uri');
+                        if (hint && uriEl) { uriEl.textContent = info.redirect_uri; hint.style.display = 'block'; }
+                        window.open(info.url, '_blank', 'noopener');
+                        msg.textContent = 'Approve PawPoller with Google in the new tab, then reopen this page.';
+                        msg.style.color = 'var(--text-muted)';
+                    } catch (err) {
+                        let detail = err.message.replace(/^API \d+:\s*/, '');
+                        try { detail = JSON.parse(detail).detail || detail; } catch {}
+                        msg.textContent = detail;
+                        msg.style.color = 'var(--danger)';
+                    } finally {
+                        ytConnectBtn.disabled = false;
+                    }
+                });
+            }
+            const ytAuthorizeBtn = document.getElementById('yt-authorize-btn');
+            if (ytAuthorizeBtn) {
+                ytAuthorizeBtn.addEventListener('click', () => { ytAuthorizeBtn.disabled = true; ytOpenAuthorize(ytAuthorizeBtn, 'yt-msg'); });
+            }
+            const ytDisconnectBtn = document.getElementById('yt-disconnect-btn');
+            if (ytDisconnectBtn) {
+                ytDisconnectBtn.addEventListener('click', async () => {
+                    if (!confirm('Disconnect YouTube? This forgets the authorisation (the app credentials stay).')) return;
+                    try {
+                        await API.ytDisconnect();
+                        this.renderSettings();
+                    } catch (err) {
+                        alert('Failed: ' + err.message);
+                    }
+                });
+            }
+            const ytPollBtn = document.getElementById('yt-poll-btn');
+            if (ytPollBtn) {
+                ytPollBtn.addEventListener('click', () => this._pollingTabPoll({
+                    btn: ytPollBtn, msgId: 'yt-msg', platform: 'yt', apiMethod: 'triggerYTPoll',
+                }));
+            }
+            const ytResyncBtn = document.getElementById('yt-resync-btn');
+            if (ytResyncBtn) {
+                ytResyncBtn.addEventListener('click', () => this._pollingTabResync({
+                    btn: ytResyncBtn, msgId: 'yt-msg', platform: 'yt', apiMethod: 'fullYTResync',
+                }));
+            }
+            // ── SoundCloud connect / authorise / disconnect / poll / notifications (4.22.0) ──
+            // One approval covers polling and posting: Connect saves the app credentials and
+            // opens SoundCloud's authorize page; the callback stores the token pair.
+            const scOpenAuthorize = async (btn, msgId) => {
+                const msg = document.getElementById(msgId);
+                try {
+                    const info = await API.getSCAuthorizeUrl();
+                    const hint = document.getElementById('sc-redirect-hint');
+                    const uriEl = document.getElementById('sc-redirect-uri');
+                    if (hint && uriEl) { uriEl.textContent = info.redirect_uri; hint.style.display = 'block'; }
+                    window.open(info.url, '_blank', 'noopener');
+                    msg.textContent = 'Approve it in the new tab, then reopen this page.';
+                    msg.style.color = 'var(--text-muted)';
+                } catch (err) {
+                    let detail = err.message.replace(/^API \d+:\s*/, '');
+                    try { detail = JSON.parse(detail).detail || detail; } catch {}
+                    msg.textContent = detail;
+                    msg.style.color = 'var(--danger)';
+                } finally {
+                    if (btn) btn.disabled = false;
+                }
+            };
+            const scConnectBtn = document.getElementById('sc-connect-btn');
+            if (scConnectBtn) {
+                scConnectBtn.addEventListener('click', async () => {
+                    const msg = document.getElementById('sc-msg');
+                    const rawId = document.getElementById('sc-client-id').value.trim();
+                    const client_id = rawId === '(saved)' ? '' : rawId;
+                    const client_secret = document.getElementById('sc-client-secret').value.trim();
+                    scConnectBtn.disabled = true;
+                    msg.textContent = '';
+                    try {
+                        const info = await API.scConnect({ client_id, client_secret });
+                        const hint = document.getElementById('sc-redirect-hint');
+                        const uriEl = document.getElementById('sc-redirect-uri');
+                        if (hint && uriEl) { uriEl.textContent = info.redirect_uri; hint.style.display = 'block'; }
+                        window.open(info.url, '_blank', 'noopener');
+                        msg.textContent = 'Approve PawPoller in the new tab, then reopen this page.';
+                        msg.style.color = 'var(--text-muted)';
+                    } catch (err) {
+                        let detail = err.message.replace(/^API \d+:\s*/, '');
+                        try { detail = JSON.parse(detail).detail || detail; } catch {}
+                        msg.textContent = detail;
+                        msg.style.color = 'var(--danger)';
+                    } finally {
+                        scConnectBtn.disabled = false;
+                    }
+                });
+            }
+            const scAuthorizeBtn = document.getElementById('sc-authorize-btn');
+            if (scAuthorizeBtn) {
+                scAuthorizeBtn.addEventListener('click', () => { scAuthorizeBtn.disabled = true; scOpenAuthorize(scAuthorizeBtn, 'sc-msg'); });
+            }
+            const scDisconnectBtn = document.getElementById('sc-disconnect-btn');
+            if (scDisconnectBtn) {
+                scDisconnectBtn.addEventListener('click', async () => {
+                    if (!confirm('Disconnect SoundCloud? This forgets the authorisation (the app credentials stay).')) return;
+                    try {
+                        await API.scDisconnect();
+                        this.renderSettings();
+                    } catch (err) {
+                        alert('Failed: ' + err.message);
+                    }
+                });
+            }
+            const scPollBtn = document.getElementById('sc-poll-btn');
+            if (scPollBtn) {
+                scPollBtn.addEventListener('click', () => this._pollingTabPoll({
+                    btn: scPollBtn, msgId: 'sc-msg', platform: 'sc', apiMethod: 'triggerSCPoll',
+                }));
+            }
+            const scResyncBtn = document.getElementById('sc-resync-btn');
+            if (scResyncBtn) {
+                scResyncBtn.addEventListener('click', () => this._pollingTabResync({
+                    btn: scResyncBtn, msgId: 'sc-msg', platform: 'sc', apiMethod: 'fullSCResync',
+                }));
+            }
             // ── Furbooru connect / disconnect / poll / notifications ──
             // Connect sends username (required) + api_key (optional — the
             // Philomena read API is public; a key only raises the rate cap).
@@ -15642,18 +16675,6 @@ const App = {
                     btn: fbrResyncBtn, msgId: 'fbr-msg', platform: 'fbr', apiMethod: 'fullFBRResync',
                 }));
             }
-            const fbrNotifToggle = document.getElementById('pref-fbr-notifications');
-            if (fbrNotifToggle) {
-                fbrNotifToggle.addEventListener('change', async (e) => {
-                    try {
-                        await API.savePreferences({ fbr_notifications_enabled: e.target.checked });
-                    } catch (err) {
-                        e.target.checked = !e.target.checked;
-                        alert('Failed to save preference: ' + err.message);
-                    }
-                });
-            }
-
             // Danger zone — Uninstall PawPoller
             document.getElementById('uninstall-btn')?.addEventListener('click', () => {
                 this._showUninstallDialog();
@@ -15785,6 +16806,7 @@ const App = {
 
             // Settings Sync
             const syncResult = document.getElementById('sync-result');
+            document.getElementById('btn-restart-connected')?.addEventListener('click', (e) => App._restartIntoConnected(e.currentTarget, 'sync-result'));
             document.getElementById('sync-pull-btn')?.addEventListener('click', async (e) => {
                 e.target.disabled = true; e.target.textContent = 'Pulling...';
                 try {
@@ -15972,6 +16994,8 @@ const App = {
             });
 
             // ── Publishing tab event handlers ─────────────────────────
+            // 4.25.0: the Server Sync block moved to Connection; its Save presses the one shared handler.
+            document.getElementById('save-server-sync-btn')?.addEventListener('click', () => document.getElementById('save-posting-settings-btn')?.click());
             document.getElementById('save-posting-settings-btn')?.addEventListener('click', async () => {
                 const btn = document.getElementById('save-posting-settings-btn');
                 const status = document.getElementById('posting-settings-status');

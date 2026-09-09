@@ -42,7 +42,15 @@ logger = logging.getLogger(__name__)
 # only because a manual "Poll Now" bootstrapped its account by hand.
 # tests/test_poll_registry.py now asserts this list against the poll-cycle map.
 PLATFORMS = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky",
-             "tw", "mast", "tum", "pix", "thr", "ig", "e621", "fn", "fbr", "tg"]
+             "tw", "mast", "tum", "pix", "thr", "ig", "e621", "fn", "fbr", "tg",
+             # 4.21.1 (MEDIAPLATS): a podcast feed PawPoller serves itself — one account per feed.
+             "pod",
+             # 4.22.0 (MEDIAPLATS): SoundCloud — poll + post, OAuth 2.1 user token.
+             "sc",
+             # 4.23.0 (MEDIAPLATS): Newgrounds — poll + post, browser cookie session (no API).
+             "ng",
+             # 4.24.0 (MEDIAPLATS): YouTube — poll + post, Google OAuth user token.
+             "yt"]
 
 # Platforms that publish but have nothing to poll: no stats table, so anything
 # aggregating stats must skip them rather than query a table that does not
@@ -57,7 +65,9 @@ PLATFORMS = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky",
 # The machinery stays because the category is real and the next broadcast-only
 # target will need it. (`fn` and `fbr` were absent from PLATFORMS entirely until
 # 4.0.10 — a different gap with the same effect, fixed above.)
-POST_ONLY_PLATFORMS: set[str] = set()
+# 4.21.1: the podcast feed is the next member — RSS has no listener counts, so there
+# is nothing to poll; the account exists so a feed can be a publish target.
+POST_ONLY_PLATFORMS: set[str] = {"pod"}
 
 PLATFORM_NAMES = {
     "ib": "Inkbunny", "fa": "FurAffinity", "ws": "Weasyl", "sf": "SoFurry",
@@ -65,6 +75,10 @@ PLATFORM_NAMES = {
     "ik": "Itaku", "bsky": "Bluesky", "tw": "X/Twitter", "mast": "Mastodon",
     "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads", "ig": "Instagram",
     "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "tg": "Telegram",
+    "pod": "Podcast feed",
+    "sc": "SoundCloud",
+    "ng": "Newgrounds",
+    "yt": "YouTube",
 }
 
 # Predicate per platform: does settings hold credentials for a default account?
@@ -103,6 +117,13 @@ DEFAULT_CRED_CHECKS = {
     # borrowed. The channel has no fallback either: without one there is
     # nowhere to post.
     "tg": lambda s: bool(s.get("tg_bot_token") and s.get("tg_channel")),
+    "pod": lambda s: bool(s.get("pod_feed_slug")),
+    # SoundCloud: the browser approval's refresh token IS the credential (4.22.0).
+    "sc": lambda s: bool(s.get("sc_refresh_token")),
+    # Newgrounds: the browser session's cookie string IS the credential (4.23.0).
+    "ng": lambda s: bool(s.get("ng_cookie")),
+    # YouTube: the browser approval's refresh token IS the credential (4.24.0).
+    "yt": lambda s: bool(s.get("yt_refresh_token")),
 }
 
 # The flat settings key whose value names the default account (for display).
@@ -130,6 +151,11 @@ _HANDLE_KEYS = {
     # private one. Load-bearing for mirroring — see the migration in db.py that
     # backfills it onto rows auto-created before Telegram was a real platform.
     "tg": ["tg_channel"],
+    # The feed's slug IS the identity (4.21.1) — it is the public URL, so it never changes.
+    "pod": ["pod_feed_slug"],
+    "sc": ["sc_username"],
+    "ng": ["ng_username"],
+    "yt": ["yt_username"],
 }
 
 
@@ -250,6 +276,10 @@ def seed_default_accounts(conn: sqlite3.Connection, settings: dict) -> int:
     """
     created = 0
     for platform in PLATFORMS:
+        if platform in POST_ONLY_PLATFORMS:
+            # 4.21.1: a podcast feed creates its own account when the feed is made
+            # (routes/podcast_api.py); a seeded one would point at no feed at all.
+            continue
         check = DEFAULT_CRED_CHECKS.get(platform)
         if not check or not check(settings):
             continue

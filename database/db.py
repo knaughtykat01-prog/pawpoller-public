@@ -47,6 +47,9 @@ _THR_SCHEMA_PATH = config.resource_path("database/thr_schema.sql")    # Threads 
 _IG_SCHEMA_PATH = config.resource_path("database/ig_schema.sql")      # Instagram tables
 _E621_SCHEMA_PATH = config.resource_path("database/e621_schema.sql")  # e621 tables
 _FN_SCHEMA_PATH = config.resource_path("database/fn_schema.sql")      # FurryNetwork tables
+_SC_SCHEMA_PATH = config.resource_path("database/sc_schema.sql")      # SoundCloud tables (4.22.0)
+_NG_SCHEMA_PATH = config.resource_path("database/ng_schema.sql")      # Newgrounds tables (4.23.0)
+_YT_SCHEMA_PATH = config.resource_path("database/yt_schema.sql")      # YouTube tables (4.24.0)
 _FBR_SCHEMA_PATH = config.resource_path("database/fbr_schema.sql")    # Furbooru tables
 _TG_SCHEMA_PATH = config.resource_path("database/tg_schema.sql")      # Telegram tables
 _POSTING_SCHEMA_PATH = config.resource_path("database/posting_schema.sql")  # Posting module tables
@@ -157,6 +160,12 @@ def init_db() -> None:
         conn.executescript(e621_schema_sql)
         fn_schema_sql = _FN_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(fn_schema_sql)
+        sc_schema_sql = _SC_SCHEMA_PATH.read_text(encoding="utf-8")
+        conn.executescript(sc_schema_sql)
+        ng_schema_sql = _NG_SCHEMA_PATH.read_text(encoding="utf-8")
+        conn.executescript(ng_schema_sql)
+        yt_schema_sql = _YT_SCHEMA_PATH.read_text(encoding="utf-8")
+        conn.executescript(yt_schema_sql)
         fbr_schema_sql = _FBR_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(fbr_schema_sql)
         tg_schema_sql = _TG_SCHEMA_PATH.read_text(encoding="utf-8")
@@ -1374,6 +1383,10 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     # the index is created after the table, here, never from a *_schema.sql.
     from database import promos as _promos
     _promos.ensure(conn)
+
+    # Migration (4.21.1): podcast feeds + episodes (MEDIAPLATS §4), same pattern.
+    from database import podcasts as _podcasts
+    _podcasts.ensure(conn)
 
     # Migration (3.29.0): re-key the DeviantArt rows that stored the wrong id.
     # DA has two identifiers per deviation — the integer in every public URL and

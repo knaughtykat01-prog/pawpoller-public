@@ -947,6 +947,76 @@ a.stat-card:hover {
     .settings-tab-content[data-tab-content="platforms"] { grid-template-columns: 1fr; }
 }
 
+/* ── Platforms as list + detail (4.26.0, SETTINGSNAV phase 2) ──────────
+   The panel keeps its grid class for the search/no-JS fallback; with the
+   layout built, the grid collapses to one cell holding the two columns. */
+.settings-page > .settings-tab-content[data-tab-content="platforms"]:has(.pset-layout) { display: block; }
+.pset-layout {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+.pset-list {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    position: sticky;
+    top: 12px;
+}
+.pset-filters {
+    display: flex;
+    gap: 4px;
+    padding: 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+    flex-wrap: wrap;
+}
+.pset-chip {
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+}
+.pset-chip.active { background: var(--text-primary); color: var(--bg-primary); }
+.pset-chip-warn:not(.active) { color: var(--warning); }
+.pset-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 12px;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    background: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+.pset-row:hover { background: var(--bg-hover); }
+.pset-row.active { background: var(--bg-tertiary); box-shadow: inset 3px 0 0 var(--accent); }
+.pset-row-overview { font-weight: 600; }
+.pset-row-logo, .pset-row-emoji {
+    width: 20px; height: 20px; border-radius: 5px; object-fit: contain;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 13px; flex: none;
+}
+.pset-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pset-row-meta { color: var(--text-muted); font-size: 11.5px; white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+.pset-list .pset-footer { padding: 10px 12px; font-size: 11.5px; }
+.pset-detail > details.settings-accordion { margin-bottom: 0; }
+.pset-detail > details.pset-hidden { display: none; }
+.pset-layout.searching .pset-detail > details.pset-hidden { display: block; margin-bottom: 8px; }
+.pset-layout.searching .pset-list { opacity: .55; }
+@media (max-width: 900px) {
+    .pset-layout { grid-template-columns: 1fr; }
+    .pset-list { position: static; }
+}
+
 /* ── "What's new" popup (App._showWhatsNewModal) ──────────────
    Shown once when the running version changed (self-update or server redeploy). */
 .wn-ov {
@@ -1074,6 +1144,94 @@ a.stat-card:hover {
 .settings-tab.active {
     color: var(--accent);
     border-bottom-color: var(--accent);
+}
+
+/* ── Settings left rail (4.25.0, SETTINGSNAV) ─────────────────── */
+.settings-layout {
+    display: grid;
+    grid-template-columns: 224px minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+}
+.settings-rail {
+    position: sticky;
+    top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 0;
+}
+.settings-rail .settings-search-bar { margin: 0 0 12px; }
+.settings-nav-group {
+    margin: 12px 0 4px 10px;
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 700;
+}
+.settings-nav-group:first-of-type { margin-top: 0; }
+.settings-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.settings-nav-item:hover { background: var(--bg-hover); }
+.settings-nav-item.active {
+    background: var(--bg-card);
+    border-color: var(--border);
+    box-shadow: inset 3px 0 0 var(--accent);
+    font-weight: 600;
+}
+.settings-nav-status {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 400;
+    white-space: nowrap;
+}
+.settings-rail.searching .settings-nav-item { opacity: .55; }
+/* ── Notifications matrix (4.27.0) ─────────────────────────────── */
+.notif-matrix .notif-masters { margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.notif-matrix .notif-sites {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0 28px;
+}
+.notif-matrix .notif-sites .settings-row { margin-top: 0 !important; padding: 8px 0; }
+.notif-matrix .notif-sites .settings-row > div > div { display: none; }   /* the per-card blurb is the same sentence twenty times */
+
+.settings-page-head { margin-bottom: 14px; }
+.settings-page-head h3 { margin: 0; font-size: 20px; }
+.settings-page-head p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
+/* A page shows one moved panel's blocks in a column; the Platforms panel keeps its grid. */
+.settings-page > .settings-tab-content { display: block; }
+.settings-page > .settings-tab-content[data-tab-content="platforms"] { display: grid; }
+@media (max-width: 900px) {
+    .settings-layout { grid-template-columns: 1fr; gap: 12px; }
+    .settings-rail {
+        position: static;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 0 0 8px;
+        border-bottom: 1px solid var(--border);
+    }
+    .settings-rail .settings-search-bar { width: 100%; margin-bottom: 8px; }
+    .settings-nav-group { width: 100%; margin: 6px 0 2px 4px; }
+    .settings-nav-item { width: auto; padding: 6px 10px; border-color: var(--border); }
+    .settings-nav-item.active { box-shadow: none; background: var(--accent); color: #fff; border-color: var(--accent); }
+    .settings-nav-status { display: none; }
 }
 
 /* ── Platform Accordion (settings) ───────────────────────── */

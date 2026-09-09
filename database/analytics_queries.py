@@ -615,14 +615,16 @@ INSIGHT_TABLES = {
     "da": "da_submissions", "wp": "wp_submissions", "ik": "ik_submissions",
     "bsky": "bsky_submissions", "tw": "tw_submissions", "mast": "mast_submissions",
     "tum": "tum_submissions", "pix": "pix_submissions", "thr": "thr_submissions",
-    "ig": "ig_submissions", "e621": "e621_submissions", "fn": "fn_submissions",
+    "ig": "ig_submissions", "e621": "e621_submissions", "fn": "fn_submissions", "sc": "sc_submissions",
+    "ng": "ng_submissions", "yt": "yt_submissions",
     "fbr": "fbr_submissions",
 }
 INSIGHT_PRIMARY = {   # the platform's headline engagement column
     "ib": "views", "fa": "views", "ws": "views", "sf": "views", "sqw": "views",
     "ao3": "views", "da": "views", "wp": "reads", "ik": "likes", "bsky": "likes",
     "tw": "views", "mast": "likes", "tum": "notes", "pix": "views",
-    "thr": "views", "ig": "views", "e621": "score", "fn": "views", "fbr": "score",
+    "thr": "views", "ig": "views", "e621": "score", "fn": "views", "fbr": "score", "sc": "views",
+    "ng": "views", "yt": "views",
 }
 INSIGHT_DATE_COL = {"ib": "create_datetime"}   # everything else: posted_at
 

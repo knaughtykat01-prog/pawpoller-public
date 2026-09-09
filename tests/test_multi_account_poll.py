@@ -19,6 +19,12 @@ def test_registry_has_all_platforms():
         # no submissions to fetch (PawPoller sent them and already records
         # each one) and no views to read (not in the Bot API at all).
         "tg",
+        # SoundCloud (4.22.0): tracks' plays / likes / comments + followers_count.
+        "sc",
+        # Newgrounds (4.23.0): audio + movie portals scraped, the profile's FANS count.
+        "ng",
+        # YouTube (4.24.0): the channel's uploads' views / likes / comments + subscribers.
+        "yt",
     }
 
 

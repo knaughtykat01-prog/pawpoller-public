@@ -149,6 +149,18 @@ def _get_poster(platform: str, account_id: int | None = None) -> PlatformPoster:
         elif platform == "tg":
             from posting.platforms.telegram import TelegramPoster
             poster = TelegramPoster()
+        elif platform == "pod":
+            from posting.platforms.podcast import PodcastPoster
+            poster = PodcastPoster()
+        elif platform == "sc":
+            from posting.platforms.soundcloud import SoundCloudPoster
+            poster = SoundCloudPoster()
+        elif platform == "ng":
+            from posting.platforms.newgrounds import NewgroundsPoster
+            poster = NewgroundsPoster()
+        elif platform == "yt":
+            from posting.platforms.youtube import YouTubePoster
+            poster = YouTubePoster()
         elif platform == "tw":
             from posting.platforms.twitter import TwitterPoster
             poster = TwitterPoster()
@@ -449,7 +461,7 @@ async def post_story(
                 package.extra["run_links"] = _run_links(results, ch_idx)
 
             # Validate
-            refusal = poster.media_refusal(package) if hasattr(poster, "media_refusal") else None
+            refusal = poster.refusal(package) if hasattr(poster, "refusal") else None   # media kind, then rating (4.21.0)
             errors = [refusal] if refusal else poster.validate(package)
             if errors:
                 result_dict = {
@@ -615,7 +627,7 @@ async def post_artwork(
             _wm_temps.append(_wm_tmp)
 
         # Validate
-        refusal = poster.media_refusal(package) if hasattr(poster, "media_refusal") else None
+        refusal = poster.refusal(package) if hasattr(poster, "refusal") else None   # media kind, then rating (4.21.0)
         errors = [refusal] if refusal else poster.validate(package)
         if errors:
             results.append({
