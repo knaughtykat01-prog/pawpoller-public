@@ -44,30 +44,6 @@ PawPoller is a desktop app and self-hosted server for publishing fiction and art
 
 ---
 
-## Screenshots
-
-<p align="center">
-  <img src="site/public/screens/story-archive.png" alt="Story archive with cover art" width="760"><br>
-  <em>Story archive: every completed story with cover art, ratings, relationships, and status</em>
-</p>
-
-<p align="center">
-  <img src="site/public/screens/analytics-overview.png" alt="Analytics dashboard across 19 platforms" width="760"><br>
-  <em>Analytics across 19 platforms: views, favourites, and comment trends over time</em>
-</p>
-
-<p align="center">
-  <img src="site/public/screens/publish-check-matrix.png" alt="Publish-check matrix" width="760"><br>
-  <em>Publish-check matrix: every chapter and platform at a glance (posted / drifted / blocked)</em>
-</p>
-
-<p align="center">
-  <img src="site/public/screens/editor-anchors.png" alt="Four-pane Markdown editor" width="760"><br>
-  <em>Four-pane editor: Markdown source, live preview, and every derived format in sync</em>
-</p>
-
----
-
 ## Quick Start
 
 Full walkthrough: [**docs/SETUP.md**](docs/SETUP.md) — covers desktop, Docker self-hosting (including reverse proxy / Cloudflare Tunnel for public access), and running from source.
