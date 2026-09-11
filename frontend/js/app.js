@@ -1749,6 +1749,15 @@ const App = {
                     </div>
                 </details>`;
             }
+            // 4.27.1: the platforms without credentials, so the list is the whole roster.
+            const notConnected = platforms.filter(p => !p.auth);
+            if (notConnected.length) {
+                html += notConnected.map(p => `
+                <div class="settings-accordion polling-unconnected">
+                    <span class="status-dot muted"></span>${Utils.escapeHtml(p.name)}
+                    <span class="summary-meta">— not connected · <a href="${p.key === 'tg' ? '#/settings/telegram' : `#/settings/platforms/${p.key}`}">connect</a></span>
+                </div>`).join('');
+            }
             html += `</div>`; // close .polling-grid (2.103.0)
 
             container.innerHTML = html;
@@ -2053,6 +2062,7 @@ const App = {
         { key: 'publishing', group: 'Publishing', label: 'Publishing defaults', blurb: '' },
         { key: 'polling', group: 'Monitoring', label: 'Polling', blurb: 'How often the numbers come in.' },
         { key: 'notifications', group: 'Monitoring', label: 'Notifications', blurb: 'Who gets told, and about what.' },
+        { key: 'telegram', group: 'Monitoring', label: 'Telegram', blurb: 'The bot, what it reports, and channel posting.' },
         { key: 'security', group: 'System', label: 'Security', blurb: '' },
         { key: 'data', group: 'System', label: 'Data & backups', blurb: '' },
         { key: 'logs', group: 'System', label: 'Logs & diagnostics', blurb: '' },
@@ -2061,7 +2071,7 @@ const App = {
     /* Where each OLD tab's blocks live now (a block's own data-page overrides). */
     SETTINGS_TAB_PAGE: {
         general: 'connection', appearance: 'appearance', platforms: 'platforms', polling: 'polling',
-        telegram: 'notifications', digest: 'notifications', data: 'data', logs: 'logs',
+        telegram: 'telegram', digest: 'notifications', data: 'data', logs: 'logs',
         about: 'about', security: 'security', diagnostics: 'logs', publishing: 'publishing',
     },
     /* ── Notifications matrix (4.27.0, SETTINGSNAV phase 3) ────────────────
@@ -2090,9 +2100,11 @@ const App = {
         const section = document.createElement('div');
         section.className = 'settings-section notif-matrix';
         section.dataset.page = 'notifications';
-        section.innerHTML = '<h3>Desktop alerts</h3>'
-            + '<p style="font-size:12px;color:var(--text-muted);margin:0 0 6px">The two master switches, then one per site. '
-            + 'Each saves the moment you flip it. Telegram, Discord and the weekly email have their own sections below.</p>'
+        section.innerHTML = '<h3>Alerts by site</h3>'
+            + '<p style="font-size:12px;color:var(--text-muted);margin:0 0 6px">'
+            + (masters.length ? (masters.length === 1 ? 'The master switch, then one per site. ' : 'The two master switches, then one per site. ') : 'One switch per site. ')
+            + 'A site\'s switch covers its toasts and its Telegram alerts, and saves the moment you flip it. '
+            + 'The bot itself is on the Telegram page; Discord and the weekly email are below.</p>'
             + '<div class="notif-masters"></div><div class="notif-sites"></div>';
         masters.forEach(r => section.querySelector('.notif-masters').appendChild(r));
         const grid = section.querySelector('.notif-sites');
@@ -2533,6 +2545,13 @@ const App = {
             { key: 'thr', name: 'Threads', emoji: '&#129525;', color: 'var(--platform-thr)', url: 'https://www.threads.net/' },
             { key: 'ig', name: 'Instagram', emoji: '&#128248;', color: 'var(--platform-ig)', url: 'https://www.instagram.com/' },
             { key: 'e621', name: 'e621', emoji: '&#128062;', color: 'var(--platform-e621)', url: 'https://e621.net/session/new' },
+            // 4.28.1: the wizard stopped at e621; the five newer credential platforms join it (the
+            // podcast feed has no credential card — it is made on the Podcasts page).
+            { key: 'fn', name: 'FurryNetwork', emoji: '&#127760;', color: '#3b8ed0', url: 'https://furrynetwork.com' },
+            { key: 'fbr', name: 'Furbooru', emoji: '&#128444;', color: '#3d7b3d', url: 'https://furbooru.org' },
+            { key: 'sc', name: 'SoundCloud', emoji: '&#127925;', color: '#ff5500', url: 'https://soundcloud.com/you/apps' },
+            { key: 'ng', name: 'Newgrounds', emoji: '&#127916;', color: '#f5a623', url: 'https://www.newgrounds.com/login' },
+            { key: 'yt', name: 'YouTube', emoji: '&#128250;', color: '#ff0000', url: 'https://console.cloud.google.com/apis/library/youtube.googleapis.com' },
         ];
 
         /* Detect runtime and pre-load existing state so the wizard can
@@ -11911,6 +11930,7 @@ const App = {
                         platforms: `${[faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth].filter(a => a && (a.has_credentials || a.has_cookies || a.has_key)).length + (creds.username ? 1 : 0)} connected`,
                         polling: pollPausedState.polling_paused ? 'paused' : (_pollingOwner === 'local' ? (_isServer ? 'this server' : 'this computer') : 'server'),
                         about: updateInfo && updateInfo.current && updateInfo.current !== '?' ? updateInfo.current : '',
+                        telegram: telegram.connected ? 'connected' : '',
                     })}
                 </aside>
                 <div class="settings-pages" id="settings-pages">
@@ -12574,10 +12594,6 @@ const App = {
                             <option value="mature" ${postingSettings.posting_default_rating === 'mature' ? 'selected' : ''}>Mature</option>
                             <option value="adult" ${postingSettings.posting_default_rating === 'adult' ? 'selected' : ''}>Adult</option>
                         </select>
-                    </div>
-                    <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:12px">
-                        <label style="font-size:13px;color:var(--text-muted)">Default Platforms (comma-separated: ib,fa,ws,sf,bsky)</label>
-                        <input type="text" id="posting-default-platforms" class="search-input" value="${Utils.escapeHtml((postingSettings.posting_default_platforms || []).join(','))}" placeholder="ib,fa,sf" style="max-width:300px">
                     </div>
                     <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:12px">
                         <label class="settings-toggle-row">
@@ -14062,7 +14078,7 @@ const App = {
                     ` : `
                     <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">
                         Poll+post — your Audio Portal and Movie Portal submissions' listens, views, faves and score, and
-                        audio / video pieces published as new projects (they go <em>Under Judgment</em> first, as every
+                        artwork, audio and video pieces published as new Art / Audio / Movie Portal projects (they go <em>Under Judgment</em> first, as every
                         Newgrounds submission does). Newgrounds has no API, so PawPoller uses your browser session.
                         mp3 uploads must be sampled at 44.1 kHz.
                     </p>
@@ -14173,10 +14189,10 @@ const App = {
                         <span id="fbr-msg" style="font-size:13px"></span>
                     </div>
                     ` : `
-                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Track your own <strong>Furbooru</strong> uploads' score, favourites and comments. Enter your Furbooru <strong>username</strong> — that's all that's required (Furbooru's read API is public). Optionally add an <strong>API key</strong> (Furbooru → <em>Account → Settings</em>) to raise the anonymous rate limit. Poll-only.</p>
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Track your own <strong>Furbooru</strong> uploads' score, favourites and comments. Enter your Furbooru <strong>username</strong> — that's all that's required (Furbooru's read API is public). Add your <strong>API key</strong> (Furbooru → <em>Account → Settings</em>) to post from the Library; it also raises the anonymous rate limit. Posting checks the site's Do-Not-Post list for the credited artist and refuses with their conditions.</p>
                     <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
                         <input type="text" id="fbr-username" class="search-input" placeholder="Furbooru username" autocomplete="username">
-                        <input type="password" id="fbr-api-key" class="search-input" placeholder="API key (optional)">
+                        <input type="password" id="fbr-api-key" class="search-input" placeholder="API key (needed to post; optional for polling)">
                     </div>
                     <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
                         <button class="btn btn-primary" id="fbr-connect-btn">Connect</button>
@@ -17003,12 +17019,9 @@ const App = {
                 status.textContent = 'Saving...';
                 status.style.color = 'var(--text-muted)';
                 try {
-                    const platformsStr = document.getElementById('posting-default-platforms')?.value || '';
-                    const platforms = platformsStr.split(',').map(s => s.trim()).filter(Boolean);
                     await API.savePostingSettings({
                         posting_enabled: document.getElementById('posting-enabled-toggle')?.checked || false,
                         posting_default_rating: document.getElementById('posting-default-rating')?.value || 'adult',
-                        posting_default_platforms: platforms,
                         posting_server_url: document.getElementById('posting-server-url')?.value || '',
                         posting_server_api_key: document.getElementById('posting-server-api-key')?.value || '',
                         posting_story_archive_path: document.getElementById('posting-archive-path')?.value || '',

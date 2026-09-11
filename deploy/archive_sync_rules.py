@@ -60,6 +60,13 @@ EXCLUDE_DIR_NAMES: tuple[str, ...] = (
     # Local styling artefacts. Not read by any poster — the posters want
     # `SquidgeWorld/` and `Chapters/SoFurry_HTML/`, which are not these.
     "Styled_HTML",
+    # Google Drive for desktop's scratch folders (4.29.2). The local archive
+    # lives inside a Drive-synced tree, and Drive parks in-flight uploads and
+    # downloads in these two directories at the archive root. They are
+    # per-device and transient — 59 of them were found on the SERVER on
+    # 2026-09-10 because a pawsync ran while Drive was mid-upload.
+    ".tmp.driveupload",
+    ".tmp.drivedownload",
 )
 
 # Glob patterns matched against any single path component.

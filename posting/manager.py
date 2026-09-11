@@ -176,6 +176,9 @@ def _get_poster(platform: str, account_id: int | None = None) -> PlatformPoster:
         elif platform == "fn":
             from posting.platforms.furrynetwork import FurryNetworkPoster
             poster = FurryNetworkPoster()
+        elif platform == "fbr":
+            from posting.platforms.furbooru import FurbooruPoster
+            poster = FurbooruPoster()
         elif platform == "ig":
             from posting.platforms.instagram import InstagramPoster
             poster = InstagramPoster()

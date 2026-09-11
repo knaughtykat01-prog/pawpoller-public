@@ -27,7 +27,7 @@
         { code: 'ig',   label: 'Instagram',    emoji: '\u{1F4F8}', color: 'var(--platform-ig)',   pollOnly: true  },
         { code: 'e621', label: 'e621',         emoji: '\u{1F43E}', color: 'var(--platform-e621)', pollOnly: false },
         { code: 'fn',   label: 'FurryNetwork', emoji: '\u{1F310}', color: '#3b8ed0',               pollOnly: false },
-        { code: 'fbr',  label: 'Furbooru',     emoji: '\u{1F5BC}', color: '#3d7b3d',               pollOnly: true  },
+        { code: 'fbr',  label: 'Furbooru',     emoji: '\u{1F5BC}', color: '#3d7b3d',               pollOnly: false },
         // Reactions and subscriber counts make Telegram pollable as of 4.0.10,
         // so it is no longer postOnly and DOES appear in analytics. It has no
         // view counter and never will (not in the Bot API at all), which the

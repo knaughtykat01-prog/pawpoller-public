@@ -15,14 +15,14 @@
   <a href="#server--docker-deployment"><img src="https://img.shields.io/badge/Docker-supported-2496ED.svg" alt="Docker supported"></a>
 </p>
 
-PawPoller is a desktop app and self-hosted server for publishing fiction and artwork across furry platforms. Write in Markdown, convert to every format (BBCode, HTML, Styled HTML, PDF), publish to **17 platforms** with per-chapter tags and descriptions, and track views, favourites and comments across **19** from one dashboard. Corrections are made once and pushed back out: PawPoller can **edit an existing post in place on 9 platforms**. Most multi-platform tools stop at the upload. [PostyBirb](https://www.postybirb.com/) reaches more sites than PawPoller does (37 to 20) and is excellent at getting a piece out the door -- but it has no analytics and no way to edit a post once it is live. PawPoller is built around the half that comes after: every view, favourite and comment in one place, and the ability to go back and change what you published.
+PawPoller is a desktop app and self-hosted server for publishing fiction and artwork across furry platforms. Write in Markdown, convert to every format (BBCode, HTML, Styled HTML, PDF), publish to **22 platforms** with per-chapter tags and descriptions, and track views, favourites and comments across **22** from one dashboard. Corrections are made once and pushed back out: PawPoller can **edit an existing post in place on 9 platforms**. Most multi-platform tools stop at the upload. [PostyBirb](https://www.postybirb.com/) reaches more sites than PawPoller does (37 to 20) and is excellent at getting a piece out the door -- but it has no analytics and no way to edit a post once it is live. PawPoller is built around the half that comes after: every view, favourite and comment in one place, and the ability to go back and change what you published.
 
 ---
 
 ## Features
 
 - **Multi-format conversion** -- Markdown to BBCode (Inkbunny), HTML (SoFurry), Styled HTML (AO3 work skins), PDF, and SquidgeWorld format, all from one source file
-- **20-platform reach** -- 19 polled for analytics, 17 published to, 9 editable in place. Galleries (Inkbunny, FurAffinity, SoFurry, Weasyl, DeviantArt, Itaku, e621, Furbooru, FurryNetwork, Instagram, Pixiv), archives (AO3, SquidgeWorld, Wattpad) and microblogs (Bluesky, Mastodon, Tumblr, X/Twitter, Threads, Telegram)
+- **24-platform reach** -- 22 polled for analytics, 22 published to, 13 editable in place. Galleries (Inkbunny, FurAffinity, SoFurry, Weasyl, DeviantArt, Itaku, e621, Furbooru, FurryNetwork, Instagram, Pixiv), archives (AO3, SquidgeWorld, Wattpad), microblogs (Bluesky, Mastodon, Tumblr, X/Twitter, Threads, Telegram) and music + video (a podcast feed PawPoller serves itself, SoundCloud, Newgrounds, YouTube)
 - **Edit once, sync everywhere** -- Change a title, description, tags or rating on the canonical record and push it to every platform that accepts an edit. Platforms that cannot edit are marked post-only rather than silently skipped
 - **Chaptered publishing** -- Split multi-chapter stories automatically, with per-chapter tags, descriptions, and thumbnails
 - **Scheduling** -- Queue stories, artwork and posts for a future time, with a list or calendar view of everything pending
@@ -107,7 +107,7 @@ The dashboard binds to `127.0.0.1:8420` by default (loopback only), reachable at
 
 ## Supported Platforms
 
-**20 platforms — 19 polled, 17 posted to, 9 editable in place.**
+**24 platforms — 22 polled, 22 posted to, 13 editable in place.**
 
 "Edit" means PawPoller can push metadata changes to an *existing* post, so a
 correction made once in the app can be synced everywhere it was published.
@@ -125,7 +125,7 @@ correction made once in the app can be synced everywhere it was published.
 | DeviantArt | OAuth2 (client id/secret) | Yes | Yes | Yes\* | \*Split across two endpoints — see below |
 | Itaku | Account token | Yes | Yes | Yes | Gallery images; tags replace (they are yours, not communal) |
 | e621 | Username + API key | Yes | Yes | Yes | Official REST API; **no title field exists**; tags are communal so edits **merge** |
-| Furbooru | Username + API key | Yes | -- | -- | Philomena-family; poll-only |
+| Furbooru | Username + API key | Yes | Yes | -- | Philomena JSON API; uploads are checked against the site's Do-Not-Post list first; tags are communal (edit on-site) |
 | FurryNetwork | Refresh token | Yes | Yes | -- | The OAuth password grant is behind reCAPTCHA; paste a refresh token |
 | Instagram | Meta access token | Yes | Yes | -- | Official Graph API; Business/Creator account |
 | Pixiv | Refresh token | Yes | -- | -- | App API; illustrations + novels |
@@ -145,6 +145,15 @@ correction made once in the app can be synced everywhere it was published.
 Editing is **not** implemented for the microblog side — the Posts module
 publishes only, even where the platform itself allows edits (Mastodon and
 Tumblr both do).
+
+### Music and video
+
+| Platform | Auth | Poll | Post | Edit | Notes |
+|----------|------|------|------|------|-------|
+| Podcast feed | None (PawPoller serves it) | -- | Yes | Yes | An RSS feed of your audio pieces; submit its address once to Apple, Spotify, Amazon, Pocket Casts; needs the server's public address |
+| SoundCloud | OAuth (client id/secret) | Yes | Yes | Yes | API access on request + Artist Pro; adult audio refused before upload |
+| Newgrounds | Browser session cookie | Yes | Yes | Yes | Art, Audio and Movie Portals; formats as the site's submit menu lists them; new submissions go Under Judgment |
+| YouTube | OAuth (your own Google project) | Yes | Yes | Yes | Video with the poster as thumbnail; uploads stay private until the project passes YouTube's compliance audit
 
 **DeviantArt needs two endpoints, because neither carries the other's fields:**
 
@@ -280,7 +289,7 @@ python -m pytest tests/ -v
 
 ## Security
 
-PawPoller holds your login credentials for up to 20 platforms, so credential handling is
+PawPoller holds your login credentials for up to 24 platforms, so credential handling is
 treated as the core of the app: secrets are **always** stored in an encrypted vault
 (AES-128 + HMAC via Fernet), never in plaintext, with the key held in your OS keystore or an
 out-of-band env var on a server ([SETUP §5.1](docs/SETUP.md)).

@@ -1201,6 +1201,9 @@ a.stat-card:hover {
     white-space: nowrap;
 }
 .settings-rail.searching .settings-nav-item { opacity: .55; }
+/* Polling page: the platforms without credentials (4.27.1). */
+.polling-unconnected { display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: var(--text-muted); font-size: 13px; }
+.polling-unconnected a { color: var(--accent); }
 /* ── Notifications matrix (4.27.0) ─────────────────────────────── */
 .notif-matrix .notif-masters { margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
 .notif-matrix .notif-sites {

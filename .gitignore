@@ -49,3 +49,6 @@ CLAUDE.md
 # GitHub Release body, not a source file. Ignored so a sweeping `git add -A`
 # cannot commit one release's notes into the tree.
 /RELEASE_NOTES.md
+
+# Claude Code local state + Spec Kit skills (re-install with 'specify init')
+/.claude/

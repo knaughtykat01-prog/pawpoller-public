@@ -58,12 +58,31 @@ Message **[@BotFather](https://t.me/BotFather)** on Telegram and send:
 
 He asks for a name (anything) and a username (must end in `bot`). He then replies with a **token**:
 
+![BotFather asking for the bot's name after /newbot](../frontend/img/guides/telegram/botfather-newbot.png)
+
+If the username is taken he says so — try another; only the `bot` ending is fixed:
+
+![BotFather: sorry, this username is already taken](../frontend/img/guides/telegram/botfather-username-taken.png)
+
 ```
 123456789:AAHk-ExampleTokenExampleTokenExample
 ```
 
 That entire string is the token. **It is the bot** — anyone holding it can post as it — so treat it
 like a password. If it ever leaks, `/revoke` in BotFather issues a new one.
+
+![BotFather's Done message with the token (blurred here)](../frontend/img/guides/telegram/botfather-token.png)
+
+Open the new bot's chat once and press **Start**, so it exists as a conversation:
+
+![The new bot's empty chat with the Start button](../frontend/img/guides/telegram/bot-start.png)
+
+Lost the token later? `/mybots` → pick the bot → **API Token** shows it again, with **Revoke current
+token** beside it:
+
+![/mybots: the bot's menu with API Token, Edit Bot, Bot Settings](../frontend/img/guides/telegram/mybots-menu.png)
+
+![/mybots: Here is the token for the bot (blurred), Revoke current token](../frontend/img/guides/telegram/mybots-token.png)
 
 > **Two bots, always.** The bot you make here is for the channel. If you also use PawPoller's
 > Telegram notifications (Settings → Telegram, the private alerts and digests), that is a
@@ -94,7 +113,20 @@ make it public later.
 
 ## 3. Add the bot as an admin
 
-In the channel: **Manage → Administrators → Add Admin →** your bot.
+In the channel: **Manage → Administrators → Add Admin →** your bot. On the phone it is quicker from
+the bot's side: open the bot's profile and tap **Add to Group or Channel**, then pick the channel:
+
+![The bot's profile with Add to Group or Channel](../frontend/img/guides/telegram/bot-add-to-channel.png)
+
+![Add to Group or Channel: the channel list](../frontend/img/guides/telegram/add-to-channel-pick.png)
+
+![The admin rights sheet for the bot](../frontend/img/guides/telegram/admin-rights.png)
+
+![Add Bot as Admin? confirmation](../frontend/img/guides/telegram/admin-confirm.png)
+
+Afterwards the bot is in the channel's admin list:
+
+![The channel's admin list with the bot as admin](../frontend/img/guides/telegram/admins-list.png)
 
 Then **tick "Post Messages"**. See §0 — this is the step that gets missed.
 
@@ -106,11 +138,28 @@ If you plan to use the **Pin** option, tick **Pin Messages** too. That is also s
 
 1. **Post any message in the channel** first — "hello" is fine. An admin bot receives channel posts,
    and that is how PawPoller learns the channel's id.
+
+   ![A first message in the channel so the bot can see it](../frontend/img/guides/telegram/channel-first-message.png)
 2. **Settings → Platforms → Telegram**.
 3. Paste the **bot token**.
 4. Press **🔍 Find my channel**. PawPoller asks Telegram which channels your bot can see and fills
    the field in. If it finds several, it lists them by title so you can pick.
 5. Press **Save & send test**.
+
+![Settings → Telegram → Channel posting with the channel and the bot token filled in](../frontend/img/guides/telegram/pp-channel-posting.png)
+
+If you press the test before the bot has seen a message, PawPoller says so — it is the one error
+worth knowing on sight:
+
+![Not found: no channels seen yet — add the bot as admin and post a message](../frontend/img/guides/telegram/pp-not-found.png)
+
+Post the message, press **Find my channel** again, and it names what it found:
+
+![Find my channel: Found "Testing" — press Save & send test to confirm](../frontend/img/guides/telegram/pp-found-testing.png)
+
+![Save & send test: Test message posted to "Testing" — check it is the right channel](../frontend/img/guides/telegram/pp-test-posted.png)
+
+![The channel with PawPoller's connection message](../frontend/img/guides/telegram/channel-connected.png)
 
 The test sends a real message and reports **which channel it reached** — *"Test message posted to
 "My Channel""*. Read that name. It is the difference between "the setup works" and "the setup works
@@ -124,6 +173,13 @@ The same fields are in the web dashboard. There is no `.env` shortcut for Telegr
 ---
 
 ## 5. What you can post
+
+From any piece in the Library: **Publish to more → Telegram**. The per-post options sit beside it, and
+**Publish now** sends it:
+
+![The Telegram options panel on one piece](../frontend/img/guides/telegram/publish-telegram-options.png)
+
+![Publish to 1 site? confirmation](../frontend/img/guides/telegram/publish-dialog.png)
 
 Telegram is a **posting target only** — PawPoller never reads stats from it, because a channel has
 none to read beyond view counts on individual posts.

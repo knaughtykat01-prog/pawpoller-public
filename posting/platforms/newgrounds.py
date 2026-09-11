@@ -1,7 +1,7 @@
-"""Newgrounds platform poster — MEDIAPLATS §5 (4.23.0). Cookie-and-form, two portals.
+"""Newgrounds platform poster — MEDIAPLATS §5 (4.23.0). Cookie-and-form, three portals.
 
 One poster class with a branch on the piece's kind: audio → the Audio Portal, video → the
-Movie Portal (``clients/ng/client.py`` ``submit_project``). The poster becomes the project's
+Movie Portal, image → the Art Portal (4.29.0; ``clients/ng/client.py`` ``submit_project``). The poster becomes the project's
 icon (fitted square); tags follow the site's rules; the rating maps onto the four content
 descriptors Newgrounds derives E / T / M / A from (``extra["ng_nudity"]`` etc. override one);
 the genre comes from ``extra["ng_genre"]`` (an id from the client's lists). A published
@@ -22,8 +22,8 @@ import logging
 import os
 
 import config
-from clients.ng.client import (AUDIO_MAX_BYTES, AUDIO_TYPES, MOVIE_MAX_BYTES, MOVIE_TYPES, NgClient,
-                               portal_for)
+from clients.ng.client import (ART_MAX_BYTES, ART_TYPES, AUDIO_MAX_BYTES, AUDIO_TYPES, MOVIE_MAX_BYTES,
+                               MOVIE_TYPES, NgClient, portal_for)
 from posting import poster_fit
 from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
 
@@ -41,8 +41,8 @@ class NewgroundsPoster(PlatformPoster):
     supports_file_replace = False
     min_post_interval = 30
     max_file_size = MOVIE_MAX_BYTES
-    accepted_file_types = list(AUDIO_TYPES) + list(MOVIE_TYPES)
-    accepted_media = {"image": [], "video": list(MOVIE_TYPES), "audio": list(AUDIO_TYPES)}
+    accepted_file_types = list(AUDIO_TYPES) + list(MOVIE_TYPES) + list(ART_TYPES)
+    accepted_media = {"image": list(ART_TYPES), "video": list(MOVIE_TYPES), "audio": list(AUDIO_TYPES)}
     max_rating = "adult"
     requires_mode = "any"
 
@@ -87,7 +87,7 @@ class NewgroundsPoster(PlatformPoster):
         try:
             portal = self._portal(package)
             if not portal:
-                return PostResult(success=False, error="Newgrounds takes audio (Audio Portal) or video (Movie Portal)",
+                return PostResult(success=False, error="Newgrounds takes audio (Audio Portal), video (Movie Portal) or an image (Art Portal)",
                                   duration_seconds=self._elapsed(_t))
             client = await self._ensure_client()
             icon = self._icon(package)
@@ -117,7 +117,7 @@ class NewgroundsPoster(PlatformPoster):
         """'audio:123' → ('audio', '123'); a bare id is assumed to be audio."""
         if ":" in (external_id or ""):
             portal, pid = external_id.split(":", 1)
-            return (portal if portal in ("audio", "movie") else "audio"), pid
+            return (portal if portal in ("audio", "movie", "art") else "audio"), pid
         return "audio", external_id or ""
 
     async def edit(self, external_id: str, package: StoryUploadPackage) -> PostResult:
@@ -145,16 +145,15 @@ class NewgroundsPoster(PlatformPoster):
     def validate(self, package: StoryUploadPackage) -> list[str]:
         errors: list[str] = []
         if not package.file_path:
-            errors.append("Newgrounds needs an audio or video file")
+            errors.append("Newgrounds needs an audio, video or image file")
         if not package.title:
             errors.append("Title is required")
         portal = self._portal(package)
         if package.file_path and os.path.isfile(package.file_path) and portal:
             size = os.path.getsize(package.file_path)
-            cap = AUDIO_MAX_BYTES if portal == "audio" else MOVIE_MAX_BYTES
+            cap = {"audio": AUDIO_MAX_BYTES, "movie": MOVIE_MAX_BYTES, "art": ART_MAX_BYTES}[portal]
             if size > cap:
-                errors.append(f"Newgrounds' {'Audio' if portal == 'audio' else 'Movie'} Portal takes files up to "
-                              f"{cap // (1024 * 1024)} MB")
+                errors.append(f"Newgrounds' {portal.title()} Portal takes files up to {cap // (1024 * 1024)} MB")
         creds = self._resolve_creds("ng", config.get_settings())
         if not (creds.get("ng_cookie") or "").strip():
             errors.append("Newgrounds is not connected (Settings → Platforms → Newgrounds — log in via the browser)")

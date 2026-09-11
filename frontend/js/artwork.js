@@ -12,7 +12,7 @@
 window.Artwork = {
 
     /* Image-capable platforms the hub posts to (v1), in display order. */
-    _PLATFORMS: ['ib', 'fa', 'sf', 'bsky', 'tw', 'ik', 'ws', 'da', 'e621', 'ig', 'fn', 'tg', 'pod', 'sc', 'ng', 'yt'],
+    _PLATFORMS: ['ib', 'fa', 'sf', 'bsky', 'tw', 'ik', 'ws', 'da', 'e621', 'fbr', 'ig', 'fn', 'tg', 'pod', 'sc', 'ng', 'yt'],
     /* The announcing platforms — a caption, links to where the piece already
      * lives, hashtags — and therefore the ones whose row carries the per-piece
      * options panel (Telegram since 4.0.10; X and Bluesky since 4.3.7). Mirrors

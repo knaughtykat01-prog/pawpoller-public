@@ -91,7 +91,8 @@ def test_session_identity_tags_descriptors_and_portals():
     assert descriptors_for("general") == {"nudity": "c", "violence": "c", "language_textual": "c", "adult_themes": "c"}
     assert descriptors_for("adult")["nudity"] == "a" and descriptors_for("mature", {"ng_violence": "a"})["violence"] == "a"
     assert portal_for("audio") == "audio" and portal_for("video") == "movie" and portal_for("", "mp3") == "audio"
-    assert portal_for("", "mov") == "movie" and portal_for("image", "png") is None
+    assert portal_for("", "mov") == "movie" and portal_for("image", "png") == "art" and portal_for("", "webp") == "art"
+    assert portal_for("", "wav") is None and portal_for("", "webm") is None       # not on the site's submit menu
 
 
 # ── the project flow against a fake HTTP layer ───────────────────────────────
@@ -134,7 +135,7 @@ class FakeHttp:
             return FakeResp(json={"success": "saved", f"{self.fail_field}_error": "MP3 must be sampled at 44.1 kHz"})
         body = {"success": "saved", "can_publish": True}
         if files:
-            body["image"] = {"linked_icon": 1}
+            body["linked_icon"] = 1
         return FakeResp(json=body)
 
 
@@ -175,6 +176,20 @@ def test_the_project_flow_posts_uploads_fields_and_publishes(tmp_path):
     assert r["success"] and http3.calls[0][1].endswith("/projects/movies/new")
     assert [x for x in http3.calls if x[0] == "POST"][1][3] == ["new_movie"]
 
+    # the art portal (4.29.0, PostyBirb's proven flow): size + crop + link_icon on the upload,
+    # then the returned linked_icon sorted in, then the same fields, then publish
+    http4 = FakeHttp()
+    c._http = lambda: http4
+    image = tmp_path / "a.png"; image.write_bytes(_png())
+    r = asyncio.run(c.submit_project("art", file_path=str(image), title="Sketch", rating="general", icon_path=str(icon)))
+    assert r["success"] and http4.calls[0][1].endswith("/projects/art/new")
+    posts4 = [x for x in http4.calls if x[0] == "POST"]
+    up = posts4[1]
+    assert up[3] == ["new_image", "thumbnail"] and up[2]["link_icon"] == "1"
+    assert int(up[2]["width"]) > 0 and int(up[2]["height"]) > 0 and up[2]["cropdata"].startswith('{"x":0,"y":0,')
+    assert posts4[2][2]["art_image_sort"] == "[1]"
+    assert posts4[-1][1].endswith("/projects/art/987/publish")
+
     # session identity
     s = asyncio.run(c.validate_session())
     assert s["ok"] and s["username"] == "samplehandle"
@@ -197,8 +212,11 @@ class FakeNgClient:
         return self.session
 
     async def get_all_items(self, portal):
-        return [{"submission_id": "1", "title": "Chilled Sample", "portal": "audio"}] if portal == "audio" \
-            else [{"submission_id": "405919", "title": "Sample Five", "portal": "movie"}]
+        if portal == "audio":
+            return [{"submission_id": "1", "title": "Chilled Sample", "portal": "audio"}]
+        if portal == "art":     # 4.29.0: an art id is its user/slug path
+            return [{"submission_id": "samplehandle/sample-sketch", "title": "Sample Sketch", "portal": "art"}]
+        return [{"submission_id": "405919", "title": "Sample Five", "portal": "movie"}]
 
     async def get_item(self, sid, portal):
         return parse_item(ITEM_AUDIO if portal == "audio" else ITEM_MOVIE, sid, portal, self.username)
@@ -242,14 +260,15 @@ def test_the_poll_cycle_writes_both_portals_and_the_follower_series(env, monkeyp
     finally:
         conn.close()
     stats = asyncio.run(ng_poller.run_ng_poll_cycle(acct))
-    assert stats == {"submissions_found": 2, "snapshots_inserted": 2} and calls == [acct]
+    assert stats == {"submissions_found": 3, "snapshots_inserted": 3} and calls == [acct]   # audio + movie + art (4.29.0)
     conn = get_connection()
     try:
         a = ng_queries.get_ng_submission(conn, "1")
         m = ng_queries.get_ng_submission(conn, "405919")
         assert a["portal"] == "audio" and a["views"] == 302940 and a["score"] == 4.45 and a["genre"] == "Techno"
         assert m["portal"] == "movie" and m["rating"] == "m" and m["account_id"] == acct
-        assert ng_queries.get_ng_summary(conn)["total_submissions"] == 2
+        assert ng_queries.get_ng_summary(conn)["total_submissions"] == 3
+        assert ng_queries.get_ng_submission(conn, "samplehandle/sample-sketch")["portal"] == "art"
         snap = ng_queries.get_ng_snapshots(conn, "1")[0]
         assert (snap["score"], snap["votes"], snap["downloads_count"]) == (4.45, 2521, 80461)   # the judgment is a series
         assert ng_queries.get_ng_last_poll(conn)["status"] == "success"
@@ -332,9 +351,12 @@ def test_the_poster_routes_by_portal_and_refuses_honestly(env, monkeypatch):
     assert res.success and fake.updated[0][:2] == ("movie", "987") and fake.updated[0][2]["title"] == "Renamed"
     assert NewgroundsPoster.split_external_id("42") == ("audio", "42")
     assert not asyncio.run(p.replace_file("audio:1", "x")).success
-    # any rating is welcome, an image is not, no session says so
+    # any rating is welcome; an image goes to the Art Portal (4.29.0); no session says so
     assert p.rating_refusal(_pkg(env["piece"], rating="adult")) is None
-    assert "image" in p.media_refusal(_pkg(env["piece"], file_type="png", media_kind="image"))
+    assert p.media_refusal(_pkg(env["piece"], file_type="png", media_kind="image")) is None
+    res = asyncio.run(p.post(_pkg(env["piece"], file_type="png", media_kind="image")))
+    assert res.success and res.external_id == "art:987" and fake.submitted[-1][0] == "art"
+    assert NewgroundsPoster.split_external_id("art:kk/piece") == ("art", "kk/piece")
     env["settings"].pop("ng_cookie")
     assert any("not connected" in e for e in p.validate(_pkg(env["piece"])))
 

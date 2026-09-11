@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Any
 
 import httpx
@@ -171,3 +172,63 @@ class FurbooruClient:
             "comments_count": _safe_int(img.get("comment_count")),
             "has_media": 1 if file_url else 0,
         }
+
+    # ── Posting (4.28.0) ────────────────────────────────────────────────
+    # Philomena's JSON API creates images too — the route is undocumented on the
+    # /pages/api table but it is in the engine (router: `resources "/images",
+    # ImageController, only: [:show, :create]` under /api/v1/json, behind
+    # ApiTokenPlug + ApiRequireAuthorizationPlug), and the server answers 401
+    # without a key rather than 404. The controller runs the same ScraperPlug as
+    # the web form, so the file travels as multipart `image[image]` and the rest
+    # as the form's own field names. VERIFY-LIVE on the first real upload.
+
+    async def dnp_entries(self, artist_tag: str) -> list[dict]:
+        """The Do-Not-Post entries claimed on an `artist:` tag (public, no key).
+
+        Tag responses carry `dnp_entries` (`dnp_type`, `conditions`, `reason`).
+        A tag the site does not know returns [] — an unlisted artist is not a
+        clearance (the site says so itself), only the absence of a claim.
+        """
+        tag = (artist_tag or "").strip().lower()
+        if not tag:
+            return []
+        data = await self._get_json("/api/v1/json/search/tags", {"q": tag})
+        for t in (data or {}).get("tags") or []:
+            if str(t.get("name", "")).lower() == tag:
+                return [e for e in (t.get("dnp_entries") or []) if isinstance(e, dict)]
+        return []
+
+    async def upload_image(self, *, file_path: str, tag_input: str, description: str = "",
+                           sources: list[str] | None = None, anonymous: bool = False) -> dict:
+        """POST /api/v1/json/images — returns {"image_id", "url"} or raises
+        RuntimeError carrying the site's own validation message."""
+        if not self.api_key:
+            raise RuntimeError("Furbooru upload needs an API key (Settings → Platforms → Furbooru)")
+        if not tag_input.strip():
+            raise RuntimeError("Furbooru upload requires tags")
+        data: dict[str, Any] = {
+            "image[tag_input]": tag_input,
+            "image[description]": description or "",
+            "image[anonymous]": "true" if anonymous else "false",
+        }
+        for i, src in enumerate([u for u in (sources or []) if u][:15]):
+            data[f"image[sources][{i}][source]"] = src
+        with open(file_path, "rb") as fh:
+            files = {"image[image]": (os.path.basename(file_path), fh.read())}
+        try:
+            r = await self._http().post(f"{self.base_url}/api/v1/json/images",
+                                        params={"key": self.api_key}, data=data, files=files)
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"Furbooru upload failed: {e}") from e
+        try:
+            body = r.json()
+        except Exception:
+            body = {}
+        if r.status_code >= 400:
+            errs = body.get("errors") or body.get("error") or r.text[:300]
+            raise RuntimeError(f"Furbooru rejected the upload ({r.status_code}): {errs}")
+        img = body.get("image") or body
+        iid = str(_safe_int(img.get("id")))
+        if not iid or iid == "0":
+            raise RuntimeError(f"Furbooru returned no image id: {str(body)[:300]}")
+        return {"image_id": iid, "url": f"{self.base_url}/images/{iid}"}

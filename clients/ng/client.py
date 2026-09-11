@@ -62,18 +62,29 @@ MAX_PAGES = 50
 USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
               "Chrome/128.0 Safari/537.36")
 
-AUDIO_TYPES = ("mp3", "wav", "flac", "ogg", "m4a", "aiff", "aif")   # Audio Portal (mp3 at 44.1 kHz)
-MOVIE_TYPES = ("mp4", "mov", "webm")                                # ❓ Movie Portal's modern list
+# The three lists are the site's own submit menu (read 2026-09-09): AUDIO "mp3, m4a, ogg",
+# ANIMATION "swf, mp4, mov, wmv", ART "webp, gif, jpg, png". swf is not a thing the Library makes.
+AUDIO_TYPES = ("mp3", "m4a", "ogg")                                 # Audio Portal (mp3 at 44.1 kHz)
+MOVIE_TYPES = ("mp4", "mov", "wmv")                                 # Movie Portal
+ART_TYPES = ("png", "jpg", "jpeg", "gif", "webp")                   # Art Portal (4.29.0)
 AUDIO_MAX_BYTES = 250 * 1024 * 1024
 MOVIE_MAX_BYTES = 400 * 1024 * 1024                                 # ❓ not published; a stop, not a fact
+ART_MAX_BYTES = 40 * 1024 * 1024                                    # ❓ not published; a stop, not a fact
 
-# ❓ Portal-specific names, by analogy with the art portal's (PostyBirb). Pinned here so the
-# first live run changes one table, not four files.
+# Portal-specific names. The ART row is PostyBirb's proven flow (its only Newgrounds portal);
+# ❓ audio and movie are by analogy with it. Pinned here so the first live run changes one
+# table, not four files. An art piece's public URL is /art/view/<user>/<slug>, which only the
+# publish redirect knows — so "view" for art is a fallback, and a stored art id is that path.
 PORTALS = {
     "audio": {"new": "/projects/audio/new", "file_field": "new_audio", "remove": "/projects/audio/remove/{id}",
-              "publish": "/projects/audio/{id}/publish", "view": "/audio/listen/{id}"},
+              "publish": "/projects/audio/{id}/publish", "view": "/audio/listen/{id}", "edit": "/projects/audio/{id}/edit",
+              "listing": "audio"},
     "movie": {"new": "/projects/movies/new", "file_field": "new_movie", "remove": "/projects/movies/remove/{id}",
-              "publish": "/projects/movies/{id}/publish", "view": "/portal/view/{id}"},
+              "publish": "/projects/movies/{id}/publish", "view": "/portal/view/{id}", "edit": "/projects/movies/{id}/edit",
+              "listing": "movies"},
+    "art":   {"new": "/projects/art/new", "file_field": "new_image", "remove": "/projects/art/remove/{id}",
+              "publish": "/projects/art/{id}/publish", "view": "/art/view/{id}", "edit": "/projects/art/{id}/edit",
+              "listing": "art"},
 }
 
 # The four descriptors Newgrounds derives its E / T / M / A rating from.
@@ -96,6 +107,8 @@ MOVIE_GENRES = {
 _ITEM_ID_RE = {
     "audio": re.compile(r'href="https?://www\.newgrounds\.com/audio/listen/(\d+)"[^>]*class="item-audiosubmission[^"]*"[^>]*title="([^"]*)"'),
     "movie": re.compile(r'href="https?://www\.newgrounds\.com/portal/view/(\d+)"[^>]*class="inline-card-portalsubmission[^"]*"[^>]*title="([^"]*)"'),
+    # ❓ the /art listing's card, by analogy with the other two; the id is the "user/slug" path.
+    "art":   re.compile(r'href="https?://www\.newgrounds\.com/art/view/([^"/]+/[^"/?#]+)"[^>]*class="[^"]*item-portalitem-art[^"]*"[^>]*title="([^"]*)"'),
 }
 _TITLE_RE = re.compile(r'<h2 class="rated-([etma])"[^>]*itemprop="name"[^>]*>(.*?)</h2>', re.S)
 _STAT_RE = r'<dt>\s*{label}\s*</dt>\s*<dd>\s*(?:<a[^>]*>\s*)?([\d,]+)'
@@ -151,13 +164,15 @@ def descriptors_for(rating: str, extra: dict | None = None) -> dict[str, str]:
 
 
 def portal_for(kind: str, ext: str = "") -> str | None:
-    """'audio' | 'movie' for a media kind (or an extension), else None."""
+    """'audio' | 'movie' | 'art' for a media kind (or an extension), else None."""
     k = (kind or "").lower()
     e = (ext or "").lower().lstrip(".")
     if k == "audio" or e in AUDIO_TYPES:
         return "audio"
     if k == "video" or e in MOVIE_TYPES:
         return "movie"
+    if k == "image" or e in ART_TYPES:
+        return "art"
     return None
 
 
@@ -292,7 +307,7 @@ class NgClient:
         """Every id in the operator's audio or movies listing (``?page=N`` until nothing new)."""
         out, seen = [], set()
         for page in range(1, MAX_PAGES + 1):
-            url = f"{self._user_base()}/{'audio' if portal == 'audio' else 'movies'}"
+            url = f"{self._user_base()}/{PORTALS[portal]['listing']}"
             if page > 1:
                 url += f"?page={page}"
             items = parse_listing(await self._get_text(url), portal)
@@ -366,8 +381,15 @@ class NgClient:
             return {"success": False, "id": str(project_id),
                     "error": f"Newgrounds {stage} failed: {errs or body}"}
 
-        # the file (+ icon)
+        # the file (+ icon). The Art Portal (4.29.0, PostyBirb's proven flow) also wants the
+        # image's size, `link_icon=1` with a crop box, and afterwards the returned `linked_icon`
+        # sorted into the project (`art_image_sort`).
         files: dict[str, Any] = {}
+        form: dict[str, str] = {"userkey": userkey}
+        if portal == "art":
+            w, h = _image_size(file_path)
+            form.update({"width": str(w), "height": str(h), "link_icon": "1",
+                         "cropdata": '{"x":0,"y":0,"width":%d,"height":%d}' % (w, h)})
         fh = open(file_path, "rb")
         files[spec["file_field"]] = (os.path.basename(file_path), fh, "application/octet-stream")
         fh_icon = None
@@ -375,13 +397,20 @@ class NgClient:
             fh_icon = open(icon_path, "rb")
             files["thumbnail"] = (os.path.basename(icon_path), fh_icon, "image/jpeg")
         try:
-            up = await self._post_json(edit_url, {"userkey": userkey}, files=files, timeout=UPLOAD_TIMEOUT)
+            up = await self._post_json(edit_url, form, files=files, timeout=UPLOAD_TIMEOUT)
         finally:
             fh.close()
             if fh_icon:
                 fh_icon.close()
         if up.get("success") != "saved":
             return await fail("upload", up)
+        if portal == "art":
+            linked = up.get("linked_icon")
+            if linked in (None, ""):
+                return await fail("upload (no linked_icon came back)", up)
+            sort = await self._post_json(edit_url, {"userkey": userkey, "art_image_sort": f"[{linked}]"})
+            if sort.get("success") != "saved":
+                return await fail("image sort", sort)
 
         # the description, then one field per request (the site's own form does this)
         desc = await self._post_json(edit_url, {"PHP_SESSION_UPLOAD_PROGRESS": "projectform", "userkey": userkey,
@@ -417,7 +446,7 @@ class NgClient:
         spec = PORTALS.get(portal)
         if not spec:
             return {"success": False, "error": f"unknown Newgrounds portal {portal!r}"}
-        edit_url = f"{BASE}/projects/{'audio' if portal == 'audio' else 'movies'}/{project_id}/edit"
+        edit_url = f"{BASE}{spec['edit'].format(id=project_id)}"
         page = await self._get_text(edit_url)
         m = _UEK_RE.search(page)
         if not m:
@@ -443,6 +472,16 @@ class NgClient:
             if r.get("success") != "saved":
                 return {"success": False, "error": f"Newgrounds refused {k}: {r}"}
         return {"success": True, "id": str(project_id), "url": f"{BASE}{spec['view'].format(id=project_id)}"}
+
+
+def _image_size(path: str) -> tuple[int, int]:
+    """(width, height) of an image file, (0, 0) when it cannot be read."""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            return int(im.width), int(im.height)
+    except Exception:
+        return 0, 0
 
 
 def _as_paragraphs(text: str) -> str:

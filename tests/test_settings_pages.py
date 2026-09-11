@@ -26,7 +26,7 @@ def _tab_map() -> dict[str, str]:
 
 def test_every_old_tab_and_every_tagged_block_lands_on_a_rail_page():
     pages = _pages()
-    assert len(pages) == 11 and len(set(pages)) == 11
+    assert len(pages) == 12 and len(set(pages)) == 12
     tab_map = _tab_map()
     old_tabs = set(re.findall(r'data-tab-content="(\w+)"', APP_JS))
     assert old_tabs, "the old panels are still what the template renders"
@@ -81,4 +81,13 @@ def test_notification_matrix_replaces_the_per_site_listeners():
     for code in ids:
         assert f"{code}_notifications_enabled" in APP_JS, code
     assert 'id="pref-tw-save-tokens"' in APP_JS and "tw_roundrobin_save_tokens: e.target.checked" in APP_JS
+
+
+def test_telegram_is_its_own_page_and_the_publishing_field_is_gone():
+    """4.27.1: the Telegram tab lands on a Telegram page; the comma-separated Default
+    Platforms field is retired (personas carry their defaults; the bot's /upload still
+    reads the stored key)."""
+    assert _tab_map()["telegram"] == "telegram" and "telegram" in _pages()
+    assert "posting-default-platforms" not in APP_JS
+    assert "polling-unconnected" in APP_JS
 

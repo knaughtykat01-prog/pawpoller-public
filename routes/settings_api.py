@@ -776,6 +776,15 @@ async def test_account_login(account_id: int):
                                f"account would go out as @{owners[0]} — paste @{handle}'s own session.")}
         return {"status": "ok", "username": owners[0], "detail": "Logged in as @" + owners[0]}
 
+    # Every other platform routes to its existing validator via a fresh throwaway client
+    # (never the poller singleton, which would clobber a live poll). Only tg (its own Settings
+    # test) and pod (no login) have no per-account credential to test.
+    from polling import account_probe
+    verdict = await account_probe.probe_account(
+        platform, creds, account_id, bool(account["is_default"]), config.get_settings())
+    if verdict is not None:
+        return verdict
+
     return {"status": "unsupported",
             "detail": f"No per-account login test for {platform} yet."}
 

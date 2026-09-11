@@ -1,4 +1,4 @@
-/* Platform "How to get started" guides — 2.65.0; per-step screenshots 4.6.4.
+/* Platform "How to get started" guides — 2.65.0; per-step screenshots 4.6.4; walked with real logins 4.30.0.
  *
  * One shared, static dataset describing, per platform, how to go from nothing to
  * a working + connected credential in PawPoller, plus how to keep it alive
@@ -36,9 +36,12 @@
       need: ['An Inkbunny account', 'API access enabled on that account'],
       steps: [
         { t: 'Log into Inkbunny', b: 'Sign in at inkbunny.net.',
-          link: { label: 'inkbunny.net', url: 'https://inkbunny.net' } },
-        { t: 'Enable API access', b: 'Go to <b>Account &rarr; Settings</b> and turn on <b>Allow API Access</b> (accept the API terms). The API uses your normal username + password to log in.' },
-        { t: 'Allow the ratings you post', b: 'If you post mature/adult work, set your content-rating preferences so the API can see it.' },
+          link: { label: 'inkbunny.net', url: 'https://inkbunny.net' },
+          img: { src: '/img/guides/ib/login.png', alt: 'Inkbunny\'s Login page: Username, Password, Login' } },
+        { t: 'Enable API access', b: 'Go to <b>Account &rarr; Settings</b> and turn on <b>Allow API Access</b> (accept the API terms). The API uses your normal username + password to log in.',
+          img: { src: '/img/guides/ib/api-access.png', alt: 'Account Settings, the API (External Scripting) box with Enable API Access ticked' } },
+        { t: 'Allow the ratings you post', b: 'If you post mature/adult work, set your content-rating preferences so the API can see it.',
+          img: { src: '/img/guides/ib/allowed-ratings.png', alt: 'The allowed ratings page with the Mature and Adult boxes ticked' } },
         { t: 'Connect in PawPoller', b: 'Enter your Inkbunny username and password in Settings.' },
       ],
       paste: 'Settings → Inkbunny → Username + Password',
@@ -53,8 +56,10 @@
       need: ['A FurAffinity account', 'Your logged-in cookies (a and b)'],
       steps: [
         { t: 'Log into FurAffinity', b: 'Sign in at furaffinity.net in a desktop browser.',
-          link: { label: 'furaffinity.net', url: 'https://www.furaffinity.net' } },
-        { t: 'Copy the a and b cookies', b: COOKIE_HOWTO + ' You need the two cookies named <code>a</code> and <code>b</code>.' },
+          link: { label: 'furaffinity.net', url: 'https://www.furaffinity.net' },
+          img: { src: '/img/guides/fa/login.png', alt: 'FurAffinity\'s login form: Username, Password and the Cloudflare human check under them' } },
+        { t: 'Copy the a and b cookies', b: COOKIE_HOWTO + ' You need the two cookies named <code>a</code> and <code>b</code>.',
+          img: { src: '/img/guides/fa/devtools-cookies.png', alt: 'FurAffinity with DevTools open on Application → Cookies, the a and b rows named, their values blurred here' } },
         { t: 'Connect in PawPoller', b: 'Paste the <code>a</code> and <code>b</code> values into the FurAffinity fields in Settings.' },
       ],
       paste: 'Settings → FurAffinity → Cookie a + Cookie b',
@@ -83,18 +88,23 @@
 
     // ── SoFurry ──────────────────────────────────────────────
     sf: {
-      kind: 'Analytics + posting', difficulty: 'Medium',
-      summary: 'Track your SoFurry stats using your login.',
-      need: ['A SoFurry account', '2FA turned OFF (the 2FA login path is unsupported)'],
+      kind: 'Analytics + posting', difficulty: 'Easy',
+      summary: 'Track your SoFurry stats and post there through the official API.',
+      need: ['A SoFurry account', 'A Personal Access Token from Settings &rarr; Developer'],
       steps: [
-        { t: 'Have your SoFurry login ready', b: 'Your normal SoFurry username and password.' },
-        { t: 'Connect in PawPoller', b: 'Enter them in the SoFurry fields in Settings. On the desktop app the session is saved; on the server it logs in through the Cloudflare proxy.' },
+        { t: 'Log into SoFurry', b: 'Sign in at sofurry.com with your e-mail address and password (or a passkey). Two-factor accounts are fine — the token never logs in.',
+          link: { label: 'sofurry.com/login', url: 'https://sofurry.com/login' },
+          img: { src: '/img/guides/sf/login.png', alt: 'SoFurry\'s Login panel: e-mail address, password, Login, or Use Passkey' } },
+        { t: 'Create a Personal Access Token', b: 'Open <b>Settings &rarr; Developer &rarr; Personal Access Tokens</b>, name the token "PawPoller" and press <b>Create token</b>. Copy the token it shows — SoFurry only shows it once.',
+          link: { label: 'sofurry.com/settings/pat-create', url: 'https://sofurry.com/settings/pat-create' },
+          img: { src: '/img/guides/sf/pat-create.png', alt: 'SoFurry Settings, the Developer tab: Personal Access Tokens with Token name, Description and Create token' } },
+        { t: 'Connect in PawPoller', b: 'Paste the token in the SoFurry field in Settings and Save. Your profile name is read from the token — there is no username or password field any more.' },
       ],
-      paste: 'Settings → SoFurry → Username + Password',
-      renew: { when: 'Only if you change your password', how: 'Re-enter the new password.' },
+      paste: 'Settings → SoFurry → Personal Access Token',
+      renew: { when: 'Only if you revoke the token on SoFurry', how: 'Create a new token under Settings → Developer and paste it.' },
       notes: [
-        'If your SoFurry account has <b>two-factor auth</b>, the login can\'t complete — that path isn\'t handled yet.',
-        'On the server SoFurry polls through the CF proxy (its datacenter IP is blocked otherwise).',
+        'PawPoller no longer stores a SoFurry password — the official API replaced the old website login.',
+        'On the server SoFurry calls go through the CF proxy (its datacenter IP is blocked otherwise).',
       ],
     },
 
@@ -105,8 +115,10 @@
       need: ['A SquidgeWorld account'],
       steps: [
         { t: 'Have your login ready', b: 'Your SquidgeWorld username and password.',
-          link: { label: 'squidgeworld.org', url: 'https://squidgeworld.org' } },
-        { t: 'Connect in PawPoller', b: 'Enter them in the SquidgeWorld fields in Settings.' },
+          link: { label: 'squidgeworld.org', url: 'https://squidgeworld.org' },
+          img: { src: '/img/guides/sqw/login.png', alt: 'SquidgeWorld\'s Log in form: user name or email, password' } },
+        { t: 'Connect in PawPoller', b: 'Enter them in the SquidgeWorld fields in Settings.',
+          img: { src: '/img/guides/sqw/logged-in.png', alt: 'What a working login looks like on SquidgeWorld: the Successfully logged in banner over your dashboard' } },
       ],
       paste: 'Settings → SquidgeWorld → Username + Password',
       renew: { when: 'Only if you change your password', how: 'Re-enter the new password.' },
@@ -119,8 +131,12 @@
       summary: 'Track hits, kudos and comments on your AO3 works.',
       need: ['An AO3 account (username + password, OR a session cookie)'],
       steps: [
-        { t: 'Choose how to log in', b: 'Easiest is your AO3 <b>username + password</b>. Alternatively you can paste the <code>_otwarchive_session</code> cookie.' },
-        { t: 'Connect in PawPoller', b: 'Enter your username + password (or the session cookie) in the AO3 fields in Settings.' },
+        { t: 'Choose how to log in', b: 'Easiest is your AO3 <b>username + password</b>. Alternatively you can paste the <code>_otwarchive_session</code> cookie.',
+          img: { src: '/img/guides/ao3/login-filled.png', alt: 'AO3\'s Log in form with the username typed in' } },
+        { t: 'Or copy the session cookie', b: 'If you prefer the cookie: log in on a desktop browser, press <b>F12</b> &rarr; <b>Application</b> (Chrome/Edge) or <b>Storage</b> (Firefox) &rarr; <b>Cookies</b> &rarr; the AO3 site, and copy the value of <code>_otwarchive_session</code>.',
+          img: { src: '/img/guides/ao3/devtools-cookies.png', alt: 'AO3 with DevTools open on Application → Cookies, the _otwarchive_session row visible' } },
+        { t: 'Connect in PawPoller', b: 'Enter your username + password (or the session cookie) in the AO3 fields in Settings.',
+          img: { src: '/img/guides/ao3/logged-in.png', alt: 'What a working login looks like on AO3: the Successfully logged in banner over your dashboard' } },
       ],
       paste: 'Settings → AO3 → Username + Password (or session cookie)',
       renew: { when: 'A session cookie expires; username + password re-logs in automatically', how: 'If you used the cookie method and it lapses, grab a fresh <code>_otwarchive_session</code> cookie, or switch to username + password.' },
@@ -135,9 +151,11 @@
       summary: 'Track views/faves/comments on a DeviantArt gallery.',
       need: ['A DeviantArt login cookie', 'The DA username to track'],
       steps: [
-        { t: 'Log into DeviantArt', b: 'Sign in at deviantart.com in a desktop browser.',
-          link: { label: 'deviantart.com', url: 'https://www.deviantart.com' } },
-        { t: 'Copy your login cookie', b: COOKIE_HOWTO },
+        { t: 'Log into DeviantArt', b: 'Sign in at deviantart.com in a desktop browser. The username comes first, then <b>Next</b> asks for the password.',
+          link: { label: 'deviantart.com', url: 'https://www.deviantart.com' },
+          img: { src: '/img/guides/da/login.png', alt: 'DeviantArt\'s Log In dialog: the Username step with Next' } },
+        { t: 'Copy your login cookie', b: COOKIE_HOWTO + ' DeviantArt\'s login is the <code>auth</code> cookie (with <code>auth_secure</code> and <code>userinfo</code> beside it).',
+          img: { src: '/img/guides/da/devtools-cookies.png', alt: 'DeviantArt with DevTools open on Application → Cookies, the auth, auth_secure and userinfo rows named, their values blurred here' } },
         { t: 'Connect in PawPoller', b: 'Paste the cookie and the target DA username in Settings.' },
       ],
       paste: 'Settings → DeviantArt → Cookie + Target user',
@@ -171,7 +189,8 @@
       steps: [
         { t: 'Find the username', b: 'The Itaku account to track. Tracking needs nothing else — you can stop here.',
           link: { label: 'itaku.ee', url: 'https://itaku.ee' } },
-        { t: 'Grab your auth token — only if you want to POST', b: 'It is an API token, NOT a cookie (so it is not in the Cookies list). Log in at itaku.ee, open DevTools (F12) → Network tab, scroll your feed so requests appear, click any request to itaku.ee, and under Request Headers find "Authorization: Token abc123…" — copy only the part AFTER "Token " (the abc123… itself). Alternatively: DevTools → Application → Local Storage → itaku.ee, and copy the saved token value.' },
+        { t: 'Grab your auth token — only if you want to POST', b: 'It is an API token, NOT a cookie (so it is not in the Cookies list). Log in at itaku.ee (<b>Log In</b>, top right), press <b>F12</b> &rarr; <b>Application</b> (Chrome/Edge) or <b>Storage</b> (Firefox) &rarr; <b>Local Storage</b> &rarr; <code>https://itaku.ee</code> and copy the value of the key named <code>token</code>. The same value also travels on every request as <code>Authorization: Token …</code> in the Network tab, if you prefer to read it there.',
+          img: { src: '/img/guides/ik/devtools-local-storage.png', alt: 'Itaku with DevTools open on Application → Local Storage → itaku.ee, the token key selected' } },
         { t: 'Connect in PawPoller', b: 'Enter the username in Settings → Itaku. To also post, paste the token in the Auth token box and Save — the panel will then show "posting enabled".' },
       ],
       paste: 'Settings → Itaku → username (+ Auth token to post)',
@@ -189,8 +208,12 @@
       need: ['A Bluesky account', 'An app password (not your main password)'],
       steps: [
         { t: 'Open App Passwords', b: 'In the Bluesky app or web: <b>Settings &rarr; Privacy and Security &rarr; App Passwords</b>.',
-          link: { label: 'Bluesky app passwords', url: 'https://bsky.app/settings/app-passwords' } },
-        { t: 'Create one', b: 'Add a new app password, name it "PawPoller", and copy it (it looks like <code>xxxx-xxxx-xxxx-xxxx</code>).' },
+          link: { label: 'Bluesky app passwords', url: 'https://bsky.app/settings/app-passwords' },
+          img: { src: '/img/guides/bsky/app-passwords.png', alt: 'Bluesky\'s App Passwords page with the Add App Password button and the existing passwords listed' } },
+        { t: 'Create one', b: 'Press <b>Add App Password</b>, name it "PawPoller" and press <b>Next</b>. Leave direct-message access unticked — PawPoller never reads your messages.',
+          img: { src: '/img/guides/bsky/add-app-password.png', alt: 'The Add App Password dialog with the name PawPoller typed in and the direct-messages box unticked' } },
+        { t: 'Copy it straight away', b: 'Bluesky shows the password once (it looks like <code>xxxx-xxxx-xxxx-xxxx</code>). Copy it before pressing <b>Done</b> — after that it can only be deleted and made again.',
+          img: { src: '/img/guides/bsky/app-password-created.png', alt: 'Here is your app password: the one-time password (blurred here) with a copy button and Done' } },
         { t: 'Connect in PawPoller', b: 'Enter your handle (e.g. <code>you.bsky.social</code>) and the app password in Settings.' },
       ],
       paste: 'Settings → Bluesky → Handle + App password',
@@ -208,8 +231,10 @@
       need: ['An X account', 'Two logged-in cookies: auth_token and ct0'],
       steps: [
         { t: 'Log into X', b: 'Sign in at x.com in a desktop browser.',
-          link: { label: 'x.com', url: 'https://x.com' } },
-        { t: 'Copy auth_token and ct0', b: COOKIE_HOWTO + ' You need the cookies named <code>auth_token</code> and <code>ct0</code>.' },
+          link: { label: 'x.com', url: 'https://x.com' },
+          img: { src: '/img/guides/tw/sign-in.png', alt: 'X\'s sign-in dialog: phone, Google or Apple, or e-mail / username then Continue' } },
+        { t: 'Copy auth_token and ct0', b: COOKIE_HOWTO + ' You need the cookies named <code>auth_token</code> and <code>ct0</code>.',
+          img: { src: '/img/guides/tw/devtools-cookies.png', alt: 'X with DevTools open on Application → Cookies, the auth_token and ct0 rows named, their values blurred here' } },
         { t: 'Connect in PawPoller', b: 'Paste both cookies and the X username to track in Settings.' },
       ],
       paste: 'Settings → X/Twitter → auth_token + ct0 (+ target user)',
@@ -226,9 +251,14 @@
       summary: 'Track favourites/boosts/replies and post to Mastodon.',
       need: ['A Mastodon account on any instance', 'An access token with read + write scopes'],
       steps: [
-        { t: 'Open your instance\'s Development page', b: 'On your instance go to <b>Preferences &rarr; Development &rarr; New application</b>.' },
-        { t: 'Create an application', b: 'Name it "PawPoller". Tick the <b>read</b> scope (for polling) and <b>write</b> scope (for posting), then Submit.' },
-        { t: 'Copy the access token', b: 'Open the app you just created and copy <b>Your access token</b>.' },
+        { t: 'Open your instance\'s Development page', b: 'On your instance go to <b>Preferences &rarr; Development &rarr; New application</b>.',
+          img: { src: '/img/guides/mast/development.png', alt: 'Preferences, the Development page: Your applications with the New application button' } },
+        { t: 'Create an application', b: 'Name it "PawPoller" and leave the redirect URI as it is.',
+          img: { src: '/img/guides/mast/new-application.png', alt: 'The New application form: Application name, Application website, Redirect URI' } },
+        { t: 'Tick the scopes', b: 'Tick the <b>read</b> scope (for polling) and <b>write</b> scope (for posting), then Submit.',
+          img: { src: '/img/guides/mast/scopes.png', alt: 'The Scopes list with the top-level read and write boxes ticked' } },
+        { t: 'Copy the access token', b: 'Open the app you just created and copy <b>Your access token</b>.',
+          img: { src: '/img/guides/mast/application-tokens.png', alt: 'The application page: Client key, Client secret and Your access token (all three blurred here)' } },
         { t: 'Connect in PawPoller', b: 'Enter your instance URL (e.g. <code>https://mastodon.social</code>) and the access token in Settings.' },
       ],
       paste: 'Settings → Mastodon → Instance URL + Access token',
@@ -245,7 +275,10 @@
       need: ['A registered Tumblr app (OAuth Consumer Key)', 'Your blog name', 'For posting: the full OAuth1 token set'],
       steps: [
         { t: 'Register a Tumblr app', b: 'Go to the Tumblr apps page and <b>Register application</b>.',
-          link: { label: 'Tumblr OAuth apps', url: 'https://www.tumblr.com/oauth/apps' } },
+          link: { label: 'Tumblr OAuth apps', url: 'https://www.tumblr.com/oauth/apps' },
+          img: { src: '/img/guides/tum/oauth-apps.png', alt: 'Tumblr\'s Applications page with the Register application button' } },
+        { t: 'Fill in the form', b: 'Name and describe the app, give any website and callback URL you own (they are never called), and register it.',
+          img: { src: '/img/guides/tum/register-app.png', alt: 'Register your application: name, website, description, contact e-mail (blurred here), callback URL' } },
         { t: 'Copy the OAuth Consumer Key', b: 'That key is your <b>API key</b> — enough for polling notes.' },
         { t: '(For posting) get OAuth1 tokens', b: 'Posting also needs the <b>consumer secret</b> plus a user <b>OAuth token</b> + <b>token secret</b> (generated via the OAuth1 flow).' },
         { t: 'Connect in PawPoller', b: 'Enter the API key and your blog name (and the OAuth1 tokens if posting) in Settings.' },
@@ -264,7 +297,8 @@
       summary: 'Track views/bookmarks/comments on your Pixiv works.',
       need: ['A Pixiv account', 'A refresh token from a browser login'],
       steps: [
-        { t: 'Get a refresh token', b: 'Pixiv has no simple token page — use a helper like <code>gppt</code> (<code>pip install gppt</code>) or a browser-based pixiv-token tool. It walks you through a Pixiv login and captures a <b>refresh token</b>.' },
+        { t: 'Get a refresh token', b: 'Pixiv has no simple token page — use a helper like <code>gppt</code> (<code>pip install gppt</code>) or a browser-based pixiv-token tool. It walks you through a Pixiv login and captures a <b>refresh token</b>.',
+          img: { src: '/img/guides/pix/login.png', alt: 'pixiv\'s login page — the helper tool drives this same login and captures the refresh token' } },
         { t: 'Copy the refresh token', b: 'The long string the tool prints after you log in.' },
         { t: 'Connect in PawPoller', b: 'Paste the refresh token (and optionally your user id) in Settings.' },
       ],
@@ -337,11 +371,17 @@
       need: ['A Telegram channel you own', 'A bot made just for the channel (30 seconds in @BotFather) — not your notification bot', 'The bot added to the channel as an admin'],
       steps: [
         { t: 'Create a bot', b: 'Message <b>@BotFather</b> on Telegram and send <code>/newbot</code>. Give it a name and a username ending in <code>bot</code>. He replies with a <b>token</b> — a long string like <code>123456789:AAHk…</code>. That whole string is the token.',
-          link: { label: '@BotFather', url: 'https://t.me/BotFather' } },
+          link: { label: '@BotFather', url: 'https://t.me/BotFather' },
+          img: { src: '/img/guides/telegram/botfather-token.png', alt: 'BotFather replying Done with the new bot username and the HTTP API token, the token blurred' } },
         { t: 'Create your channel', b: 'In Telegram: <b>New Channel</b>. Public or private both work — a public channel gets a <code>@username</code>, a private one does not.' },
-        { t: 'Add the bot as an admin', b: 'Channel &rarr; <b>Administrators</b> &rarr; <b>Add Admin</b> &rarr; your bot. ⚠ <b>Tick "Post Messages"</b> — admin rights are individual toggles, and a bot can be an admin and still not be allowed to post. This is the step people miss.' },
-        { t: 'Post one message in the channel', b: 'Anything at all. An admin bot receives channel posts, which is how PawPoller can find the channel’s id for you.' },
-        { t: 'Connect in PawPoller', b: 'Settings &rarr; Telegram &rarr; paste the bot token, then press <b>🔍 Find my channel</b>. It fills the channel in. Then <b>Save &amp; send test</b> — a real message lands in the channel, and PawPoller tells you <i>which</i> channel it reached.' },
+        { t: 'Add the bot as an admin', b: 'Channel &rarr; <b>Administrators</b> &rarr; <b>Add Admin</b> &rarr; your bot. ⚠ <b>Tick "Post Messages"</b> — admin rights are individual toggles, and a bot can be an admin and still not be allowed to post. This is the step people miss.',
+          img: { src: '/img/guides/telegram/admin-rights.png', alt: 'Telegram\'s Add Bot sheet for a channel: the admin rights toggles with Manage Messages on and Add Bot as Admin at the bottom' } },
+        { t: 'Post one message in the channel', b: 'Anything at all. An admin bot receives channel posts, which is how PawPoller can find the channel’s id for you.',
+          img: { src: '/img/guides/telegram/channel-first-message.png', alt: 'The channel after the bot was added, with a plain Hello message typed so the bot can see the channel' } },
+        { t: 'Connect in PawPoller', b: 'Settings &rarr; Telegram &rarr; paste the bot token, then press <b>🔍 Find my channel</b>. It fills the channel in. Then <b>Save &amp; send test</b> — a real message lands in the channel, and PawPoller tells you <i>which</i> channel it reached.',
+          img: { src: '/img/guides/telegram/pp-found-testing.png', alt: 'PawPoller Settings, Telegram channel posting: Find my channel has found the channel and asks for Save and send test' } },
+        { t: 'Publish a piece to it', b: 'Open any artwork or story in the Library, choose Telegram in <b>Publish to more</b>, and set the per-post options — blur, hashtags, caption, silent, pin — or leave the channel defaults. <b>Publish now</b> sends it; the post appears in the channel within seconds.',
+          img: { src: '/img/guides/telegram/publish-telegram-options.png', alt: 'PawPoller\'s Telegram options panel for one piece: blur, hashtags, caption, forwarding, quality, silent, pin and link previews' } },
       ],
       paste: 'Settings → Telegram → Channel posting',
       renew: { when: 'Bot tokens don’t expire', how: 'Only if you revoke one with /revoke in BotFather — then paste the new token back in.' },
@@ -359,21 +399,152 @@
 
     // ── e621 ─────────────────────────────────────────────────
     e621: {
-      kind: 'Analytics', difficulty: 'Easy',
+      kind: 'Analytics + posting', difficulty: 'Easy',
       summary: 'Track score, favorites and comments on your e621 uploads.',
       need: ['An e621 account', 'An API key (not your password)'],
       steps: [
-        { t: 'Open your API access page', b: 'Log in to e621, then go to <b>Account &rarr; Manage API Access</b> (e621.net/users/home &rarr; "Manage API Access").',
-          link: { label: 'e621.net', url: 'https://e621.net/users/home' } },
-        { t: 'Copy your API key', b: 'The page shows your <b>API key</b> — a long string tied to your account. This is <b>not</b> your login password.' },
+        { t: 'Open your API keys page', b: 'Log in to e621, then open the account menu (your name, top right) &rarr; <b>Manage API Keys</b> (or go straight to e621.net/api_keys).',
+          link: { label: 'e621.net', url: 'https://e621.net/users/home' },
+          img: { src: '/img/guides/e621/sign-in.png', alt: 'e621\'s Welcome sign-in box: Username, Password, Sign in' } },
+        { t: 'Copy your API key', b: 'The page shows your <b>API key</b> — a long string tied to your account. This is <b>not</b> your login password.',
+          img: { src: '/img/guides/e621/api-keys.png', alt: 'e621\'s API Keys page: the key (blurred here) in the Name/Key table and in the example-usage string' } },
         { t: 'Connect in PawPoller', b: 'Enter your e621 <b>username</b> and paste the <b>API key</b> in Settings.' },
       ],
       paste: 'Settings → e621 → Username + API key',
       renew: { when: 'API keys don\'t expire', how: 'Only if you regenerate/revoke it on e621 — paste the new key back in.' },
       notes: [
-        'Poll-only: PawPoller reads the engagement on posts you <b>uploaded</b> (tags <code>user:&lt;you&gt;</code>). It never posts.',
+        'Analytics read the engagement on posts you <b>uploaded</b> (tags <code>user:&lt;you&gt;</code>); posting uploads a Library piece with your tags, rating and source, and it goes through e621\'s moderation queue.',
         'e621 exposes no view count, so <b>score</b> (up-votes minus down-votes, which can go negative) is the headline metric alongside favorites and comments.',
         'Polling is gentle by design — e621\'s API asks for about one request per second, which PawPoller respects.',
+      ],
+    },
+
+    // ── FurryNetwork (4.28.1) ────────────────────────────────
+    fn: {
+      kind: 'Analytics + posting', difficulty: 'Medium',
+      summary: 'Track views, favourites and comments across your FurryNetwork characters, and post artwork to them.',
+      need: ['A FurryNetwork account', 'A desktop browser with DevTools (F12)'],
+      steps: [
+        { t: 'Log in on the website', b: 'Sign in at furrynetwork.com in your browser. The real page solves the reCAPTCHA that stops any app from logging in with a password.',
+          link: { label: 'furrynetwork.com', url: 'https://furrynetwork.com' },
+          img: { src: '/img/guides/fn/login.png', alt: 'FurryNetwork\'s Log in page: Email, Password, reCAPTCHA notice, LOG IN' } },
+        { t: 'Find your refresh token', b: 'Press <b>F12</b> &rarr; <b>Application</b> (Chrome/Edge) or <b>Storage</b> (Firefox) &rarr; <b>Local Storage</b> &rarr; furrynetwork.com. FurryNetwork stores your login under the <code>token</code> key as <code>{"access_token":…,"refresh_token":…}</code> — click it and copy the <code>refresh_token</code> value. (Or: the <b>Network</b> tab &rarr; the <code>oauth/token</code> response.)',
+          img: { src: '/img/guides/fn/devtools-local-storage.png', alt: 'FurryNetwork with DevTools open on Application → Local Storage → furrynetwork.com, the token and user keys named, their values blurred here' } },
+        { t: 'Connect in PawPoller', b: 'Paste the refresh token in Settings. The email is optional — only a label if the token carries no name.' },
+      ],
+      paste: 'Settings → Platforms → FurryNetwork → Refresh token',
+      renew: { when: 'Only if the token is revoked (a password change, or "log out everywhere")', how: 'PawPoller renews the token itself on every poll; paste a fresh one from Local Storage if polling stops.' },
+      notes: [
+        'Email + password sign-in is <b>gone</b>: FurryNetwork put its login behind a reCAPTCHA no app can pass, so the token is the only way in.',
+        'Work is grouped by <b>character</b>; PawPoller polls and posts across all of yours.',
+      ],
+    },
+
+    // ── Furbooru (4.28.1) ────────────────────────────────────
+    fbr: {
+      kind: 'Analytics + posting', difficulty: 'Easy',
+      summary: 'Track score, faves and comments on your Furbooru uploads, and post artwork with the site\'s rules checked first.',
+      need: ['A Furbooru account', 'Your API key (posting; optional for analytics)'],
+      steps: [
+        { t: 'Find your API key', b: 'Log in to Furbooru, open <b>Account &rarr; Settings</b>, and under <b>API Key</b> press <b>Click to show</b> and copy the key. It is not your password.',
+          link: { label: 'furbooru.org', url: 'https://furbooru.org' },
+          img: { src: '/img/guides/fbr/api-key.png', alt: 'Furbooru Account Settings, the API Key section with the key revealed and blurred here' } },
+        { t: 'Connect in PawPoller', b: 'Enter your Furbooru <b>username</b> and paste the <b>API key</b> in Settings. The username alone is enough for analytics — the read API is public.' },
+        { t: 'Read the rules once', b: 'Furbooru asks every uploader to read the site rules and check the Do-Not-Post list. PawPoller checks the credited artist against that list before every post and refuses with the artist\'s own conditions when they have claimed one.',
+          link: { label: 'Rules + DNP list', url: 'https://furbooru.org/pages/rules' } },
+      ],
+      paste: 'Settings → Platforms → Furbooru → Username + API key',
+      renew: { when: 'API keys don\'t expire', how: 'Only if you regenerate it on Furbooru — paste the new key back in.' },
+      notes: [
+        'Every upload gets a <b>rating tag</b> (safe / questionable / explicit from the piece\'s rating), the artist as <code>artist:name</code>, tags with spaces, and needs five or more tags — the site\'s own tagging rules, applied before anything is sent.',
+        'A Do-Not-Post claim of <i>Artist Upload Only</i> or <i>With Permission Only</i> stops the post. If you have the artist\'s permission, or are the commissioner where their conditions allow it, set <code>dnp_ack</code> in the piece\'s Furbooru options and post again.',
+        'Tags on Furbooru are communal — edit them on the site, not from PawPoller.',
+      ],
+    },
+
+    // ── Podcast feed (4.28.1) ────────────────────────────────
+    pod: {
+      kind: 'Posting', difficulty: 'Medium',
+      summary: 'A podcast feed PawPoller serves itself — publish audio pieces to it and they appear on Spotify, Apple Podcasts and everywhere else.',
+      need: ['A server install with a public address', 'An email address for the feed\'s owner line'],
+      steps: [
+        { t: 'Give the server a public address', b: 'Podcast directories fetch the feed from the internet, so the server needs <code>IG_PUBLIC_BASE_URL</code> set — the same setting the Instagram host uses. The Podcasts page says so until it is.' },
+        { t: 'Make a feed', b: 'Open <b>Podcasts</b> (under Your works), click <b>New feed</b> and fill in the title, address, author, owner email, category and whether it is explicit.' },
+        { t: 'Publish an episode', b: 'Publish any audio piece from the Library and pick the feed as a target, the way you would a Telegram channel. The piece\'s poster becomes the episode art and an adult-rated piece is marked explicit.' },
+        { t: 'Submit the feed once', b: 'Copy the feed address (<code>/feed/&lt;slug&gt;.xml</code>) into Apple Podcasts Connect, Spotify for Creators, Amazon Music and Pocket Casts. From then on every episode you publish appears there on its own.',
+          link: { label: 'Spotify for Creators', url: 'https://creators.spotify.com' } },
+      ],
+      paste: 'Podcasts page → New feed (no credentials — PawPoller is the host)',
+      renew: { when: 'Nothing expires', how: 'The audio streams from your own Library; keep the server\'s public address stable, since the directories cache it.' },
+      notes: [
+        'Nothing is uploaded anywhere: the directories read your feed and the audio streams from the server.',
+        'The owner email goes in the feed\'s owner tag, which directories use to verify ownership — it is never shown in PawPoller\'s logs.',
+        'Feed art falls back to the newest episode\'s poster when the feed has none of its own.',
+      ],
+    },
+
+    // ── SoundCloud (4.28.1) ──────────────────────────────────
+    sc: {
+      kind: 'Analytics + posting', difficulty: 'Involved',
+      summary: 'Track your tracks\' plays, likes and comments, and publish audio pieces as tracks.',
+      need: ['A SoundCloud account with an <b>Artist Pro</b> subscription', 'API access granted through SoundCloud\'s request form', 'The app\'s client id and secret'],
+      steps: [
+        { t: 'Request API access', b: 'SoundCloud only hands out API access on request. Fill in the developer request form; approval is case by case and can take weeks.',
+          link: { label: 'SoundCloud API request', url: 'https://soundcloud.com/you/apps' } },
+        { t: 'Register the redirect URI', b: 'Once approved, open the app\'s settings on SoundCloud and add the redirect URI PawPoller shows after Connect. SoundCloud only redirects back to an address registered on the app.' },
+        { t: 'Paste the credentials', b: 'Copy the app\'s <b>client id</b> and <b>client secret</b> into Settings.' },
+        { t: 'Approve PawPoller', b: 'Click <b>Connect &amp; authorise</b>; SoundCloud opens in your browser, you approve once, and polling starts.' },
+      ],
+      paste: 'Settings → Platforms → SoundCloud → Client id + Client secret, then Connect & authorise',
+      renew: { when: 'Tokens refresh themselves', how: 'If polling stops, click <b>Re-authorise</b> on the SoundCloud card and approve again.' },
+      notes: [
+        'SoundCloud does <b>not</b> allow adult audio: an adult-rated piece is refused before anything is sent; a mature one goes through.',
+        'The poster image becomes the track\'s cover.',
+      ],
+    },
+
+    // ── Newgrounds (4.28.1) ──────────────────────────────────
+    ng: {
+      kind: 'Analytics + posting', difficulty: 'Medium',
+      summary: 'Track your Art, Audio and Movie Portal submissions, and publish artwork, audio and video pieces as new projects.',
+      need: ['A Newgrounds account', 'A desktop browser with DevTools (F12)'],
+      steps: [
+        { t: 'Sign in on the website', b: 'Newgrounds has no API, so PawPoller uses your browser session. Log in at newgrounds.com.',
+          link: { label: 'newgrounds.com', url: 'https://www.newgrounds.com' },
+          img: { src: '/img/guides/ng/sign-in.png', alt: 'Newgrounds Passport: Username or Email, Password, Sign In With Newgrounds' } },
+        { t: 'Enter the emailed code if asked', b: 'On a browser Newgrounds has not seen before it e-mails a verification code and waits for it here. Type it in and the session is yours.',
+          img: { src: '/img/guides/ng/verify-code.png', alt: 'Newgrounds Passport asking for the Authentication Code it e-mailed (address blurred here)' } },
+        { t: 'Copy the cookie header', b: 'Press <b>F12</b> &rarr; <b>Network</b>, reload the page, click the top <b>Doc</b> request (newgrounds.com), and under <b>Request Headers</b> copy the whole value of <code>cookie</code>.',
+          img: { src: '/img/guides/ng/network-cookie.png', alt: 'Newgrounds with DevTools open on Network → the document request → Request Headers, the whole cookie value blurred here' } },
+        { t: 'Connect in PawPoller', b: 'Paste the cookie header in Settings (or use the browser login on the desktop app).' },
+      ],
+      paste: 'Settings → Platforms → Newgrounds → Cookie header (or Browser login)',
+      renew: { when: 'When the session expires or you log out', how: 'Sign in again and paste a fresh cookie header.' },
+      notes: [
+        'Every new submission goes <b>Under Judgment</b> first, as all Newgrounds submissions do; the poller reports what the public decided.',
+        'Newgrounds takes every rating, up to A.',
+        'mp3 uploads must be sampled at <b>44.1 kHz</b>.',
+        'Formats per portal, from the site\'s submit menu: art webp / gif / jpg / png; audio mp3 / m4a / ogg; animation mp4 / mov / wmv.',
+      ],
+    },
+
+    // ── YouTube (4.28.1) ─────────────────────────────────────
+    yt: {
+      kind: 'Analytics + posting', difficulty: 'Involved',
+      summary: 'Track your channel\'s views, likes, comments and subscribers, and upload video pieces with the poster as the thumbnail.',
+      need: ['A Google account with a YouTube channel', 'Your own Google Cloud project'],
+      steps: [
+        { t: 'Make a Google Cloud project', b: 'In Google Cloud, create a project and enable the <b>YouTube Data API v3</b>.',
+          link: { label: 'Google Cloud console', url: 'https://console.cloud.google.com/apis/library/youtube.googleapis.com' } },
+        { t: 'Configure the consent screen', b: 'Set up the OAuth consent screen and add yourself as a <b>test user</b>.' },
+        { t: 'Create the OAuth client', b: 'Make a <b>Web application</b> OAuth client. After Connect, PawPoller shows the redirect URI to add as an authorised redirect URI on that client.' },
+        { t: 'Paste and authorise', b: 'Copy the client id and secret into Settings, click <b>Connect &amp; authorise</b>, and approve PawPoller in your browser.' },
+      ],
+      paste: 'Settings → Platforms → YouTube → Client id + Client secret, then Connect & authorise',
+      renew: { when: 'Every 7 days while the consent screen is in Testing', how: 'Click <b>Re-authorise</b> on the YouTube card. Publishing the consent screen stops the weekly expiry.' },
+      notes: [
+        'Uploads from a project that has not passed YouTube\'s <b>API compliance audit</b> stay <b>private</b> whatever you ask for. PawPoller uploads, sets the thumbnail, tells you what YouTube set, and you flip each one public in Studio.',
+        'YouTube does not allow sexually explicit content: an adult-rated piece is refused before anything is sent.',
       ],
     },
   };

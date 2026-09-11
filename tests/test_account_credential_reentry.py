@@ -106,10 +106,24 @@ def test_it_tests_the_named_accounts_credentials_not_the_defaults(
     assert seen["cookie_a"] == "this_accounts_cookie"
 
 
-def test_an_unsupported_platform_says_so_rather_than_guessing(client):
+def test_a_testable_platform_without_creds_says_unconfigured(client):
+    # Inkbunny CAN be tested now (001-account-cred-test); with nothing entered it reports
+    # "unconfigured" — a real answer — rather than the old bare "unsupported".
     conn = get_connection()
     try:
         aid = adb.create_account(conn, "ib", "IbTest", handle="IbTest")
+    finally:
+        conn.close()
+    body = client.post(f"/api/accounts/{aid}/test-login").json()
+    assert body["status"] == "unconfigured"
+
+
+def test_a_platform_with_no_credential_test_says_unsupported(client):
+    # Telegram has no per-account credential to test here (its own Settings test covers the bot);
+    # it is the case that legitimately returns "unsupported".
+    conn = get_connection()
+    try:
+        aid = adb.create_account(conn, "tg", "TgTest", handle="TgTest")
     finally:
         conn.close()
     body = client.post(f"/api/accounts/{aid}/test-login").json()

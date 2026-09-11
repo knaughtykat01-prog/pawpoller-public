@@ -225,6 +225,12 @@ def _render_link(artist: dict, platform: str, name: str) -> str:
         nm = _clean(name, "markdown")
         return f"[{nm}]({url})" if url else nm
 
+    # --- Furbooru (4.28.0): Philomena Markdown, a titled link. The artist TAG
+    # (`artist:name`, built in posting/platforms/furbooru.py) is the index there.
+    if platform == "fbr":
+        nm = _clean(name, "markdown")
+        return f"[{nm}]({url})" if url else nm
+
     # --- e621: DText. There is NO @mention syntax (confirmed against e621's
     # own parser source), so a titled link is the only option — and the real
     # attribution mechanism there is the artist TAG, which build_artwork_package
@@ -423,7 +429,7 @@ ROLES = ("commissioner", "owner", "collaborator")
 
 # What each site's markup would break on, for a name that is NOT linked.
 _BARE_KIND = {"fa": "bbcode", "ib": "bbcode", "ws": "markdown", "fn": "markdown",
-              "ik": "markdown", "e621": "dtext"}
+              "ik": "markdown", "e621": "dtext", "fbr": "markdown"}
 
 
 def _mention_ok(person: dict | None, platform: str) -> bool:

@@ -123,8 +123,9 @@ async def run_ng_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         if not session.get("ok"):
             raise ValueError(f"Newgrounds session check failed -- {session.get('detail') or 'log in again in Settings'}")
 
-        _update_ng_progress("searching", message="Fetching your audio and movie listings...")
-        tracks = await client.get_all_items("audio") + await client.get_all_items("movie")
+        _update_ng_progress("searching", message="Fetching your audio, movie and art listings...")
+        tracks = (await client.get_all_items("audio") + await client.get_all_items("movie")
+                  + await client.get_all_items("art"))
         stats["submissions_found"] = len(tracks)
 
         if not tracks:
