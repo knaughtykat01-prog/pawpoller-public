@@ -57,6 +57,25 @@ def test_every_still_has_alt_text():
         assert len(alt) > 20, (ref, alt)
 
 
+def _guide_codes():
+    """The keys of the GUIDES object — every platform the UI renders a guide (and a PDF link) for."""
+    js = _read(JS)
+    block = js[js.index("const GUIDES = {"):js.index("window.PlatformGuides")]
+    return re.findall(r"^    ([a-z0-9]+): \{$", block, re.MULTILINE)
+
+
+def test_every_guide_ships_a_pdf():
+    """renderBody links /img/guides/<code>/guide.pdf for every guide — the bundled file must exist and be a real PDF."""
+    codes = _guide_codes()
+    assert len(codes) >= 24, codes
+    for code in codes:
+        p = os.path.join(IMG_ROOT, code, "guide.pdf")
+        assert os.path.exists(p), f"missing guide.pdf for {code} (re-run deploy/make_guide_pdfs.py)"
+        with open(p, "rb") as fh:
+            assert fh.read(5) == b"%PDF-", code
+        assert os.path.getsize(p) > 4 * 1024, (code, os.path.getsize(p))
+
+
 def test_no_orphan_stills_anywhere():
     used = {ref for ref, _ in _js_refs()} | _doc_refs()
     on_disk = set()

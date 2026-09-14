@@ -186,6 +186,25 @@ _tray_icon = None   # pystray.Icon instance, set in main()
 _window = None      # pywebview window instance, set in main()
 
 
+def _webview_start_kwargs():
+    """Base kwargs for webview.start().
+
+    private_mode=False + a stable storage_path make the embedded browser keep its
+    cookie jar between runs, under %APPDATA%\\PawPoller/webview (which survives app
+    updates). pywebview defaults to private_mode=True, which drops all cookies on
+    exit — so the 30-day dashboard session cookie was discarded on every restart,
+    and because the app lives in the tray the only restart is an update. That made
+    an update look like it logged you out (4.31.1).
+
+    On Linux force the Qt backend (GTK+WebKit2GTK is brittle to bundle).
+    The embedded browser (WebView2 / QtWebEngine) creates storage_path itself.
+    """
+    kw = {"private_mode": False, "storage_path": str(config.APPDATA_DIR / "webview")}
+    if sys.platform.startswith("linux"):
+        kw["gui"] = "qt"
+    return kw
+
+
 def _load_tray_image():
     """Load the tray icon image via Pillow."""
     from PIL import Image
@@ -384,10 +403,7 @@ def run_connected(server_url: str, api_key: str):
         _window = webview.create_window("PawPoller", html=desktop_agent.offline_page(server_url, agent), **kwargs)
         agent.when_reachable(lambda: _window.load_url(server_url))
     _window.events.closing += _on_closing
-    _start_kwargs = {}
-    if sys.platform.startswith("linux"):
-        _start_kwargs["gui"] = "qt"
-    webview.start(**_start_kwargs)
+    webview.start(**_webview_start_kwargs())
     if _tray_icon is not None:
         _tray_icon.stop()
     agent.stop()
@@ -570,10 +586,7 @@ def run_standalone():
     # are brittle to bundle via PyInstaller (and AppImage); Qt with
     # QtWebEngine is pip-installable, ships its own native libs, and
     # bundles cleanly. Windows and macOS use their native backend.
-    _start_kwargs = {}
-    if sys.platform.startswith("linux"):
-        _start_kwargs["gui"] = "qt"
-    webview.start(**_start_kwargs)
+    webview.start(**_webview_start_kwargs())
 
     # --- Step 7: Cleanup ---
     # Stop the tray icon thread if it is still running (e.g. the user

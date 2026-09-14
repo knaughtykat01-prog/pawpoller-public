@@ -81,6 +81,25 @@
 .guide-badge--kind { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); border-color: transparent; }
 .guide-badge--diff { background: var(--bg-tertiary); color: var(--text-secondary); }
 
+/* "Open this guide as a PDF" — links to the bundled /img/guides/<code>/guide.pdf */
+.guide-pdf-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0 0 1rem;
+    padding: 0.42rem 0.85rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-decoration: none;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+    border-radius: var(--radius-pill);
+    transition: background 0.15s, border-color 0.15s;
+}
+.guide-pdf-link:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: var(--accent); }
+.guide-pdf-ico { font-size: 0.95rem; line-height: 1; }
+
 .guide-h {
     font-family: var(--font-display);
     font-size: 0.82rem;

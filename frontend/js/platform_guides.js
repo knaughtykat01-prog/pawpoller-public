@@ -591,6 +591,9 @@
         <span class="guide-badge guide-badge--kind">${g.kind}</span>
         <span class="guide-badge guide-badge--diff">${g.difficulty} setup</span>
       </div>
+      <a class="guide-pdf-link" href="/img/guides/${code}/guide.pdf" target="_blank" rel="noopener">
+        <span class="guide-pdf-ico" aria-hidden="true">&#128196;</span> Open this guide as a PDF <span aria-hidden="true">&#8599;</span>
+      </a>
       <h4 class="guide-h">What you'll need</h4>
       <ul class="guide-need">${need}</ul>
       <h4 class="guide-h">Step by step</h4>
