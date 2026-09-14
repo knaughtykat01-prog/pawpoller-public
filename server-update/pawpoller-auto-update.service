@@ -1,0 +1,14 @@
+# Installed by server-update/install.sh (fills in __USER__/__REPO__).
+# The opt-in scheduled auto-update. Runs update.sh --quiet, which only makes
+# noise on a real change or an error. Enabled ONLY when you ask for it
+# (install.sh --auto, or systemctl enable --now pawpoller-auto-update.timer).
+[Unit]
+Description=PawPoller — scheduled automatic update
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__REPO__
+ExecStart=/bin/bash __REPO__/update.sh --quiet

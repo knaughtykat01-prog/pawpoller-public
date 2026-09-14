@@ -1,0 +1,13 @@
+# Installed by server-update/install.sh (which fills in __USER__/__REPO__).
+# Applies an update the dashboard "Update now" button asked for. It calls
+# update.sh --if-requested, which does nothing unless a request is pending.
+[Unit]
+Description=PawPoller — apply a dashboard-requested update
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__REPO__
+ExecStart=/bin/bash __REPO__/update.sh --if-requested --quiet

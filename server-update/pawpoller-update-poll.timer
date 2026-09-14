@@ -1,0 +1,12 @@
+# Installed by server-update/install.sh. Polls every ~2 minutes for a
+# dashboard-requested update. It never updates on its own — it only acts on an
+# explicit "Update now" request, so leaving it enabled does not auto-upgrade you.
+[Unit]
+Description=PawPoller — poll for a dashboard update request
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target

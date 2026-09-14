@@ -521,28 +521,55 @@ You do not have to connect all twenty. Connect what you use.
 
 ### Updating
 
-**If you used the prebuilt image:**
+**One command, whichever way you installed:**
 
 ```bash
 cd ~/pawpoller-public
-git pull
-docker compose -f docker-compose.image.yml pull
-docker compose -f docker-compose.image.yml up -d
+./update.sh
 ```
 
-**If you build from source:**
+It auto-detects whether you build from source or run the prebuilt image, pulls
+the latest, updates the container, and reports the version before and after.
+Your data volumes are preserved and the database migrates itself on startup.
 
 ```bash
-cd ~/pawpoller-public
-git pull
-docker compose up -d --build
+./update.sh --check     # just say whether a newer version exists; change nothing
+./update.sh --quiet     # only print on a change or an error (for cron)
 ```
 
-The database migrates itself on startup and your data volumes are preserved.
+If you have local edits to a tracked file (e.g. a customized compose file) it
+stops rather than overwrite them — commit or stash first.
 
-> `git pull` matters in both cases — it refreshes the compose file and the docs.
-> The `pull` step is what actually fetches the new version of the app when you
-> are running the image; without it Docker keeps using the copy it already has.
+**Update from the dashboard (one-time setup).** A container can't rebuild
+itself, so the **Update now** button (Settings → About → Server updates) is
+carried out by a small host-side helper. Install it once:
+
+```bash
+sudo server-update/install.sh
+```
+
+Then you can update from the web UI without SSH — the dashboard shows the
+current version, whether a newer one is available, and the update's progress.
+
+**Automatic updates (opt-in).** To have the server update itself daily:
+
+```bash
+sudo server-update/install.sh --auto
+# or later:  sudo systemctl enable --now pawpoller-auto-update.timer
+```
+
+Off by default — a plain install never updates itself. Disable any time with
+`sudo systemctl disable --now pawpoller-auto-update.timer`.
+
+<details><summary>What <code>./update.sh</code> runs under the hood</summary>
+
+- Build-from-source: `git pull --ff-only` then `docker compose up -d --build`.
+- Prebuilt image: `git pull --ff-only` then `docker compose -f docker-compose.image.yml pull` then `… up -d`.
+
+`git pull` refreshes the compose file and the docs; the build/pull is what
+fetches the new version of the app. `--ff-only` means it never discards local
+changes.
+</details>
 
 ### Backups
 

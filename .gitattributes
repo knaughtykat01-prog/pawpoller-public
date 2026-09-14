@@ -1,0 +1,7 @@
+# Shell scripts and systemd units run on Linux servers — they MUST ship with LF
+# line endings or the kernel rejects the interpreter ("bad interpreter: No such
+# file or directory"). Force LF regardless of the committer's core.autocrlf.
+*.sh          text eol=lf
+*.service     text eol=lf
+*.timer       text eol=lf
+*.path        text eol=lf

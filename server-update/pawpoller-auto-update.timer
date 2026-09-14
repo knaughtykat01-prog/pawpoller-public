@@ -1,0 +1,15 @@
+# Installed (but NOT enabled) by server-update/install.sh. Enable it only
+# if you want the server to update itself daily:
+#   sudo systemctl enable --now pawpoller-auto-update.timer
+# Disable any time:
+#   sudo systemctl disable --now pawpoller-auto-update.timer
+[Unit]
+Description=PawPoller — daily automatic update
+
+[Timer]
+OnCalendar=*-*-* 04:00
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

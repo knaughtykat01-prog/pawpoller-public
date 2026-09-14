@@ -49,6 +49,7 @@ from routes.posts_api import posts_router
 from routes.collections_api import collections_router
 from routes.commissions_api import commissions_router
 from routes.artists_api import artists_router
+from routes.server_update_api import server_update_router
 from routes.masterpieces_api import masterpieces_router
 from routes.whatsnew_api import whatsnew_router
 from routes.tech_api import tech_router
@@ -480,6 +481,10 @@ _AUTH_EXEMPT_PATHS = frozenset({
     # hands an image to this server to host for Meta. Gated in the route itself
     # by `ig_relay_open`, a size cap, an image check and a per-address rate limit.
     "/api/ig/relay",
+    # 4.32.0: the host update-agent has no session cookie. This endpoint is
+    # gated instead by a loopback check inside the route (only a process on the
+    # host can reach it), so a remote client can never claim/trigger an update.
+    "/api/server/update-claim",
 })
 _AUTH_EXEMPT_PREFIXES = ("/css/", "/js/", "/vendor/", "/img/", "/api/ig/pubmedia/", "/share/", "/feed/")
 
@@ -606,6 +611,7 @@ app.include_router(collections_router)  # Collections (master container) routes 
 app.include_router(commissions_router)  # Commissions (client tracker) routes (/api/commissions/*)
 app.include_router(masterpieces_router)  # Masterpieces (master image record) routes (/api/masterpieces/*)
 app.include_router(artists_router)       # Artist registry (/api/artists/*)
+app.include_router(server_update_router)  # Server self-update: button + host-agent handoff (/api/server/*)
 app.include_router(whatsnew_router)  # In-app "What's new" changelog popup (/api/whatsnew)
 app.include_router(backup_router)    # Backup & restore (/api/backup/*)
 app.include_router(mirror_router)    # Server → desktop mirroring (/api/mirror/*)

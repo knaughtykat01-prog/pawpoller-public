@@ -331,11 +331,14 @@ Whichever proxy you use, keep port 8420 itself off the public internet — your 
 
 ### 2.6 Updating
 
+One command, whichever way you installed (build-from-source or prebuilt image — it auto-detects):
+
 ```bash
 cd PawPoller
-git pull
-docker compose up -d --build
+./update.sh
 ```
+
+It pulls the latest, updates the container, and reports the version before and after. `./update.sh --check` just checks; `--quiet` suits cron. For a dashboard **Update now** button (and optional daily auto-update), install the one-time host helper: `sudo server-update/install.sh` (see `docs/SELF_HOSTING.md`). The under-the-hood commands are still `git pull && docker compose up -d --build`.
 
 The SQLite schema auto-migrates on startup. Your `data` and `logs` volumes are preserved; the `story-archive` bind mount is never touched by the container except on explicit saves from the editor.
 

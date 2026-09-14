@@ -11853,7 +11853,7 @@ const App = {
         try {
             // Core settings: only fetch what General/Platforms/Telegram/Data/About tabs need.
             // Polling tab data is loaded lazily when the user clicks into it.
-            const [creds, prefs, telegram, tgFeatures, pollPausedState, faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, updateInfo, postingSettings, browserLoginInfo, setupStatus, digest, tgChannel, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth] = await Promise.all([
+            const [creds, prefs, telegram, tgFeatures, pollPausedState, faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, updateInfo, postingSettings, browserLoginInfo, setupStatus, digest, tgChannel, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, serverUpdate] = await Promise.all([
                 API.getCredentials(),
                 API.getPreferences(),
                 API.getTelegram(),
@@ -11886,6 +11886,7 @@ const App = {
                 API.getSCAuthStatus().catch(() => ({ has_credentials: false, has_app: false, username: '' })),
                 API.getNGAuthStatus().catch(() => ({ has_credentials: false, username: '' })),
                 API.getYTAuthStatus().catch(() => ({ has_credentials: false, has_app: false, username: '' })),
+                API.getServerUpdateStatus().catch(() => ({ applicable: false, host_agent_installed: false, available: false, in_progress: false })),
             ]);
 
             // Resolve effective mode for hide/show logic. Falls back to inferred
@@ -12840,7 +12841,7 @@ const App = {
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Current: ${Utils.escapeHtml(updateInfo.current)} &rarr; Latest: ${Utils.escapeHtml(updateInfo.latest)}</span>
-                            ${_isServer ? '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">This is a server install — update by running <code>pawupdate</code> (or <code>git pull &amp;&amp; docker compose up -d --build</code>) on the host.</div>' : ''}
+                            ${_isServer ? '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">This is a server install — run <code>./update.sh</code> on the host, or use the button under <b>Server updates</b> below.</div>' : ''}
                         </div>
                         ${_isServer ? '' : '<div style="display:flex;gap:8px;align-items:center"><button class="btn btn-primary" id="apply-update-btn">Update Now</button><button class="btn btn-secondary" id="skip-update-btn" style="padding:4px 10px;font-size:12px" title="Don\'t offer this version again at startup; the next one will be">Skip this version</button></div>'}
                     </div>
@@ -12855,6 +12856,20 @@ const App = {
                         </div>
                     </div>
                 </div>`}
+
+                ${_isServer ? `
+                <div class="settings-section">
+                    <h3>Server updates</h3>
+                    <div class="settings-row">
+                        <div>
+                            <span class="settings-label">${serverUpdate.available ? 'Update available' : 'Up to date'}${serverUpdate.latest ? ' &mdash; latest ' + Utils.escapeHtml(serverUpdate.latest) : ''}</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">One command on the host: <code>./update.sh</code> &mdash; it detects your install type and keeps your data.</div>
+                        </div>
+                        ${serverUpdate.host_agent_installed ? '<button class="btn btn-primary" id="server-update-now-btn">Update now</button>' : ''}
+                    </div>
+                    ${serverUpdate.host_agent_installed ? '' : '<div style="font-size:11px;color:var(--text-muted);margin-top:8px">Want to update with one click from here? Install the one-time helper on the host: <code>sudo server-update/install.sh</code></div>'}
+                    <div id="server-update-msg" style="font-size:13px;margin-top:8px;color:var(--text-muted)"></div>
+                </div>` : ''}
 
                 ${_isServer ? '' : `
                 <div class="settings-section">
@@ -16916,6 +16931,50 @@ const App = {
                         applyUpdateBtn.textContent = 'Failed';
                         alert('Update failed: ' + err.message);
                     }
+                });
+            }
+
+            // Server "Update now" (4.32.0): record a request; the host agent applies it and restarts the container.
+            const serverUpdateBtn = document.getElementById('server-update-now-btn');
+            if (serverUpdateBtn) {
+                serverUpdateBtn.addEventListener('click', async () => {
+                    const msg = document.getElementById('server-update-msg');
+                    const fromVersion = (serverUpdate && serverUpdate.current) || '';
+                    if (!confirm('Update the server now? It will pull the latest release and restart. Your data is preserved.')) return;
+                    serverUpdateBtn.disabled = true;
+                    serverUpdateBtn.textContent = 'Requesting…';
+                    try {
+                        const r = await API.requestServerUpdate();
+                        if (r && r.host_agent_installed === false) {
+                            if (msg) msg.innerHTML = 'The host helper isn\'t installed yet. Run <code>sudo server-update/install.sh</code> on the host.';
+                            serverUpdateBtn.disabled = false; serverUpdateBtn.textContent = 'Update now';
+                            return;
+                        }
+                    } catch (err) {
+                        if (msg) msg.textContent = 'Could not request the update: ' + err.message;
+                        serverUpdateBtn.disabled = false; serverUpdateBtn.textContent = 'Update now';
+                        return;
+                    }
+                    serverUpdateBtn.textContent = 'Updating…';
+                    if (msg) msg.textContent = 'Update requested. The server updates within a couple of minutes and restarts — this page refreshes when it is back.';
+                    const started = Date.now();
+                    const poll = async () => {
+                        if (Date.now() - started > 6 * 60 * 1000) {
+                            if (msg) msg.innerHTML = 'The update has not completed yet. Check the host: <code>docker compose logs --tail=50</code>.';
+                            serverUpdateBtn.disabled = false; serverUpdateBtn.textContent = 'Update now';
+                            return;
+                        }
+                        try {
+                            const h = await fetch('/api/health', { cache: 'no-store' }).then(res => res.ok ? res.json() : null);
+                            if (h && h.version && fromVersion && h.version !== fromVersion) {
+                                if (msg) msg.innerHTML = '<span style="color:var(--success)">Updated to ' + Utils.escapeHtml(h.version) + '. Reloading…</span>';
+                                setTimeout(() => window.location.reload(), 1500);
+                                return;
+                            }
+                        } catch (_) { /* server bouncing during restart — keep polling */ }
+                        setTimeout(poll, 5000);
+                    };
+                    setTimeout(poll, 8000);
                 });
             }
 

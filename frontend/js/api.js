@@ -985,6 +985,9 @@ const API = {
      */
     checkUpdate() { return this.get('/api/update/check'); },
     applyUpdate(data) { return this.post('/api/update/apply', data); },
+    // Server self-update (4.32.0): status + the "Update now" request handed to the host agent.
+    getServerUpdateStatus() { return this.get('/api/server/update-status'); },
+    requestServerUpdate() { return this.post('/api/server/update', {}); },
     /* ── Pins methods ─────────────────────────────────────────────
      * Pin/unpin favourite submissions to dashboard tops.
      */
