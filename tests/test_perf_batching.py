@@ -15,6 +15,8 @@ statement.
 import json
 import re
 
+import pytest
+
 from database.db import get_connection
 from database import masterpiece_queries as mq
 from database import posting_queries
@@ -129,6 +131,30 @@ def test_ensure_indexed_bulk_only_inserts_missing():
         # Re-running is a no-op (0 writes worth of names).
         assert mq.ensure_indexed_bulk(conn, ["Already", "New1", "New2"]) == 0
     finally:
+        conn.close()
+
+
+def test_ensure_indexed_on_an_indexed_name_never_waits_on_a_writer():
+    """Opening a piece's page called ensure_indexed, whose INSERT OR IGNORE took the
+    write lock even when it ignored — so any other writer 500'd the page with
+    "database is locked" after the busy timeout."""
+    import sqlite3
+    import config
+    conn = get_connection()
+    mq.ensure_indexed(conn, "Indexed")
+    conn.commit()
+    writer = sqlite3.connect(str(config.DB_PATH), timeout=0)
+    writer.execute("BEGIN IMMEDIATE")             # another thread mid-write
+    page = sqlite3.connect(str(config.DB_PATH), timeout=0)
+    try:
+        mq.ensure_indexed(page, "Indexed")        # raised OperationalError: database is locked
+        page.commit()
+        with pytest.raises(sqlite3.OperationalError):
+            mq.ensure_indexed(page, "NotYetIndexed")   # a real insert still needs the lock
+    finally:
+        page.close()
+        writer.rollback()
+        writer.close()
         conn.close()
 
 

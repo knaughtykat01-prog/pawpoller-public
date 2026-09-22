@@ -107,7 +107,9 @@ class TestLinkByUrl:
 
 class TestRoutes:
     def test_library_work_goes_to_the_board(self):
-        assert "StoryBoard.render(parts.slice(2).join('/'))" in APP
+        # 4.32.1: the name now goes through the router's nameFrom() helper, which decodes it once
+        # (UNIHASH — a title with an accent used to arrive still percent-encoded).
+        assert "StoryBoard.render(nameFrom(2))" in APP
 
     def test_the_old_story_route_redirects(self):
         i = APP.index("parts[0] === 'posting' && parts[1] === 'story' && parts[2]")

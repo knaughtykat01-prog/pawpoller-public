@@ -292,6 +292,38 @@ class TestTunnelHelper:
             asyncio.run(ig_tunnel.download_helper())
         assert "no tunnel helper build" in str(ei.value)
 
+    def test_a_helper_that_dies_says_what_it_said(self, monkeypatch):
+        """The error used to be "did not report a public address within 30s" whatever happened."""
+        import sys
+        real = asyncio.create_subprocess_exec
+        said = "ERR failed to request quick Tunnel: 429 Too Many Requests"
+
+        def fake(*_cmd, **kw):   # a helper that complains and exits, like a rate-limited cloudflared
+            kw.pop("creationflags", None)
+            return real(sys.executable, "-c", f"import sys; sys.stderr.write({said!r} + '\\n')", **kw)
+        monkeypatch.setattr(ig_tunnel.asyncio, "create_subprocess_exec", fake)
+        with pytest.raises(RuntimeError) as ei:
+            asyncio.run(ig_tunnel.Tunnel(ig_tunnel.Path("cloudflared"), 1).start(timeout=20))
+        assert "stopped before reporting a public address" in str(ei.value)
+        assert "429 Too Many Requests" in str(ei.value)
+
+    def test_a_failed_test_reaches_the_user(self, relay_client, monkeypatch):
+        """A 502 here was scrubbed to "Internal server error" by dashboard.py, hiding the reason."""
+        c, _ = relay_client
+
+        async def boom():
+            raise RuntimeError("the tunnel opened but Cloudflare never answered through it (HTTP 530)")
+        monkeypatch.setattr(ig_tunnel, "open_public_host", boom)
+        r = c.post("/api/ig/tunnel-helper/test")
+        assert r.status_code == 200
+        assert r.json() == {"ok": False,
+                            "error": "the tunnel opened but Cloudflare never answered through it (HTTP 530)"}
+
+        async def blocked():   # antivirus refusing the helper: the reason, never the path
+            raise PermissionError(13, "Access is denied", "/home/owner/helpers/cloudflared")
+        monkeypatch.setattr(ig_tunnel, "open_public_host", blocked)
+        assert c.post("/api/ig/tunnel-helper/test").json()["error"] == "PermissionError: Access is denied"
+
     def test_pinned_assets_look_like_real_pins(self):
         for key, (asset, sha) in config.IG_TUNNEL_HELPER_ASSETS.items():
             assert asset.startswith("cloudflared-") and len(sha) == 64 and int(sha, 16)

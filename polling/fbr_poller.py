@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.fbr.client import FurbooruClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -92,12 +93,12 @@ def _get_or_create_client(settings: dict, fbr_username: str, fbr_api_key: str) -
     """Return the persistent FurbooruClient, re-pointed at the account's credentials."""
     global _fbr_client
 
-    if _fbr_client is None:
+    if not loop_bound.reusable(_fbr_client):
         _fbr_client = FurbooruClient(username=fbr_username, api_key=fbr_api_key)
     else:
         _fbr_client.update_credentials(fbr_username, fbr_api_key)
 
-    return _fbr_client
+    return loop_bound.pin(_fbr_client)
 
 
 async def run_fbr_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

@@ -910,6 +910,17 @@ const App = {
         this._routeQuery = _q === -1 ? '' : rawHash.slice(_q + 1);
         const parts = hash.split('/').filter(Boolean);
 
+        /* A work's NAME travels in the hash percent-encoded (every link builds it with
+           encodeURIComponent), and each renderer encodes it again for its API call. For an
+           ASCII name encoding is the identity, so that double pass was invisible — but a
+           title with an accent, a macron or CJK came back as '%25C5%258D…' and the page said
+           "This masterpiece no longer exists" for a piece sitting right there on the shelf.
+           Decode once, here, for every route that carries a name. */
+        const nameFrom = (i) => {
+            const raw = parts.slice(i).join('/');
+            try { return decodeURIComponent(raw); } catch (e) { return raw; }
+        };
+
         /* Full-screen pages hide the sidebar, context bar, bottom nav, and
            remove the main column's left margin. */
         const isFullScreen = parts[0] === 'login' || parts[0] === 'loading'
@@ -1268,7 +1279,7 @@ const App = {
             Editor.renderStoryList();
         } else if (parts[0] === 'editor' && parts[1]) {
             // Story name may contain slashes (e.g. My_Story/Nice_Version)
-            Editor.renderEditor(parts.slice(1).join('/'));
+            Editor.renderEditor(nameFrom(1));
         } else if (parts[0] === 'promo') {
             // #/promo · #/promo/new[?story=<name>] · #/promo/<id>  (4.16.0)
             if (window.Promo) window.Promo.render(parts[1] || null, this._routeQuery || '');
@@ -1289,7 +1300,7 @@ const App = {
             if (window.Artwork) window.Artwork.renderUpload();
         } else if (parts[0] === 'artwork' && parts[1] === 'image' && parts[2]) {
             // Artwork name may contain slashes — rejoin the tail.
-            if (window.Artwork) window.Artwork.renderDetail(parts.slice(2).join('/'));
+            if (window.Artwork) window.Artwork.renderDetail(nameFrom(2));
         } else if (parts[0] === 'artwork' && parts[1] === 'log') {
             if (window.Artwork) window.Artwork.renderLog();
         } else if (parts[0] === 'artwork' && parts[1] === 'ignored') {
@@ -1326,7 +1337,7 @@ const App = {
             if (window.Masterpieces) window.Masterpieces.renderDuplicates();
         } else if (parts[0] === 'masterpieces' && parts[1]) {
             // Masterpiece detail (read-only, Phase 2). Name may contain slashes.
-            if (window.Masterpieces) window.Masterpieces.renderDetail(parts.slice(1).join('/'));
+            if (window.Masterpieces) window.Masterpieces.renderDetail(nameFrom(1));
         } else if (parts[0] === 'masterpieces') {
             // The managed grid lives inside Library under its own type filter —
             // land there with the Masterpieces segment pre-selected.
@@ -1349,7 +1360,7 @@ const App = {
         } else if (parts[0] === 'library' && parts[1] === 'work' && parts[2]) {
             // Work name may contain slashes — rejoin the tail. The story board
             // (story_board.js, 4.5.0) replaced Bookshelf's read-only work page.
-            if (window.StoryBoard) StoryBoard.render(parts.slice(2).join('/'));
+            if (window.StoryBoard) StoryBoard.render(nameFrom(2));
         } else if (parts[0] === 'library' && parts[1] === 'browse') {
             // The CLASSIC full grid (filters/search/sorts) — the Showcase's
             // "✕ Classic view" target. Reset the segment (see bare-route note).
@@ -2692,7 +2703,7 @@ const App = {
             if (currentStep === 'welcome') {
                 body = `
                     <h1 style="font-size:26px;font-weight:700;color:var(--accent);margin-bottom:8px">Welcome to PawPoller</h1>
-                    <p style="color:var(--text-secondary);margin-bottom:8px;font-size:15px">Multi-platform story analytics for furry fiction writers.</p>
+                    <p style="color:var(--text-secondary);margin-bottom:8px;font-size:15px">Publish art, fiction, audio and video across your sites &mdash; and see what happened after.</p>
                     <p style="color:var(--text-muted);margin-bottom:28px;font-size:13px">Let's get you set up in a few quick steps.</p>
                     <button class="btn btn-primary login-btn" id="setup-next">Get Started</button>`;
             } else if (currentStep === 'mode') {
@@ -17139,12 +17150,12 @@ const App = {
                 document.getElementById('ig-host-open')?.addEventListener('change', e => save({ ig_relay_open: e.target.checked }));
                 document.getElementById('ig-host-dl')?.addEventListener('click', async e => {
                     e.target.disabled = true; msg.textContent = 'Downloading… (this can take a minute)'; msg.style.color = 'var(--text-muted)';
-                    try { await API.downloadIgTunnelHelper(); await _paintIgHost(); }
+                    try { const res = await API.downloadIgTunnelHelper(); if (res && res.ok === false) throw new Error(res.error); await _paintIgHost(); }
                     catch (err) { msg.textContent = 'Error: ' + err.message; msg.style.color = 'var(--danger)'; e.target.disabled = false; }
                 });
                 document.getElementById('ig-host-test')?.addEventListener('click', async e => {
                     e.target.disabled = true; msg.textContent = 'Opening a tunnel…'; msg.style.color = 'var(--text-muted)';
-                    try { const res = await API.testIgTunnel(); msg.textContent = 'Tunnel works — Cloudflare answered at ' + res.url + ' (closed again).'; msg.style.color = 'var(--success)'; }
+                    try { const res = await API.testIgTunnel(); if (res && res.ok === false) throw new Error(res.error); msg.textContent = 'Tunnel works — Cloudflare answered at ' + res.url + ' (closed again).'; msg.style.color = 'var(--success)'; }
                     catch (err) { msg.textContent = 'Error: ' + err.message; msg.style.color = 'var(--danger)'; }
                     e.target.disabled = false;
                 });

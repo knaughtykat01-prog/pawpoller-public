@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.wp.client import WPClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -95,13 +96,13 @@ def _get_or_create_client(settings: dict, wp_target: str) -> WPClient:
     """Return the persistent WPClient, re-pointed at the account's target user."""
     global _wp_client
 
-    if _wp_client is None:
+    if not loop_bound.reusable(_wp_client):
         from polling.cf_proxy import proxy_kwargs
         _wp_client = WPClient(target_user=wp_target, **proxy_kwargs(settings, "wp"))
     else:
         _wp_client.update_credentials(wp_target)
 
-    return _wp_client
+    return loop_bound.pin(_wp_client)
 
 
 async def run_wp_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.ig.client import IgClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -91,7 +92,7 @@ def _get_or_create_client(settings: dict, ig_access_token: str, ig_user_id: str)
     """Return the persistent IgClient, re-pointed at the account's credentials."""
     global _ig_client
 
-    if _ig_client is None:
+    if not loop_bound.reusable(_ig_client):
         from polling.cf_proxy import proxy_kwargs
         _ig_client = IgClient(
             access_token=ig_access_token,
@@ -101,7 +102,7 @@ def _get_or_create_client(settings: dict, ig_access_token: str, ig_user_id: str)
     else:
         _ig_client.update_credentials(ig_access_token, ig_user_id)
 
-    return _ig_client
+    return loop_bound.pin(_ig_client)
 
 
 async def run_ig_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

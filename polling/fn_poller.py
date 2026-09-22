@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.fn.client import FnClient
 from database.db import get_connection
 from database import fn_queries
@@ -69,7 +70,7 @@ async def _send_fn_telegram(new_details: list[dict]) -> None:
 def _get_or_create_client(creds: dict) -> FnClient:
     """Return the persistent FnClient, re-pointed at the account's credentials."""
     global _fn_client
-    if _fn_client is None:
+    if not loop_bound.reusable(_fn_client):
         _fn_client = FnClient(
             username=creds.get("fn_username", ""), password=creds.get("fn_password", ""),
             access_token=creds.get("fn_access_token", ""),
@@ -79,7 +80,7 @@ def _get_or_create_client(creds: dict) -> FnClient:
         _fn_client.password = creds.get("fn_password", "")
         if creds.get("fn_refresh_token"):
             _fn_client.refresh_token = creds["fn_refresh_token"]
-    return _fn_client
+    return loop_bound.pin(_fn_client)
 
 
 def _persist_tokens(client: FnClient, is_default: bool) -> None:

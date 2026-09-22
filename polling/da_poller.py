@@ -25,6 +25,7 @@ from html import escape as _esc
 from polling import notifications
 
 import config
+from polling import loop_bound
 from clients.da.client import DAClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -106,7 +107,7 @@ def _get_or_create_client(settings: dict, client_id: str, client_secret: str,
     """
     global _da_client
 
-    if _da_client is None:
+    if not loop_bound.reusable(_da_client):
         _da_client = DAClient(
             client_id=client_id,
             client_secret=client_secret,
@@ -121,7 +122,7 @@ def _get_or_create_client(settings: dict, client_id: str, client_secret: str,
             cookie_value=cookie,
         )
 
-    return _da_client
+    return loop_bound.pin(_da_client)
 
 
 async def run_da_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

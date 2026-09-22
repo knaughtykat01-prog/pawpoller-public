@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.e621.client import E621Client
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -92,7 +93,7 @@ def _get_or_create_client(settings: dict, e621_username: str, e621_api_key: str)
     """Return the persistent E621Client, re-pointed at the account's credentials."""
     global _e621_client
 
-    if _e621_client is None:
+    if not loop_bound.reusable(_e621_client):
         from polling.cf_proxy import proxy_kwargs
         _e621_client = E621Client(
             username=e621_username,
@@ -102,7 +103,7 @@ def _get_or_create_client(settings: dict, e621_username: str, e621_api_key: str)
     else:
         _e621_client.update_credentials(e621_username, e621_api_key)
 
-    return _e621_client
+    return loop_bound.pin(_e621_client)
 
 
 async def run_e621_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

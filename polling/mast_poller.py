@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.mast.client import MastClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -94,7 +95,7 @@ def _get_or_create_client(settings: dict, mast_instance_url: str, mast_access_to
     """Return the persistent MastClient, re-pointed at the account's credentials."""
     global _mast_client
 
-    if _mast_client is None:
+    if not loop_bound.reusable(_mast_client):
         from polling.cf_proxy import proxy_kwargs
         _mast_client = MastClient(
             instance_url=mast_instance_url,
@@ -104,7 +105,7 @@ def _get_or_create_client(settings: dict, mast_instance_url: str, mast_access_to
     else:
         _mast_client.update_credentials(mast_instance_url, mast_access_token)
 
-    return _mast_client
+    return loop_bound.pin(_mast_client)
 
 
 async def run_mast_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

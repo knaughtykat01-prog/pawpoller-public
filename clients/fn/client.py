@@ -136,6 +136,41 @@ class FnRecaptchaError(FnAuthError):
     """
 
 
+class FnChallengeError(FnAuthError):
+    """FurryNetwork is behind a Cloudflare bot check, so the request never reached the site.
+
+    Measured 2026-09-21: every furrynetwork.com URL — ``/robots.txt`` included — answered 403 with
+    ``cf-mitigated: challenge`` and the "Just a moment…" page, to any user agent, and the operator's
+    own browser got the same. That is site-wide attack mode, not our credentials.
+
+    It matters that this is its own error: without it the challenge page falls through to the
+    generic handler as ``FurryNetwork auth failed: HTTP 403``, which reads like a dead login and
+    sends the user to re-enter a token that was never the problem. A subclass so existing
+    ``except FnAuthError`` handlers still catch it.
+    """
+
+
+def _is_cf_challenge(resp) -> bool:
+    """Cloudflare's interstitial, however it is dressed: the header it always sets, or the
+    unmistakable title on the HTML it serves."""
+    if resp.status_code not in (403, 503):
+        return False
+    if "cf-mitigated" in {k.lower() for k in resp.headers}:
+        return True
+    ctype = resp.headers.get("content-type", "")
+    if "html" not in ctype.lower():
+        return False
+    return "just a moment" in resp.text[:2000].lower() or "cf-browser-verification" in resp.text[:4000]
+
+
+_CHALLENGE_MESSAGE = (
+    "FurryNetwork is behind a Cloudflare bot check right now, so PawPoller can't reach it at all "
+    "— this is the site, not your login, and re-entering credentials won't help. Open "
+    "furrynetwork.com in a browser: if you get the same \"Just a moment…\" page, wait for them to "
+    "turn it off."
+)
+
+
 class FnClient:
     def __init__(self, username: str = "", password: str = "",
                  access_token: str = "", refresh_token: str = ""):
@@ -169,6 +204,10 @@ class FnClient:
     async def _token_request(self, data: dict) -> dict:
         data = {**data, "client_id": CLIENT_ID}
         r = await self._http().post(f"{API_BASE}/oauth/token", data=data)
+        if _is_cf_challenge(r):
+            # Checked BEFORE the body: the challenge is HTML with no OAuth keys at all, so the
+            # generic path below would report it as "HTTP 403" and blame the credentials.
+            raise FnChallengeError(_CHALLENGE_MESSAGE)
         try:
             body = r.json()
         except Exception:
@@ -206,6 +245,10 @@ class FnClient:
                 await self._token_request({"grant_type": "refresh_token",
                                            "refresh_token": self.refresh_token})
                 return True
+            except FnChallengeError:
+                # The site is unreachable, so the password grant would be a second doomed
+                # request — and the fallback would relabel a site outage as a dead token.
+                raise
             except FnAuthError:
                 # Refresh token dead → fall back to password grant if we can.
                 if not (self.username and self.password):
@@ -234,6 +277,10 @@ class FnClient:
                 headers={"Authorization": f"Bearer {self.access_token}"})
         if r.status_code == 401:
             raise FnAuthError("FurryNetwork rejected the token (401)")
+        if _is_cf_challenge(r):
+            # A read behind the challenge returns HTML, not JSON; without this it became a silent
+            # None and the poll reported "no submissions" instead of "the site is unreachable".
+            raise FnChallengeError(_CHALLENGE_MESSAGE)
         if r.status_code >= 400:
             return None
         try:

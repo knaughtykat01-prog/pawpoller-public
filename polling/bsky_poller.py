@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.bsky.client import BskyClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -93,7 +94,7 @@ def _get_or_create_client(settings: dict, bsky_identifier: str, bsky_app_passwor
     """Return the persistent BskyClient, re-pointed at the account's credentials."""
     global _bsky_client
 
-    if _bsky_client is None:
+    if not loop_bound.reusable(_bsky_client):
         from polling.cf_proxy import proxy_kwargs
         _bsky_client = BskyClient(
             identifier=bsky_identifier,
@@ -103,7 +104,7 @@ def _get_or_create_client(settings: dict, bsky_identifier: str, bsky_app_passwor
     else:
         _bsky_client.update_credentials(bsky_identifier, bsky_app_password)
 
-    return _bsky_client
+    return loop_bound.pin(_bsky_client)
 
 
 async def run_bsky_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

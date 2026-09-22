@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.ng.client import NgClient
 from database.db import get_connection
 from database import ng_queries
@@ -79,9 +80,9 @@ def client_from_creds(creds: dict) -> NgClient:
 def _get_or_create_client(creds: dict) -> NgClient:
     """Return the persistent NgClient, re-pointed at the account's credentials."""
     global _ng_client
-    if _ng_client is None or _ng_client.cookie != (creds.get("ng_cookie") or "").strip()             or _ng_client.username != (creds.get("ng_username") or "").strip():
+    if not loop_bound.reusable(_ng_client) or _ng_client.cookie != (creds.get("ng_cookie") or "").strip()             or _ng_client.username != (creds.get("ng_username") or "").strip():
         _ng_client = client_from_creds(creds)
-    return _ng_client
+    return loop_bound.pin(_ng_client)
 
 
 ITEM_PAUSE_S = 1.5      # between item pages — no API, so be a polite browser
@@ -158,6 +159,7 @@ async def run_ng_poll_cycle(account_id: int | None = None, force_full: bool = Fa
                 ng_queries.insert_ng_snapshot(conn, account_id, sid, views, faves, comments, polled_at=poll_ts,
                                               score=detail.get("score", 0.0), votes=detail.get("votes", 0),
                                               downloads_count=detail.get("downloads_count", 0))
+                conn.commit()   # before the next item's pause + fetch: never hold the write lock across an await
                 stats["snapshots_inserted"] += 1
             except Exception as e:
                 logger.warning("Error processing ng item %s: %s", str(raw.get("submission_id", ""))[:50], e, exc_info=True)

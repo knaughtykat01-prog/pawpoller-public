@@ -19,8 +19,8 @@ cheap standalone probe and fall back to poll-derived status.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
+import threading
 from datetime import datetime, timezone
 
 import config
@@ -30,7 +30,10 @@ logger = logging.getLogger(__name__)
 # code -> {"status": str, "detail": str | None, "checked_at": ISO str}
 #   status: 'valid' | 'expired' | 'error' | 'unconfigured'
 _session_health: dict[str, dict] = {}
-_lock = asyncio.Lock()
+# A thread lock, not asyncio.Lock: check_all() runs on the server's orchestrator
+# loop AND on the dashboard's loop ("Check sessions now"), and an asyncio.Lock
+# contended across two loops raises "bound to a different event loop".
+_lock = threading.Lock()
 
 # Platforms with a real validate_session() network check. Order = check order.
 CHECKABLE: tuple[str, ...] = ("ao3", "sf", "sqw", "bsky", "mast", "tum", "pix",
@@ -240,9 +243,15 @@ async def check_platform(code: str, s: dict | None = None) -> dict:
 async def check_all() -> dict:
     """Validate every checkable platform, serially (gentle on rate limits)."""
     s = config.get_settings()
-    async with _lock:
+    if not _lock.acquire(blocking=False):
+        # One is already running; its results land in the same cache.
+        logger.info("session check already running — skipped")
+        return dict(_session_health)
+    try:
         for code in CHECKABLE:
             await check_platform(code, s)
+    finally:
+        _lock.release()
     logger.info("session check complete: %s",
                 {k: v["status"] for k, v in _session_health.items()})
     return dict(_session_health)

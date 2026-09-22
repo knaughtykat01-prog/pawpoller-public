@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.pix.client import PixClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -92,7 +93,7 @@ def _get_or_create_client(settings: dict, pix_refresh_token: str, pix_user_id: s
     """Return the persistent PixClient, re-pointed at the account's credentials."""
     global _pix_client
 
-    if _pix_client is None:
+    if not loop_bound.reusable(_pix_client):
         from polling.cf_proxy import proxy_kwargs
         _pix_client = PixClient(
             refresh_token=pix_refresh_token,
@@ -102,7 +103,7 @@ def _get_or_create_client(settings: dict, pix_refresh_token: str, pix_user_id: s
     else:
         _pix_client.update_credentials(pix_refresh_token, pix_user_id)
 
-    return _pix_client
+    return loop_bound.pin(_pix_client)
 
 
 async def run_pix_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

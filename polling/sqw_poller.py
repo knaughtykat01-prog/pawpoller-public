@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.sqw.client import SquidgeWorldClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -117,7 +118,7 @@ def _get_or_create_client(settings: dict, sqw_user: str, sqw_pass: str, sqw_targ
     """Return the persistent SquidgeWorldClient, re-pointed at the account's creds."""
     global _sqw_client
 
-    if _sqw_client is None:
+    if not loop_bound.reusable(_sqw_client):
         from polling.cf_proxy import proxy_kwargs
         _sqw_client = SquidgeWorldClient(
             username=sqw_user,
@@ -128,7 +129,7 @@ def _get_or_create_client(settings: dict, sqw_user: str, sqw_pass: str, sqw_targ
     else:
         _sqw_client.update_credentials(sqw_user, sqw_pass, sqw_target)
 
-    return _sqw_client
+    return loop_bound.pin(_sqw_client)
 
 
 async def run_sqw_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

@@ -270,13 +270,28 @@ def ig_host_settings(body: dict):
     return _host_status()
 
 
+# The helper routes answer a failure as 200 {ok: False, error}, not a 502: the 5xx
+# scrubber in dashboard.py replaces any 5xx detail with "Internal server error", which
+# hid every one of ig_tunnel's plain-sentence reasons from the user (4.32.2).
+def _tunnel_reason(e: Exception) -> str:
+    """ig_tunnel's RuntimeErrors are sentences written for the user. An OSError's text
+    carries the helper's path, which holds the OS username — so only its reason goes out
+    ("PermissionError: Access is denied" is the antivirus case). Anything else: its type."""
+    if isinstance(e, RuntimeError):
+        return str(e) or "RuntimeError"
+    if isinstance(e, OSError):
+        return f"{type(e).__name__}: {e.strerror or 'operating system error'}"
+    return f"{type(e).__name__} — see the app log"
+
+
 @ig_router.post("/tunnel-helper/download")
 async def ig_tunnel_helper_download():
     from posting import ig_tunnel
     try:
         return await ig_tunnel.download_helper()
     except Exception as e:
-        raise HTTPException(502, str(e))
+        logger.warning("IG tunnel helper download failed: %s", e)
+        return {"ok": False, "error": _tunnel_reason(e)}
 
 
 @ig_router.post("/tunnel-helper/remove")
@@ -292,7 +307,8 @@ async def ig_tunnel_helper_test():
     try:
         host = await ig_tunnel.open_public_host()
     except Exception as e:
-        raise HTTPException(502, str(e))
+        logger.warning("IG tunnel test failed: %s", e)
+        return {"ok": False, "error": _tunnel_reason(e)}
     url = host.base_url
     await host.close()
     return {"ok": True, "url": url}

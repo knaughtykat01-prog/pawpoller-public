@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.ik.client import IKClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -97,13 +98,13 @@ def _get_or_create_client(settings: dict, ik_target: str) -> IKClient:
     """Return the persistent IKClient, re-pointed at the account's target user."""
     global _ik_client
 
-    if _ik_client is None:
+    if not loop_bound.reusable(_ik_client):
         from polling.cf_proxy import proxy_kwargs
         _ik_client = IKClient(target_user=ik_target, **proxy_kwargs(settings, "ik"))
     else:
         _ik_client.update_credentials(ik_target)
 
-    return _ik_client
+    return loop_bound.pin(_ik_client)
 
 
 async def run_ik_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.yt.client import YtClient
 from database.db import get_connection
 from database import yt_queries
@@ -84,7 +85,7 @@ def client_from_creds(creds: dict) -> YtClient:
 def _get_or_create_client(creds: dict) -> YtClient:
     """Return the persistent YtClient, re-pointed at the account's credentials."""
     global _yt_client
-    if _yt_client is None:
+    if not loop_bound.reusable(_yt_client):
         _yt_client = client_from_creds(creds)
     else:
         _yt_client.client_id = creds.get("yt_client_id", "")
@@ -96,7 +97,7 @@ def _get_or_create_client(creds: dict) -> YtClient:
             _yt_client.expires_at = 0.0
             _yt_client._me = None
     _yt_client.tokens_changed = False
-    return _yt_client
+    return loop_bound.pin(_yt_client)
 
 
 def token_updates(client: YtClient) -> dict:

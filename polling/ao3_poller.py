@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.ao3.client import AO3Client
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -117,7 +118,7 @@ def _get_or_create_client(settings: dict, ao3_user: str, ao3_pass: str,
     """Return the persistent AO3Client, re-pointed at the account's creds."""
     global _ao3_client
 
-    if _ao3_client is None:
+    if not loop_bound.reusable(_ao3_client):
         from polling.cf_proxy import proxy_kwargs
         _ao3_client = AO3Client(
             username=ao3_user,
@@ -130,7 +131,7 @@ def _get_or_create_client(settings: dict, ao3_user: str, ao3_pass: str,
         _ao3_client.update_credentials(ao3_user, ao3_pass, ao3_target,
                                         session_cookie=ao3_cookie)
 
-    return _ao3_client
+    return loop_bound.pin(_ao3_client)
 
 
 async def run_ao3_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

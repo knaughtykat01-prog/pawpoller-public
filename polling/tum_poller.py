@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.tum.client import TumClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -91,7 +92,7 @@ def _get_or_create_client(settings: dict, tum_api_key: str, tum_blog: str) -> Tu
     """Return the persistent TumClient, re-pointed at the account's credentials."""
     global _tum_client
 
-    if _tum_client is None:
+    if not loop_bound.reusable(_tum_client):
         from polling.cf_proxy import proxy_kwargs
         _tum_client = TumClient(
             api_key=tum_api_key,
@@ -101,7 +102,7 @@ def _get_or_create_client(settings: dict, tum_api_key: str, tum_blog: str) -> Tu
     else:
         _tum_client.update_credentials(tum_api_key, tum_blog)
 
-    return _tum_client
+    return loop_bound.pin(_tum_client)
 
 
 async def run_tum_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

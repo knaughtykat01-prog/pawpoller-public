@@ -114,8 +114,13 @@
         // never will be, so views stays null the way it does for Bluesky and
         // Tumblr. Without an entry here tg fell through to the 'views' default
         // and claimed a total_views column that does not exist.
+        // ⚠ `snap` is the column name in the aggregate rows, not a label: the Overview chart does
+        // `keys: [metrics.snap]` against what /api/{code}/aggregate returned. tg's aggregate
+        // selects `SUM(reactions_count) AS reactions_count` (tg_queries.get_aggregate_snapshots),
+        // so 'reactions' matched nothing and the chart drew an empty grid from the day it shipped.
+        // Every other platform's snap already equals its column — checked across all of them.
         tg:   M('engagement', null, 'total_reactions', null,
-                'reactions', 'faves', { faves: 'Reactions' }),
+                'reactions_count', 'faves', { faves: 'Reactions' }),
     };
     PLATFORMS.forEach(p => { p.metrics = METRICS[p.code] || V(); });
 

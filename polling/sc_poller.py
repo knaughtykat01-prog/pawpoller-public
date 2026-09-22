@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.sc.client import ScClient
 from database.db import get_connection
 from database import sc_queries
@@ -87,7 +88,7 @@ def client_from_creds(creds: dict) -> ScClient:
 def _get_or_create_client(creds: dict) -> ScClient:
     """Return the persistent ScClient, re-pointed at the account's credentials."""
     global _sc_client
-    if _sc_client is None:
+    if not loop_bound.reusable(_sc_client):
         _sc_client = client_from_creds(creds)
     else:
         _sc_client.client_id = creds.get("sc_client_id", "")
@@ -99,7 +100,7 @@ def _get_or_create_client(creds: dict) -> ScClient:
             _sc_client.expires_at = 0.0
             _sc_client._me = None
     _sc_client.tokens_changed = False
-    return _sc_client
+    return loop_bound.pin(_sc_client)
 
 
 def token_updates(client: ScClient) -> dict:

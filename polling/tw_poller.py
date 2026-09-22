@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.tw.client import TWClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -94,7 +95,7 @@ def _get_or_create_client(settings: dict, tw_auth_token: str, tw_ct0: str, tw_ta
     """Return the persistent TWClient, re-pointed at the account's credentials."""
     global _tw_client
 
-    if _tw_client is None:
+    if not loop_bound.reusable(_tw_client):
         from polling.cf_proxy import proxy_kwargs
         _tw_client = TWClient(
             auth_token=tw_auth_token,
@@ -105,7 +106,7 @@ def _get_or_create_client(settings: dict, tw_auth_token: str, tw_ct0: str, tw_ta
     else:
         _tw_client.update_credentials(tw_auth_token, tw_ct0, tw_target)
 
-    return _tw_client
+    return loop_bound.pin(_tw_client)
 
 
 async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

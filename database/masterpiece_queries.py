@@ -28,7 +28,15 @@ def ensure_indexed(conn: sqlite3.Connection, name: str, *,
                    source_link_id: int | None = None) -> None:
     """Register a Masterpiece name in the thin ``masterpieces`` index (idempotent).
     The disk masterpiece.json remains the source of truth; this just gives us a
-    stable row for fast listing + migration provenance."""
+    stable row for fast listing + migration provenance.
+
+    Reads first: an INSERT OR IGNORE takes the write lock even when it ignores,
+    so opening a piece's page queued behind any writer and 500'd with "database
+    is locked" after the 30 s busy timeout (4.32.2). ``ensure_indexed_bulk`` made
+    the same change for the list in 2.165.0."""
+    if source_link_id is None and conn.execute(
+            "SELECT 1 FROM masterpieces WHERE name = ?", (name,)).fetchone():
+        return
     conn.execute(
         "INSERT OR IGNORE INTO masterpieces (name, source_link_id) VALUES (?, ?)",
         (name, source_link_id))

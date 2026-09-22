@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.sf.client import SoFurryClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -142,7 +143,7 @@ def _get_or_create_client(settings: dict, account_id: int, is_default: bool) -> 
     from polling.cf_proxy import proxy_kwargs
     sf_proxy = proxy_kwargs(settings, "sf")
 
-    if _sf_client is None:
+    if not loop_bound.reusable(_sf_client):
         _sf_client = SoFurryClient(
             api_token=sf_token,
             display_name=sf_display,
@@ -151,7 +152,7 @@ def _get_or_create_client(settings: dict, account_id: int, is_default: bool) -> 
     else:
         _sf_client.update_credentials(sf_token, sf_display)
 
-    return _sf_client
+    return loop_bound.pin(_sf_client)
 
 
 async def run_sf_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:

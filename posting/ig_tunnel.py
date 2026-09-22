@@ -251,6 +251,7 @@ class Tunnel:
         self.proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE, **kw)
         deadline = time.monotonic() + timeout
+        last, line = "", None
         while time.monotonic() < deadline and self.url is None:
             try:
                 line = await asyncio.wait_for(self.proc.stderr.readline(),
@@ -259,10 +260,18 @@ class Tunnel:
                 break
             if not line:
                 break
-            self.url = parse_public_url(line.decode("utf-8", "replace"))
+            text = line.decode("utf-8", "replace").strip()
+            last = text or last
+            self.url = parse_public_url(text)
         if not self.url:
+            exited = self.proc.returncode is not None or line == b""   # EOF: the process is gone
             await self.stop()
-            raise RuntimeError(f"the tunnel helper did not report a public address within {int(timeout)}s")
+            # cloudflared's own last line is the reason (a 429 from trycloudflare, a
+            # blocked connection) — without it this error named no cause at all.
+            why = f" It said: {last[-200:]}" if last else ""
+            if exited:
+                raise RuntimeError(f"the tunnel helper stopped before reporting a public address.{why}")
+            raise RuntimeError(f"the tunnel helper did not report a public address within {int(timeout)}s.{why}")
         self._drain = asyncio.create_task(self._drain_stderr())
         logger.info("IG tunnel: open at %s -> 127.0.0.1:%d", self.url, self.port)
         return self.url

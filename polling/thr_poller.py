@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from html import escape as _esc
 
 import config
+from polling import loop_bound
 from clients.thr.client import ThrClient
 from database.db import get_connection
 from polling.notifications import describe_error
@@ -91,7 +92,7 @@ def _get_or_create_client(settings: dict, thr_access_token: str, thr_user_id: st
     """Return the persistent ThrClient, re-pointed at the account's credentials."""
     global _thr_client
 
-    if _thr_client is None:
+    if not loop_bound.reusable(_thr_client):
         from polling.cf_proxy import proxy_kwargs
         _thr_client = ThrClient(
             access_token=thr_access_token,
@@ -101,7 +102,7 @@ def _get_or_create_client(settings: dict, thr_access_token: str, thr_user_id: st
     else:
         _thr_client.update_credentials(thr_access_token, thr_user_id)
 
-    return _thr_client
+    return loop_bound.pin(_thr_client)
 
 
 async def run_thr_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
