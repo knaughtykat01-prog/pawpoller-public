@@ -80,6 +80,7 @@
                     ${LEVELS.map(l => `<option value="${l}">${l === 'all' ? 'all levels' : l}</option>`).join('')}
                 </select>
                 <button class="pp-logs-pause" type="button" title="Pause / resume">⏸</button>
+                <button class="pp-logs-copy" type="button" title="Copy the lines shown to the clipboard">⧉ copy</button>
                 <button class="pp-logs-clear" type="button" title="Clear view (server log untouched)">✕ clear</button>
                 <button class="pp-logs-close" type="button" title="Close panel">×</button>
             </div>
@@ -117,6 +118,7 @@
             updateStatus();
         });
 
+        panelEl.querySelector('.pp-logs-copy').addEventListener('click', (e) => copyVisible(e.currentTarget));
         panelEl.querySelector('.pp-logs-clear').addEventListener('click', () => clearView());
         panelEl.querySelector('.pp-logs-close').addEventListener('click', () => toggle());
 
@@ -126,6 +128,59 @@
             const slop = 24;
             stickToBottom = (bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight) < slop;
         });
+    }
+
+    /* Copy what the panel is showing — the reason anyone opens this thing is to send
+     * the lines somewhere. Hand-selecting them fought the live tail (every new line
+     * scrolled the selection away), and the desktop app's webview does not always give
+     * the async clipboard, so fall back to the old textarea + execCommand path. Copies
+     * what the level filter leaves visible, in order, nothing else. */
+    function copyVisible(btn) {
+        if (!bodyEl) return;
+        const text = [...bodyEl.querySelectorAll('.pp-log-line')]
+            .filter(el => el.style.display !== 'none')
+            .map(el => el.textContent)
+            .join('\n');
+        const say = (msg) => {
+            if (!btn) return;
+            const original = btn.textContent;
+            btn.textContent = msg;
+            setTimeout(() => { btn.textContent = original; }, 1500);
+        };
+        if (!text) { say('empty'); return; }
+        const fallback = () => {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            let ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            document.body.removeChild(ta);
+            say(ok ? '✓ copied' : 'copy failed');
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text)
+                .then(() => say(`✓ ${countLines(text)}`))
+                .catch(fallback);
+        } else {
+            fallback();
+        }
+    }
+
+    function countLines(text) {
+        const n = text.split('\n').length;
+        return `${n} line${n === 1 ? '' : 's'}`;
+    }
+
+    /* True while the user has text selected inside the panel — the tail must not
+     * scroll their selection out from under them mid-drag. */
+    function hasSelectionInBody() {
+        const sel = window.getSelection && window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.rangeCount || !bodyEl) return false;
+        try { return bodyEl.contains(sel.getRangeAt(0).commonAncestorContainer); } catch (e) { return false; }
     }
 
     function clearView() {
@@ -172,7 +227,7 @@
             bodyEl.removeChild(bodyEl.firstChild);
             lineCount--;
         }
-        if (stickToBottom) {
+        if (stickToBottom && !hasSelectionInBody()) {
             bodyEl.scrollTop = bodyEl.scrollHeight;
         }
         updateCount();

@@ -486,7 +486,7 @@ expect adult content to be a problem with Meta specifically.
 
 - [`THREADS_SETUP.md`](THREADS_SETUP.md) — the same app, the Threads use case; ten minutes once
   Instagram is done
-- [`SETUP.md` §5](SETUP.md#5-platform-credentials) — credentials for all twenty platforms, and
+- [`SETUP.md` §5](SETUP.md#platform-credentials) — credentials for all twenty platforms, and
   what each needs to poll versus to post
-- [`SELF_HOSTING.md`](SELF_HOSTING.md) — running PawPoller on a server, which is also what gives
+- [`SETUP.md` Paths B and C](SETUP.md#start-here-which-of-these-are-you) — running PawPoller on a server, which is also what gives
   you the public URL Instagram posting needs

@@ -10,7 +10,7 @@ No OAuth dance, no refresh token needed.
 below writes to ``/api/v1/statuses`` and needs ``write:statuses``, plus
 ``write:media`` for images. A read-only token polls perfectly, then has every
 post rejected — which reads as a broken integration rather than a missing
-permission, so it is called out here and in ``docs/SETUP.md`` §5.1.
+permission, so it is called out here and in ``docs/SETUP.md`` (Platform credentials).
 
 Key details:
   - Post IDs are ActivityPub URIs (https://instance/users/x/statuses/123),

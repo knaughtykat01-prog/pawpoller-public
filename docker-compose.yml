@@ -4,7 +4,7 @@ services:
     ports:
       # Loopback by default, so a fresh `docker compose up` is NOT exposed to
       # the network. To reach it from other devices, put it behind a reverse
-      # proxy (see docs/SETUP.md §2.5) and/or set PAWPOLLER_BIND=0.0.0.0 in
+      # proxy (see docs/SETUP.md, "A public web address") and/or set PAWPOLLER_BIND=0.0.0.0 in
       # .env — but ONLY with a dashboard password set.
       - "${PAWPOLLER_BIND:-127.0.0.1}:8420:8420"
     volumes:

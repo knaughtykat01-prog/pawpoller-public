@@ -270,3 +270,36 @@ def test_build_discovered_image_post_is_art_and_prefers_link():
     assert out["10"]["kind"] == "text"                        # no image → text
     # Falls back to url_template when no link is stored.
     assert out["10"]["url"] == "https://mastodon.social/web/statuses/10"
+
+
+CFG_TW = {"id_col": "submission_id", "title_col": "title",
+          "url_template": "https://x.com/i/status/{id}"}
+CFG_BSKY = {"id_col": "submission_id", "title_col": "title",
+            "url_template": "https://bsky.app/profile/x/post/{id}"}
+
+
+def test_discovered_drops_reposts_of_other_peoples_posts():
+    """X and Bluesky keep a repost when it tags the account — a post ABOUT you, worth
+    counting, but not your work. Offering them for import filled an artist's Library
+    with other people's posts (backlog TAGREPOST)."""
+    rows_tw = [
+        {"submission_id": "1", "title": "My tweet", "content_type": "tweet", "posted_at": "2026-03-03"},
+        {"submission_id": "2", "title": "Someone tagged me", "content_type": "retweet", "posted_at": "2026-03-04"},
+    ]
+    rows_bsky = [
+        {"submission_id": "3", "title": "My skeet", "content_type": "post", "posted_at": "2026-03-01"},
+        {"submission_id": "4", "title": "Tagged repost", "content_type": "repost", "posted_at": "2026-03-02"},
+        {"submission_id": "5", "title": "Odd casing", "content_type": " RePost ", "posted_at": "2026-03-05"},
+    ]
+    out = build_discovered([("tw", CFG_TW, rows_tw), ("bsky", CFG_BSKY, rows_bsky)], set())
+    assert {d["submission_id"] for d in out} == {"1", "3"}
+
+
+def test_discovered_keeps_replies_and_quotes():
+    """Only reposts are someone else's — a reply or a quote is the account's own post."""
+    rows = [
+        {"submission_id": "6", "title": "Reply", "content_type": "reply", "posted_at": "2026-03-06"},
+        {"submission_id": "7", "title": "Quote", "content_type": "quote", "posted_at": "2026-03-07"},
+    ]
+    out = build_discovered([("tw", CFG_TW, rows)], set())
+    assert {d["submission_id"] for d in out} == {"6", "7"}

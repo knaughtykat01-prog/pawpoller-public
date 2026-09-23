@@ -147,22 +147,26 @@
 
     // ── DeviantArt ───────────────────────────────────────────
     da: {
-      kind: 'Analytics', difficulty: 'Medium',
-      summary: 'Track views/faves/comments on a DeviantArt gallery.',
-      need: ['A DeviantArt login cookie', 'The DA username to track'],
+      kind: 'Analytics + posting', difficulty: 'Medium',
+      summary: 'Track views/faves/comments on a DeviantArt gallery, and post to it.',
+      need: ['A DeviantArt account', 'A DeviantArt "app" you register yourself — free, about two minutes'],
       steps: [
-        { t: 'Log into DeviantArt', b: 'Sign in at deviantart.com in a desktop browser. The username comes first, then <b>Next</b> asks for the password.',
+        { t: 'Sign in to DeviantArt', b: 'Sign in at deviantart.com in a desktop browser &mdash; the username comes first, then <b>Next</b> asks for the password. Everything below happens while signed in as the account you want tracked.',
           link: { label: 'deviantart.com', url: 'https://www.deviantart.com' },
           img: { src: '/img/guides/da/login.png', alt: 'DeviantArt\'s Log In dialog: the Username step with Next' } },
-        { t: 'Copy your login cookie', b: COOKIE_HOWTO + ' DeviantArt\'s login is the <code>auth</code> cookie (with <code>auth_secure</code> and <code>userinfo</code> beside it).',
-          img: { src: '/img/guides/da/devtools-cookies.png', alt: 'DeviantArt with DevTools open on Application → Cookies, the auth, auth_secure and userinfo rows named, their values blurred here' } },
-        { t: 'Connect in PawPoller', b: 'Paste the cookie and the target DA username in Settings.' },
+        { t: 'Register a DeviantArt app', b: 'Open <b>Applications</b> (under Developers) and press <b>Register Application</b>. Any name will do &mdash; "PawPoller" is fine. Set <b>Client type</b> to <b>Confidential</b>, accept the terms, and save.',
+          link: { label: 'DeviantArt Applications', url: 'https://www.deviantart.com/developers/apps' } },
+        { t: 'Copy the two codes it gives you', b: 'The app\'s page shows a <code>client_id</code> (a short number) and a <code>client_secret</code> (a long string). You will paste both into PawPoller. Treat the secret like a password.' },
+        { t: 'Connect in PawPoller', b: 'In <b>Settings &rarr; DeviantArt</b>, paste the <code>client_id</code>, the <code>client_secret</code> and the DeviantArt <b>username to track</b>, then press <b>Connect</b>. Stats arrive on the next check.' },
+        { t: 'Only if you want to post: allow it', b: 'Press <b>Authorise posting</b> and approve on DeviantArt. &#9888; DeviantArt approves <b>whichever account that browser is signed in to</b> &mdash; not the one you pressed the button for. With more than one account, open a private window, sign in as the right one, and press it there.' },
+        { t: 'Add the return address to your app', b: 'DeviantArt only comes back to an address listed on your app, and it is the <b>address you opened PawPoller at</b> plus <code>/api/da/auth/callback</code>. Pressing <b>Authorise posting</b> prints the exact line to copy. Paste it into <b>Applications &rarr; Edit &rarr; OAuth2 Redirect URI Whitelist</b>, save there, then press the button again. Typical ones: <code>http://127.0.0.1:8420/api/da/auth/callback</code> for the desktop app, <code>https://yourmachine.your-tailnet.ts.net/api/da/auth/callback</code> over Tailscale, <code>https://pawpoller.yourdomain.com/api/da/auth/callback</code> on your own web address. Open PawPoller two ways and you need both lines &mdash; the list takes as many as you like.' },
       ],
-      paste: 'Settings → DeviantArt → Cookie + Target user',
-      renew: { when: 'The cookie expires periodically — stats stop updating', how: 'Log back into DeviantArt and paste a fresh cookie.' },
+      paste: 'Settings → DeviantArt → client_id + client_secret + username to track',
+      renew: { when: 'Posting stops working (tracking keeps going)', how: 'Press Authorise posting again. The app\'s own codes do not expire.' },
       notes: [
-        'On the server DA polls through the CF proxy (datacenter IPs are blocked).',
-        'DeviantArt now has an official OAuth API that returns public stats without a cookie — a future PawPoller update will switch to it and drop the cookie step.',
+        'No browser cookie any more (since 2.47.0): this uses DeviantArt\'s official API, so there is nothing to copy out of DevTools and nothing that expires every few weeks. If a guide still tells you to fetch an <code>auth</code> cookie, it is out of date.',
+        'Tracking needs only the app. Posting as you needs the extra approval, which is the only way DeviantArt will issue that permission.',
+        'On a server, DA is polled through the Cloudflare proxy — data-centre addresses are blocked.',
       ],
     },
 

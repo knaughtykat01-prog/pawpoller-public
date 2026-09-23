@@ -604,6 +604,13 @@ def build_discovered(platform_rows: list[tuple], linked: set) -> list[dict]:
                 continue
             stype = (d.get("category") or d.get("content_type") or d.get("subtype")
                      or d.get("type_name") or "")
+            # Someone else's post, kept only for its numbers: the X and Bluesky pollers
+            # hold on to a repost when it tags the account (clients/tw `_user_tagged_in`,
+            # clients/bsky `_post_mentions_did`), because a post ABOUT you is worth
+            # counting. It is not YOUR work, so it must never be offered for import —
+            # people tagging an artist filled the Library with other people's posts.
+            if str(stype).strip().lower() in ("repost", "retweet"):
+                continue
             thumb = (d.get("thumbnail_url") or d.get("thumb_url") or d.get("download_url")
                      or d.get("media_url") or d.get("file_url") or "")
             out.append({

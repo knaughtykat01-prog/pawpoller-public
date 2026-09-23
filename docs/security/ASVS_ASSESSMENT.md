@@ -399,7 +399,7 @@ Cryptographic inventory (also satisfies V11.1.2):
 | API-key storage/compare | **SHA-256** of a high-entropy token | `config.validate_api_key` |
 | Random tokens/secrets/seeds | **`secrets`** CSPRNG / `Fernet.generate_key` / `pyotp` | throughout |
 
-- **V11.1.1 (L2) — PARTIAL.** Key lifecycle is documented (SETUP §5.1 + this table): vault key
+- **V11.1.1 (L2) — PARTIAL.** Key lifecycle is documented (SETUP "The credential vault" + this table): vault key
   source order (operator env → OS keyring → dotfile), rotation on password change for the
   session key. Not a formal NIST SP 800-57 policy.
 - **V11.1.2 (L2) — PASS.** The inventory above is maintained here.

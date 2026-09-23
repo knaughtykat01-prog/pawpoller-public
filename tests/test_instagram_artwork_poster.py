@@ -42,10 +42,23 @@ def test_validate_requires_image(upload_file):
     assert p.validate(_pkg(file_path=upload_file)) == []
 
 
-def test_validate_requires_public_host(upload_file):
-    config.save_settings({"ig_public_base_url": "", "posting_server_url": ""})
+def test_validate_requires_some_image_host(upload_file):
+    """4.32.3 (IGPOST2): the relay and the tunnel are hosts too.
+
+    This check predated the 4.7.0 ladder and wanted a public base or a paired server, so a
+    desktop with neither — the case the relay exists for — had every post refused before the
+    ladder ran. It must object only when no rung at all can serve.
+    """
     p = InstagramPoster()
-    assert any("public image host" in e for e in p.validate(_pkg(file_path=upload_file)))
+    config.save_settings({"ig_public_base_url": "", "posting_server_url": "",
+                          "ig_relay_enabled": True})
+    assert [e for e in p.validate(_pkg(file_path=upload_file)) if "public address" in e] == []
+
+    config.save_settings({"ig_relay_enabled": False, "ig_tunnel_enabled": False})
+    try:
+        assert any("public address" in e for e in p.validate(_pkg(file_path=upload_file)))
+    finally:
+        config.save_settings({"ig_relay_enabled": True, "ig_tunnel_enabled": True})
 
 
 # ── Post ─────────────────────────────────────────────────────

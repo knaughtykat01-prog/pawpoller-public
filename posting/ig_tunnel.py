@@ -285,13 +285,20 @@ class Tunnel:
         except Exception:
             return
 
-    async def wait_ready(self, timeout: float = 25.0, http=None) -> None:
+    async def wait_ready(self, timeout: float = 60.0, http=None) -> None:
         """Poll ``<url>/__ping`` through the tunnel until it answers (a fresh quick
-        tunnel can 502/1033 for its first seconds)."""
+        tunnel can 502/1033 for its first seconds).
+
+        The window was 25 s, which is plenty on a fast link and not always enough on a
+        slow one; waiting longer only ever costs time on a publish that was going to
+        fail anyway. The failure says how long it waited and what the last answer was,
+        so a report can tell a slow tunnel from a blocked one.
+        """
         import httpx
         own = http is None
         client = http or httpx.AsyncClient(timeout=8.0)
-        deadline = time.monotonic() + timeout
+        started = time.monotonic()
+        deadline = started + timeout
         last = "no answer"
         try:
             while time.monotonic() < deadline:
@@ -306,7 +313,10 @@ class Tunnel:
         finally:
             if own:
                 await client.aclose()
-        raise RuntimeError(f"the tunnel opened but Cloudflare never answered through it ({last})")
+        waited = int(time.monotonic() - started)
+        logger.warning("IG tunnel: %s never answered through Cloudflare in %ds (%s)", self.url, waited, last)
+        raise RuntimeError(
+            f"the tunnel opened but Cloudflare never answered through it after {waited}s ({last})")
 
     async def stop(self) -> None:
         if self._drain:

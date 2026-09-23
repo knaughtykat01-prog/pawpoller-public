@@ -1267,6 +1267,9 @@ def get_preferences():
         "update_skip_version": settings.get("update_skip_version", ""),
         "run_on_startup": config.get_run_on_startup(),
         "display_timezone": settings.get("display_timezone", "UTC"),
+        # Who helped — shown in Settings → About. Empty until the operator adds
+        # someone; no names ship in the repo.
+        "credits": settings.get("credits", []),
         "theme": settings.get("theme", "dark"),
         "mobile_mode": settings.get("mobile_mode", "auto"),
         "auto_sync_enabled": settings.get("auto_sync_enabled", True),
@@ -1448,6 +1451,23 @@ def save_preferences(body: dict):
     # ── Timezone ───────────────────────────────────────────────
     if "display_timezone" in body:
         update["display_timezone"] = str(body["display_timezone"])
+
+    # ── Credits (Settings → About) ─────────────────────────────
+    # The people who helped: testers, translators, whoever the operator wants to
+    # thank. Kept as DATA, not baked into the source, because this repo ships as a
+    # public copy and must carry no real names (CLAUDE.md) — and because who helped
+    # is the operator's to say, not ours. Bounded so a stray payload can't grow
+    # settings.json without limit.
+    if "credits" in body:
+        people = []
+        for entry in (body.get("credits") or [])[:100]:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name", "")).strip()[:80]
+            role = str(entry.get("role", "")).strip()[:80]
+            if name:
+                people.append({"name": name, "role": role})
+        update["credits"] = people
 
     # ── Milestone threshold arrays ─────────────────────────────
     # Validate as sorted positive integer lists

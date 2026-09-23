@@ -4,6 +4,13 @@
 
 /* ── Duplicate finder / merge (2.144.0) ── */
 .mp-dup-group { margin-bottom: 1rem; }
+/* Confidence badge — groups are listed most-certain first, so this marks where
+   the safe merges end and the judgement calls begin. */
+.mp-dup-conf { display: inline-block; margin-bottom: .5rem; padding: .1rem .5rem; border-radius: 999px;
+    font-size: .72rem; font-weight: 600; letter-spacing: .02em; border: 1px solid transparent; }
+.mp-dup-conf.is-certain { color: var(--success, #5ae0a0); border-color: var(--success, #5ae0a0); }
+.mp-dup-conf.is-strong { color: var(--accent, #6c8cff); border-color: var(--accent, #6c8cff); }
+.mp-dup-conf.is-loose { color: var(--text-muted, #5f6578); border-color: var(--border, #2e3140); }
 .mp-dup-row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: stretch; }
 .mp-dup-card {
     display: flex; gap: .7rem; align-items: center;

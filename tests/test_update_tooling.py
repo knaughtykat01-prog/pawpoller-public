@@ -54,7 +54,7 @@ def test_update_sh_covers_both_install_types_and_flags():
 
 
 def test_update_sh_is_documented_for_self_hosters():
-    assert "update.sh" in _read("docs/SELF_HOSTING.md")
+    assert "update.sh" in _read("docs/SETUP.md")
 
 
 def test_units_call_update_sh():

@@ -209,10 +209,18 @@ class TestRelayRoute:
             assert c.post("/api/ig/relay", files={"file": ("a.png", _png_bytes(), "image/png")}).status_code == 200
         r = c.post("/api/ig/relay", files={"file": ("a.png", _png_bytes(), "image/png")})
         assert r.status_code == 429
-        # a different address (first hop of X-Forwarded-For) is its own bucket
+        # 4.32.3: a forged X-Forwarded-For buys NOTHING. The route used to read the
+        # header itself, so anyone could rotate a value and upload past the cap; the
+        # count now follows the address uvicorn resolved under PAWPOLLER_FORWARDED_IPS.
         r = c.post("/api/ig/relay", files={"file": ("a.png", _png_bytes(), "image/png")},
                    headers={"X-Forwarded-For": "203.0.113.9, 10.0.0.1"})
-        assert r.status_code == 200
+        assert r.status_code == 429
+        # A genuinely different caller still gets its own bucket.
+        from routes import ig_api as _ig_api
+        other = TestClient(c.app, client=("198.51.100.7", 40000))
+        assert other.post("/api/ig/relay",
+                          files={"file": ("a.png", _png_bytes(), "image/png")}).status_code == 200
+        assert "198.51.100.7" in _ig_api._RELAY_HITS
 
     def test_stops_at_the_pending_cap(self, relay_client, monkeypatch):
         c, _ = relay_client
@@ -363,3 +371,56 @@ class TestPostersUseTheLadder:
         api = open("frontend/js/api.js", encoding="utf-8").read()
         assert 'id="ig-host-accordion"' in app and "API.getIgHostStatus()" in app
         assert "downloadIgTunnelHelper" in api and "/api/ig/tunnel-helper/download" in api
+
+
+class TestThePreflightCheckAgreesWithTheLadder:
+    """A desktop post was rejected before the ladder ran (backlog IGPOST2).
+
+    `validate()` predates 4.7.0: it asked only for a public base or a paired server, so a
+    desktop with neither — the exact case the relay and the tunnel were built for — failed
+    every Instagram post with "needs a public image host", and not one request ever reached
+    the relay. Both sides now ask `ig_host.first_available_rung()`.
+    """
+
+    @staticmethod
+    def _settings(**over):
+        s = {"ig_public_base_url": "", "posting_server_url": "",
+             "ig_relay_enabled": True, "ig_tunnel_enabled": False}
+        s.update(over)
+        return s
+
+    def test_the_relay_alone_is_a_host(self):
+        assert ig_host.first_available_rung(self._settings()) == "relay"
+
+    def test_a_public_base_wins_then_a_paired_server(self):
+        assert ig_host.first_available_rung(self._settings(ig_public_base_url="https://x.example")) == "local"
+        assert ig_host.first_available_rung(self._settings(posting_server_url="https://s.example")) == "paired"
+
+    def test_nothing_left_is_nothing(self):
+        assert ig_host.first_available_rung(self._settings(ig_relay_enabled=False)) == ""
+
+    def test_the_tunnel_counts_only_once_its_helper_is_there(self, monkeypatch):
+        s = self._settings(ig_relay_enabled=False, ig_tunnel_enabled=True)
+        monkeypatch.setattr(ig_tunnel, "helper_status", lambda: {"supported": True, "present": False})
+        assert ig_host.first_available_rung(s) == ""
+        monkeypatch.setattr(ig_tunnel, "helper_status", lambda: {"supported": True, "present": True})
+        assert ig_host.first_available_rung(s) == "tunnel"
+
+    def test_a_desktop_with_only_the_relay_may_post(self, monkeypatch, image):
+        from posting.platforms.base import StoryUploadPackage
+        from posting.platforms.instagram import InstagramPoster
+        monkeypatch.setattr(config, "get_settings", lambda: self._settings())
+        pkg = StoryUploadPackage(story_name="Sample Story", chapter_index=0, chapter_title="",
+                                 platform="ig", title="Sample", description="",
+                                 file_path=image, file_type="png", media_kind="image")
+        assert [e for e in InstagramPoster().validate(pkg) if "public" in e] == []
+
+    def test_a_desktop_with_no_rung_is_told_where_to_look(self, monkeypatch, image):
+        from posting.platforms.base import StoryUploadPackage
+        from posting.platforms.instagram import InstagramPoster
+        monkeypatch.setattr(config, "get_settings", lambda: self._settings(ig_relay_enabled=False))
+        pkg = StoryUploadPackage(story_name="Sample Story", chapter_index=0, chapter_title="",
+                                 platform="ig", title="Sample", description="",
+                                 file_path=image, file_type="png", media_kind="image")
+        errs = [e for e in InstagramPoster().validate(pkg) if "public address" in e]
+        assert errs and "Settings → Posting → Instagram image host" in errs[0]

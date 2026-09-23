@@ -130,11 +130,14 @@ class InstagramPoster(PlatformPoster):
                     errors.append("Video is over 1 GB — Instagram Reels take up to 1 GB")
                 if package.duration_s and package.duration_s > self.max_video_seconds:
                     errors.append(f"Video runs {package.duration_s / 60:.1f} min — Instagram Reels take up to 15 minutes")
-        # Fail fast (before any stash) when no public host is configured.
-        s = config.get_settings()
-        if not s.get("ig_public_base_url", "").strip() and not s.get("posting_server_url", "").strip():
-            errors.append("Instagram needs a public image host — set IG_PUBLIC_BASE_URL on the "
-                          "server, or pair the desktop app with your server (Settings → Posting)")
+        # Fail fast (before any stash) when NO rung of the image-host ladder can serve
+        # this post — the same question ig_host.host_images() will ask, asked once here.
+        from posting import ig_host
+        if not ig_host.first_available_rung(config.get_settings()):
+            errors.append("Instagram needs a public address to fetch the image from, and none is "
+                          "available: turn on the PawPoller relay or the temporary tunnel in "
+                          "Settings → Posting → Instagram image host, pair this app with your "
+                          "server, or set IG_PUBLIC_BASE_URL on a server")
         return errors
 
 

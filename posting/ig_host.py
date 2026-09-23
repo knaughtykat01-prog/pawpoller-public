@@ -122,6 +122,33 @@ def relay_url(settings: dict) -> str:
     return (settings.get("ig_relay_url") or config.IG_RELAY_DEFAULT_URL).strip()
 
 
+def first_available_rung(settings: dict | None = None) -> str:
+    """The name of the first rung that could host an image, or ``""`` when none can.
+
+    The pre-flight check in ``platforms/instagram.py::validate`` and this ladder have to
+    agree about what counts as a host. They didn't: the check predates 4.7.0 and asked
+    only for a public base or a paired server, so on a desktop with neither it rejected
+    every Instagram post before the ladder ran — with the relay switched on, reachable
+    and ready. That is why a desktop could fail for weeks without a single request
+    reaching the relay. Both sides now read this one function.
+    """
+    s = settings if settings is not None else config.get_settings()
+    if (s.get("ig_public_base_url") or "").strip():
+        return "local"
+    if (s.get("posting_server_url") or "").strip():
+        return "paired"
+    if _truthy(s.get("ig_relay_enabled", True)) and relay_url(s):
+        return "relay"
+    if _truthy(s.get("ig_tunnel_enabled", True)):
+        from posting import ig_tunnel
+        st = ig_tunnel.helper_status()
+        # A helper that isn't downloaded yet is not a host — say so before the post
+        # rather than after a stash and a failed climb.
+        if st.get("supported") and st.get("present"):
+            return "tunnel"
+    return ""
+
+
 async def host_images(paths: list[str], settings: dict | None = None) -> Hosted:
     """Climb the ladder for *paths*; return the public URLs and how they are hosted.
 
@@ -184,6 +211,10 @@ async def host_images(paths: list[str], settings: dict | None = None) -> Hosted:
     else:
         tried.append("a temporary tunnel (turned off in Settings → Posting)")
 
+    # The reasons only ever reached the screen, so a failure the user described
+    # second-hand ("the relay isn't working") could not be diagnosed from their
+    # log. Put every rung's reason in app.log too.
+    logger.warning("IG host: no rung worked — tried %s", "; ".join(tried))
     raise NoPublicHost(
         "Instagram needs a public address to fetch the image from, and none worked. Tried "
         + "; ".join(tried)

@@ -23,6 +23,10 @@ a = Analysis(
     binaries=[],
     datas=[
         ('frontend', 'frontend'),
+        # The editor's tag picker reads these at runtime (routes/editor_api.py::_TAG_DB_DIR,
+        # resolved next to the code). Left out of the build until 4.32.3, so every frozen
+        # install answered /api/editor/tags with "Tag database not found" — 2.9 MB of text.
+        ('tag_database', 'tag_database'),
         *_DB_SCHEMAS,
         ('assets', 'assets'),
         *_CHANGELOG,

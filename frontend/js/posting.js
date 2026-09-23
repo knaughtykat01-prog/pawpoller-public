@@ -656,9 +656,16 @@ const Posting = {
                 const error = entry.error_message
                     ? `<span class="error-text" title="${Utils.escapeHtml(entry.error_message)}">&#9888;</span>` : '';
                 const dur = entry.duration_seconds ? `${entry.duration_seconds.toFixed(1)}s` : '';
+                // The log carries artwork as well as stories (they were invisible here
+                // until 4.32.3), and an artwork's detail page is not under /posting.
+                const isArt = entry.content_type === 'artwork';
+                const href = isArt
+                    ? `#/artwork/image/${encodeURIComponent(entry.story_name || '')}`
+                    : `#/posting/story/${Utils.escapeHtml(entry.story_name)}`;
                 return `<tr>
                     <td data-label="Time">${Utils.escapeHtml(entry.created_at || '')}</td>
-                    <td data-label="Story"><a href="#/posting/story/${Utils.escapeHtml(entry.story_name)}">${Utils.escapeHtml((entry.story_name || '').replace(/_/g, ' '))}</a></td>
+                    <td data-label="Work"><a href="${href}">${Utils.escapeHtml((entry.story_name || '').replace(/_/g, ' '))}</a>
+                        ${isArt ? '<span class="muted" style="font-size:.8em"> · art</span>' : ''}</td>
                     <td data-label="Platform">${PLATFORM_LABELS[entry.platform] || entry.platform}</td>
                     <td data-label="Action">${entry.action}</td>
                     <td data-label="Status"><span class="status-badge ${statusClass}">${entry.status}</span></td>
@@ -674,7 +681,7 @@ const Posting = {
                 <div class="card">
                     <table class="data-table" data-mobile-cards>
                         <thead><tr>
-                            <th>Time</th><th>Story</th><th>Platform</th>
+                            <th>Time</th><th>Work</th><th>Platform</th>
                             <th>Action</th><th>Status</th><th>Details</th><th>Duration</th>
                         </tr></thead>
                         <tbody>${rows}</tbody>

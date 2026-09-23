@@ -979,11 +979,22 @@ def reschedule_queue_item(queue_id: int, body: dict):
 def get_log(
     story_name: str = Query(None),
     limit: int = Query(50),
+    content_type: str = Query(None),
 ):
-    """Get posting audit log."""
+    """Get the posting audit log — every kind of post unless one is asked for.
+
+    `get_posting_log` defaults to `content_type="story"` so the Stories views never show
+    artwork. This endpoint inherited that default while calling itself "Posting History",
+    so anyone who posts art saw "No posting activity yet" no matter how much they had
+    posted. `laurels.js` had already been passing `content_type: null` expecting
+    everything, and was being ignored — a query string carries no nulls.
+    """
+    ct = (content_type or "").strip().lower()
+    ct = None if ct in ("", "null", "none", "all") else ct
     conn = get_connection()
     try:
-        entries = posting_queries.get_posting_log(conn, story_name=story_name, limit=limit)
+        entries = posting_queries.get_posting_log(
+            conn, story_name=story_name, limit=limit, content_type=ct)
         return {"log": entries}
     finally:
         conn.close()

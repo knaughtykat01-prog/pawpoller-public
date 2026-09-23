@@ -234,6 +234,38 @@ def upsert_artist(body: dict):
         conn.close()
 
 
+@artists_router.delete("/{key}")
+def delete_artist(key: str, confirm: bool = False):
+    """Remove a person from the registry.
+
+    Works are never touched: the credit lives inline on each `masterpiece.json`, so a
+    piece keeps the name and simply renders it without handles afterwards. That is still
+    a change the operator should see coming, so an uncalled `confirm` on a person who is
+    credited anywhere answers **409** with the count and the first names — the same
+    "never blind" rule the rename preview follows. Nobody credited: it just goes.
+    """
+    conn = get_connection()
+    try:
+        person = aq.get_artist(conn, key)
+        if not person:
+            raise HTTPException(404, detail="Person not found")
+        works = _works_by_artist_key().get(key, [])
+        if works and not confirm:
+            raise HTTPException(409, detail={
+                "message": (f"{person['name']} is credited on {len(works)} piece"
+                            f"{'' if len(works) == 1 else 's'}. Deleting them keeps the name on "
+                            f"every piece — only the saved handles and mention settings go."),
+                "works": sorted(works)[:20],
+                "work_count": len(works),
+            })
+        aq.delete_artist(conn, key)
+        conn.commit()
+        logger.info("People: removed %s from the registry (credited on %d works)", key, len(works))
+        return {"status": "deleted", "key": key, "name": person["name"], "work_count": len(works)}
+    finally:
+        conn.close()
+
+
 @artists_router.delete("/{key}/handles/{platform}")
 def delete_handle(key: str, platform: str):
     """Drop one platform handle. The artist itself is never deleted here —

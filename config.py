@@ -152,7 +152,7 @@ def _operator_vault_key() -> bytes | None:
     This lets a server operator hold the key OUT-OF-BAND (secrets manager,
     Docker secret, env) instead of the ``.vault_key`` dotfile that otherwise
     sits next to the ciphertext on the data volume — the only way the vault
-    gives real at-rest protection on a server (see docs/SETUP.md §5.1).
+    gives real at-rest protection on a server (see docs/SETUP.md, "The credential vault").
 
     Raises if a key is supplied but malformed, so a typo fails fast at startup
     rather than silently making the vault undecryptable.
@@ -1225,7 +1225,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.32.2"
+APP_VERSION = "4.32.3"
 
 # ── Inkbunny API settings ──
 INKBUNNY_API_BASE = "https://inkbunny.net"     # Inkbunny API root URL
@@ -1240,11 +1240,20 @@ DASHBOARD_HOST = "127.0.0.1"  # Localhost only -- not exposed to the network
 DASHBOARD_PORT = 8420          # Arbitrary high port unlikely to conflict
 
 # Trusted proxy IPs for uvicorn's X-Forwarded-* handling. Default 127.0.0.1
-# (safe for desktop / direct binding). Behind a reverse proxy that terminates
-# TLS (e.g. Caddy for pawpoller.syncopates.app), set PAWPOLLER_FORWARDED_IPS=*
-# so request.url.scheme reflects the real HTTPS connection — the dashboard
-# session cookie's Secure flag (routes/dashboard_auth.py) and per-client rate
-# limiting depend on it. Only widen this when actually behind a trusted proxy.
+# (safe for desktop / direct binding). Behind a reverse proxy that terminates TLS,
+# widen it to the PROXY'S OWN address — loopback plus that address or its range,
+# e.g. `127.0.0.1,172.16.0.0/12` for a proxy reaching a Docker container. The
+# dashboard session cookie's Secure flag (routes/dashboard_auth.py) and per-client
+# rate limiting both depend on the forwarded headers being honoured.
+#
+# ⚠ NEVER `*`. uvicorn trusts every hop then, which makes it take the LEFTMOST
+# X-Forwarded-For entry — and proxies append, so that entry is whatever the visitor
+# sent. A forged `X-Forwarded-For: 127.0.0.1` then reads as loopback, which is the
+# only gate on first-run password setup and the sensitive-when-open endpoints
+# (dashboard.py::_client_is_loopback), and it sidesteps the per-address login
+# lockout. A named address or CIDR is safe: uvicorn walks the chain from the right
+# and returns the first untrusted host, so a prepended fake is ignored.
+# tests/test_proxy_trust.py pins all of this; docs/SETUP.md says the same.
 DASHBOARD_FORWARDED_IPS = os.environ.get("PAWPOLLER_FORWARDED_IPS", "127.0.0.1")
 
 # ── Stat offsets ──

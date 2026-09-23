@@ -190,6 +190,23 @@ const Charts = {
      * Callers override or extend the returned object (e.g. adding time X axis,
      * dual Y axes, or annotation config) before passing to new Chart().
      */
+    /**
+     * Bar width, in pixels, for a bar chart drawn on a time axis.
+     *
+     * Chart.js derives bar width from the smallest interval between points, which makes
+     * every bar as narrow as the closest pair of snapshots. Deriving it from the canvas
+     * and the number of points keeps bars visible however the readings are spaced. The
+     * floor keeps a dense chart drawable, the ceiling stops three or four readings from
+     * becoming slabs.
+     *
+     * @param {number} count   - Number of snapshots being plotted.
+     * @param {number} pxWidth - Canvas width in CSS pixels (0 when it isn't laid out yet).
+     */
+    _barThickness(count, pxWidth) {
+        const w = pxWidth > 0 ? pxWidth : 600;
+        return Math.max(2, Math.min(24, Math.floor(w / Math.max(count, 1)) - 1));
+    },
+
     _baseOptions() {
         const c = this._getThemeColors();
         return {
@@ -295,6 +312,11 @@ const Charts = {
         const ctx = document.getElementById(canvasId);
         if (!ctx) return;
         const isBar = type === 'bar';
+        // Chart.js sizes time-axis bars from the SMALLEST gap between points, so one
+        // snapshot taken minutes after another — a manual "check now" next to the
+        // scheduled poll — collapses every bar to a hairline and the chart looks empty
+        // (BARCHART). Size them from the canvas instead. Lines don't care.
+        const barThickness = isBar ? this._barThickness(snapshots.length, ctx.clientWidth) : undefined;
 
         // Metric-to-colour mapping (consistent across all chart types)
         const colors = {
@@ -327,6 +349,7 @@ const Charts = {
                 pointRadius: isBar ? 0 : (snapshots.length > 50 ? 0 : 3),
                 tension: 0.3,
                 fill: !isBar ? false : true,
+                barThickness,
             });
             // Trendlines only make sense on the line view.
             if (!isBar) {

@@ -62,3 +62,52 @@ def test_not_duplicate_dismissal_persists():
     assert dismissed == {("A", "B")}                            # normalised (a < b)
     assert image_hash.duplicate_masterpiece_groups(conn, dismissed=dismissed) == []
     conn.close()
+
+
+# ── Confidence (4.32.3): the duplicates page works down from the sure things ──
+
+def test_group_confidence_is_the_weakest_pair():
+    """A group is chained from near-identical pairs, so its ends can be further apart
+    than any single edge. Quoting the closest pair would oversell it."""
+    conn = get_connection()
+    image_hash.ensure_table(conn)
+    image_hash.store(conn, "__mp__", "A", "ffffffffffffffff")
+    image_hash.store(conn, "__mp__", "B", "ffffffffffffffff")   # identical to A
+    image_hash.store(conn, "__mp__", "C", "fffffffffffffff0")   # 4 bits off A
+    conn.commit()
+    assert image_hash.group_confidence(conn, ["A", "B"]) == 1.0
+    assert image_hash.group_confidence(conn, ["A", "B", "C"]) == 1.0 - 4 / 64
+    conn.close()
+
+
+def test_group_confidence_needs_two_hashes():
+    conn = get_connection()
+    image_hash.ensure_table(conn)
+    image_hash.store(conn, "__mp__", "Lonely", "ffffffffffffffff")
+    conn.commit()
+    assert image_hash.group_confidence(conn, ["Lonely"]) == 0.0
+    assert image_hash.group_confidence(conn, []) == 0.0
+    conn.close()
+
+
+def test_the_api_lists_certain_groups_first_and_labels_them():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from routes.masterpieces_api import masterpieces_router
+
+    conn = get_connection()
+    image_hash.ensure_table(conn)
+    # One pair that is byte-identical, one pair that is merely close.
+    image_hash.store(conn, "__mp__", "Sure A", "ffffffffffffffff")
+    image_hash.store(conn, "__mp__", "Sure B", "ffffffffffffffff")
+    image_hash.store(conn, "__mp__", "Maybe A", "00000000000000ff")
+    image_hash.store(conn, "__mp__", "Maybe B", "00000000000000f0")
+    conn.commit()
+    conn.close()
+
+    app = FastAPI()
+    app.include_router(masterpieces_router)      # the router carries its own prefix
+    groups = TestClient(app).get("/api/masterpieces/duplicates").json()["groups"]
+    confs = [g[0]["confidence"] for g in groups]
+    assert confs == sorted(confs, reverse=True), confs
+    assert all(0.0 <= c <= 1.0 for c in confs)

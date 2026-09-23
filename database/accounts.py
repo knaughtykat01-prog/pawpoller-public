@@ -160,7 +160,18 @@ _HANDLE_KEYS = {
 
 
 def ensure_accounts_table(conn: sqlite3.Connection) -> None:
-    """Create the accounts table + indexes if absent. Idempotent."""
+    """Create the accounts table + indexes if absent. Idempotent.
+
+    Three route handlers call this per request, and the DDL takes the write lock even
+    when it creates nothing — see ``variant_suggest.ensure_dismiss_table`` for the
+    "database is locked" that costs. The guard checks every object this creates, so an
+    install that predates one of the indexes still gets it.
+    """
+    have = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE name IN "
+        "('accounts', 'idx_accounts_platform', 'idx_accounts_one_default')")}
+    if len(have) == 3:
+        return
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS accounts (

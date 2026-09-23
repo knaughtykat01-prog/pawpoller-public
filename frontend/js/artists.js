@@ -178,6 +178,8 @@ window.Artists = {
                         <select class="ar-persona" data-ar-persona="${this.esc(a.key)}" title="Is this person one of your personas?" aria-label="Persona">${pOpts}</select>
                         <button class="btn btn-sm" data-ar-rename="${this.esc(a.key)}" type="button">Rename</button>
                         <button class="btn btn-sm btn-primary" data-ar-save="${this.esc(a.key)}" type="button">Save</button>
+                        <button class="btn btn-sm ar-del" data-ar-del="${this.esc(a.key)}" type="button"
+                            title="Remove this person from the registry. Pieces keep their name — only the handles go.">Delete</button>
                     </div>
                 </div>
                 ${warn}${ctx}
@@ -204,6 +206,8 @@ window.Artists = {
             if (rm) { e.preventDefault(); this._removeHandle(rm.dataset.arRm); return; }
             const ren = e.target.closest('[data-ar-rename]');
             if (ren) { e.preventDefault(); this._rename(ren.dataset.arRename); return; }
+            const del = e.target.closest('[data-ar-del]');
+            if (del) { e.preventDefault(); this._delete(del.dataset.arDel); return; }
             const add = e.target.closest('[data-ar-new]');
             if (add) { e.preventDefault(); this._addArtist(); return; }
         });
@@ -319,6 +323,37 @@ window.Artists = {
             }
         } catch (err) {
             alert('Rename failed: ' + (err.message || err));
+        }
+    },
+
+    /* Delete a person from the registry (4.32.3).
+     *
+     * Nothing in the archive is touched: the credit is written inline on each
+     * masterpiece.json, so those pieces keep the name and simply render it without a
+     * link afterwards. The server refuses the first attempt when anyone is credited and
+     * hands back the count, so this can say exactly that before doing it — the same
+     * "never blind" rule as the rename preview. */
+    async _delete(key) {
+        const a = this._all.find(x => x.key === key);
+        if (!a) return;
+        // The card already carries the piece count (the list is loaded with_counts), so
+        // ask with it in hand rather than firing a request to be refused — a rejected
+        // DELETE would also pop an error card at someone who has done nothing wrong.
+        const n = a.works || 0;
+        const ok = confirm(
+            `Remove “${a.name}” from People?\n\n`
+            + (n
+                ? `${n} piece${n === 1 ? '' : 's'} credit them. Those pieces keep the name — only the `
+                  + 'saved handles and mention settings go, so the credit stops linking to their profiles.\n\n'
+                : 'Nothing credits them, so only this registry entry goes.\n\n')
+            + 'Nothing is removed from your archive, and adding them again under the same name '
+            + 'brings every link back.');
+        if (!ok) return;
+        try {
+            await API.deleteArtist(key, true);
+            await this._load();
+        } catch (err) {
+            alert('Could not remove them: ' + (err.message || err));
         }
     },
 };

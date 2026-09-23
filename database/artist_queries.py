@@ -336,6 +336,25 @@ def rename_artist(conn: sqlite3.Connection, key: str, new_name: str) -> dict:
     return {"from": old["name"], "to": disp, "key": new_key, "rekeyed": True}
 
 
+def delete_artist(conn: sqlite3.Connection, key: str) -> dict:
+    """Remove a person from the registry, with their handles and mention flags.
+
+    ⚠ Works are NOT touched, for the same reason a rename doesn't touch them:
+    `masterpiece.json` stores the credit INLINE. A piece that credits this person keeps
+    their name and still renders it — it just stops resolving to handles, so the credit
+    line becomes a plain name. Nothing is deleted from the archive, and re-adding the
+    person under the same name restores every link.
+
+    Returns the removed record so a caller can report (or restore) it.
+    """
+    existing = get_artist(conn, key)
+    if not existing:
+        raise KeyError(key)
+    conn.execute("DELETE FROM artist_handles WHERE artist_key = ?", (key,))
+    conn.execute("DELETE FROM artists WHERE artist_key = ?", (key,))
+    return existing
+
+
 def remove_handle(conn: sqlite3.Connection, key: str, platform: str) -> None:
     conn.execute("DELETE FROM artist_handles WHERE artist_key = ? AND platform = ?",
                  (key, str(platform).strip().lower()))

@@ -686,6 +686,11 @@
     font-family: var(--font-mono, ui-monospace, monospace);
     font-size: 11px;
     line-height: 1.4;
+    /* The lines exist to be pasted into a bug report: say so explicitly, so no
+       parent's `user-select: none` can take selection away in a webview. */
+    -webkit-user-select: text;
+    user-select: text;
+    cursor: text;
 }
 
 .pp-log-line {

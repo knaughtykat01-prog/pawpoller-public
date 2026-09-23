@@ -291,7 +291,7 @@ the post's id and no link.
 
 ## Related
 
-- [`SETUP.md` §5](SETUP.md#5-platform-credentials) — credentials for every platform, and what each
+- [`SETUP.md` §5](SETUP.md#platform-credentials) — credentials for every platform, and what each
   needs to poll versus to post
 - [`INSTAGRAM_SETUP.md`](INSTAGRAM_SETUP.md) — the other image target, and a useful contrast:
   Instagram needs a public image host, a Meta developer account and a Business account, where

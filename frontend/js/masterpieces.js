@@ -502,6 +502,21 @@ window.Masterpieces = {
             fail ? `Folded ${ok}, ${fail} failed` : `${keep.title || keep.name} now has ${ok} labeled variant${ok === 1 ? '' : 's'}`);
     },
 
+    /* How sure the finder is that a group really is one image (server:
+     * image_hash.group_confidence, judged by the group's weakest pair). Groups arrive
+     * most-certain first, so the badge tells you where the certain ones stop and the
+     * judgement calls start. */
+    _dupConfidenceBadge(items) {
+        const conf = items && items[0] && items[0].confidence;
+        if (typeof conf !== 'number') return '';
+        const pct = Math.round(conf * 100);
+        const [cls, word] = conf >= 1 ? ['is-certain', 'Identical']
+            : conf >= 0.97 ? ['is-strong', 'Near-identical']
+                : ['is-loose', 'Similar'];
+        return `<div class="mp-dup-conf ${cls}" title="How alike the least-alike pair in this group is">`
+            + `${word} · ${pct}%</div>`;
+    },
+
     _dupGroup(items, gi) {
         // items[0] is the recommended survivor (most views, then most sites).
         const cards = items.map((m, i) => {
@@ -525,6 +540,7 @@ window.Masterpieces = {
         }).join('');
         return `
             <div class="mp-dup-group card" data-group="${gi}">
+                ${this._dupConfidenceBadge(items)}
                 <div class="mp-dup-row">${cards}</div>
                 <div class="mp-dup-actions">
                     <button class="btn btn-primary btn-sm" data-merge="${gi}">Merge ${items.length} into one</button>

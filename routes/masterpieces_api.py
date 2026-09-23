@@ -109,7 +109,16 @@ def masterpiece_duplicates():
                 })
             if len(items) >= 2:
                 items.sort(key=lambda x: (x["views"], x["sites"]), reverse=True)
+                # How alike this group is, by its weakest pair (image_hash.group_confidence).
+                # Carried on every item because the payload is a bare list of groups; the
+                # page reads it off the first one.
+                conf = image_hash.group_confidence(conn, [i["name"] for i in items])
+                for it in items:
+                    it["confidence"] = round(conf, 4)
                 result.append(items)
+        # Certain matches first: the operator asked to work down from the ones that are
+        # definitely the same image, and a 100%-identical pair needs no thought to merge.
+        result.sort(key=lambda g: (-(g[0].get("confidence") or 0), -len(g)))
         return {"groups": result}
     finally:
         conn.close()

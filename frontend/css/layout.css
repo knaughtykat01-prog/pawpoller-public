@@ -188,7 +188,6 @@
     min-width: 0;
 }
 .sidebar.collapsed .poll-badge { display: none; }
-.btn-logout,
 .btn-theme-toggle,
 .btn-sfw-toggle {
     width: 30px;
@@ -207,7 +206,30 @@
 }
 .btn-theme-toggle:hover,
 .btn-sfw-toggle:hover { border-color: var(--accent); color: var(--accent); }
-.btn-logout:hover { border-color: var(--danger); color: var(--danger); }
+/* Sign out says so (4.32.3). It used to be a 30x30 "back arrow" between two other
+   glyph buttons — nobody reads a tooltip, and the one control that ends your session
+   should not be a guess. Full width of the footer row, icon + word, and it only drops
+   back to an icon when the sidebar is collapsed. */
+.btn-logout {
+    flex: 1 1 100%;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: none;
+    border: 1px solid var(--card-border-inner);
+    border-radius: 9px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.btn-logout-icon { font-size: 14px; line-height: 1; }
+.btn-logout:hover { border-color: var(--danger); color: var(--danger); background: rgba(192, 57, 43, 0.07); }
+.sidebar.collapsed .btn-logout { flex: 0 0 auto; width: 30px; gap: 0; }
+.sidebar.collapsed .btn-logout-label { display: none; }
 /* The theme button is icon-only in the new footer. */
 .btn-theme-toggle .nav-label { display: none; }
 .sidebar.collapsed .sidebar-footer { flex-direction: column; gap: 6px; }

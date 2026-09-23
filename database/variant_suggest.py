@@ -172,6 +172,18 @@ def _dedupe_keys(members: list[dict]) -> None:
 # table, created lazily here so this stays out of the central schema/migrations.
 
 def ensure_dismiss_table(conn: sqlite3.Connection) -> None:
+    """Create the dismissal table once; on every later call, read and return.
+
+    ``CREATE TABLE IF NOT EXISTS`` still takes the database's write lock even when it
+    creates nothing, and :func:`not_variant_pairs` calls this on a plain GET. So opening
+    the variant suggestions while anything was writing queued the read behind it for the
+    whole 30 s busy timeout and then 500'd with "database is locked" — the same shape as
+    ``masterpiece_queries.ensure_indexed`` in 4.32.2. Asking the catalogue first is a
+    read, and costs nothing on the hot path.
+    """
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                    "AND name = 'masterpiece_not_variant'").fetchone():
+        return
     conn.execute(
         "CREATE TABLE IF NOT EXISTS masterpiece_not_variant ("
         "  name_a TEXT NOT NULL, name_b TEXT NOT NULL,"

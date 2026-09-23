@@ -280,6 +280,12 @@ const API = {
     /* Removing a handle needs its own call: upserts MERGE, so clearing a field
        cannot express "this handle was wrong, forget it" — the merge keeps it and
        the picker re-fills it from the registry next time. */
+    /* Remove a person. Without `confirm` the server answers 409 with how many pieces
+       credit them, so the page can say what will happen before it happens. */
+    deleteArtist(key, confirm = false) {
+        return this.del(`/api/artists/${encodeURIComponent(key)}${confirm ? '?confirm=true' : ''}`);
+    },
+
     deleteArtistHandle(key, platform) {
         return this.del(`/api/artists/${encodeURIComponent(key)}/handles/${encodeURIComponent(platform)}`);
     },

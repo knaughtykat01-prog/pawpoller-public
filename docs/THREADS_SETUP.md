@@ -239,4 +239,4 @@ policies remove adult content. For your own account in development mode none of 
 
 - [`INSTAGRAM_SETUP.md`](INSTAGRAM_SETUP.md) — the same app, the Instagram use case, and §0's
   notes on Meta's developer registration
-- [`SETUP.md` §5](SETUP.md#5-platform-credentials) — credentials for all twenty platforms
+- [`SETUP.md` §5](SETUP.md#platform-credentials) — credentials for all twenty platforms

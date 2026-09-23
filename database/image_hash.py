@@ -127,6 +127,14 @@ def is_allowed_thumb_url(url: str) -> bool:
 # ── Storage ──────────────────────────────────────────────────────────────
 
 def ensure_table(conn: sqlite3.Connection) -> None:
+    """Create the hash table once; later calls read the catalogue and return.
+
+    Same reason as ``variant_suggest.ensure_dismiss_table``: the DDL takes the write lock
+    even when the table is already there, and this one is reached from request paths.
+    """
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                    "AND name = 'image_hashes'").fetchone():
+        return
     conn.execute("""
         CREATE TABLE IF NOT EXISTS image_hashes (
             platform       TEXT NOT NULL,
@@ -379,3 +387,26 @@ def duplicate_masterpiece_groups(conn: sqlite3.Connection,
     for i in range(n):
         clusters.setdefault(find(i), []).append(rows[i][0])
     return [g for g in clusters.values() if len(g) >= 2]
+
+
+def group_confidence(conn: sqlite3.Connection, names: list[str]) -> float:
+    """How alike a duplicate group is, 0.0–1.0, judged by its WEAKEST pair.
+
+    A group is built by chaining near-identical pairs, so A can reach C through B while
+    being further from C than the threshold allows. Reporting the closest pair would
+    dress that group up as a certainty; the worst pair is the honest claim — "everything
+    in here is at least this alike". 1.0 means byte-identical hashes.
+
+    Returns 0.0 when fewer than two members have a hash to compare.
+    """
+    if not names:
+        return 0.0
+    marks = "?" * len(names)
+    hashes = [r["phash"] for r in conn.execute(
+        f"SELECT phash FROM image_hashes WHERE platform = ? AND submission_id IN ({','.join(marks)})",
+        (_MP_PLATFORM, *names))]
+    if len(hashes) < 2:
+        return 0.0
+    worst = max(hamming(hashes[i], hashes[j])
+                for i in range(len(hashes)) for j in range(i + 1, len(hashes)))
+    return 1.0 - worst / 64.0

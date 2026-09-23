@@ -445,7 +445,13 @@ const App = {
         /* Logout button — clears dashboard session if dashboard auth is active,
          * otherwise clears Inkbunny platform session */
         document.getElementById('logout-btn')?.addEventListener('click', async () => {
-            if (this._dashboardAuthRequired) {
+            // Ask first. One click used to end the session outright, and the button was
+            // an unlabelled arrow between two other glyphs — easy to hit by accident,
+            // and on a phone the "back" arrow is exactly what a thumb reaches for.
+            const dash = this._dashboardAuthRequired;
+            const ok = await this._confirmSignOut(dash);
+            if (!ok) return;
+            if (dash) {
                 try { await API.dashboardLogout(); } catch { /* ignore */ }
                 this.navigate('/dashboard-login');
             } else {
@@ -2739,7 +2745,7 @@ const App = {
                     : '';
                 body = `
                     <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">Connect to your server</h2>
-                    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">Enter your PawPoller server URL and an API key. Find or create the key under <em>Settings &rarr; Authentication</em> on the server.</p>
+                    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">Enter your PawPoller server URL and an API key. Find or create the key under <em>Settings &rarr; Security &rarr; API Keys</em> on the server.</p>
                     <div class="login-field">
                         <label>Server URL</label>
                         <input type="text" id="setup-pair-url" class="search-input" value="${Utils.escapeHtml(pairingUrl)}" placeholder="https://pawpoller.example.com" style="width:100%">
@@ -3050,6 +3056,13 @@ const App = {
                 const btn = document.getElementById('setup-finish');
                 btn.disabled = true;
                 btn.textContent = 'Saving...';
+                // A fresh install keeps UTC until someone finds the setting, so Telegram
+                // messages and the digest read hours out. Start from this computer's own
+                // zone; Settings → Preferences still overrides it.
+                try {
+                    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                    if (tz) await API.savePreferences({ display_timezone: tz });
+                } catch (e) { /* never block completion */ }
                 try {
                     await API.markSetupComplete();
                     // The run is over; nothing should be restored into a later one.
@@ -3901,6 +3914,106 @@ const App = {
         }).join('');
         const more = items.length > 6 ? `<div class="dash-sub">+${items.length - 6} more</div>` : '';
         return `<a class="dash-stat-link" data-nav="#/posting/queue" title="Open the posting queue">${rows}${more}</a>`;
+    },
+
+    /* Credits (Settings → About, 4.32.3): the people the operator wants to thank.
+     *
+     * Kept in settings rather than in this file on purpose — the repo ships as a public
+     * copy and carries no real names, and who helped is the operator's call, not ours.
+     * So the list starts empty in every install and only ever holds what someone typed. */
+    _drawCredits() {
+        const el = document.getElementById('credits-list');
+        if (!el) return;
+        const list = this._credits || [];
+        if (!list.length) {
+            el.innerHTML = '<p class="muted" style="font-size:12px;margin:0">Nobody added yet.</p>';
+            return;
+        }
+        el.innerHTML = list.map((c, i) => `
+            <div class="settings-row" style="padding:6px 0">
+                <div>
+                    <span class="settings-label">${Utils.escapeHtml(c.name || '')}</span>
+                    ${c.role ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${Utils.escapeHtml(c.role)}</div>` : ''}
+                </div>
+                <button class="btn btn-sm" data-credit-rm="${i}" type="button" title="Remove">&times;</button>
+            </div>`).join('');
+    },
+
+    async _saveCredits() {
+        const msg = document.getElementById('credit-msg');
+        try {
+            await API.savePreferences({ credits: this._credits });
+            this._drawCredits();
+            if (msg) { msg.textContent = 'Saved'; setTimeout(() => { msg.textContent = ''; }, 1500); }
+            return true;
+        } catch (err) {
+            if (msg) msg.textContent = 'Could not save: ' + (err.message || err);
+            return false;
+        }
+    },
+
+    /* Options for Settings → Preferences → Display timezone.
+     *
+     * The list used to be twenty hand-picked cities, so anyone living outside them had
+     * to settle for a neighbour — and the stored default is UTC, which reads as simply
+     * wrong on Telegram messages and digests. The browser knows every zone, so offer
+     * them all, with this computer's own zone first. A zone the browser doesn't list
+     * (an older one, or a value already saved) is kept so the current choice can never
+     * vanish from the menu; the server falls back to UTC for anything it can't read.
+     */
+    _timezoneOptions(current) {
+        const esc = (s) => (window.Utils && Utils.escapeHtml ? Utils.escapeHtml(s) : s);
+        const pretty = (z) => esc(String(z).replace(/_/g, ' '));
+        let zones = [];
+        try { zones = (Intl.supportedValuesOf && Intl.supportedValuesOf('timeZone')) || []; } catch (e) { zones = []; }
+        let here = '';
+        try { here = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { here = ''; }
+        zones = zones.filter(z => z !== here && z !== 'UTC');
+        const head = [];
+        if (here) head.push([here, `This computer — ${pretty(here)}`]);
+        head.push(['UTC', 'UTC']);
+        if (current && current !== here && current !== 'UTC' && !zones.includes(current)) head.push([current, pretty(current)]);
+        return head.concat(zones.map(z => [z, pretty(z)]))
+            .map(([val, label]) => `<option value="${esc(val)}"${val === current ? ' selected' : ''}>${label}</option>`)
+            .join('');
+    },
+
+    /* The sign-out confirmation (4.32.3). Resolves true when the person means it.
+     *
+     * Two different things wear this button: with a dashboard password it ends the
+     * browser session, and without one it clears the stored site login instead — so the
+     * dialog says which, rather than a generic "are you sure". Escape and the backdrop
+     * both mean "stay", the safe answer. */
+    _confirmSignOut(dashboardAuth) {
+        return new Promise(resolve => {
+            const ov = document.createElement('div');
+            ov.className = 'modal-overlay open';
+            ov.innerHTML = `
+                <div class="modal" role="dialog" aria-modal="true" aria-labelledby="signout-h" style="max-width:420px">
+                    <div class="modal-header"><h3 id="signout-h">Sign out?</h3></div>
+                    <div class="modal-body">
+                        <p>${dashboardAuth
+                            ? 'You will need your password to get back in. PawPoller keeps checking your sites and posting while you are signed out.'
+                            : 'This clears the site login saved in this app. Your work and settings stay where they are.'}</p>
+                    </div>
+                    <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+                        <button class="btn btn-outline" id="signout-cancel" type="button">Stay signed in</button>
+                        <button class="btn btn-danger" id="signout-go" type="button">Sign out</button>
+                    </div>
+                </div>`;
+            const close = (answer) => {
+                document.removeEventListener('keydown', onKey);
+                ov.remove();
+                resolve(answer);
+            };
+            const onKey = (e) => { if (e.key === 'Escape') close(false); };
+            document.body.appendChild(ov);
+            document.addEventListener('keydown', onKey);
+            ov.querySelector('#signout-cancel').addEventListener('click', () => close(false));
+            ov.querySelector('#signout-go').addEventListener('click', () => close(true));
+            ov.addEventListener('click', (e) => { if (e.target === ov) close(false); });
+            ov.querySelector('#signout-go').focus();
+        });
     },
 
     _dashWidgetMount(id, ctx, w) {
@@ -12480,28 +12593,7 @@ const App = {
                             <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Timezone for Telegram messages and timestamps</div>
                         </div>
                         <select class="filter-select" id="pref-timezone" style="width:auto">
-                            ${[
-                                ['UTC', 'UTC'],
-                                ['Australia/Sydney', 'Sydney (AEST/AEDT)'],
-                                ['Australia/Melbourne', 'Melbourne (AEST/AEDT)'],
-                                ['Australia/Brisbane', 'Brisbane (AEST)'],
-                                ['Australia/Adelaide', 'Adelaide (ACST/ACDT)'],
-                                ['Australia/Perth', 'Perth (AWST)'],
-                                ['Australia/Darwin', 'Darwin (ACST)'],
-                                ['Australia/Hobart', 'Hobart (AEST/AEDT)'],
-                                ['Pacific/Auckland', 'Auckland (NZST/NZDT)'],
-                                ['Asia/Tokyo', 'Tokyo (JST)'],
-                                ['Asia/Singapore', 'Singapore (SGT)'],
-                                ['Asia/Hong_Kong', 'Hong Kong (HKT)'],
-                                ['Asia/Kolkata', 'India (IST)'],
-                                ['Europe/London', 'London (GMT/BST)'],
-                                ['Europe/Paris', 'Paris (CET/CEST)'],
-                                ['Europe/Berlin', 'Berlin (CET/CEST)'],
-                                ['America/New_York', 'New York (EST/EDT)'],
-                                ['America/Chicago', 'Chicago (CST/CDT)'],
-                                ['America/Denver', 'Denver (MST/MDT)'],
-                                ['America/Los_Angeles', 'Los Angeles (PST/PDT)'],
-                            ].map(([val, label]) => `<option value="${val}" ${prefs.display_timezone === val ? 'selected' : ''}>${label}</option>`).join('')}
+                            ${App._timezoneOptions(prefs.display_timezone || 'UTC')}
                         </select>
                     </div>
                     </div>
@@ -12890,6 +12982,20 @@ const App = {
                         <label class="toggle-switch"><input type="checkbox" id="pref-auto-update" ${prefs.auto_update !== false ? 'checked' : ''}><span class="toggle-slider"></span></label>
                     </div>
                 </div>`}
+
+                <div class="settings-section">
+                    <h3>Credits</h3>
+                    <p style="font-size:11px;color:var(--text-muted);margin:-4px 0 10px">The people who helped —
+                    beta testers, the person who found that one bug, anyone you want to thank. Stored with your
+                    settings, shown only here.</p>
+                    <div id="credits-list"></div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+                        <input type="text" id="credit-name" class="search-input" placeholder="Name or handle" style="max-width:220px" maxlength="80">
+                        <input type="text" id="credit-role" class="search-input" placeholder="What they did (e.g. Beta tester)" style="max-width:260px" maxlength="80">
+                        <button class="btn btn-secondary" id="credit-add-btn" type="button">Add</button>
+                        <span id="credit-msg" style="font-size:12px;color:var(--text-muted);align-self:center"></span>
+                    </div>
+                </div>
 
                 <div class="settings-section">
                     <h3>Website</h3>
@@ -15398,6 +15504,27 @@ const App = {
                 } catch (err) {
                     alert('Failed to save: ' + err.message);
                 }
+            });
+
+            // ── Credits (Settings → About) ───────────────────────────
+            this._credits = Array.isArray(prefs.credits) ? prefs.credits.slice() : [];
+            this._drawCredits();
+            const creditAdd = document.getElementById('credit-add-btn');
+            const creditName = document.getElementById('credit-name');
+            const creditRole = document.getElementById('credit-role');
+            creditAdd?.addEventListener('click', async () => {
+                const name = (creditName.value || '').trim();
+                if (!name) { creditName.focus(); return; }
+                this._credits.push({ name, role: (creditRole.value || '').trim() });
+                if (await this._saveCredits()) { creditName.value = ''; creditRole.value = ''; }
+            });
+            creditName?.addEventListener('keydown', (e) => { if (e.key === 'Enter') creditAdd?.click(); });
+            creditRole?.addEventListener('keydown', (e) => { if (e.key === 'Enter') creditAdd?.click(); });
+            document.getElementById('credits-list')?.addEventListener('click', async (e) => {
+                const rm = e.target.closest('[data-credit-rm]');
+                if (!rm) return;
+                this._credits.splice(parseInt(rm.dataset.creditRm, 10), 1);
+                await this._saveCredits();
             });
 
             // SF notification filter toggle

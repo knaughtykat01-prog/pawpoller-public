@@ -47,7 +47,7 @@ stores only SHA-256 hashes; the plaintext is shown once.
 
 **If you lose both your authenticator and your backup codes:** you can still recover from the server by deleting the
 `auth_totp_secret` / `auth_totp_enabled` keys from the encrypted vault (`settings.vault.json`) — this needs the vault
-key and shell access, i.e. the local operator. See §5.1 of `SETUP.md` for the vault key.
+key and shell access, i.e. the local operator. See "The credential vault" in `SETUP.md` for the vault key.
 
 ## Credentials at rest
 

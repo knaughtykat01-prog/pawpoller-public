@@ -153,9 +153,14 @@ _IMAGE_MAGIC = (b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n", b"RIFF", b"GIF8")
 
 
 def _client_ip(request: Request) -> str:
-    xff = request.headers.get("x-forwarded-for", "")
-    if xff:
-        return xff.split(",")[0].strip()
+    """Who the rate limiter counts against.
+
+    Reading X-Forwarded-For here by hand undid uvicorn's work: the header is
+    attacker-supplied, so anyone could rotate a value and upload past the per-address
+    cap. `request.client.host` is the address uvicorn already resolved under
+    PAWPOLLER_FORWARDED_IPS — the real peer when nothing is trusted, and the forwarded
+    address only when the proxy is.
+    """
     return request.client.host if request.client else "?"
 
 
