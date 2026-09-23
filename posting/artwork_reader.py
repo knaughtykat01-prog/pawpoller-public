@@ -78,6 +78,13 @@ _ARTIST_TAG_PLATFORMS = frozenset({"e621", "fbr", "ib"})
 # keywords, not a booru vocabulary, so a `name_(owner)` tag there is noise.
 _CHARACTER_TAG_PLATFORMS = frozenset({"e621", "fbr"})
 
+# Sites with a title field, for the render suffix (4.34.0, VARSPLIT). Posting two
+# renders of one piece to a gallery would otherwise show two submissions with an
+# identical name. The boorus are deliberately absent: e621 has NO title field at all
+# and Furbooru posts only a description, so there is nothing there to collide — two
+# renders are told apart by their own tags.
+_TITLED_PLATFORMS = frozenset({"fa", "ws", "ib", "ik", "da", "sf", "fn"})
+
 
 def _canonical_tag_list(tags: dict) -> list[str]:
     """core + auxiliary, de-duplicated, order preserved.
@@ -546,6 +553,7 @@ def build_artwork_package(
     tags_override: list[str] | None = None,
     rating_override: str | None = None,
     variant_key: str | None = None,
+    multi_render: bool = False,
     account_id: int | None = None,
 ) -> StoryUploadPackage:
     """Build a StoryUploadPackage for one artwork + platform.
@@ -572,6 +580,14 @@ def build_artwork_package(
             raise ValueError(
                 f"{artwork.name}: no variant with key {variant_key!r}")
     title = title_override or artwork.titles_by_platform.get(platform) or artwork.title
+    # Several renders to one gallery need names a VIEWER can tell apart, not just the
+    # database. Only when more than one is going out: a render posted alone should read
+    # as the piece, not as a variant of it. An explicit title_override always wins.
+    if (variant is not None and multi_render and not title_override
+            and platform in _TITLED_PLATFORMS):
+        _label = variant.get("label") or variant.get("key") or ""
+        if _label and _label.lower() not in title.lower():
+            title = f"{title} ({_label})"
 
     if description_override:
         description = description_override

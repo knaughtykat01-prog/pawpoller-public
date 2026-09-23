@@ -73,8 +73,10 @@ class TestThePublishLoopHonoursIt:
         """Without a sentinel there is no way to decline an automatic substitution."""
         assert manager._PRIMARY_RENDER == "__primary__"
         src = inspect.getsource(manager.post_artwork)
-        assert "if _asked == _PRIMARY_RENDER:" in src
-        assert "_variant = None" in src
+        assert "_asked == _PRIMARY_RENDER:" in src
+        # 4.34.0 made the selection a LIST; the sentinel now yields the primary as the
+        # single render rather than a bare None.
+        assert "_renders = [None]" in src
 
     def test_an_unknown_render_name_refuses_that_platform(self):
         """Not a silent fallback to the primary: the caller asked for something real."""

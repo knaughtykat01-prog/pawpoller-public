@@ -1903,6 +1903,12 @@ const Components = {
      * @param {Array}  [o.textBoxes] [{ code, label, cap, value? }] — one "text for
      *                               this post" box per announcing platform (4.3.7);
      *                               their values come back as `descriptions[code]`.
+     * @param {Array}  [o.renders]  [{ key, label, rating }] — the piece's declared
+     *                              renders (4.34.0). Present ⇒ a multi-select appears and
+     *                              the chosen keys come back as `renders`; each posts as
+     *                              its OWN submission. `''` is the piece's own image.
+     * @param {number} [o.renderWait] Seconds between posts on the slowest chosen site,
+     *                              used to warn that several renders take a while.
      * @param {Object} [o.tgDesc]    The pre-4.3.7 form of the above: a Telegram box
      *                               alone (4.3.0). Still honoured; its value also
      *                               comes back as `tgDescription`.
@@ -1940,6 +1946,16 @@ const Components = {
                     </div>
                     <ul class="pub-confirm-list">${rows}</ul>
                     ${o.warning ? `<p class="pub-confirm-warn">${esc(o.warning)}</p>` : ''}
+                    ${(o.renders && o.renders.length) ? `<div class="pub-confirm-renders">
+                        <div class="pub-confirm-renders-head">Which versions to post
+                            <span class="muted">— each one becomes its own submission on every site above.</span></div>
+                        ${o.renders.map(r => `<label class="pub-confirm-render">
+                            <input type="checkbox" data-pub-render="${esc(r.key)}"${r.checked ? ' checked' : ''}>
+                            <span>${esc(r.label)}</span>
+                            ${r.rating ? `<span class="muted">${esc(r.rating)}</span>` : ''}
+                        </label>`).join('')}
+                        <div class="pub-confirm-render-wait muted" data-pub-render-wait hidden></div>
+                    </div>` : ''}
                     ${(o.textBoxes || (o.tgDesc ? [{ code: 'tg', label: 'Telegram', cap: 900, value: o.tgDesc.value }] : [])).map(b => `<label class="pub-confirm-tgdesc">
                         <span>${esc(b.label || b.code)} text for this post <span class="muted">— optional, this post only. Blank uses the piece's saved ${esc(b.label || b.code)} text, then its description.</span></span>
                         <textarea data-pub-desc="${esc(b.code)}"${b.code === 'tg' ? ' data-pub-tgdesc' : ''} rows="2" maxlength="${b.cap || 900}">${esc(b.value || '')}</textarea>
@@ -1958,16 +1974,40 @@ const Components = {
             const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); done(false); } };
             ov.addEventListener('click', (e) => { if (e.target === ov) done(false); });
             ov.querySelector('[data-pub-cancel]').addEventListener('click', () => done(false));
+
+            // FR-009: several renders to one site is deliberate waiting, not a hang.
+            // Three to FurAffinity is ~140 s, because FA enforces 70 s between posts.
+            const waitEl = ov.querySelector('[data-pub-render-wait]');
+            const gap = Number(o.renderWait || 0);
+            const refreshWait = () => {
+                if (!waitEl) return;
+                const n = ov.querySelectorAll('[data-pub-render]:checked').length;
+                const secs = Math.max(0, n - 1) * gap;
+                if (secs < 30) { waitEl.hidden = true; return; }
+                const mins = Math.round(secs / 60);
+                waitEl.hidden = false;
+                waitEl.textContent = `${n} versions × ${live.length} site${live.length === 1 ? '' : 's'}`
+                    + ` — allow about ${mins} minute${mins === 1 ? '' : 's'}, because these sites`
+                    + ' enforce a gap between posts. Leave the page open.';
+            };
+            ov.querySelectorAll('[data-pub-render]').forEach(
+                el => el.addEventListener('change', refreshWait));
+            refreshWait();
             ov.querySelector('[data-pub-ok]').addEventListener('click', () => {
                 const descriptions = {};
                 ov.querySelectorAll('[data-pub-desc]').forEach(el => {
                     const v = (el.value || '').trim();
                     if (v) descriptions[el.dataset.pubDesc] = v;
                 });
+                const chosen = [...ov.querySelectorAll('[data-pub-render]')]
+                    .filter(el => el.checked).map(el => el.dataset.pubRender);
                 done({
                     ok: true,
                     descriptions,
                     tgDescription: descriptions.tg || '',   // the 4.3.0 name, kept for callers that read it
+                    // Only when the piece HAS renders and more than the default is picked —
+                    // a single render must go down the unchanged 4.33.0 path (FR-005).
+                    renders: (o.renders && o.renders.length && chosen.length) ? chosen : undefined,
                 });
             });
             document.addEventListener('keydown', onKey);

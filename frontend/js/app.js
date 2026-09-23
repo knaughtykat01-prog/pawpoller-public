@@ -2077,6 +2077,43 @@ const App = {
      * whole panel goes to the page its old tab maps to. The old tab names keep
      * deep-linking through _settingsPageFor. Phase 2 (Platforms list + detail)
      * and phase 3 (the notifications matrix) build on these containers. */
+    /* What "Default" MEANS on a piece, per announcing platform (4.34.0, ANNOUNCEDEF).
+
+       Each piece already has a Default/On/Off control per option. Until now "Default"
+       was a constant inside the poster, so "I never want hashtags on X" had to be set
+       on every piece, one at a time, for ever. These are the middle rung: the piece
+       still wins, and an option left alone here still falls back to the built-in, so
+       an install that never opens this page behaves exactly as it did.
+
+       Mirrors each poster's _resolve_options — a test holds the two lists together. */
+    ANNOUNCE_DEFAULTS: {
+        tw: { label: 'X / Twitter', opts: [
+            ['tags',      'Include hashtags', true,
+             'Dropped first when the post will not fit 280 — the text always wins.'],
+            ['caption',   'Include text', true, 'Off sends the image alone.'],
+            ['alt',       'Send alt text', true,
+             'Best-effort: X may refuse it without refusing the post.'],
+            ['sensitive', 'Mark as sensitive', false,
+             'A FLOOR, not a switch: adult work is always flagged whatever this says. Turn it on to flag everything.'],
+        ] },
+        bsky: { label: 'Bluesky', opts: [
+            ['tags',    'Include hashtags', false,
+             '300 graphemes is not much. On, they become clickable and are dropped first when it will not fit.'],
+            ['caption', 'Include text', true, 'Off sends the image alone, with its alt text.'],
+        ] },
+        tg: { label: 'Telegram', opts: [
+            ['tags',     'Include hashtags', true, ''],
+            ['caption',  'Include text', true, 'Off sends a bare image — fine for a pure-image channel.'],
+            ['preview',  'Show link previews', true, ''],
+            ['silent',   'Send silently', false, 'No notification sound for subscribers.'],
+            ['protect',  'Protect content', false, 'Stops forwarding and saving.'],
+            ['document', 'Send as a file', false, 'Keeps full resolution instead of Telegram recompressing it.'],
+            ['pin',      'Pin to the channel', false, ''],
+            ['spoiler',  'Blur behind a spoiler', false,
+             'A FLOOR, like X\u2019s sensitive flag: adult work is always blurred whatever this says.'],
+        ] },
+    },
+
     SETTINGS_PAGES: [
         { key: 'connection', group: 'Account', label: 'Connection', blurb: 'This install, its server, and what syncs between them.' },
         { key: 'preferences', group: 'Account', label: 'Preferences', blurb: '' },
@@ -3935,6 +3972,48 @@ const App = {
     SHIPPED_CREDITS: [
         { name: '@_kasscabel', role: 'Beta testing & bug reports' },
     ],
+
+    /* Settings → Publishing defaults → what "Default" means (4.34.0, ANNOUNCEDEF).
+       Three rungs: the piece, then this, then the built-in. "Use the built-in" is a
+       real third state, not a synonym for Off — clearing a preference has to be
+       possible, and an unset option is what keeps an untouched install unchanged. */
+    _drawAnnounceDefaults() {
+        const host = document.getElementById("announce-defaults-body");
+        if (!host) return;
+        const saved = this._announceDefaults || {};
+        host.innerHTML = Object.entries(this.ANNOUNCE_DEFAULTS).map(([code, spec]) => `
+            <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;margin-top:10px">
+                <div style="font-weight:600;font-size:13px">${Utils.escapeHtml(spec.label)}</div>
+                ${spec.opts.map(([key, label, built, help]) => {
+                    const v = (saved[code] || {})[key];
+                    const cur = v === undefined || v === null ? "" : (v ? "on" : "off");
+                    return `<label style="display:flex;align-items:center;gap:8px;font-size:12.5px">
+                        <select class="search-input" data-anndef="${code}|${key}" style="max-width:150px">
+                            <option value=""${cur === "" ? " selected" : ""}>Built-in (${built ? "on" : "off"})</option>
+                            <option value="on"${cur === "on" ? " selected" : ""}>On</option>
+                            <option value="off"${cur === "off" ? " selected" : ""}>Off</option>
+                        </select>
+                        <span>${Utils.escapeHtml(label)}</span>
+                        ${help ? `<span style="color:var(--text-muted);font-size:11.5px">${Utils.escapeHtml(help)}</span>` : ""}
+                    </label>`;
+                }).join("")}
+            </div>`).join("");
+        host.querySelectorAll("[data-anndef]").forEach(sel => {
+            sel.addEventListener("change", () => this._saveAnnounceDefaults());
+        });
+    },
+
+    async _saveAnnounceDefaults() {
+        const out = {};
+        document.querySelectorAll("[data-anndef]").forEach(sel => {
+            const [code, key] = sel.dataset.anndef.split("|");
+            if (!sel.value) return;             // built-in — store nothing
+            (out[code] = out[code] || {})[key] = sel.value === "on";
+        });
+        this._announceDefaults = out;
+        try { await API.savePreferences({ announce_defaults: out }); }
+        catch (e) { if (window.toast) window.toast.error("Could not save: " + (e.message || e)); }
+    },
 
     _drawCredits() {
         const el = document.getElementById('credits-list');
@@ -12770,6 +12849,17 @@ const App = {
                     </div>
                 </details>
 
+                <details class="settings-accordion" data-page="publishing" id="announce-defaults-accordion">
+                    <summary>What &ldquo;Default&rdquo; means on X, Bluesky and Telegram</summary>
+                    <div class="accordion-body">
+                    <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
+                        Every piece has its own <strong>Default / On / Off</strong> for these. This is what
+                        <strong>Default</strong> falls back to, so you set a preference once instead of on every piece.
+                        Anything you set on a piece still wins.</p>
+                    <div id="announce-defaults-body"></div>
+                    </div>
+                </details>
+
                 <details class="settings-accordion" data-page="publishing" id="ig-host-accordion">
                     <summary>Instagram image host <span class="summary-meta">— where Meta fetches your post images from</span></summary>
                     <div class="accordion-body" id="ig-host-body">
@@ -15565,6 +15655,11 @@ const App = {
             // ── Credits (Settings → About) ───────────────────────────
             this._credits = Array.isArray(prefs.credits) ? prefs.credits.slice() : [];
             this._drawCredits();
+
+            // ── Announce defaults (Settings → Publishing defaults) ──
+            this._announceDefaults = (prefs.announce_defaults && typeof prefs.announce_defaults === "object")
+                ? prefs.announce_defaults : {};
+            this._drawAnnounceDefaults();
             const creditAdd = document.getElementById('credit-add-btn');
             const creditName = document.getElementById('credit-name');
             const creditRole = document.getElementById('credit-role');

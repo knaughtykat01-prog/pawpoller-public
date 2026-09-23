@@ -203,7 +203,8 @@ _RULES += [
         "ever be a stale copy overwriting fresher analytics. Genuinely "
         "desktop-originated rows already arrive through Stage 2's apply_result; "
         "this catches anything that channel missed.",
-        key=("content_type", "story_name", "chapter_index", "platform", "account"),
+        key=("content_type", "story_name", "chapter_index", "platform", "account",
+             "variant_key"),
         exclude=("pub_id", "account_id"), upward=INSERT_ONLY,
     ),
     TableRule(

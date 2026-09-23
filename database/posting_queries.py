@@ -43,6 +43,7 @@ def upsert_publication(
     file_hash: str = "",
     word_count: int = 0,
     status: str = "posted",
+    variant_key: str = "",
 ) -> int:
     """Insert or update a publication record. Returns pub_id.
 
@@ -58,11 +59,14 @@ def upsert_publication(
     tags_json = json.dumps(tags_used or [])
 
     # Check if exists (scoped to the account + content_type).
+    # variant_key is part of the identity (4.34.0): two renders of one piece on one
+    # platform are two submissions, and matching without it made the second overwrite
+    # the first. '' is the piece's own image and every row that predates renders.
     row = conn.execute(
         "SELECT pub_id, update_count FROM publications "
         "WHERE content_type = ? AND story_name = ? AND chapter_index = ? "
-        "AND platform = ? AND account_id = ?",
-        (content_type, story_name, chapter_index, platform, account_id),
+        "AND platform = ? AND account_id = ? AND variant_key = ?",
+        (content_type, story_name, chapter_index, platform, account_id, variant_key or ""),
     ).fetchone()
 
     if row:
@@ -83,12 +87,12 @@ def upsert_publication(
         cursor = conn.execute(
             """INSERT INTO publications
                 (content_type, story_name, chapter_index, platform, account_id,
-                 external_id, external_url,
+                 variant_key, external_id, external_url,
                  title_used, description_used, tags_used, rating_used,
                  format_file, file_hash, word_count, status, first_posted_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (content_type, story_name, chapter_index, platform, account_id,
-             external_id, external_url,
+             variant_key or "", external_id, external_url,
              title_used, description_used, tags_json, rating_used,
              format_file, file_hash, word_count, status, now),
         )
@@ -333,6 +337,7 @@ def add_to_queue(
     priority: int = 0,
     requires: str = "any",
     drip_group: str | None = None,
+    variant_key: str = "",
 ) -> int:
     """Add an item to the posting queue. Returns queue_id.
 
@@ -346,6 +351,10 @@ def add_to_queue(
         drip_group: Campaign id shared by all rows of one "drip schedule"
             (gap G1) so the whole drip can be cancelled as a unit. None for
             ordinary one-off schedules.
+        variant_key: Which render to post (4.34.0). Carried rather than resolved at
+            queue time so the row re-posts THAT render — without it a retry silently
+            becomes whatever the rating would pick, which for an alternate render
+            (rated the same as the piece) means the primary. '' is the piece's own image.
     """
     if account_id is None:
         from database import accounts as _accts
@@ -354,11 +363,13 @@ def add_to_queue(
         """INSERT INTO posting_queue
             (content_type, story_name, chapter_index, platform, account_id, action,
              scheduled_at, title_override, description_override, tags_override,
-             rating_override, file_path_override, priority, requires, drip_group)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             rating_override, file_path_override, priority, requires, drip_group,
+             variant_key)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (content_type, story_name, chapter_index, platform, account_id, action,
          scheduled_at, title_override, description_override, tags_override,
-         rating_override, file_path_override, priority, requires, drip_group),
+         rating_override, file_path_override, priority, requires, drip_group,
+         variant_key or ""),
     )
     conn.commit()
     return cursor.lastrowid

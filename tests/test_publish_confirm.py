@@ -33,7 +33,9 @@ def _fn(src, opener):
 def test_the_dialog_exists_and_shows_a_list_not_a_sentence():
     src = _src("frontend/js/components.js")
     i = src.index("confirmPublish(o) {")
-    block = src[i:i + 5000]
+    # Window widened in 4.34.0: the render multi-select and its wait estimate pushed
+    # the focus guard past 5000 chars. The guard is unchanged — the slice was stale.
+    block = src[i:i + 9000]
     for must in ("modal-overlay open", "pub-confirm-list", "pub-confirm-row", "data-pub-cancel", "data-pub-ok"):
         assert must in block, f"dialog lacks {must}"
 
@@ -43,7 +45,9 @@ def test_the_button_label_carries_the_count():
     Quick Publish restores its ticks from localStorage, unread."""
     src = _src("frontend/js/components.js")
     i = src.index("confirmPublish(o) {")
-    block = src[i:i + 5000]
+    # Window widened in 4.34.0: the render multi-select and its wait estimate pushed
+    # the focus guard past 5000 chars. The guard is unchanged — the slice was stale.
+    block = src[i:i + 9000]
     assert "data-pub-ok" in block and "${esc(verb)} to ${n}" in block
 
 
@@ -51,7 +55,9 @@ def test_escape_and_backdrop_cancel_and_focus_starts_on_cancel():
     """Enter from a stale keypress must not publish."""
     src = _src("frontend/js/components.js")
     i = src.index("confirmPublish(o) {")
-    block = src[i:i + 5000]
+    # Window widened in 4.34.0: the render multi-select and its wait estimate pushed
+    # the focus guard past 5000 chars. The guard is unchanged — the slice was stale.
+    block = src[i:i + 9000]
     assert "e.key === 'Escape'" in block
     assert "e.target === ov" in block
     assert "[data-pub-cancel]').focus()" in block
@@ -61,7 +67,9 @@ def test_no_typed_phrase_gate():
     """Deliberate. A phrase typed on every publish is a phrase nobody reads."""
     src = _src("frontend/js/components.js")
     i = src.index("confirmPublish(o) {")
-    block = src[i:i + 5000]
+    # Window widened in 4.34.0: the render multi-select and its wait estimate pushed
+    # the focus guard past 5000 chars. The guard is unchanged — the slice was stale.
+    block = src[i:i + 9000]
     assert "prompt(" not in block
 
 

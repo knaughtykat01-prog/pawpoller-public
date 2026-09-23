@@ -681,6 +681,31 @@ window.Artwork = {
     /* The "this post only" text boxes the confirm dialog shows: one per
      * announcing platform in the selection (Telegram since 4.3.0; X and
      * Bluesky since 4.3.7). */
+    /* The piece's renders for the publish dialog (4.34.0, VARSPLIT).
+
+       The first entry is AUTOMATIC, not "Original", and it is what stays ticked by
+       default — because the picker is sent for every piece that has a render, and a
+       default of "Original" would silently switch 4.33.0's rating routing off for
+       exactly the pieces it exists to serve. Ticking a version adds a submission; it
+       never takes the automatic one away. */
+    _pubRenders(meta) {
+        const vs = (meta && meta.variants || []).filter(v => v && v.key && v.image);
+        if (!vs.length) return [];
+        return [{ key: '__auto__', checked: true,
+                  label: 'Automatic — the fullest version each site allows' },
+                { key: '__primary__', label: 'The original',
+                  rating: (meta && meta.rating) || '' }]
+            .concat(vs.map(v => ({ key: v.key, label: v.label || v.key, rating: v.rating || '' })));
+    },
+
+    /* The longest enforced gap between posts among the chosen sites, in seconds —
+       what the dialog turns into "allow about N minutes". FurAffinity is the outlier
+       at 70; it is the reason the warning exists at all. */
+    _RENDER_WAIT: { fa: 70, ng: 30, yt: 30, sc: 10, tw: 10 },
+    _pubRenderWait(platforms) {
+        return (platforms || []).reduce((m, c) => Math.max(m, this._RENDER_WAIT[c] || 5), 0);
+    },
+
     _pubTextBoxes(platforms) {
         return this._ANNOUNCERS.filter(c => (platforms || []).includes(c)).map(code => ({
             code, label: this._plat(code).label, cap: this._TEXT_CAPS[code] || 900,
@@ -961,6 +986,8 @@ window.Artwork = {
             persona: this._personaLabel('#art-platforms'),
             targets: this._confirmTargets('#art-platforms', meta.platforms, accountIds),
             textBoxes: this._pubTextBoxes(meta.platforms),
+            renders: this._pubRenders(meta),
+            renderWait: this._pubRenderWait(meta.platforms),
         });
         if (!conf) {
             this._toast('info', 'Saved — not published');
@@ -975,6 +1002,9 @@ window.Artwork = {
                 account_ids: accountIds,
                 persona_id: this._personaId('#art-platforms'),
                 description_overrides: this._pubDescOverrides(conf),
+                // Each ticked version posts as its own submission (4.34.0). Absent
+                // when the piece has no renders, so the ordinary path is unchanged.
+                renders: conf.renders,
                 confirm_live: true,
             });
             const ok = res.successes || 0;
@@ -1386,11 +1416,17 @@ window.Artwork = {
         });
         const img = document.getElementById('art-detail-img') || {};
         const title = img.alt || name.replace(/_/g, ' ');
+        // The detail page renders from the DOM, so the declared renders have to be
+        // fetched. A failure here must not block publishing — no renders, no picker.
+        let _meta = null;
+        try { _meta = await API.getArtwork(name); } catch (e) { _meta = null; }
         const conf = await Components.confirmPublish({
             title, thumb: img.src || '', subtitle: 'Publish to more',
             persona: this._personaLabel('#art-detail-platforms'),
             targets: this._confirmTargets('#art-detail-platforms', checked, accountIds),
             textBoxes: this._pubTextBoxes(checked),
+            renders: this._pubRenders(_meta),
+            renderWait: this._pubRenderWait(checked),
         });
         if (!conf) { msg.textContent = ''; return; }
         msg.textContent = 'Publishing…';
@@ -1398,6 +1434,9 @@ window.Artwork = {
             const res = await API.publishArtwork({ artwork_name: name, platforms: checked, account_ids: accountIds,
                 persona_id: this._personaId('#art-detail-platforms'),
                 description_overrides: this._pubDescOverrides(conf),
+                // Each ticked version posts as its own submission (4.34.0). Absent
+                // when the piece has no renders, so the ordinary path is unchanged.
+                renders: conf.renders,
                 confirm_live: true });
             const ok = res.successes || 0;
             const fail = Components.showPublishResults(msg, res.results);

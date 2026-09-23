@@ -188,3 +188,90 @@ def test_patch_no_fields_is_400(archive):
     with pytest.raises(HTTPException) as ei:
         api.update_masterpiece(name, {})
     assert ei.value.status_code == 400
+
+
+# ── Sync-all on a piece posted as several renders (4.34.0, VARSPLIT) ─────────
+
+@pytest.mark.asyncio
+async def test_sync_all_does_not_overwrite_the_primarys_publication(archive, monkeypatch):
+    """The High from 4.34.0's security review, driven through the REAL edit path.
+
+    `update_artwork` read the recorded render correctly, refused one the piece no longer
+    declared, built the right package and edited the right submission — and then wrote
+    the result back with no `variant_key`. The default `""` matched the PRIMARY's row and
+    replaced its external_id, url, title, tags and rating with the alternate's, so one
+    click of Sync-all lost a still-live submission from the registry.
+
+    This test exists because the first three attempts at covering it did not: two
+    asserted properties of `upsert_publication` without ever calling `update_artwork`,
+    and one grepped the source for `variant_key=`, which a hardcoded `""` satisfies while
+    fully reintroducing the bug. Only driving the real function catches it.
+    """
+    from database import posting_queries
+
+    name = artwork_reader.create_artwork(
+        title="Piece", image_filename="i.png", image_bytes=b"\x89PNG fake",
+        description="d", rating="general", tags={"default": ["a"]})
+    (archive / name / "alt.png").write_bytes(b"\x89PNG alt")
+    artwork_reader.save_artwork_metadata(name, {"variants": [
+        {"key": "alt", "label": "Alt colours", "image": "alt.png", "rating": "general"}]})
+
+    conn = get_connection()
+    try:
+        mq.add_member(conn, name, "ib", "111", role="primary", variant_key="")
+        mq.add_member(conn, name, "ib", "222", variant_key="alt")
+        for vk, ext in (("", "111"), ("alt", "222")):
+            posting_queries.upsert_publication(
+                conn, name, 0, "ib", content_type="artwork", external_id=ext,
+                external_url=f"https://x/{ext}", variant_key=vk)
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(manager, "_get_poster",
+                        lambda platform, account_id=None: _EditStub())
+
+    await manager.update_artwork(name)
+
+    conn = get_connection()
+    try:
+        rows = {r["variant_key"]: r["external_id"] for r in conn.execute(
+            "SELECT variant_key, external_id FROM publications "
+            "WHERE story_name = ? AND platform = 'ib'", (name,))}
+    finally:
+        conn.close()
+    assert rows == {"": "111", "alt": "222"}, (
+        "Sync-all must leave each render's own row alone — the primary's submission is "
+        "still live and losing its row means PawPoller stops knowing about it")
+
+
+@pytest.mark.asyncio
+async def test_sync_all_on_a_render_less_piece_updates_one_row(archive, monkeypatch):
+    """The other direction: no renders must not grow a second row."""
+    from database import posting_queries
+
+    name = artwork_reader.create_artwork(
+        title="Plain", image_filename="i.png", image_bytes=b"\x89PNG fake",
+        description="d", rating="general", tags={"default": ["a"]})
+    conn = get_connection()
+    try:
+        mq.add_member(conn, name, "ib", "900", role="primary")
+        posting_queries.upsert_publication(
+            conn, name, 0, "ib", content_type="artwork", external_id="900")
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(manager, "_get_poster",
+                        lambda platform, account_id=None: _EditStub())
+
+    await manager.update_artwork(name)
+
+    conn = get_connection()
+    try:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT variant_key, external_id FROM publications "
+            "WHERE story_name = ? AND platform = 'ib'", (name,))]
+    finally:
+        conn.close()
+    assert len(rows) == 1 and rows[0]["variant_key"] == ""

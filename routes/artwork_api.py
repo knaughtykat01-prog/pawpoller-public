@@ -496,6 +496,7 @@ async def publish_artwork(body: dict):
                                    // account of this persona's is refused, not defaulted
         "description_overrides": {"tg": "…"}   // optional: this post only (4.3.0)
         "variant_overrides": {"fa": "alt"}     // optional: post a named render (4.33.0)
+        "renders": ["", "alt"]                 // optional: one submission per render (4.34.0)
     }
     """
     from posting import manager
@@ -508,6 +509,22 @@ async def publish_artwork(body: dict):
     # {platform: variant_key} — post a NAMED render there, '__primary__' for the
     # piece's own image (4.33.0). The rating gate still runs on whatever is chosen.
     variant_overrides = body.get("variant_overrides") or None
+    # A LIST of renders, each posted as its own submission (4.34.0). Outranks
+    # variant_overrides, which names one render per site.
+    renders = body.get("renders") or None
+    if renders is not None:
+        if not isinstance(renders, list):
+            raise HTTPException(400, detail="renders must be a list of render names")
+        # Valid keys are bounded by the piece's own variants (the publish loop
+        # de-duplicates on key), but UNKNOWN ones are not: each appends a refusal row
+        # per platform BEFORE the de-duplication, so a 10k-element list × 19 sites is
+        # ~190k result dicts. No piece has 32 renders.
+        if len(renders) > 32:
+            raise HTTPException(400, detail="too many renders (32 max)")
+        if not all(isinstance(r, str) for r in renders):
+            # `null` would otherwise match any variant dict lacking a "key" and quietly
+            # mean "the primary" — a silent reading of a malformed request.
+            raise HTTPException(400, detail="every render must be a name")
 
     if not artwork_name:
         raise HTTPException(400, detail="artwork_name is required")
@@ -525,7 +542,7 @@ async def publish_artwork(body: dict):
         results = await manager.post_artwork(
             artwork_name, platforms, account_ids=account_ids, persona_id=persona_id,
             description_overrides=description_overrides,
-            variant_overrides=variant_overrides)
+            variant_overrides=variant_overrides, renders=renders)
         successes = sum(1 for r in results if r.get("success"))
         return {
             "status": "completed",

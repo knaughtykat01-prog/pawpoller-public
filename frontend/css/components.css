@@ -2236,6 +2236,18 @@ a.stat-card:hover {
 .artwork-plat-adv .art-tg-desc-label { display: block; width: auto; }
 .pub-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
+/* Render multi-select in the publish dialog (4.34.0, VARSPLIT) — each ticked version
+   becomes its own submission on every chosen site. */
+.pub-confirm-renders { margin: 10px 0 0; padding: 10px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--bg-secondary); }
+.pub-confirm-renders-head { font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+.pub-confirm-renders-head .muted { font-weight: 400; }
+.pub-confirm-render { display: flex; align-items: center; gap: 8px; font-size: 13px;
+    padding: 3px 0; cursor: pointer; }
+.pub-confirm-render input { margin: 0; }
+.pub-confirm-render .muted { font-size: 11.5px; margin-left: auto; }
+.pub-confirm-render-wait { margin-top: 8px; font-size: 12px; line-height: 1.45; }
+
 .pub-results { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .pub-result { display: grid; grid-template-columns: 18px auto 1fr; gap: 8px; align-items: center; font-size: 13px; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--bg-secondary); border: 1px solid var(--border); }
 .pub-result.is-ok .pub-result-mark { color: var(--success); }

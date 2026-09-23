@@ -1270,6 +1270,7 @@ def get_preferences():
         # Who helped — shown in Settings → About. Empty until the operator adds
         # someone; no names ship in the repo.
         "credits": settings.get("credits", []),
+        "announce_defaults": settings.get("announce_defaults", {}),
         "hidden_platforms": settings.get("hidden_platforms", []),
         "theme": settings.get("theme", "dark"),
         "mobile_mode": settings.get("mobile_mode", "auto"),
@@ -1482,6 +1483,39 @@ def save_preferences(body: dict):
             if name:
                 people.append({"name": name, "role": role})
         update["credits"] = people
+
+    # What "Default" means per announcing platform (4.34.0, ANNOUNCEDEF). Whitelisted
+    # hard, because this reaches the posting path: an unknown key would sit in
+    # settings.json for ever doing nothing, and a non-bool would be coerced by
+    # announce.flag() in a direction nobody chose. Absent = the built-in, which is why
+    # only real booleans are stored — "unset" has to stay distinguishable from "off".
+    if "announce_defaults" in body:
+        allowed = {
+            "tw": {"tags", "caption", "alt", "sensitive"},
+            "bsky": {"tags", "caption", "label"},
+            "tg": {"tags", "caption", "preview", "silent", "protect", "document",
+                   "pin", "spoiler"},
+        }
+        clean: dict = {}
+        raw = body.get("announce_defaults") or {}
+        if isinstance(raw, dict):
+            for code, keys in allowed.items():
+                per = raw.get(code)
+                if not isinstance(per, dict):
+                    continue
+                out = {}
+                for k in keys:
+                    if k not in per or per[k] is None:
+                        continue          # not set — the built-in still answers
+                    if k == "label":      # Bluesky's content label is a choice, not a flag
+                        v = str(per[k]).strip().lower()
+                        if v in ("nudity", "sexual", "porn", "graphic-media"):
+                            out[k] = v
+                        continue
+                    out[k] = bool(per[k])
+                if out:
+                    clean[code] = out
+        update["announce_defaults"] = clean
 
     # ── Milestone threshold arrays ─────────────────────────────
     # Validate as sorted positive integer lists

@@ -296,6 +296,9 @@ def _export_publications(conn):
         "content_type": _get(r, "content_type", "story") or "story",
         "story_name": r["story_name"], "chapter_index": int(_get(r, "chapter_index", 0) or 0),
         "platform": r["platform"], "account": _handle_for(conn, _get(r, "account_id")),
+        # Which render (4.34.0) — part of the identity, so a bundle that omitted it
+        # would collapse two submissions into one on the receiver.
+        "variant_key": _get(r, "variant_key", "") or "",
         "chapter_title": _get(r, "chapter_title", ""),
         "external_id": _get(r, "external_id", ""), "external_url": _get(r, "external_url", ""),
         "format_file": _get(r, "format_file", ""), "file_hash": _get(r, "file_hash", ""),
@@ -914,12 +917,13 @@ def _apply_publications(conn, rows, ctx):
         account_id = _resolve_account(conn, platform, r.get("account")) or 0
         cur = conn.execute(
             "INSERT OR IGNORE INTO publications (content_type, story_name, chapter_index, "
-            "platform, account_id, chapter_title, external_id, external_url, format_file, "
-            "file_hash, tags_used, title_used, description_used, rating_used, status, "
-            "first_posted_at, last_updated_at, update_count, word_count) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "platform, account_id, variant_key, chapter_title, external_id, external_url, "
+            "format_file, file_hash, tags_used, title_used, description_used, rating_used, "
+            "status, first_posted_at, last_updated_at, update_count, word_count) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (r.get("content_type") or "story", story, int(r.get("chapter_index") or 0),
-             platform, account_id, r.get("chapter_title") or "",
+             platform, account_id, r.get("variant_key") or "",
+             r.get("chapter_title") or "",
              r.get("external_id") or "", r.get("external_url") or "",
              r.get("format_file") or "", r.get("file_hash") or "",
              r.get("tags_used") or "[]", r.get("title_used") or "",

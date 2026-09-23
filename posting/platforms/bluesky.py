@@ -72,7 +72,7 @@ class BlueskyPoster(PlatformPoster):
         try:
             client = await self._ensure_client()
 
-            opts = _resolve_options(package)
+            opts = _resolve_options(package, config.get_settings())
             is_art = bool(package.file_path
                           and (package.file_type in ("png", "jpg", "jpeg", "gif", "webp")
                                or package.media_kind in ("video", "audio")))   # 4.18.0: media announces as art
@@ -218,15 +218,22 @@ def _is_video(package: StoryUploadPackage) -> bool:
         and (package.file_type or "").lower() in _BSKY_VIDEO_TYPES
 
 
-def _resolve_options(package: StoryUploadPackage) -> dict:
+def _resolve_options(package: StoryUploadPackage, settings: dict | None = None) -> dict:
     """Per-piece options from ``categories.bsky`` (artwork_reader puts them in
-    ``package.extra``), each falling back to Bluesky's own default (4.3.7).
+    ``package.extra``), each falling back to the operator's default, then Bluesky's own
+    (4.3.7; the middle rung added 4.34.0, ANNOUNCEDEF).
 
     ``label`` is a choice, not a tri-state: '' follows the rating (adult →
     sexual, mature → nudity, else none), "none" clears it, and one of
     _LABELS sets it outright.
+
+    The configured label is deliberately only consulted when the rating produces
+    NOTHING. A content label is the same kind of promise as X's sensitive flag: a
+    setting may add one where the rating asks for none, but it must not quietly remove
+    the one an adult piece earned. Clearing that stays a per-piece decision.
     """
     x = package.extra or {}
+    settings = settings or {}
     rating = (package.rating or "").lower()
     if rating in ("adult", "explicit", "nsfw"):
         from_rating = ["sexual"]
@@ -234,12 +241,19 @@ def _resolve_options(package: StoryUploadPackage) -> dict:
         from_rating = ["nudity"]
     else:
         from_rating = None
+    if from_rating is None:
+        _cfg = str(((settings.get("announce_defaults") or {}).get("bsky") or {})
+                   .get("label") or "").strip().lower()
+        if _cfg in _LABELS:
+            from_rating = [_cfg]
     raw = str(x.get("label") or "").strip().lower()
     labels = None if raw == "none" else ([raw] if raw in _LABELS else from_rating)
     return {
         "labels": labels,
-        "tags": announce.flag(x.get("tags"), False),
-        "caption": announce.flag(x.get("caption"), True),
+        "tags": announce.flag(x.get("tags"),
+                              announce.option_default(settings, "bsky", "tags", False)),
+        "caption": announce.flag(x.get("caption"),
+                                 announce.option_default(settings, "bsky", "caption", True)),
     }
 
 

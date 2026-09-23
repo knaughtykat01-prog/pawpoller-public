@@ -244,6 +244,8 @@ def _run_table_rebuilds() -> None:
         _rebuild_sf_watchers(conn, _accounts)
         _rebuild_publications(conn, _accounts)
         _rebuild_publications_content_type(conn, _accounts)
+        # AFTER content_type: each rebuild copies the column set the last one produced.
+        _rebuild_publications_variant_key(conn, _accounts)
     finally:
         try:
             conn.execute("PRAGMA foreign_keys=ON")
@@ -538,6 +540,88 @@ def _rebuild_publications_content_type(conn: sqlite3.Connection, _accounts) -> N
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_publications_content_type ON publications(content_type)")
     logger.info("Rebuilt publications to fold content_type into UNIQUE")
+
+
+def _rebuild_publications_variant_key(conn: sqlite3.Connection, _accounts=None) -> None:
+    """publications: fold `variant_key` into the UNIQUE key (4.34.0, VARSPLIT).
+
+    Runs AFTER _rebuild_publications_content_type — the order is load-bearing, because
+    each rebuild copies the column set the previous one produced.
+
+    Why it is needed: a piece can be posted to one site as several renders, each its own
+    submission with its own URL and history. Without the render in the key the second
+    `upsert_publication` UPDATED the first, and PawPoller simply stopped knowing about a
+    submission that still existed on the platform. `masterpiece_members` has always been
+    keyed correctly; this is publications catching up.
+
+    Idempotent — guarded on the stored DDL. Defensive about the column set for the same
+    reason the content_type rebuild is: a legacy DB may not have been through both of the
+    earlier rebuilds, whose fixed INSERT lists drop columns they do not know about.
+    `_accounts` is unused (no backfill needs an account here) and kept so every rebuild in
+    this module has one signature.
+    """
+    if not _table_exists(conn, "publications"):
+        return
+    ddl = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='publications'"
+    ).fetchone()
+    if ddl and "variant_key" in (ddl[0] or ""):
+        return  # already migrated
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(publications)").fetchall()}
+    ct_expr = "COALESCE(content_type, 'story')" if "content_type" in cols else "'story'"
+    acct_expr = "account_id" if "account_id" in cols else "0"
+    conn.execute("DROP TABLE IF EXISTS publications_vk_new")
+    conn.execute(
+        """CREATE TABLE publications_vk_new (
+            pub_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            content_type     TEXT NOT NULL DEFAULT 'story',
+            story_name       TEXT NOT NULL,
+            chapter_index    INTEGER DEFAULT 0,
+            chapter_title    TEXT DEFAULT '',
+            platform         TEXT NOT NULL,
+            account_id       INTEGER NOT NULL DEFAULT 0,
+            variant_key      TEXT NOT NULL DEFAULT '',
+            external_id      TEXT NOT NULL DEFAULT '',
+            external_url     TEXT DEFAULT '',
+            format_file      TEXT DEFAULT '',
+            file_hash        TEXT DEFAULT '',
+            tags_used        TEXT DEFAULT '[]',
+            title_used       TEXT DEFAULT '',
+            description_used TEXT DEFAULT '',
+            rating_used      TEXT DEFAULT '',
+            status           TEXT NOT NULL DEFAULT 'draft',
+            first_posted_at  TEXT,
+            last_updated_at  TEXT,
+            update_count     INTEGER DEFAULT 0,
+            last_error       TEXT,
+            created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+            word_count       INTEGER DEFAULT 0,
+            UNIQUE(content_type, story_name, chapter_index, platform, account_id, variant_key)
+        )"""
+    )
+    # Preserve pub_id so posting_queue/posting_log FK references stay valid.
+    conn.execute(
+        f"""INSERT INTO publications_vk_new
+            (pub_id, content_type, story_name, chapter_index, chapter_title, platform,
+             account_id, external_id, external_url, format_file, file_hash, tags_used,
+             title_used, description_used, rating_used, status, first_posted_at,
+             last_updated_at, update_count, last_error, created_at, word_count)
+        SELECT pub_id, {ct_expr}, story_name, chapter_index, chapter_title, platform,
+             {acct_expr}, external_id, external_url, format_file, COALESCE(file_hash, ''),
+             tags_used, title_used, description_used, rating_used, status, first_posted_at,
+             last_updated_at, update_count, last_error, COALESCE(created_at, datetime('now')),
+             word_count
+        FROM publications"""
+    )
+    conn.execute("DROP TABLE publications")
+    conn.execute("ALTER TABLE publications_vk_new RENAME TO publications")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_story ON publications(story_name)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_platform ON publications(platform)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_status ON publications(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_account ON publications(account_id)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_publications_content_type ON publications(content_type)")
+    logger.info("Rebuilt publications to fold variant_key into UNIQUE")
 
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -1150,6 +1234,18 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     if "posting_queue" in tables:
         try:
             conn.execute("ALTER TABLE posting_queue ADD COLUMN drip_group TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
+
+    # Migration: which render a queued post is (4.34.0, VARSPLIT). Additive; every
+    # existing row is the piece's own image. Without it a queued or retried render post
+    # silently becomes whatever the rating would pick — and for an alternate render,
+    # rated the same as the piece, that means the primary.
+    if "posting_queue" in tables:
+        try:
+            conn.execute("ALTER TABLE posting_queue ADD COLUMN "
+                         "variant_key TEXT NOT NULL DEFAULT ''")
         except sqlite3.OperationalError as e:
             if "duplicate column" not in str(e).lower():
                 raise

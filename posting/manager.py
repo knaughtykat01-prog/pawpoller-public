@@ -42,7 +42,7 @@ _PERMANENT_ERROR_MARKERS = (
 
 def _schedule_retry(story_name: str, ch_idx: int, platform: str, action: str,
                     error: str, content_type: str = "story",
-                    account_id: int | None = None) -> bool:
+                    account_id: int | None = None, variant_key: str = "") -> bool:
     """Queue a retry for a failed post/update if under max attempts.
 
     Returns True if a retry was queued, False if it must not be retried.
@@ -106,6 +106,9 @@ def _schedule_retry(story_name: str, ch_idx: int, platform: str, action: str,
             content_type=content_type,
             scheduled_at=scheduled,
             priority=-1,
+            # A retry must re-post the SAME render (4.34.0). Without this the row comes
+            # back as the rating's pick, which for an alternate render is the primary.
+            variant_key=variant_key,
         )
         logger.info("Retry: %s ch%d on %s queued for %s (attempt %d/%d, account %s, error: %s)",
                      story_name, ch_idx, platform, scheduled, attempt + 1, max_attempts,
@@ -571,6 +574,13 @@ async def post_story(
 # choose" (absent). Without it there is no way to say no to an automatic substitution.
 _PRIMARY_RENDER = "__primary__"
 
+# "let PawPoller choose" — the rating's pick, which is the 4.33.0 default. Needed as an
+# explicit value because the picker always sends a list once a piece HAS renders, and a
+# list containing only the primary would silently switch the automatic routing OFF for
+# every piece that has a variant — disabling the feature for exactly the pieces it exists
+# to serve.
+_AUTO_RENDER = "__auto__"
+
 
 async def post_artwork(
     artwork_name: str,
@@ -580,6 +590,7 @@ async def post_artwork(
     persona_id: int | None = None,
     description_overrides: dict[str, str] | None = None,
     variant_overrides: dict[str, str] | None = None,
+    renders: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Post one artwork (a single image) to multiple platforms.
 
@@ -605,6 +616,11 @@ async def post_artwork(
             the piece: two colourways, a text-free version, a different pose.
             It does NOT bypass the rating gate — asking for the adult render on a
             general-audience site is refused, with the gate's own wording.
+        renders: post SEVERAL renders, each as its own submission (4.34.0). A list of
+            variant keys, `"__primary__"` for the piece's own image. Every site named in
+            `platforms` gets every render in the list, one submission each, rate-limited
+            between them. Outranks `variant_overrides`. Each render is gated on its own,
+            so one refused render does not refuse its siblings.
 
     Returns:
         List of result dicts with platform, success, url, error.
@@ -628,180 +644,237 @@ async def post_artwork(
         # A named render for this site beats the rating's pick (4.33.0). This is the
         # only way to send an alternate render that the rating would never choose,
         # because it is rated the same as the piece.
+        # Which renders this site gets (4.34.0, VARSPLIT). A piece can be posted to one
+        # site as SEVERAL submissions — a second colourway, a text-free version — so this
+        # resolves to a LIST and the loop below runs once per render.
+        #
+        # Precedence: an explicit `renders` list, then a named override for this site,
+        # then the rating's pick. `None` in the list means the piece's own image.
+        _renders: list = []
         _asked = (variant_overrides or {}).get(platform) or ""
-        if _asked == _PRIMARY_RENDER:
-            _variant = None
+        if renders:
+            for _key in renders:
+                if _key == _AUTO_RENDER:
+                    _renders.append(artwork_reader.variant_for_rating(
+                        artwork, getattr(poster, "max_rating", "adult")))
+                    continue
+                if _key == _PRIMARY_RENDER:
+                    _renders.append(None)
+                    continue
+                _v = next((v for v in (artwork.variants or [])
+                           if isinstance(v, dict) and v.get("key") == _key), None)
+                if _v is None:
+                    results.append(_refused(
+                        platform, ValueError(f"no render called {_key!r} on this piece"),
+                        chapter_index=0, chapter_title="", variant=_key))
+                    continue
+                _renders.append(_v)
+            # Auto can resolve to a render that was also ticked by name — one submission,
+            # not two identical ones.
+            _seen, _uniq = set(), []
+            for _v in _renders:
+                _k = (_v or {}).get("key") or ""
+                if _k in _seen:
+                    continue
+                _seen.add(_k)
+                _uniq.append(_v)
+            _renders = _uniq
+            if not _renders:
+                continue          # every named render was unknown; already reported
+        elif _asked == _PRIMARY_RENDER:
+            _renders = [None]
         elif _asked:
-            _variant = next((v for v in (artwork.variants or [])
-                             if isinstance(v, dict) and v.get("key") == _asked), None)
-            if _variant is None:
+            _v = next((v for v in (artwork.variants or [])
+                       if isinstance(v, dict) and v.get("key") == _asked), None)
+            if _v is None:
                 results.append(_refused(
                     platform, ValueError(f"no render called {_asked!r} on this piece"),
                     chapter_index=0, chapter_title="", variant=_asked))
                 continue
+            _renders = [_v]
         else:
-            _variant = artwork_reader.variant_for_rating(
-                artwork, getattr(poster, "max_rating", "adult"))
-        try:
-            package = artwork_reader.build_artwork_package(
-                artwork, platform,
-                description_override=(description_overrides or {}).get(platform),
-                variant_key=(_variant or {}).get("key") or None,
-                account_id=account_id)
-        except FileNotFoundError as e:
-            # A render that vanished between the selection and the build. One platform's
-            # missing file must not take the rest of the run down with it.
-            results.append(_refused(platform, e,
-                                    chapter_index=0, chapter_title="",
-                                    variant=(_variant or {}).get("label")
-                                            or (_variant or {}).get("key") or ""))
-            logger.warning("Artwork %s on %s: %s", artwork_name, platform, e)
-            continue
-        if _variant:
-            logger.info("Artwork %s on %s: posting the %r render (rated %s)", artwork_name,
-                        platform, _variant.get("label") or _variant.get("key"),
-                        _variant.get("rating") or artwork.rating)
-        if extras:
-            package.extra.update(extras)
-        if platform in _ANNOUNCES_LAST:
-            package.extra["run_links"] = _run_links(results)
+            _renders = [artwork_reader.variant_for_rating(
+                artwork, getattr(poster, "max_rating", "adult"))]
 
-        # Watermark (gap-wave-5 §1): swap in a stamped temp copy before
-        # validation (so the size check sees the real bytes) and post that.
-        # No-op / never raises when disabled or on any PIL error. Temps are
-        # collected and deleted after the whole loop (a retry within an
-        # iteration re-posts the same package, so they must outlive it).
-        from posting import watermark
-        _wm_path, _wm_tmp = watermark.apply(package.file_path)
-        if _wm_tmp:
-            package.file_path = _wm_path
-            _wm_temps.append(_wm_tmp)
+        # Several renders to ONE site is several uploads where there used to be one.
+        # FurAffinity enforces 70 seconds between posts; post_artwork was the only
+        # publish path that never rate-limited, because one post per platform never
+        # needed it. Nesting platform-OUTER is what makes this per-platform sleep the
+        # right one (post_story does the same between chapters).
+        for _ri, _variant in enumerate(_renders):
+            if _ri:
+                await poster._rate_limit()
+            _multi = len(_renders) > 1
+            try:
+                package = artwork_reader.build_artwork_package(
+                    artwork, platform,
+                    description_override=(description_overrides or {}).get(platform),
+                    variant_key=(_variant or {}).get("key") or None,
+                    multi_render=_multi,
+                    account_id=account_id)
+            except FileNotFoundError as e:
+                # A render that vanished between the selection and the build. One platform's
+                # missing file must not take the rest of the run down with it.
+                results.append(_refused(platform, e,
+                                        chapter_index=0, chapter_title="",
+                                        variant=(_variant or {}).get("label")
+                                                or (_variant or {}).get("key") or ""))
+                logger.warning("Artwork %s on %s: %s", artwork_name, platform, e)
+                continue
+            if _variant:
+                logger.info("Artwork %s on %s: posting the %r render (rated %s)", artwork_name,
+                            platform, _variant.get("label") or _variant.get("key"),
+                            _variant.get("rating") or artwork.rating)
+            if extras:
+                package.extra.update(extras)
+            if platform in _ANNOUNCES_LAST:
+                package.extra["run_links"] = _run_links(results)
 
-        # Validate
-        refusal = poster.refusal(package) if hasattr(poster, "refusal") else None   # media kind, then rating (4.21.0)
-        errors = [refusal] if refusal else poster.validate(package)
-        if errors:
+            # Watermark (gap-wave-5 §1): swap in a stamped temp copy before
+            # validation (so the size check sees the real bytes) and post that.
+            # No-op / never raises when disabled or on any PIL error. Temps are
+            # collected and deleted after the whole loop (a retry within an
+            # iteration re-posts the same package, so they must outlive it).
+            from posting import watermark
+            _wm_path, _wm_tmp = watermark.apply(package.file_path)
+            if _wm_tmp:
+                package.file_path = _wm_path
+                _wm_temps.append(_wm_tmp)
+
+            # Validate
+            refusal = poster.refusal(package) if hasattr(poster, "refusal") else None   # media kind, then rating (4.21.0)
+            errors = [refusal] if refusal else poster.validate(package)
+            if errors:
+                results.append({
+                    "platform": platform,
+                    "chapter_index": 0,
+                    "chapter_title": "",
+                    "success": False,
+                    "error": "; ".join(errors),
+                    "variant": (_variant or {}).get("label") or (_variant or {}).get("key") or "",
+                })
+                logger.warning("Validation failed for artwork %s on %s: %s",
+                               artwork_name, platform, errors)
+                _log_validation_failure(platform, artwork_name, 0, errors,
+                                        account_id=account_id,
+                                        content_type="artwork")
+                continue
+
+            # Post
+            result = await poster.post(package)
+
+            # Compute file hash for change detection (the image itself)
+            from posting.sync import hash_file
+            current_hash = hash_file(package.file_path) if package.file_path else ""
+
+            # Auto-recover failures, mirroring post_story:
+            #   1. Desktop-requiring platforms (FA/DA) → queue for desktop
+            #   2. Rate-limit / transient errors → backoff retry
+            queued_for_desktop = False
+            retry_queued = False
+            if not result.success:
+                from posting.scheduler import _runtime_mode
+                if poster.requires_mode == "desktop" and _runtime_mode == "server":
+                    conn = get_connection()
+                    try:
+                        posting_queries.add_to_queue(
+                            conn, artwork_name, 0, platform, "post",
+                            account_id=account_id,
+                            content_type="artwork",
+                            requires="desktop",
+                            # Without this, N renders failing a server post queue N rows
+                            # that all mean "the rating's pick" — the desktop publishes
+                            # the same image N times and the alternates never go out.
+                            # posting_queue has no UNIQUE, so nothing dedupes them.
+                            variant_key=(_variant or {}).get("key") or "",
+                        )
+                        queued_for_desktop = True
+                        logger.info(
+                            "Auto-queued artwork %s on %s (account %s) for desktop "
+                            "(server post failed: %s)",
+                            artwork_name, platform, account_id, result.error,
+                        )
+                    finally:
+                        conn.close()
+                elif not queued_for_desktop:
+                    retry_queued = _schedule_retry(
+                        artwork_name, 0, platform, "post", result.error or "unknown",
+                        content_type="artwork", account_id=account_id,
+                        variant_key=(_variant or {}).get("key") or "",
+                    )
+
+            # Record in database (content_type='artwork' so it never collides with
+            # a same-named story and the Stories views never show it).
+            conn = get_connection()
+            try:
+                pub_id = posting_queries.upsert_publication(
+                    conn, artwork_name, 0, platform,
+                    account_id=account_id,
+                    content_type="artwork",
+                    # Which render this row is (4.34.0) — the UNIQUE key includes it, so
+                    # two renders on one site are two rows instead of one overwriting.
+                    variant_key=(_variant or {}).get("key") or "",
+                    external_id=result.external_id,
+                    external_url=result.external_url,
+                    title_used=package.title,
+                    description_used=package.description[:500],
+                    tags_used=package.tags,
+                    rating_used=package.rating,
+                    format_file=package.file_path or "",
+                    file_hash=current_hash,
+                    word_count=0,
+                    status="posted" if result.success else "failed",
+                )
+                posting_queries.log_posting_action(
+                    conn, platform, artwork_name, 0,
+                    action="post",
+                    account_id=account_id,
+                    content_type="artwork",
+                    status="success" if result.success else (
+                        "queued_desktop" if queued_for_desktop else "failed"),
+                    pub_id=pub_id,
+                    external_id=result.external_id,
+                    external_url=result.external_url,
+                    error_message=result.error,
+                    duration_seconds=result.duration_seconds,
+                )
+                # Publishing IS mastering (spec §6.1): the artwork folder IS the
+                # Masterpiece (Phase 0), so a successful upload becomes a member with
+                # linked_via='publication'. This is what makes a fresh "New Masterpiece"
+                # accumulate its members automatically as it is posted. Idempotent
+                # (add_member = INSERT OR IGNORE + ensure_indexed); best-effort so a
+                # membership-link failure never breaks an already-recorded post.
+                if result.success and result.external_id:
+                    try:
+                        from database import masterpiece_queries
+                        masterpiece_queries.add_member(
+                            conn, artwork_name, platform, result.external_id,
+                            account_id=account_id, role="crosspost",
+                            linked_via="publication",
+                            # Which render this site holds — the column existed and nothing
+                            # wrote it, so every edit had to guess by re-deriving (4.33.0).
+                            variant_key=(_variant or {}).get("key") or "")
+                        conn.commit()
+                    except Exception:
+                        logger.warning("Masterpiece member link failed for %s/%s",
+                                       artwork_name, platform, exc_info=True)
+            finally:
+                conn.close()
+
             results.append({
                 "platform": platform,
                 "chapter_index": 0,
                 "chapter_title": "",
-                "success": False,
-                "error": "; ".join(errors),
+                "success": result.success,
+                "queued_desktop": queued_for_desktop,
+                "retry_queued": retry_queued,
+                "external_id": result.external_id,
+                "external_url": result.external_url,
+                "error": result.error,
+                "duration": result.duration_seconds,
+                # Which render went to this site — "" for the primary (4.33.0).
                 "variant": (_variant or {}).get("label") or (_variant or {}).get("key") or "",
             })
-            logger.warning("Validation failed for artwork %s on %s: %s",
-                           artwork_name, platform, errors)
-            _log_validation_failure(platform, artwork_name, 0, errors,
-                                    account_id=account_id,
-                                    content_type="artwork")
-            continue
-
-        # Post
-        result = await poster.post(package)
-
-        # Compute file hash for change detection (the image itself)
-        from posting.sync import hash_file
-        current_hash = hash_file(package.file_path) if package.file_path else ""
-
-        # Auto-recover failures, mirroring post_story:
-        #   1. Desktop-requiring platforms (FA/DA) → queue for desktop
-        #   2. Rate-limit / transient errors → backoff retry
-        queued_for_desktop = False
-        retry_queued = False
-        if not result.success:
-            from posting.scheduler import _runtime_mode
-            if poster.requires_mode == "desktop" and _runtime_mode == "server":
-                conn = get_connection()
-                try:
-                    posting_queries.add_to_queue(
-                        conn, artwork_name, 0, platform, "post",
-                        account_id=account_id,
-                        content_type="artwork",
-                        requires="desktop",
-                    )
-                    queued_for_desktop = True
-                    logger.info(
-                        "Auto-queued artwork %s on %s (account %s) for desktop "
-                        "(server post failed: %s)",
-                        artwork_name, platform, account_id, result.error,
-                    )
-                finally:
-                    conn.close()
-            elif not queued_for_desktop:
-                retry_queued = _schedule_retry(
-                    artwork_name, 0, platform, "post", result.error or "unknown",
-                    content_type="artwork", account_id=account_id,
-                )
-
-        # Record in database (content_type='artwork' so it never collides with
-        # a same-named story and the Stories views never show it).
-        conn = get_connection()
-        try:
-            pub_id = posting_queries.upsert_publication(
-                conn, artwork_name, 0, platform,
-                account_id=account_id,
-                content_type="artwork",
-                external_id=result.external_id,
-                external_url=result.external_url,
-                title_used=package.title,
-                description_used=package.description[:500],
-                tags_used=package.tags,
-                rating_used=package.rating,
-                format_file=package.file_path or "",
-                file_hash=current_hash,
-                word_count=0,
-                status="posted" if result.success else "failed",
-            )
-            posting_queries.log_posting_action(
-                conn, platform, artwork_name, 0,
-                action="post",
-                account_id=account_id,
-                content_type="artwork",
-                status="success" if result.success else (
-                    "queued_desktop" if queued_for_desktop else "failed"),
-                pub_id=pub_id,
-                external_id=result.external_id,
-                external_url=result.external_url,
-                error_message=result.error,
-                duration_seconds=result.duration_seconds,
-            )
-            # Publishing IS mastering (spec §6.1): the artwork folder IS the
-            # Masterpiece (Phase 0), so a successful upload becomes a member with
-            # linked_via='publication'. This is what makes a fresh "New Masterpiece"
-            # accumulate its members automatically as it is posted. Idempotent
-            # (add_member = INSERT OR IGNORE + ensure_indexed); best-effort so a
-            # membership-link failure never breaks an already-recorded post.
-            if result.success and result.external_id:
-                try:
-                    from database import masterpiece_queries
-                    masterpiece_queries.add_member(
-                        conn, artwork_name, platform, result.external_id,
-                        account_id=account_id, role="crosspost",
-                        linked_via="publication",
-                        # Which render this site holds — the column existed and nothing
-                        # wrote it, so every edit had to guess by re-deriving (4.33.0).
-                        variant_key=(_variant or {}).get("key") or "")
-                    conn.commit()
-                except Exception:
-                    logger.warning("Masterpiece member link failed for %s/%s",
-                                   artwork_name, platform, exc_info=True)
-        finally:
-            conn.close()
-
-        results.append({
-            "platform": platform,
-            "chapter_index": 0,
-            "chapter_title": "",
-            "success": result.success,
-            "queued_desktop": queued_for_desktop,
-            "retry_queued": retry_queued,
-            "external_id": result.external_id,
-            "external_url": result.external_url,
-            "error": result.error,
-            "duration": result.duration_seconds,
-            # Which render went to this site — "" for the primary (4.33.0).
-            "variant": (_variant or {}).get("label") or (_variant or {}).get("key") or "",
-        })
 
     # Clean up watermark temp files (gap-wave-5 §1) now every post + retry is done.
     for _t in _wm_temps:
@@ -1168,6 +1241,18 @@ async def update_artwork(
                 conn, artwork_name, 0, plat,
                 account_id=account_id,
                 content_type="artwork",
+                # The render this submission IS (4.34.0). Omitting it defaults to "" and
+                # matches the PRIMARY's row, so an edit to the alt overwrote the
+                # primary's external_id, url, title, tags and rating — the submission
+                # stays live and PawPoller loses it. Exactly the harm this release's
+                # migration exists to stop, reached from the edit side.
+                # `_recorded` ALONE, deliberately. Falling back to the auto-derived
+                # variant writes a second row for a member linked before 4.33.0 (whose
+                # key is "") whenever the rating now picks a render — one submission,
+                # two publication rows. The member row is the source of truth for which
+                # render a submission holds, and for a legacy member "" is the honest
+                # answer: it predates renders, so it IS the primary.
+                variant_key=_recorded,
                 external_id=result.external_id or ext_id,
                 external_url=result.external_url or "",
                 title_used=package.title,

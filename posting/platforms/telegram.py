@@ -298,17 +298,22 @@ def _resolve_options(package: StoryUploadPackage, settings: dict) -> dict:
     return {
         # Rating decides the blur unless the artwork overrides it, so a
         # general-rated piece can still be hidden and an adult one shown.
-        "spoiler": _flag(x.get("spoiler"), rating_spoiler),
-        # Hashtags are appended by default; a channel with its own conventions
-        # can drop them globally (tg_no_tags) or on one piece.
-        "tags": _flag(x.get("tags"), not _flag(settings.get("tg_no_tags"), False)),
+        # The spoiler blur is a FLOOR, like X's sensitive flag: the configured default
+        # can add it where the rating asks for none, but must not strip it from work the
+        # rating says is adult. Clearing that stays a per-piece decision (4.34.0).
+        "spoiler": _flag(x.get("spoiler"),
+                        rating_spoiler or announce.option_default(settings, "tg", "spoiler", False)),
+        # Hashtags are appended by default; a channel with its own conventions can drop
+        # them globally or on one piece. `tg_no_tags` still works — option_default reads
+        # the legacy flat key when the nested block does not set it.
+        "tags": _flag(x.get("tags"), announce.option_default(settings, "tg", "tags", True)),
         # A caption-less post is a legitimate choice for a pure-image channel.
-        "caption": _flag(x.get("caption"), True),
-        "silent": _flag(x.get("silent"), _flag(settings.get("tg_silent"), False)),
-        "protect": _flag(x.get("protect"), _flag(settings.get("tg_protect"), False)),
-        "document": _flag(x.get("document"), _flag(settings.get("tg_document"), False)),
-        "pin": _flag(x.get("pin"), False),
-        "preview": _flag(x.get("preview"), True),
+        "caption": _flag(x.get("caption"), announce.option_default(settings, "tg", "caption", True)),
+        "silent": _flag(x.get("silent"), announce.option_default(settings, "tg", "silent", False)),
+        "protect": _flag(x.get("protect"), announce.option_default(settings, "tg", "protect", False)),
+        "document": _flag(x.get("document"), announce.option_default(settings, "tg", "document", False)),
+        "pin": _flag(x.get("pin"), announce.option_default(settings, "tg", "pin", False)),
+        "preview": _flag(x.get("preview"), announce.option_default(settings, "tg", "preview", True)),
     }
 
 

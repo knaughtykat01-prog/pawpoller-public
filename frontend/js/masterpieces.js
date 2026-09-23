@@ -39,6 +39,14 @@ window.Masterpieces = {
             : String(s == null ? '' : s).replace(/[&<>"']/g, c =>
                 ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     },
+    /* The label for a member's render — '' (the piece's own image) shows nothing,
+       because every upload was that until 4.34.0 and saying so on every row is noise. */
+    _renderLabel(key) {
+        if (!key) return '';
+        const v = (this._detail && this._detail.variants || []).find(x => x && x.key === key);
+        return (v && (v.label || v.key)) || key;
+    },
+
     _fmt(n) {
         if (n == null) return '—';   // platform doesn't track this metric
         return (window.Utils && Utils.formatNumber) ? Utils.formatNumber(n) : String(n);
@@ -1117,7 +1125,12 @@ window.Masterpieces = {
                 ? `<span class="mp-role mp-role--postonly" title="This site can't be edited in place — re-post to update">post-only</span>` : '';
             const safe = window.Utils && Utils.safeUrl ? Utils.safeUrl(l.url) : l.url;
             const link = safe ? `<a class="btn btn-sm" href="${this.esc(safe)}" target="_blank" rel="noopener">open&nbsp;&#8599;</a>` : '<span></span>';
-            const sub = [l.account_label || l.account || '', l.title || ''].filter(Boolean).map(x => this.esc(x)).join(' · ');
+            // Which render this upload is (4.34.0, VARSPLIT). A piece can hold several
+            // submissions on ONE site now, so the row has to say which is which — the
+            // account and title alone no longer identify it.
+            const _rl = this._renderLabel(l.variant_key);
+            const sub = [l.account_label || l.account || '', l.title || '', _rl]
+                .filter(Boolean).map(x => this.esc(x)).join(' · ');
             return `
                 <div class="loc-row">
                     ${thumb}

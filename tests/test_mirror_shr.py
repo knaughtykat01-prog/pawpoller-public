@@ -486,6 +486,29 @@ def test_an_ambiguous_collection_name_is_skipped_and_reported(desktop, server):
         "SELECT COUNT(*) FROM collections WHERE notes = 'mine'").fetchone()[0] == 0
 
 
+def test_two_renders_of_one_piece_cross_as_two_rows(desktop, server):
+    """4.34.0 (VARSPLIT): `variant_key` is part of publications' identity.
+
+    A bundle that dropped it would collapse two live submissions into one on the
+    receiver — the same overwrite the migration exists to stop, arriving over the wire.
+    """
+    _account(desktop, "fa", "secondfur", default=True)
+    for vk, ext in (("", "9001"), ("alt", "9002")):
+        desktop.execute(
+            "INSERT INTO publications (content_type, story_name, chapter_index, platform,"
+            " account_id, variant_key, external_id, status) "
+            "VALUES ('artwork', 'Sample Piece', 0, 'fa', "
+            "(SELECT account_id FROM accounts WHERE platform='fa' LIMIT 1), ?, ?, 'posted')",
+            (vk, ext))
+    desktop.commit()
+
+    _push(desktop, server)
+
+    rows = {r["variant_key"]: r["external_id"] for r in server.execute(
+        "SELECT variant_key, external_id FROM publications WHERE story_name = 'Sample Piece'")}
+    assert rows == {"": "9001", "alt": "9002"}
+
+
 # ── Content that should simply arrive ─────────────────────────
 
 def test_a_full_round_trip_carries_the_shared_content(desktop, server):

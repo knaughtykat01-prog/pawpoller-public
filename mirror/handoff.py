@@ -117,6 +117,11 @@ def describe_jobs(conn, limit: int = 20) -> list[dict]:
             "account": identity,
             "priority": _row_get(row, "priority", 0),
             "created_at": _row_get(row, "created_at"),
+            # Which render this job is for (4.34.0). Without it the desktop re-derives
+            # by rating and posts the primary — and an alternate render, rated the same
+            # as the piece, derives to exactly that. The server-side fix does not
+            # survive the hop on its own.
+            "variant_key": _row_get(row, "variant_key", "") or "",
             "overrides": {
                 k: _row_get(row, k)
                 for k in ("title_override", "description_override", "tags_override",
@@ -183,6 +188,11 @@ def apply_result(conn, result: dict) -> dict:
             conn, story_name, chapter_index, platform,
             account_id=account_id,
             content_type=content_type,
+            # The row already holds it (SELECT * above), and omitting it defaults to ""
+            # — which matches the PRIMARY's row and replaces its external_id and url
+            # with this render's. Same overwrite as the update_artwork High, one door
+            # further along.
+            variant_key=_row_get(row, "variant_key", "") or "",
             external_id=str(result.get("external_id") or ""),
             external_url=str(result.get("external_url") or ""),
             title_used=str(result.get("title_used") or ""),
@@ -255,6 +265,9 @@ def import_job(conn, job: dict, server_url: str) -> dict:
         description_override=overrides.get("description_override"),
         tags_override=overrides.get("tags_override"),
         rating_override=overrides.get("rating_override"),
+        # Carried from the server's row (4.34.0) so the desktop posts THAT render.
+        # Re-deriving here would pick the primary for any alternate render.
+        variant_key=str(job.get("variant_key") or ""),
     )
     conn.execute(
         "UPDATE posting_queue SET origin_server = ?, origin_queue_id = ?, requires = 'any' "

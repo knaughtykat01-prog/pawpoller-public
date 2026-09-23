@@ -426,6 +426,9 @@ def rollup_members(conn: sqlite3.Connection, name: str,
             loc["title"] = pub.get("title", "")
         loc["role"] = m.get("role") or "crosspost"
         loc["linked_via"] = m.get("linked_via") or "manual"
+        # Which render this upload is (4.34.0). A piece can hold SEVERAL submissions on
+        # one site now, so platform + account no longer identify a row on their own.
+        loc["variant_key"] = m.get("variant_key") or ""
         locations.append(loc)
 
     tot = {"views": 0, "favorites": 0, "comments": 0}

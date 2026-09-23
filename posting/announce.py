@@ -40,6 +40,42 @@ SPOILER_RATINGS = ("adult", "explicit", "nsfw", "mature", "questionable")
 LINK_MODES = ("auto", "first", "all", "pick", "none")
 
 
+# Where the per-platform announce defaults live in settings (4.34.0, ANNOUNCEDEF).
+# `{"tw": {"tags": false}, "bsky": {...}, "tg": {...}}` — a key that is absent means
+# "the built-in default", which is what keeps an install that has never touched Settings
+# behaving exactly as it did.
+_DEFAULTS_KEY = "announce_defaults"
+
+# Telegram had three of these as flat settings keys before there was a general home for
+# them. They keep working, so nobody's saved preference is silently dropped, but the
+# nested block wins where both are set.
+_LEGACY_TG_KEYS = {"tags": ("tg_no_tags", True), "silent": ("tg_silent", False),
+                   "protect": ("tg_protect", False), "document": ("tg_document", False)}
+
+
+def option_default(settings: dict, platform: str, key: str, hard: bool) -> bool:
+    """The fallback for one announce option: the operator's setting, else *hard*.
+
+    This is the middle rung of three. A per-piece value always wins; this decides what
+    "Default" on the piece MEANS. Before 4.34.0 it meant a constant in the poster, so
+    "I never want hashtags on X" had to be set on every piece, one at a time, for ever.
+
+    ``hard`` is the built-in, and it is still the answer when nothing is configured —
+    so this function is a no-op on an install that has never opened the setting.
+    """
+    block = (settings or {}).get(_DEFAULTS_KEY) or {}
+    per = block.get(platform) or {}
+    if key in per:
+        return flag(per.get(key), hard)
+    if platform == "tg" and key in _LEGACY_TG_KEYS:
+        legacy, inverted = _LEGACY_TG_KEYS[key]
+        if legacy in (settings or {}):
+            v = flag((settings or {}).get(legacy), False)
+            # tg_no_tags is worded as a negative, so it inverts.
+            return (not v) if inverted else v
+    return hard
+
+
 def flag(value, default: bool) -> bool:
     """Read a tri-state option: unset falls back, anything else is coerced.
 

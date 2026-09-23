@@ -114,7 +114,7 @@ class TwitterPoster(PlatformPoster):
             return PostResult(success=False, duration_seconds=self._elapsed(_t),
                               error="X isn't connected for this account — Settings → X, or Browser login")
 
-        opts = _resolve_options(package)
+        opts = _resolve_options(package, config.get_settings())
         is_video = _is_video(package)
         is_art = bool(package.file_path
                       and (package.file_type.lower() in announce.IMAGE_TYPES or package.media_kind in ("video", "audio")))
@@ -225,21 +225,33 @@ def _is_video(package: StoryUploadPackage) -> bool:
         and (package.file_type or "").lower() in _X_VIDEO_TYPES
 
 
-def _resolve_options(package: StoryUploadPackage) -> dict:
+def _resolve_options(package: StoryUploadPackage, settings: dict | None = None) -> dict:
     """Per-piece options from ``categories.tw`` (artwork_reader puts them in
-    ``package.extra``), each falling back to a sensible default.
+    ``package.extra``), each falling back to the operator's default, then a built-in.
 
-    ``sensitive`` follows the rating: X requires the flag on adult media and
-    an unflagged adult image is the kind of thing that gets an account
-    restricted — so it is on for anything in SPOILER_RATINGS unless the piece
-    says otherwise. ``tags`` is on because compose() drops the block first
-    when it does not fit, so it never costs the caption its body.
+    Three rungs (4.34.0, ANNOUNCEDEF): the piece, then Settings → Posting, then the
+    constant. Before this the constant was the only answer, so "I never want hashtags on
+    X" had to be set on every piece for ever.
+
+    ``sensitive`` is deliberately NOT a plain three-rung option. X requires the flag on
+    adult media, and an unflagged adult image is how an account gets restricted rather
+    than how a post gets refused — so the rating-derived value is a FLOOR. A setting can
+    turn it on for everything; it cannot turn it off for work the rating says is adult.
+    A checkbox that could do that would be a footgun, not a preference. The per-piece
+    control keeps its full override, because that is a deliberate act on one piece.
+
+    ``tags`` defaults on because compose() drops the block first when it does not fit,
+    so it never costs the caption its body.
     """
     x = package.extra or {}
+    settings = settings or {}
     rating_sensitive = (package.rating or "").lower() in announce.SPOILER_RATINGS
+    # The floor: the rating wins over the setting, never the other way round.
+    sensitive_default = rating_sensitive or announce.option_default(
+        settings, "tw", "sensitive", False)
     return {
-        "sensitive": announce.flag(x.get("sensitive"), rating_sensitive),
-        "tags": announce.flag(x.get("tags"), True),
-        "caption": announce.flag(x.get("caption"), True),
-        "alt": announce.flag(x.get("alt"), True),
+        "sensitive": announce.flag(x.get("sensitive"), sensitive_default),
+        "tags": announce.flag(x.get("tags"), announce.option_default(settings, "tw", "tags", True)),
+        "caption": announce.flag(x.get("caption"), announce.option_default(settings, "tw", "caption", True)),
+        "alt": announce.flag(x.get("alt"), announce.option_default(settings, "tw", "alt", True)),
     }

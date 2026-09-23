@@ -139,6 +139,11 @@ async def _process_queue_item(item: dict) -> None:
     # (publish_flow spec §10 Q6). A scheduled "this post only" Telegram text.
     _desc_override = item["description_override"] if "description_override" in item.keys() else None
     description_overrides = {platform: _desc_override} if _desc_override else None
+    # Which render this row is for (4.34.0, VARSPLIT). Carried on the row rather than
+    # re-derived, because re-deriving is wrong for an alternate render: rated the same
+    # as the piece, it derives to "no variant" and the retry would post the primary.
+    _vk = item["variant_key"] if "variant_key" in item.keys() else ""
+    variant_overrides = {platform: _vk} if _vk else None
 
     # For posts the story_name is a bare post_id — use the snippet stashed in
     # title_override as the human label in Telegram notifications.
@@ -184,6 +189,7 @@ async def _process_queue_item(item: dict) -> None:
                 story_name, [platform],
                 account_ids={platform: account_id} if account_id else None,
                 description_overrides=description_overrides,
+                variant_overrides=variant_overrides,
             )
         elif action == "post":
             results = await manager.post_story(

@@ -45,11 +45,16 @@ CREATE TABLE IF NOT EXISTS publications (
     update_count        INTEGER DEFAULT 0,
     last_error          TEXT,
 
+    -- Which render this row is (4.34.0, VARSPLIT). '' = the piece's own image,
+    -- and every row predating renders. In the UNIQUE key because a piece can be
+    -- posted to one site as several renders, each its own submission.
+    variant_key         TEXT NOT NULL DEFAULT '',
+
     -- Metadata
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     word_count          INTEGER DEFAULT 0,
 
-    UNIQUE(story_name, chapter_index, platform)
+    UNIQUE(story_name, chapter_index, platform, variant_key)
 );
 
 CREATE INDEX IF NOT EXISTS idx_publications_story
@@ -85,6 +90,9 @@ CREATE TABLE IF NOT EXISTS posting_queue (
     tags_override       TEXT,
     rating_override     TEXT,
     file_path_override  TEXT,
+    -- Which render to post (4.34.0, VARSPLIT). Without this a queued or retried
+    -- render post silently becomes whatever the rating would pick.
+    variant_key         TEXT NOT NULL DEFAULT '',
 
     -- Scheduling
     scheduled_at        TEXT,

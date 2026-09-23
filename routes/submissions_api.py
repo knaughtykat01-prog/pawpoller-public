@@ -754,6 +754,9 @@ def link_submission(body: dict):
             # submission (from its {platform}_submissions row), not the platform
             # default — so persona/account scoping is correct.
             acct_id = _submission_account_id(conn, platform, submission_id)
+            # variant_key defaults to "" (the piece's own image) deliberately: an
+            # imported/linked submission IS the piece unless something says
+            # otherwise, and this path has no render to name (4.34.0).
             pub_id = posting_queries.upsert_publication(
                 conn,
                 story_name=name,
