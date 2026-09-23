@@ -567,6 +567,11 @@ async def post_story(
     return results
 
 
+# The sentinel a caller sends to mean "the piece's own image", as distinct from "you
+# choose" (absent). Without it there is no way to say no to an automatic substitution.
+_PRIMARY_RENDER = "__primary__"
+
+
 async def post_artwork(
     artwork_name: str,
     platforms: list[str],
@@ -574,6 +579,7 @@ async def post_artwork(
     account_ids: dict[str, int] | None = None,
     persona_id: int | None = None,
     description_overrides: dict[str, str] | None = None,
+    variant_overrides: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Post one artwork (a single image) to multiple platforms.
 
@@ -592,6 +598,13 @@ async def post_artwork(
         persona_id: Persona-first publish: a platform without one of this
             persona's accounts in ``account_ids`` is refused, never defaulted.
         description_overrides: ``{platform: text}`` for THIS post only (4.3.0).
+        variant_overrides: ``{platform: variant_key}`` — post a NAMED render to that
+            site instead of the one the rating would pick (4.33.0). ``"__primary__"``
+            forces the piece's own image. This is how you send an alternate render
+            that the rating alone would never select, because it is rated the same as
+            the piece: two colourways, a text-free version, a different pose.
+            It does NOT bypass the rating gate — asking for the adult render on a
+            general-audience site is refused, with the gate's own wording.
 
     Returns:
         List of result dicts with platform, success, url, error.
@@ -609,10 +622,45 @@ async def post_artwork(
             results.append(_refused(platform, e))
             continue
         poster = _get_poster(platform, account_id)
-        package = artwork_reader.build_artwork_package(
-            artwork, platform,
-            description_override=(description_overrides or {}).get(platform),
-            account_id=account_id)
+        # Which render this site gets (4.33.0). A piece whose primary is adult used to be
+        # refused outright on an SFW-only site even when an SFW variant of it existed;
+        # now the variant is posted there, with its own rating, tags and description.
+        # A named render for this site beats the rating's pick (4.33.0). This is the
+        # only way to send an alternate render that the rating would never choose,
+        # because it is rated the same as the piece.
+        _asked = (variant_overrides or {}).get(platform) or ""
+        if _asked == _PRIMARY_RENDER:
+            _variant = None
+        elif _asked:
+            _variant = next((v for v in (artwork.variants or [])
+                             if isinstance(v, dict) and v.get("key") == _asked), None)
+            if _variant is None:
+                results.append(_refused(
+                    platform, ValueError(f"no render called {_asked!r} on this piece"),
+                    chapter_index=0, chapter_title="", variant=_asked))
+                continue
+        else:
+            _variant = artwork_reader.variant_for_rating(
+                artwork, getattr(poster, "max_rating", "adult"))
+        try:
+            package = artwork_reader.build_artwork_package(
+                artwork, platform,
+                description_override=(description_overrides or {}).get(platform),
+                variant_key=(_variant or {}).get("key") or None,
+                account_id=account_id)
+        except FileNotFoundError as e:
+            # A render that vanished between the selection and the build. One platform's
+            # missing file must not take the rest of the run down with it.
+            results.append(_refused(platform, e,
+                                    chapter_index=0, chapter_title="",
+                                    variant=(_variant or {}).get("label")
+                                            or (_variant or {}).get("key") or ""))
+            logger.warning("Artwork %s on %s: %s", artwork_name, platform, e)
+            continue
+        if _variant:
+            logger.info("Artwork %s on %s: posting the %r render (rated %s)", artwork_name,
+                        platform, _variant.get("label") or _variant.get("key"),
+                        _variant.get("rating") or artwork.rating)
         if extras:
             package.extra.update(extras)
         if platform in _ANNOUNCES_LAST:
@@ -639,6 +687,7 @@ async def post_artwork(
                 "chapter_title": "",
                 "success": False,
                 "error": "; ".join(errors),
+                "variant": (_variant or {}).get("label") or (_variant or {}).get("key") or "",
             })
             logger.warning("Validation failed for artwork %s on %s: %s",
                            artwork_name, platform, errors)
@@ -728,7 +777,10 @@ async def post_artwork(
                     masterpiece_queries.add_member(
                         conn, artwork_name, platform, result.external_id,
                         account_id=account_id, role="crosspost",
-                        linked_via="publication")
+                        linked_via="publication",
+                        # Which render this site holds — the column existed and nothing
+                        # wrote it, so every edit had to guess by re-deriving (4.33.0).
+                        variant_key=(_variant or {}).get("key") or "")
                     conn.commit()
                 except Exception:
                     logger.warning("Masterpiece member link failed for %s/%s",
@@ -747,6 +799,8 @@ async def post_artwork(
             "external_url": result.external_url,
             "error": result.error,
             "duration": result.duration_seconds,
+            # Which render went to this site — "" for the primary (4.33.0).
+            "variant": (_variant or {}).get("label") or (_variant or {}).get("key") or "",
         })
 
     # Clean up watermark temp files (gap-wave-5 §1) now every post + retry is done.
@@ -1044,10 +1098,58 @@ async def update_artwork(
                             "success": False, "skipped": True, "reason": "post-only"})
             continue
 
-        package = artwork_reader.build_artwork_package(artwork, plat, account_id=account_id)
+        # The render this site was actually POSTED as (4.33.0). Without this an edit
+        # pushed the PRIMARY's rating, tags and description to a site holding the SFW
+        # render — the post/edit asymmetry that arrived with variant routing. The gate
+        # runs here too, for the same reason it runs on the way out.
+        #
+        # Read what was recorded, and only re-derive for a post made before the column
+        # was written. Re-deriving is NOT equivalent: a deliberately-chosen alt render
+        # rated the same as the piece would re-derive to None, and the edit would push
+        # the primary's metadata over it.
+        _recorded = (m.get("variant_key") or "").strip()
+        if _recorded:
+            _variant = next((v for v in (artwork.variants or [])
+                             if isinstance(v, dict) and v.get("key") == _recorded), None)
+            if _variant is None:
+                # Recorded a render the piece no longer declares. Falling through to the
+                # primary would push ITS rating over a live submission that still holds
+                # the other render's bytes — an edit sets skip_content_refresh, so the
+                # image stays. On a piece rated below one of its renders that is a rating
+                # DOWNGRADE on live adult work: the same rating/bytes decoupling as the
+                # post side, reached from the edit side.
+                results.append({
+                    "platform": plat, "submission_id": ext_id, "success": False,
+                    "refused": True, "variant": _recorded,
+                    "error": (f"this site holds the {_recorded!r} render, which the piece "
+                              f"no longer declares — re-link or re-post it")})
+                logger.warning("Artwork edit %s on %s: recorded render %r is gone",
+                               artwork_name, plat, _recorded)
+                continue
+        else:
+            _variant = artwork_reader.variant_for_rating(
+                artwork, getattr(poster, "max_rating", "adult"))
+        try:
+            package = artwork_reader.build_artwork_package(
+                artwork, plat, variant_key=(_variant or {}).get("key") or None,
+                account_id=account_id)
+        except FileNotFoundError as e:
+            results.append({"platform": plat, "submission_id": ext_id,
+                            "success": False, "error": str(e), "refused": True})
+            logger.warning("Artwork edit %s on %s: %s", artwork_name, plat, e)
+            continue
         package.extra["skip_content_refresh"] = True   # metadata sync only — never re-upload the image
         if extras:
             package.extra.update(extras)
+
+        refusal = poster.refusal(package) if hasattr(poster, "refusal") else None
+        if refusal:
+            results.append({"platform": plat, "submission_id": ext_id,
+                            "success": False, "error": refusal, "refused": True,
+                            "variant": (_variant or {}).get("label")
+                                       or (_variant or {}).get("key") or ""})
+            logger.warning("Artwork edit refused for %s on %s: %s", artwork_name, plat, refusal)
+            continue
 
         # update_artwork had NO desktop handling at all — not even the
         # after-the-fact fallback the story path carried — so an FA artwork edit

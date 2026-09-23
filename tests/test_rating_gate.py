@@ -83,11 +83,19 @@ def test_every_existing_poster_still_takes_adult_work():
         assert poster.rating_refusal(_pkg("adult", file_type="png", media_kind="image")) is None, code
 
 
-def test_the_manager_runs_the_combined_gate_at_both_sites():
+def test_the_manager_runs_the_combined_gate_at_every_site():
+    """Three gate sites since 4.33.0.
+
+    Story publish, artwork publish — and the artwork EDIT path, which had no gate at all
+    until variant routing made the omission matter: a piece posted to a general-audience
+    site as its SFW render was edited with the PRIMARY's rating, tags and description.
+    """
     from posting import manager
     src = inspect.getsource(manager)
-    assert src.count("poster.refusal(package)") == 2, "both publish paths gate on media kind AND rating"
+    assert src.count("poster.refusal(package)") == 3, "every publish path gates on media kind AND rating"
     assert "poster.media_refusal(package)" not in src
+    edit = src[src.index("async def update_artwork"):]
+    assert "poster.refusal(package)" in edit, "the artwork edit path gates too"
 
 
 def test_the_capability_payload_carries_the_ceiling_and_its_sentences(monkeypatch):

@@ -1336,6 +1336,8 @@ const App = {
             if (window.Collections) window.Collections.render();
         } else if (parts[0] === 'artists') {
             if (window.Artists) window.Artists.render();
+        } else if (parts[0] === 'characters') {
+            if (window.Characters) window.Characters.render();
         } else if (parts[0] === 'commissions' && parts[1] === 'archived') {
             if (window.Commissions) window.Commissions.render(true);
         } else if (parts[0] === 'commissions' && parts[1]) {

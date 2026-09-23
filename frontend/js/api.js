@@ -292,6 +292,24 @@ const API = {
     // The person row that IS one of your personas (4.6.0), or {artist: null}.
     getPersonForPersona(personaId) { return this.get(`/api/artists/by-persona/${encodeURIComponent(personaId)}`); },
 
+    /* Character registry (4.33.0) — the People shape for characters: no handles, an
+       owner pointing at a person, and the booru tag that reaches a post. */
+    listCharacters(q = '', withCounts = false) {
+        const qs = [];
+        if (q) qs.push('q=' + encodeURIComponent(q));
+        if (withCounts) qs.push('with_counts=true');
+        return this.get('/api/characters' + (qs.length ? '?' + qs.join('&') : ''));
+    },
+    resolveCharacter(name) { return this.get(`/api/characters/resolve?name=${encodeURIComponent(name)}`); },
+    saveCharacter(body) { return this.post('/api/characters', body); },
+    renameCharacter(key, newName, apply = false) {
+        return this.post(`/api/characters/${encodeURIComponent(key)}/rename`,
+                         { new_name: newName, apply });
+    },
+    deleteCharacter(key, confirm = false) {
+        return this.del(`/api/characters/${encodeURIComponent(key)}${confirm ? '?confirm=true' : ''}`);
+    },
+
     getMasterpieces() { return this.get('/api/masterpieces'); },
     getMasterpiece(name) { return this.get(`/api/masterpieces/${encodeURIComponent(name)}`); },
     /* What each platform actually receives as tags, and what it loses (3.12.0). */

@@ -2243,6 +2243,8 @@ a.stat-card:hover {
 .pub-result.is-fail .pub-result-mark { color: var(--danger); }
 .pub-result-plat { font-weight: 600; white-space: nowrap; }
 .pub-result-what { color: var(--text-secondary); overflow-wrap: anywhere; }
+.pub-result-variant { display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: var(--radius-sm);
+    background: var(--bg-tertiary, var(--bg-secondary)); color: var(--text-muted); font-size: 11.5px; white-space: nowrap; }
 .pub-result.is-skip { opacity: .7; }
 .pub-result.is-skip .pub-result-mark { color: var(--text-secondary); }
 

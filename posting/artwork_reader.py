@@ -72,6 +72,12 @@ _TAG_BUDGET = tag_budget.BUDGETS
 # extra name tag there is noise rather than discovery.
 _ARTIST_TAG_PLATFORMS = frozenset({"e621", "fbr", "ib"})
 
+# Where a character's booru tag is worth carrying (4.33.0, spec 003). The same sites
+# that index on artist index on character: `scripts/reorder_tags.py` puts CHARACTER at
+# tier 3, right behind artist and species. Inkbunny is deliberately absent — it takes
+# keywords, not a booru vocabulary, so a `name_(owner)` tag there is noise.
+_CHARACTER_TAG_PLATFORMS = frozenset({"e621", "fbr"})
+
 
 def _canonical_tag_list(tags: dict) -> list[str]:
     """core + auxiliary, de-duplicated, order preserved.
@@ -89,6 +95,77 @@ def _canonical_tag_list(tags: dict) -> list[str]:
                 seen.add(low)
                 ordered.append(tag)
     return ordered
+
+
+def variant_image_path(artwork, variant: dict):
+    """The render file for *variant*, or ``None`` if it isn't there (4.33.0).
+
+    Two jobs, both of which have to happen before a variant can be chosen:
+
+    1. **Anchor it inside the piece's own folder.** ``image`` is a stored string, so
+       ``../OtherPiece/adult.png`` would otherwise resolve and post. Same
+       ``resolve()`` + ``relative_to()`` guard ``load_artwork`` uses on the name.
+    2. **Check the file exists.** A declared-but-absent render is ordinary — deleted,
+       renamed, or a `masterpiece.json` that reached this machine ahead of its images
+       through a partial sync.
+
+    Why this is security-relevant rather than tidiness: ``build_artwork_package`` takes
+    the *rating* from the variant, and until 4.33.0 it took the *image* only if the file
+    happened to be there — so a missing SFW render meant the ADULT primary's bytes went
+    out labelled ``general``, straight through the rating gate onto a general-audience
+    site. Selection and substitution have to agree about what exists, so both ask here.
+    """
+    name = (variant or {}).get("image")
+    if not name:
+        return None
+    root = Path(getattr(artwork, "path", "") or "").resolve()
+    try:
+        candidate = (root / str(name)).resolve()
+        candidate.relative_to(root)
+    except (ValueError, OSError):
+        logger.warning("%s: variant render %r is outside the piece's folder — ignored",
+                       getattr(artwork, "name", "?"), name)
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def variant_for_rating(artwork, max_rating: str) -> dict | None:
+    """The render to post where a site takes work up to *max_rating* (4.33.0).
+
+    A piece and its variants are the same artwork at different ratings — the catalogue
+    holds SFW, Censored, Nude and Cum renders of one image. Until now a publish always
+    sent the PRIMARY render, so a piece whose primary is adult was simply refused by the
+    rating gate on Instagram or Threads, even when an SFW render of it was sitting right
+    there. Choosing here keeps that decision in one place, next to the rules that say
+    what a variant inherits.
+
+    Returns ``None`` when the primary already fits (the normal case) **and** when nothing
+    fits — the caller's rating gate refuses that, with its own wording, rather than this
+    silently posting something the site would reject.
+
+    Picks the HIGHEST-rated variant the site allows: on a mature-capable site, the
+    censored render beats the SFW one. A variant without its own rating inherits the
+    piece's, which is what ``variant_tags`` and ``variant_description`` do for their
+    fields.
+    """
+    from posting.platforms.base import rating_rank
+
+    allowed = rating_rank(max_rating)
+    if rating_rank(getattr(artwork, "rating", "")) <= allowed:
+        return None
+
+    best, best_rank = None, -1
+    for v in (getattr(artwork, "variants", None) or []):
+        if not isinstance(v, dict) or not v.get("key") or not v.get("image"):
+            continue
+        # A render that isn't on disk is not a render. Choosing one would hand the
+        # package the variant's RATING and the primary's BYTES — see variant_image_path.
+        if variant_image_path(artwork, v) is None:
+            continue
+        rank = rating_rank(v.get("rating") or getattr(artwork, "rating", ""))
+        if rank <= allowed and rank > best_rank:
+            best, best_rank = v, rank
+    return best
 
 
 def variant_tags(artwork_tags: dict, variant: dict) -> dict:
@@ -490,7 +567,7 @@ def build_artwork_package(
     variant = None
     if variant_key:
         variant = next((v for v in (artwork.variants or [])
-                        if v.get("key") == variant_key), None)
+                        if isinstance(v, dict) and v.get("key") == variant_key), None)
         if variant is None:
             raise ValueError(
                 f"{artwork.name}: no variant with key {variant_key!r}")
@@ -576,6 +653,30 @@ def build_artwork_package(
         if atag and atag not in {str(t).lower() for t in tags}:
             tags = [atag] + list(tags)
 
+    # Character tags on the booru sites (4.33.0). A character has always existed twice:
+    # as a name in `characters[]`, which reached no post at all, and as a hand-typed
+    # `name_(owner)` tag that did. The registry holds the mapping, so the piece's own
+    # cast now carries its tags — for characters that HAVE one; an invented tag is worse
+    # than a missing one. Skipped under tags_override for the same reason as the artist
+    # tag: that is the UI saying "post exactly these".
+    if platform in _CHARACTER_TAG_PLATFORMS and tags_override is None and artwork.characters:
+        try:
+            from database import character_queries
+            from database.db import get_connection
+            conn = get_connection()
+            try:
+                ctags = character_queries.booru_tags_for(conn, artwork.characters)
+            finally:
+                conn.close()
+        except Exception as e:                    # a registry hiccup must not stop a post
+            logger.warning("Character tags unavailable for %s: %s", artwork.name, e)
+            ctags = []
+        have = {str(t).lower() for t in tags}
+        # Prepended like the artist tag: per-platform budgets trim from the TAIL.
+        add = [t for t in ctags if t.lower() not in have]
+        if add:
+            tags = add + list(tags)
+
     settings = config.get_settings()
     rating = (rating_override
               or (variant.get("rating") if variant else "")
@@ -584,13 +685,25 @@ def build_artwork_package(
                               settings.get("posting_default_rating", "adult")))
 
     image_path = artwork.image_path
-    if variant and variant.get("image"):
-        candidate = artwork.path / variant["image"]
-        if candidate.is_file():
-            image_path = str(candidate)
-        else:
-            logger.warning("%s: variant %r image %s missing, using the primary render",
-                           artwork.name, variant_key, variant["image"])
+    # `if variant:` — deliberately NOT `if variant and variant.get("image")`. The rating
+    # above is taken from the variant unconditionally, so a keyed-but-image-less variant
+    # would skip this block and keep the PRIMARY's bytes under the variant's rating —
+    # the same leak, reached by a different door (a hand-edited or partially-synced
+    # masterpiece.json with a duplicate key, where the first match by key is the empty
+    # one and the render actually chosen was the second). A keyed variant with no image
+    # is meaningless by construction, so nothing legitimate is refused here.
+    if variant:
+        candidate = variant_image_path(artwork, variant)
+        if candidate is None:
+            # NEVER fall back to the primary here. `rating` above already came from the
+            # variant, so posting the primary's bytes under it is how adult work reaches
+            # a general-audience site past a gate that sees only the label. A render the
+            # caller explicitly asked for and that isn't there is a refusal.
+            raise FileNotFoundError(
+                f"{artwork.name}: the {variant.get('label') or variant_key!r} render "
+                f"({variant.get('image') or 'no file declared'}) is missing from the "
+                f"piece's folder")
+        image_path = str(candidate)
     file_type = Path(image_path).suffix.lstrip(".").lower() if image_path else ""
     # 4.18.0: the kind + the browser's measurements ride on the package so a poster can check a
     # site's duration / size cap without decoding anything.

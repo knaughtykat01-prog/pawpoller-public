@@ -1998,10 +1998,15 @@ const Components = {
                     : url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(okText)} ↗</a>` : esc(okText))
                 : skipped ? esc(r.reason || 'skipped')
                 : esc(r.error || 'Failed');
+            // Which render went out (4.33.0). Empty unless the piece's own image was
+            // swapped for a variant the site's rating allowed — otherwise every row
+            // would carry a "primary" nobody asked about.
+            const variant = r.variant
+                ? `<span class="pub-result-variant">${esc(r.variant)} render</span>` : '';
             return `<li class="pub-result ${ok ? 'is-ok' : skipped ? 'is-skip' : 'is-fail'}">
                 <span class="pub-result-mark">${ok ? '✓' : skipped ? '–' : '✗'}</span>
                 <span class="pub-result-plat">${esc(p.emoji || '')} ${esc(p.label)}</span>
-                <span class="pub-result-what">${what}</span>
+                <span class="pub-result-what">${what}${variant}</span>
             </li>`;
         }).join('');
         return `<ul class="pub-results">${rows}</ul>`;

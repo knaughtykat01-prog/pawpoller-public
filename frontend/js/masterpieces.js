@@ -742,6 +742,7 @@ window.Masterpieces = {
         this._wireDetailPublish(name, m);
         this._loadSuggestions();
         this._tagChips();
+        this._charChips();
         this._loadTagBudget();
         this._loadChart(name);
         this._foldTarget = null;      // reset the "fold into" choice per detail open
@@ -961,8 +962,11 @@ window.Masterpieces = {
                     <div class="mp-field-row">
                         <label class="mp-field"><span>Rating</span>
                             <select class="mp-input" id="mp-e-rating">${ratingOpts}</select></label>
-                        <label class="mp-field"><span>Characters <span class="muted">(comma-separated)</span></span>
-                            <input class="mp-input" id="mp-e-chars" value="${this.esc(charsStr)}"></label>
+                        <div class="mp-field"><span>Characters
+                                <button class="btn btn-sm btn-browse" data-mp-charbrowse type="button"
+                                    title="Pick from your cast">&#128100; Browse cast</button></span>
+                            <input class="mp-input" id="mp-e-chars" value="${this.esc(charsStr)}" hidden aria-hidden="true">
+                            <ul class="tagchips" id="mp-charchips" role="list" aria-label="Characters"></ul></div>
                     </div>
                     <div class="mp-edit-actions"><span class="mp-edit-msg muted" id="mp-edit-msg"></span></div>
                 </div>
@@ -1232,6 +1236,37 @@ window.Masterpieces = {
     },
 
     /* ── Tag chips (§5.3, §13) ──────────────────────────────────────────── */
+    /* Characters as chips over the same hidden #mp-e-chars field the save path already
+     * reads (4.33.0). Before this the field was a comma box: no canonical spelling, no
+     * dedup across pieces, and nothing a post could use. The names still live on the
+     * piece — the registry is what they resolve TO. */
+    _charChips() {
+        const input = document.getElementById('mp-e-chars');
+        const host = document.getElementById('mp-charchips');
+        if (!input || !host) return;
+        const names = input.value.split(',').map(x => x.trim()).filter(Boolean);
+        host.innerHTML = names.length
+            ? names.map((n, i) => `<li class="tagchip"><b>${this.esc(n)}</b>` +
+                `<button type="button" class="tagchip-x" data-mp-charx="${i}" aria-label="Remove ${this.esc(n)}">&times;</button></li>`).join('')
+            : '<li class="muted" style="font-size:12px">Nobody yet — press Browse cast.</li>';
+    },
+
+    _setChars(names) {
+        const input = document.getElementById('mp-e-chars');
+        if (!input) return;
+        input.value = (names || []).join(', ');
+        this._charChips();
+    },
+
+    _openCharacterPicker() {
+        const input = document.getElementById('mp-e-chars');
+        if (!input || !window.CharacterPicker) return;
+        CharacterPicker.open({
+            selected: input.value.split(',').map(x => x.trim()).filter(Boolean),
+            onConfirm: (names) => this._setChars(names),
+        });
+    },
+
     /* Render the chips from #mp-e-tags. Core / cut styling comes from the last
      * tag-preview (_loadTagBudget → this._budget); with none yet, plain chips:
      * the tags are real data the page already holds, and hiding them would
@@ -1661,6 +1696,17 @@ window.Masterpieces = {
             if (sync) { e.preventDefault(); this._syncAll(sync); return; }
             const tb = e.target.closest('[data-mp-tagbrowse]');
             if (tb) { e.preventDefault(); this._openTagBrowse(); return; }
+            const cb = e.target.closest('[data-mp-charbrowse]');
+            if (cb) { e.preventDefault(); this._openCharacterPicker(); return; }
+            const cx = e.target.closest('[data-mp-charx]');
+            if (cx) {
+                e.preventDefault();
+                const input = document.getElementById('mp-e-chars');
+                const names = input.value.split(',').map(x => x.trim()).filter(Boolean);
+                names.splice(parseInt(cx.dataset.mpCharx, 10), 1);
+                this._setChars(names);
+                return;
+            }
             const scan = e.target.closest('[data-mp-scan]');
             if (scan) { e.preventDefault(); this._scanForMatches(scan); return; }
             const linkpick = e.target.closest('[data-mp-linkpick]');

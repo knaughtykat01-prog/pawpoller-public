@@ -1365,6 +1365,29 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
                  "ON artist_handles(platform, handle)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_artists_name ON artists(name)")
 
+    # Characters (4.33.0, backlog CHARREG). Until now a character was a string typed
+    # into a comma box on each piece: no canonical spelling, no dedup across works, no
+    # rename, and no way to reach a post except as a substring of the credit line —
+    # while the SAME character already existed as a `name_(owner)` booru tag that does
+    # reach every post and carries tier-3 priority. This is the people registry minus
+    # handles: a key derived from the name (so one character is never three rows), an
+    # optional owner pointing at `artists.artist_key`, and the booru tag that closes the
+    # gap to the tag side.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS characters (
+            character_key TEXT PRIMARY KEY,
+            name          TEXT NOT NULL,
+            owner_key     TEXT DEFAULT '',
+            booru_tag     TEXT DEFAULT '',
+            species       TEXT DEFAULT '',
+            notes         TEXT DEFAULT '',
+            aliases       TEXT DEFAULT '[]',
+            created_at    TEXT DEFAULT (datetime('now')),
+            updated_at    TEXT DEFAULT (datetime('now'))
+        )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_characters_name ON characters(name)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_characters_owner ON characters(owner_key)")
+
     # People (4.6.0, docs/specs/people_registry.md): a person row may BE one of
     # the operator's personas, and each handle carries whether it may be
     # @-mentioned on that site. Mention defaults OFF: a mention notifies, on

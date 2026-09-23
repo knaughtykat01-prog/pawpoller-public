@@ -325,6 +325,18 @@ _RULES += [
         key=("artist_key", "platform"),
     ),
     TableRule(
+        "characters", SHR,
+        "The character registry (4.33.0). Reference data the user maintains, "
+        "keyed the same way artists are — `character_key` is derived from the "
+        "name, not allocated — and shared for the same reason: the booru tag "
+        "researched for a character on one box must reach the other, or a post "
+        "from there tags nobody. Deletes are NOT recorded: losing a row loses "
+        "the owner link and the tag, and a stale character tags nothing wrongly. "
+        "`owner_key` is a soft reference, so it needs no ordering guarantee "
+        "beyond artists coming first.",
+        key=("character_key",),
+    ),
+    TableRule(
         "ignored_submissions", SHR,
         "Already naturally keyed. Un-ignoring is meaningful, so it tombstones.",
         key=("platform", "submission_id"), deletes=TOMBSTONE,
@@ -450,6 +462,8 @@ SHR_ORDER: tuple[str, ...] = (
     "commissions", "goals",
     # Artists before handles: a handle row is meaningless without its artist.
     "artists", "artist_handles",
+    # Characters after artists: a character's owner_key points at one.
+    "characters",
 )
 
 # Deletes are RECORDED for both of these classes — you cannot surface a

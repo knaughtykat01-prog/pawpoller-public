@@ -54,7 +54,10 @@ def test_class_counts_match_the_spec(conn):
     # +1 in 4.0.10: tg_submissions — the only *_submissions table the DESKTOP
     # can originate, because PawPoller writes it when it posts rather than
     # learning it from a poll.
-    assert counts["SHR"] == 27
+    # +1 in 4.33.0: the character registry (`characters`), shared for the same
+    # reason the artist one is — a booru tag researched on one box has to reach
+    # the other or a post from there tags nobody.
+    assert counts["SHR"] == 28
     assert counts["HANDOFF"] == 2
     assert counts["DER"] == 1
     assert counts["LOC"] == 8  # + this stage's own outbox, + promos (4.16.0), + podcast feeds / episodes (4.21.1)

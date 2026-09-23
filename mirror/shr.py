@@ -436,6 +436,13 @@ def _export_artist_handles(conn):
             for r in _rows(conn, "SELECT * FROM artist_handles "
                                  "ORDER BY artist_key, platform")]
 
+def _export_characters(conn):
+    return [{"character_key": r["character_key"], "name": _get(r, "name", ""),
+             "owner_key": _get(r, "owner_key", ""), "booru_tag": _get(r, "booru_tag", ""),
+             "species": _get(r, "species", ""), "notes": _get(r, "notes", ""),
+             "aliases": _get(r, "aliases", "[]")}
+            for r in _rows(conn, "SELECT * FROM characters ORDER BY character_key")]
+
 
 def _export_ignored(conn):
     return [{"platform": r["platform"], "submission_id": _s(r["submission_id"]),
@@ -493,6 +500,7 @@ _EXPORTERS = {
     "submission_tags": _export_submission_tags,
     "artists": _export_artists,
     "artist_handles": _export_artist_handles,
+    "characters": _export_characters,
     "ignored_submissions": _export_ignored,
     "inbox_state": _export_inbox_state,
     "commissions": _export_commissions,
@@ -1195,6 +1203,37 @@ def _apply_goals(conn, rows, ctx):
     return n
 
 
+def _apply_characters(conn, rows, ctx):
+    """Merge, never blank — the same rule ``_apply_artists`` follows, and for the
+    same reason: a box that only ever saw the name must not wipe the booru tag or
+    the owner researched on the other. An empty field means "not supplied"."""
+    n = 0
+    for r in rows:
+        if not r.get("character_key"):
+            continue
+        conn.execute(
+            "INSERT INTO characters (character_key, name, owner_key, booru_tag, "
+            "                        species, notes, aliases) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(character_key) DO UPDATE SET "
+            "  name      = excluded.name, "
+            "  owner_key = CASE WHEN excluded.owner_key = ''  THEN characters.owner_key "
+            "              ELSE excluded.owner_key END, "
+            "  booru_tag = CASE WHEN excluded.booru_tag = ''  THEN characters.booru_tag "
+            "              ELSE excluded.booru_tag END, "
+            "  species   = CASE WHEN excluded.species   = ''  THEN characters.species "
+            "              ELSE excluded.species END, "
+            "  notes     = CASE WHEN excluded.notes     = ''  THEN characters.notes "
+            "              ELSE excluded.notes END, "
+            "  aliases   = CASE WHEN excluded.aliases   = '[]' THEN characters.aliases "
+            "              ELSE excluded.aliases END, "
+            "  updated_at = datetime('now')",
+            (r.get("character_key"), r.get("name") or "", r.get("owner_key") or "",
+             r.get("booru_tag") or "", r.get("species") or "", r.get("notes") or "",
+             r.get("aliases") or "[]"))
+        n += 1
+    return n
+
 _APPLIERS = {
     "personas": _apply_personas,
     "accounts": _apply_accounts,
@@ -1219,6 +1258,7 @@ _APPLIERS = {
     "submission_tags": _apply_submission_tags,
     "artists": _apply_artists,
     "artist_handles": _apply_artist_handles,
+    "characters": _apply_characters,
     "ignored_submissions": _apply_ignored,
     "inbox_state": _apply_inbox_state,
     "commissions": _apply_commissions,

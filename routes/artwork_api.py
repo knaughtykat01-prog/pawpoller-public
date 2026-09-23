@@ -495,6 +495,7 @@ async def publish_artwork(body: dict):
         "persona_id": 2,           // optional: persona-first — a platform with no
                                    // account of this persona's is refused, not defaulted
         "description_overrides": {"tg": "…"}   // optional: this post only (4.3.0)
+        "variant_overrides": {"fa": "alt"}     // optional: post a named render (4.33.0)
     }
     """
     from posting import manager
@@ -504,6 +505,9 @@ async def publish_artwork(body: dict):
     account_ids = body.get("account_ids")
     persona_id = body.get("persona_id")
     description_overrides = body.get("description_overrides") or None
+    # {platform: variant_key} — post a NAMED render there, '__primary__' for the
+    # piece's own image (4.33.0). The rating gate still runs on whatever is chosen.
+    variant_overrides = body.get("variant_overrides") or None
 
     if not artwork_name:
         raise HTTPException(400, detail="artwork_name is required")
@@ -520,7 +524,8 @@ async def publish_artwork(body: dict):
     try:
         results = await manager.post_artwork(
             artwork_name, platforms, account_ids=account_ids, persona_id=persona_id,
-            description_overrides=description_overrides)
+            description_overrides=description_overrides,
+            variant_overrides=variant_overrides)
         successes = sum(1 for r in results if r.get("success"))
         return {
             "status": "completed",
