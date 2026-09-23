@@ -1242,6 +1242,7 @@ const Components = {
             return `
             <tr>
                 <td data-label="Title"><a href="#/bsky/submission/${rkey}">${Utils.escapeHtml(Utils.truncate(s.title, 45))}</a></td>
+                <td data-label="Type">${Utils.escapeHtml(Components.BSKY_TYPE_LABELS[s.content_type] || s.content_type || 'Post')}</td>
                 <td data-label="Likes">${Utils.formatNumber(s.likes || 0)} ${Utils.formatDelta(s.likes_delta)}</td>
                 <td data-label="Reposts">${Utils.formatNumber(s.reposts || 0)} ${Utils.formatDelta(s.reposts_delta)}</td>
                 <td data-label="Replies">${Utils.formatNumber(s.replies || 0)} ${Utils.formatDelta(s.replies_delta)}</td>
@@ -1256,6 +1257,7 @@ const Components = {
                 <thead>
                     <tr>
                         <th data-sort="title">Title</th>
+                        <th data-sort="content_type">Type</th>
                         <th data-sort="likes">Likes</th>
                         <th data-sort="reposts">Reposts</th>
                         <th data-sort="replies">Replies</th>

@@ -154,7 +154,12 @@ async def run_ig_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         _update_ig_progress("searching", message="Fetching media list...")
         post_items = await client.get_all_post_uris()
         stats["submissions_found"] = len(post_items)
-        logger.info("IG: Found %d media", len(post_items))
+        # A listing that stopped on a failed page is not the whole gallery. Saying so
+        # is the difference between "you have 100 posts" and a count that sticks at the
+        # same number every cycle while the poll reports success.
+        partial = bool(getattr(client, "partial_fetch", False))
+        logger.info("IG: Found %d media%s", len(post_items),
+                    " (PARTIAL — a page did not load)" if partial else "")
 
         if not post_items:
             _update_ig_progress("complete", message="No Instagram posts found.")
@@ -218,7 +223,9 @@ async def run_ig_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         # Finalise
         duration = time.time() - start_time
         _update_ig_progress("complete", current=len(details), total=len(details),
-                          message=f"Done -- {stats['submissions_found']} posts in {duration:.1f}s")
+                          message=(f"Done -- {stats['submissions_found']} posts in {duration:.1f}s"
+                                   + (" (partial: Instagram stopped answering part-way, so there may"
+                                      " be more — the next check picks up the rest)" if partial else "")))
         ig_queries.finish_ig_poll_log(conn, log_id, "success",
                                       duration_seconds=duration, **stats)
         logger.info("IG poll complete in %.1fs -- %d posts, %d snapshots",
@@ -228,7 +235,9 @@ async def run_ig_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         if not is_first:
             from polling.telegram import send_poll_summary, check_milestones_batch, check_goals
             try:
-                await send_poll_summary("ig", stats, duration)
+                await send_poll_summary("ig", stats, duration,
+                                        note=("Instagram stopped answering part-way — there may be more posts"
+                                              if partial else ""))
             except Exception as te:
                 logger.warning("Failed to send IG Telegram summary: %s", te, exc_info=True)
             try:

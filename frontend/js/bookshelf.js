@@ -34,6 +34,7 @@ window.Bookshelf = {
     _search: '',
     _sort: 'recent',   // recent | title | platforms
     _status: 'all',    // all | posted | drafts — filter by publish state
+    _platform: '',     // '' = every platform; a code filters to works live there
     _discCount: 0,     // discovered-segment badge (filled by _loadDiscovered)
 
     /* Valid #/library/type/{t} targets — guards the deep-link + the redirects
@@ -236,6 +237,11 @@ window.Bookshelf = {
                     <option value="drafts">Drafts</option>
                     <option value="unattributed">Missing artist</option>
                     ${junkOpt}
+                </select>
+                <select id="shelf-platform" class="shelf-input shelf-sort" title="Filter by the site a work is live on">
+                    <option value="">Every platform</option>
+                    ${(window.visiblePlatforms ? window.visiblePlatforms() : (window.PLATFORMS || []))
+                        .map(p => `<option value="${this.esc(p.code)}"${p.code === this._platform ? ' selected' : ''}>${this.esc(p.emoji ? p.emoji + ' ' + p.label : p.label)}</option>`).join('')}
                 </select>`;
         el.innerHTML = `
             <div class="shelf-controls">
@@ -253,6 +259,8 @@ window.Bookshelf = {
         if (so) { so.value = this._sort; so.addEventListener('change', () => { this._sort = so.value; this._paint(); }); }
         const st = el.querySelector('#shelf-status');
         if (st) { st.value = this._status; st.addEventListener('change', () => { this._status = st.value; this._paint(); }); }
+        const pf = el.querySelector('#shelf-platform');
+        if (pf) { pf.value = this._platform; pf.addEventListener('change', () => { this._platform = pf.value; this._paint(); }); }
     },
 
     /* Switch segment IN PLACE — no re-fetch, no router round-trip (the works are
@@ -299,6 +307,11 @@ window.Bookshelf = {
         // Publish-state filter (2.199.0): a work is "posted" once it's live on ≥1
         // platform, else it's a local draft. Uses publication_count already on
         // each work — no extra fetch.
+        // Platform filter (4.32.3): the sites a work is actually live on. `platforms`
+        // is already on every work for the "Most platforms" sort, so this costs nothing.
+        if (this._platform) {
+            list = list.filter(w => (w.platforms || []).includes(this._platform));
+        }
         if (this._status === 'posted') list = list.filter(w => (w.publication_count || 0) > 0);
         else if (this._status === 'drafts') list = list.filter(w => (w.publication_count || 0) === 0);
         // Attribution filter (3.5.2). Only artwork can be unattributed — a story

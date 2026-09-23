@@ -566,6 +566,10 @@ const App = {
     async _refreshPrefsFromServer() {
         try {
             const prefs = await API.getPreferences();
+            // "Platforms I use" (4.32.3): every list that renders platforms reads this
+            // through platforms.js, so it has to land before the first render.
+            window.HIDDEN_PLATFORMS = Array.isArray(prefs && prefs.hidden_platforms)
+                ? prefs.hidden_platforms : [];
             const serverTheme = prefs && prefs.theme;
             if (serverTheme && serverTheme !== this.getCurrentTheme()
                 && this.THEMES.some(t => t.id === serverTheme)) {
@@ -3921,21 +3925,30 @@ const App = {
      * Kept in settings rather than in this file on purpose — the repo ships as a public
      * copy and carries no real names, and who helped is the operator's call, not ours.
      * So the list starts empty in every install and only ever holds what someone typed. */
+    /* Shipped with the app, shown above whatever this install has added. The one
+       name that goes in the source rather than in somebody's settings: a handle, at
+       the operator's explicit instruction, for the tester who found the Instagram
+       posting refusal, the blank bar charts, the empty tag picker and the Library
+       full of other people's posts. Handles here, never real names. */
+    SHIPPED_CREDITS: [
+        { name: '@_kasscabel', role: 'Beta testing & bug reports' },
+    ],
+
     _drawCredits() {
         const el = document.getElementById('credits-list');
         if (!el) return;
-        const list = this._credits || [];
-        if (!list.length) {
-            el.innerHTML = '<p class="muted" style="font-size:12px;margin:0">Nobody added yet.</p>';
-            return;
-        }
+        const own = this._credits || [];
+        const shipped = (this.SHIPPED_CREDITS || []).map(c => ({ ...c, _shipped: true }));
+        const list = shipped.concat(own);
         el.innerHTML = list.map((c, i) => `
             <div class="settings-row" style="padding:6px 0">
                 <div>
                     <span class="settings-label">${Utils.escapeHtml(c.name || '')}</span>
                     ${c.role ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${Utils.escapeHtml(c.role)}</div>` : ''}
                 </div>
-                <button class="btn btn-sm" data-credit-rm="${i}" type="button" title="Remove">&times;</button>
+                ${c._shipped
+                    ? '<span class="muted" style="font-size:11px">with thanks</span>'
+                    : `<button class="btn btn-sm" data-credit-rm="${i - shipped.length}" type="button" title="Remove">&times;</button>`}
             </div>`).join('');
     },
 
@@ -3971,7 +3984,9 @@ const App = {
         zones = zones.filter(z => z !== here && z !== 'UTC');
         const head = [];
         if (here) head.push([here, `This computer — ${pretty(here)}`]);
-        head.push(['UTC', 'UTC']);
+        // A machine set to UTC is its own "this computer" row — offering UTC again would
+        // list it twice and select both (CI runs on exactly such a machine).
+        if (here !== 'UTC') head.push(['UTC', 'UTC']);
         if (current && current !== here && current !== 'UTC' && !zones.includes(current)) head.push([current, pretty(current)]);
         return head.concat(zones.map(z => [z, pretty(z)]))
             .map(([val, label]) => `<option value="${esc(val)}"${val === current ? ' selected' : ''}>${label}</option>`)
@@ -13261,6 +13276,19 @@ const App = {
                     <a class="btn btn-sm btn-primary" href="#/setup">&#8592; Back to setup</a>
                 </div>`}
 
+                <details class="settings-accordion">
+                    <summary>Platforms I use <span class="summary-meta">— hide the ones you don't</span></summary>
+                    <div class="accordion-body">
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">
+                        Untick a site to keep it out of the Platforms hub, the Overview charts and the
+                        Library's platform filter. Nothing is deleted and nothing stops being checked —
+                        it just stops filling up lists. A site you connect later appears on its own.
+                    </p>
+                    <div id="platform-visibility" class="platform-checkboxes"></div>
+                    <span id="platform-visibility-msg" style="font-size:12px;color:var(--text-muted)"></span>
+                    </div>
+                </details>
+
                 <details class="settings-accordion" open>
                     <summary><span class="status-dot" id="session-health-dot"></span>Session health <span class="summary-meta">— cookie / token validity</span></summary>
                     <div class="accordion-body">
@@ -15505,6 +15533,32 @@ const App = {
                     alert('Failed to save: ' + err.message);
                 }
             });
+
+            // ── Platforms I use (Settings → Platforms) ───────────────
+            const pvBox = document.getElementById('platform-visibility');
+            if (pvBox) {
+                const hidden = new Set(window.HIDDEN_PLATFORMS || []);
+                pvBox.innerHTML = (window.PLATFORMS || []).map(p => `
+                    <label class="checkbox-label">
+                        <input type="checkbox" data-pv="${Utils.escapeHtml(p.code)}"${hidden.has(p.code) ? '' : ' checked'}>
+                        ${Utils.escapeHtml(p.emoji ? p.emoji + ' ' + p.label : p.label)}
+                    </label>`).join('');
+                pvBox.addEventListener('change', async (e) => {
+                    const box = e.target.closest('[data-pv]');
+                    if (!box) return;
+                    const next = [...pvBox.querySelectorAll('[data-pv]')]
+                        .filter(b => !b.checked).map(b => b.dataset.pv);
+                    const msg = document.getElementById('platform-visibility-msg');
+                    try {
+                        await API.savePreferences({ hidden_platforms: next });
+                        window.HIDDEN_PLATFORMS = next;
+                        if (msg) { msg.textContent = 'Saved'; setTimeout(() => { msg.textContent = ''; }, 1500); }
+                    } catch (err) {
+                        box.checked = !box.checked;
+                        if (msg) msg.textContent = 'Could not save: ' + (err.message || err);
+                    }
+                });
+            }
 
             // ── Credits (Settings → About) ───────────────────────────
             this._credits = Array.isArray(prefs.credits) ? prefs.credits.slice() : [];
@@ -18010,6 +18064,63 @@ const App = {
     // Operates on the full allSubmissions array (already fetched) rather than
     // re-fetching from the API, so filtering is instant. Re-renders the table
     // HTML and re-binds sort handlers after each filter change.
+    /* Shared controls for a platform's post list (4.32.3, backlog SUBFILTER).
+     *
+     * The artwork pages got search + rating + type filters; the post pages (X, Bluesky,
+     * Mastodon, Threads, Instagram, Tumblr) got a search box and nothing else, though
+     * every row already carries a `content_type` and a date. Rather than twenty copies
+     * of the same three controls, this is one binder: it builds the **Type** dropdown
+     * from the types actually present in the rows (so a timeline with no replies never
+     * offers "Replies"), adds newest/oldest, and re-renders whichever view is open.
+     *
+     * The select is injected beside the search box, so a page needs no extra markup.
+     */
+    _bindPostSearch(allRows, gridRenderer, opts) {
+        const { tableFn, rebindSort, typeLabels = {}, dateKey = 'posted_at' } = opts || {};
+        const input = document.getElementById('search-input');
+        const toolbar = input?.parentElement;
+
+        const mk = (id, options) => {
+            if (!toolbar || document.getElementById(id)) return document.getElementById(id);
+            const sel = document.createElement('select');
+            sel.className = 'filter-select';
+            sel.id = id;
+            sel.innerHTML = options.map(([v, label]) =>
+                `<option value="${Utils.escapeHtml(v)}">${Utils.escapeHtml(label)}</option>`).join('');
+            input.insertAdjacentElement('afterend', sel);
+            return sel;
+        };
+
+        const types = [...new Set((allRows || []).map(r => r.content_type).filter(Boolean))].sort();
+        const typeSel = types.length > 1
+            ? mk('filter-post-type', [['', 'All types'],
+                                      ...types.map(t => [t, typeLabels[t] || t])])
+            : null;
+        const sortSel = mk('filter-post-sort', [['new', 'Newest first'], ['old', 'Oldest first']]);
+
+        const doFilter = () => {
+            const q = (input?.value || '').toLowerCase();
+            const type = typeSel?.value || '';
+            let rows = allRows || [];
+            if (q) rows = rows.filter(s => (s.title || '').toLowerCase().includes(q));
+            if (type) rows = rows.filter(s => (s.content_type || '') === type);
+            if (sortSel) {
+                const dir = sortSel.value === 'old' ? 1 : -1;
+                rows = rows.slice().sort((a, b) =>
+                    dir * String(a[dateKey] || '').localeCompare(String(b[dateKey] || '')));
+            }
+            const grid = document.getElementById('grid-container');
+            if (grid && gridRenderer) grid.innerHTML = gridRenderer(rows);
+            const table = document.getElementById('table-container');
+            if (table && tableFn) table.innerHTML = tableFn(rows);
+            if (rebindSort) rebindSort();
+        };
+
+        input?.addEventListener('input', doFilter);
+        typeSel?.addEventListener('change', doFilter);
+        sortSel?.addEventListener('change', doFilter);
+    },
+
     _bindSearch(allSubmissions, gridRenderer) {
         const input = document.getElementById('search-input');
         const ratingSelect = document.getElementById('filter-rating');
@@ -18404,26 +18515,11 @@ const App = {
 
     // BSKY variant of _bindSearch(). Filters by text (title only).
     _bindBSKYSearch(allSubmissions, gridRenderer) {
-        const input = document.getElementById('search-input');
-
-        const doFilter = () => {
-            const q = (input?.value || '').toLowerCase();
-
-            let filtered = allSubmissions;
-            if (q) {
-                filtered = filtered.filter(s =>
-                    (s.title || '').toLowerCase().includes(q)
-                );
-            }
-
-            // 2.16.14 (BUG-021): re-render grid container too if a renderer was passed
-            const grid = document.getElementById('grid-container');
-            if (grid && gridRenderer) grid.innerHTML = gridRenderer(filtered);
-            document.getElementById('table-container').innerHTML = Components.bskySubmissionsTable(filtered);
-            this._bindBSKYTableSort();
-        };
-
-        input?.addEventListener('input', doFilter);
+        this._bindPostSearch(allSubmissions, gridRenderer, {
+            tableFn: Components.bskySubmissionsTable,
+            rebindSort: () => this._bindBSKYTableSort(),
+            typeLabels: Components.BSKY_TYPE_LABELS || {},
+        });
     },
 
     // MAST table sort binding — same pattern as BSKY but for MAST.
@@ -18444,25 +18540,11 @@ const App = {
 
     // MAST variant of _bindSearch(). Filters by text (title only).
     _bindMASTSearch(allSubmissions, gridRenderer) {
-        const input = document.getElementById('search-input');
-
-        const doFilter = () => {
-            const q = (input?.value || '').toLowerCase();
-
-            let filtered = allSubmissions;
-            if (q) {
-                filtered = filtered.filter(s =>
-                    (s.title || '').toLowerCase().includes(q)
-                );
-            }
-
-            const grid = document.getElementById('grid-container');
-            if (grid && gridRenderer) grid.innerHTML = gridRenderer(filtered);
-            document.getElementById('table-container').innerHTML = Components.mastSubmissionsTable(filtered);
-            this._bindMASTTableSort();
-        };
-
-        input?.addEventListener('input', doFilter);
+        this._bindPostSearch(allSubmissions, gridRenderer, {
+            tableFn: Components.mastSubmissionsTable,
+            rebindSort: () => this._bindMASTTableSort(),
+            typeLabels: Components.MAST_TYPE_LABELS || {},
+        });
     },
 
     // TUM table sort binding — same pattern as MAST but for TUM.
@@ -18483,25 +18565,11 @@ const App = {
 
     // TUM variant of _bindSearch(). Filters by text (title only).
     _bindTUMSearch(allSubmissions, gridRenderer) {
-        const input = document.getElementById('search-input');
-
-        const doFilter = () => {
-            const q = (input?.value || '').toLowerCase();
-
-            let filtered = allSubmissions;
-            if (q) {
-                filtered = filtered.filter(s =>
-                    (s.title || '').toLowerCase().includes(q)
-                );
-            }
-
-            const grid = document.getElementById('grid-container');
-            if (grid && gridRenderer) grid.innerHTML = gridRenderer(filtered);
-            document.getElementById('table-container').innerHTML = Components.tumSubmissionsTable(filtered);
-            this._bindTUMTableSort();
-        };
-
-        input?.addEventListener('input', doFilter);
+        this._bindPostSearch(allSubmissions, gridRenderer, {
+            tableFn: Components.tumSubmissionsTable,
+            rebindSort: () => this._bindTUMTableSort(),
+            typeLabels: Components.TUM_TYPE_LABELS || {},
+        });
     },
 
     // PIX table sort binding — same pattern as the gallery platforms.
@@ -18561,25 +18629,11 @@ const App = {
 
     // THR variant of _bindSearch(). Filters by text (title only).
     _bindTHRSearch(allSubmissions, gridRenderer) {
-        const input = document.getElementById('search-input');
-
-        const doFilter = () => {
-            const q = (input?.value || '').toLowerCase();
-
-            let filtered = allSubmissions;
-            if (q) {
-                filtered = filtered.filter(s =>
-                    (s.title || '').toLowerCase().includes(q)
-                );
-            }
-
-            const grid = document.getElementById('grid-container');
-            if (grid && gridRenderer) grid.innerHTML = gridRenderer(filtered);
-            document.getElementById('table-container').innerHTML = Components.thrSubmissionsTable(filtered);
-            this._bindTHRTableSort();
-        };
-
-        input?.addEventListener('input', doFilter);
+        this._bindPostSearch(allSubmissions, gridRenderer, {
+            tableFn: Components.thrSubmissionsTable,
+            rebindSort: () => this._bindTHRTableSort(),
+            typeLabels: Components.THR_TYPE_LABELS || {},
+        });
     },
 
     // IG table sort binding.
@@ -18600,25 +18654,11 @@ const App = {
 
     // IG variant of _bindSearch(). Filters by text (title only).
     _bindIGSearch(allSubmissions, gridRenderer) {
-        const input = document.getElementById('search-input');
-
-        const doFilter = () => {
-            const q = (input?.value || '').toLowerCase();
-
-            let filtered = allSubmissions;
-            if (q) {
-                filtered = filtered.filter(s =>
-                    (s.title || '').toLowerCase().includes(q)
-                );
-            }
-
-            const grid = document.getElementById('grid-container');
-            if (grid && gridRenderer) grid.innerHTML = gridRenderer(filtered);
-            document.getElementById('table-container').innerHTML = Components.igSubmissionsTable(filtered);
-            this._bindIGTableSort();
-        };
-
-        input?.addEventListener('input', doFilter);
+        this._bindPostSearch(allSubmissions, gridRenderer, {
+            tableFn: Components.igSubmissionsTable,
+            rebindSort: () => this._bindIGTableSort(),
+            typeLabels: Components.IG_TYPE_LABELS || {},
+        });
     },
 
     // TW table sort binding — same pattern as IK but for TW.
@@ -18639,26 +18679,11 @@ const App = {
 
     // TW variant of _bindSearch(). Filters by text (title only).
     _bindTWSearch(allSubmissions, gridRenderer) {
-        const input = document.getElementById('search-input');
-
-        const doFilter = () => {
-            const q = (input?.value || '').toLowerCase();
-
-            let filtered = allSubmissions;
-            if (q) {
-                filtered = filtered.filter(s =>
-                    (s.title || '').toLowerCase().includes(q)
-                );
-            }
-
-            // 2.16.14 (BUG-021): re-render grid container too if a renderer was passed
-            const grid = document.getElementById('grid-container');
-            if (grid && gridRenderer) grid.innerHTML = gridRenderer(filtered);
-            document.getElementById('table-container').innerHTML = Components.twSubmissionsTable(filtered);
-            this._bindTWTableSort();
-        };
-
-        input?.addEventListener('input', doFilter);
+        this._bindPostSearch(allSubmissions, gridRenderer, {
+            tableFn: Components.twSubmissionsTable,
+            rebindSort: () => this._bindTWTableSort(),
+            typeLabels: Components.TW_TYPE_LABELS || {},
+        });
     },
 
     // SF variant of _bindSearch(). Filters by text (title/keywords) and rating

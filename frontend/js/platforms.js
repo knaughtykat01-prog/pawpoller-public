@@ -190,17 +190,26 @@
      * connected later shows up everywhere by default, so a filtered widget can
      * never quietly under-count new work. */
     function visiblePlatforms(exclude) {
-        if (!Array.isArray(exclude) || !exclude.length) return PLATFORMS;
-        const off = new Set(exclude);
+        // The app-wide "platforms I use" list (4.32.3) rides on the same exclusion
+        // doctrine: somebody who posts to three sites should not wade through twenty.
+        // It is stored as hidden codes, so a platform connected later appears by
+        // default and can never be quietly left out of a count.
+        const off = new Set([...(window.HIDDEN_PLATFORMS || []),
+                             ...(Array.isArray(exclude) ? exclude : [])]);
+        if (!off.size) return PLATFORMS;
         return PLATFORMS.filter(p => !off.has(p.code));
     }
 
     /* isPlatformVisible(code, exclude) — the same test for a single code, for
      * widgets that filter rows of data rather than the platform list. */
     function isPlatformVisible(code, exclude) {
-        return !(Array.isArray(exclude) && exclude.includes(code));
+        if (Array.isArray(exclude) && exclude.includes(code)) return false;
+        return !(window.HIDDEN_PLATFORMS || []).includes(code);
     }
 
+    /* Hidden by the operator in Settings → Platforms. Filled from preferences at
+       boot (app.js); an empty list means "show everything", which is the default. */
+    window.HIDDEN_PLATFORMS = window.HIDDEN_PLATFORMS || [];
     window.PLATFORMS = PLATFORMS;
     /* Everything that can actually produce numbers.
      *

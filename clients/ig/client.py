@@ -107,6 +107,9 @@ class IgClient:
         self.ignored_user_id: str = "" if self.user_id else str(user_id or "").strip()
         self._username: str = ""
         self._logged_in = False
+        # True when the last media listing ended on a page that would not load, so
+        # the caller knows the count is "at least this many" rather than the gallery.
+        self.partial_fetch: bool = False
 
         if proxy_url and proxy_key:
             from polling.cf_proxy import CloudflareProxyTransport
@@ -253,7 +256,17 @@ class IgClient:
     async def get_all_post_uris(self) -> list[dict]:
         """Page through the user's media. Items carry the post metadata (including
         like_count/comments_count); reach/saves/shares/views come per-post in the
-        details pass."""
+        details pass.
+
+        A page that fails to load ends the walk — and used to end it *silently*, which
+        made a transient Meta error (a 500, a dropped connection) look exactly like
+        "that is all your posts". The symptom is a gallery stuck at the same count every
+        cycle while the poll reports success: seen live, a library frozen at ~100 posts
+        with `IG: Failed to fetch …/media?…&after=…` immediately above the "Found 100
+        media" line. So: retry the page once, and if it still will not load, say the
+        listing is partial (``partial_fetch``) instead of pretending it is complete.
+        """
+        self.partial_fetch = False
         if not await self.ensure_logged_in():
             logger.error("IG: Not logged in, cannot fetch media")
             return []
@@ -266,6 +279,17 @@ class IgClient:
         for _page_safety in range(1000):
             data = await self._get_json(url, params)
             if not data or not isinstance(data, dict):
+                # One retry, after a longer pause than the normal spacing — most of
+                # these are a momentary 500 from Meta.
+                await asyncio.sleep(config.IG_REQUEST_DELAY_SECONDS * 5)
+                data = await self._get_json(url, params)
+            if not data or not isinstance(data, dict):
+                if all_posts:
+                    self.partial_fetch = True
+                    logger.warning(
+                        "IG: media listing stopped early — page %d did not load, so this is "
+                        "%d posts and not necessarily all of them",
+                        _page_safety + 1, len(all_posts))
                 break
             posts = data.get("data") or []
             for post in posts:

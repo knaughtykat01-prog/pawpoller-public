@@ -7,6 +7,8 @@ someone typed into the box.
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -63,8 +65,22 @@ class TestThePage:
         block = APP_JS[APP_JS.index("_drawCredits()"):APP_JS.index("async _saveCredits()")]
         assert "Utils.escapeHtml(c.name" in block and "Utils.escapeHtml(c.role" in block
 
-    def test_no_name_is_baked_into_the_source(self):
-        """The public copy must carry no real names — the list ships empty."""
-        block = APP_JS[APP_JS.index("_drawCredits()"):APP_JS.index("async _saveCredits()")]
-        assert "Nobody added yet" in block
+    def test_the_operators_own_list_is_still_their_own(self):
         assert "this._credits = Array.isArray(prefs.credits) ? prefs.credits.slice() : []" in APP_JS
+
+    def test_the_shipped_credit_is_a_handle_and_carries_no_real_name(self):
+        """One credit ships with the app, at the operator's instruction. Handles only —
+        the public copy carries no real names (CLAUDE.md), and the leak scan enforces it."""
+        block = APP_JS[APP_JS.index("SHIPPED_CREDITS: ["):][:400]
+        entries = re.findall(r"name: '([^']+)', role: '([^']+)'", block)
+        assert entries, block[:200]
+        for name, role in entries:
+            assert name.startswith("@"), f"{name} does not read as a handle"
+            assert role.strip()
+
+    def test_a_shipped_credit_cannot_be_deleted_by_accident(self):
+        """It is not in this install's settings, so there is nothing to remove — the row
+        must not offer a button that would index into somebody else's list."""
+        block = APP_JS[APP_JS.index("_drawCredits()"):APP_JS.index("async _saveCredits()")]
+        assert "c._shipped" in block
+        assert "i - shipped.length" in block, "removal must index into the operator's own list"

@@ -151,6 +151,14 @@ async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = Fa
     client = _get_or_create_client(settings, creds.get("tw_auth_token", ""),
                                    creds.get("tw_ct0", ""), creds.get("tw_target_user", ""))
     client.throttled = False   # reset per cycle; set True by the client on a 429
+    # Resume a timeline walk that ran out of X's budget last time. Starting from the
+    # top every cycle re-reads the same first pages and never reaches the tail — an
+    # account was seen stopping at the identical count two cycles running, each ending
+    # on a 429. The cursor is per account; a walk that reaches the end clears it.
+    _cursor_key = config.account_setting_key(account_id, "tw_resume_cursor", is_default)
+    _resume_from = str(settings.get(_cursor_key, "") or "")
+    if _resume_from:
+        logger.info("TW: resuming the timeline walk where the last cycle stopped")
 
     try:
         conn = get_connection()
@@ -181,9 +189,14 @@ async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         # (the per-tweet TweetResultByRestId endpoint 404s), so there's no second
         # detail pass — get_all_tweets() returns full detail dicts.
         _update_tw_progress("searching", message="Fetching tweets...")
-        details = await client.get_all_tweets()
+        details = await client.get_all_tweets(_resume_from)
         stats["submissions_found"] = len(details)
         logger.info("TW: Found %d tweets", len(details))
+
+        # Save where this walk stopped, or clear the marker when it read to the end.
+        _stopped_at = str(getattr(client, "stopped_cursor", "") or "")
+        if _stopped_at != _resume_from:
+            config.save_settings({_cursor_key: _stopped_at})
 
         if not details:
             # No tweets could mean genuinely-none OR the timeline was rate-limited
@@ -268,7 +281,7 @@ async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         if not is_first:
             from polling.telegram import send_poll_summary, check_milestones_batch, check_goals
             try:
-                await send_poll_summary("tw", stats, duration)
+                await send_poll_summary("tw", stats, duration, note=_msg or "")
             except Exception as te:
                 logger.warning("Failed to send TW Telegram summary: %s", te, exc_info=True)
             try:

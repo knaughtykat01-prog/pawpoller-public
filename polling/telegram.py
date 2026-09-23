@@ -235,11 +235,17 @@ def account_alert_prefix(platform: str, account_id: int | None) -> str:
 orchestrated_poll_active = False
 
 
-async def send_poll_summary(platform: str, stats: dict, duration: float) -> None:
+async def send_poll_summary(platform: str, stats: dict, duration: float,
+                            note: str = "") -> None:
     """Send a compact poll cycle summary for a single platform.
 
     Suppressed during orchestrated polls (server.py sends a consolidated
     summary instead).  Still fires for manual /poll commands.
+
+    ``note`` is the caveat the poller already worked out — "rate-limited, some
+    tweets may be missing", "a page did not load". Without it this message said
+    **Poll Complete** over a count the poller had itself recorded as *partial*,
+    which is how a gallery that stops growing reads as a healthy poll.
     """
     if orchestrated_poll_active:
         return
@@ -252,8 +258,10 @@ async def send_poll_summary(platform: str, stats: dict, duration: float) -> None
     subs = stats.get("submissions_found", 0)
     snaps = stats.get("snapshots_inserted", 0)
 
-    lines = [f"<b>{emoji} {name} Poll Complete</b>"]
+    lines = [f"<b>{emoji} {name} Poll {'Incomplete' if note else 'Complete'}</b>"]
     lines.append(f"  {subs} submissions, {snaps} snapshots in {duration:.1f}s")
+    if note:
+        lines.append(f"  ⚠ {note}")
 
     new_faves = stats.get("new_faves_found", 0)
     new_comments = stats.get("new_comments_found", 0)

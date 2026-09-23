@@ -1270,6 +1270,7 @@ def get_preferences():
         # Who helped — shown in Settings → About. Empty until the operator adds
         # someone; no names ship in the repo.
         "credits": settings.get("credits", []),
+        "hidden_platforms": settings.get("hidden_platforms", []),
         "theme": settings.get("theme", "dark"),
         "mobile_mode": settings.get("mobile_mode", "auto"),
         "auto_sync_enabled": settings.get("auto_sync_enabled", True),
@@ -1451,6 +1452,19 @@ def save_preferences(body: dict):
     # ── Timezone ───────────────────────────────────────────────
     if "display_timezone" in body:
         update["display_timezone"] = str(body["display_timezone"])
+
+    # ── Platforms the operator actually uses (Settings → Platforms) ────
+    # Stored as the HIDDEN codes, never the shown ones: a platform connected later
+    # then shows up by default, so a filtered view can never quietly under-count new
+    # work (the same doctrine as the per-widget exclusions in platforms.js).
+    if "hidden_platforms" in body:
+        known = set(platform_metrics.ALL_CODES)
+        codes = []
+        for code in (body.get("hidden_platforms") or [])[:50]:
+            code = str(code).strip().lower()[:16]
+            if code in known and code not in codes:
+                codes.append(code)
+        update["hidden_platforms"] = codes
 
     # ── Credits (Settings → About) ─────────────────────────────
     # The people who helped: testers, translators, whoever the operator wants to

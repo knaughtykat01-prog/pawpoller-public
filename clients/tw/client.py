@@ -321,6 +321,9 @@ class TWClient:
         # sent a tester to re-copy working credentials for a week.
         self.last_error: str = ""
         self.throttled = False          # set True on a 429; read + reset by the poller each cycle
+        # Where a cut-short timeline walk stopped, for the poller to store and hand
+        # back next cycle. "" means the last walk reached the end.
+        self.stopped_cursor: str = ""
         self._owners: list[str] | None = None   # whose session (4.6.3), asked once
 
         if proxy_url and proxy_key:
@@ -842,7 +845,7 @@ class TWClient:
 
     # -- Tweet Discovery ------------------------------------------------------
 
-    async def get_all_tweets(self) -> list[dict]:
+    async def get_all_tweets(self, start_cursor: str = "") -> list[dict]:
         """Fetch the target user's tweets with full stats.
 
         Backend priority (each returns None when it's not its turn / fails, so we
@@ -884,10 +887,11 @@ class TWClient:
         if via_api is not None:
             return via_api
 
-        # 3. GraphQL timeline scrape (always-available last-ditch fallback)
-        return await self._get_all_tweets_graphql()
+        # 3. GraphQL timeline scrape (always-available last-ditch fallback). Only this
+        # backend walks the timeline page by page, so only it can be resumed.
+        return await self._get_all_tweets_graphql(start_cursor)
 
-    async def _get_all_tweets_graphql(self) -> list[dict]:
+    async def _get_all_tweets_graphql(self, start_cursor: str = "") -> list[dict]:
         """Fetch the target user's tweets — with full stats — via UserTweets.
 
         The timeline response already carries each tweet's text and engagement
@@ -907,7 +911,16 @@ class TWClient:
 
         all_tweets: list[dict] = []
         seen_ids: set[str] = set()
-        cursor: str | None = None
+        # Where to carry on from, when the last walk was cut short. X's per-IP budget
+        # runs out part-way down a long timeline, so starting from the top every cycle
+        # reads the same first N tweets for ever and never reaches the tail: an account
+        # was seen stopping at exactly the same count two cycles running, each ending on
+        # a 429. The poller hands back the cursor the last walk died on, and clears it
+        # once a walk reaches the end. ponytail: while a backfill is in progress new
+        # tweets wait for it to finish — a cycle or two — which beats never reading the
+        # rest at all; per-cycle interleaving if that ever matters.
+        cursor: str | None = start_cursor or None
+        self.stopped_cursor = ""
 
         for _page_safety in range(1000):
             variables: dict[str, Any] = {
@@ -932,6 +945,8 @@ class TWClient:
             )
 
             if not data or not isinstance(data, dict):
+                # Rate-limited or a page that would not load: remember where to resume.
+                self.stopped_cursor = cursor or ""
                 break
 
             # Navigate the nested timeline structure
@@ -1001,6 +1016,9 @@ class TWClient:
 
             await asyncio.sleep(config.TW_REQUEST_DELAY_SECONDS)
 
+        if self.stopped_cursor:
+            logger.warning("TW: timeline walk stopped early at %d tweets — will resume from "
+                           "this point next cycle", len(all_tweets))
         logger.info("TW: Found %d tweets for %s", len(all_tweets), self.target_user)
         return all_tweets
 

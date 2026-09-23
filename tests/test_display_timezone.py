@@ -12,6 +12,7 @@ the wizard line is a source check, the same style as test_hash_names_and_tg_char
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 
@@ -35,14 +36,15 @@ global.fetch = () => Promise.reject(new Error('no net'));
 """
 
 
-def _options(current: str) -> list[dict]:
+def _options(current: str, tz: str = "") -> list[dict]:
     script = HARNESS + """
     const html = globalThis.__App._timezoneOptions(%s);
     const out = [...html.matchAll(/<option value="([^"]*)"( selected)?>([^<]*)</g)]
         .map(m => ({value: m[1], selected: !!m[2], label: m[3]}));
     console.log(JSON.stringify(out));
     """ % json.dumps(current)
-    r = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=120)
+    env = {**os.environ, **({"TZ": tz} if tz else {})}
+    r = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=120, env=env)
     assert r.returncode == 0, r.stderr[-600:]
     return json.loads(r.stdout)
 
@@ -82,3 +84,18 @@ class TestTheMenu:
     def test_no_zone_is_offered_twice(self):
         values = [o["value"] for o in _options("UTC")]
         assert len(values) == len(set(values))
+
+
+    def test_a_machine_set_to_utc_does_not_get_utc_twice(self):
+        """CI runs on UTC, where "this computer" and the plain UTC row are the same zone —
+        listing both offered it twice and selected both (caught by the public build)."""
+        opts = _options("UTC", tz="UTC")
+        values = [o["value"] for o in opts]
+        assert values.count("UTC") == 1, values[:4]
+        assert [o["value"] for o in opts if o["selected"]] == ["UTC"]
+        assert opts[0]["label"].startswith("This computer")
+
+    def test_a_machine_somewhere_else_still_offers_utc(self):
+        opts = _options("UTC", tz="America/New_York")
+        assert opts[0]["value"] == "America/New_York"
+        assert [o["value"] for o in opts if o["selected"]] == ["UTC"]
