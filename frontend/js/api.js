@@ -247,6 +247,27 @@ const API = {
     createCommission(body) { return this.post('/api/commissions', body); },
     updateCommission(id, body) { return this.patch(`/api/commissions/${id}`, body); },
     deleteCommission(id) { return this.del(`/api/commissions/${id}`); },
+    /* Trello sync (spec 005). Two-way: the board mirrors PawPoller and what
+       happens on the board comes back. `syncTrello()` PREVIEWS unless told to
+       confirm -- a bare call must never write to a board other people see. */
+    testTrello(key, token) { return this.post('/api/trello/test', { key, token }); },
+    getTrelloBoards() { return this.get('/api/trello/boards'); },
+    getTrelloLists(boardId) { return this.get(`/api/trello/boards/${boardId}/lists`); },
+    getTrelloConfig() { return this.get('/api/trello/config'); },
+    saveTrelloConfig(body) { return this.put('/api/trello/config', body); },
+    previewTrello() { return this.post('/api/trello/preview', {}); },
+    syncTrello(confirm = false, confirmUnlinks = false) {
+        return this.post('/api/trello/sync', { confirm, confirm_unlinks: confirmUnlinks });
+    },
+    getTrelloStatus() { return this.get('/api/trello/status'); },
+    getTrelloConflicts() { return this.get('/api/trello/conflicts'); },
+    resolveTrelloConflict(body) { return this.post('/api/trello/conflicts/resolve', body); },
+    getTrelloCandidates() { return this.get('/api/trello/candidates'); },
+    importTrelloCard(cardId) { return this.post('/api/trello/candidates/import', { card_id: cardId }); },
+    unlinkTrello(clientName, createdAt) {
+        return this.post('/api/trello/unlink', { client_name: clientName, created_at: createdAt });
+    },
+
     /* Attachments (2.188) — any file, ≤25 MB. */
     getCommissionFiles(id) { return this.get(`/api/commissions/${id}/files`); },
     uploadCommissionFile(id, file) {

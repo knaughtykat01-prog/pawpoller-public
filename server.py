@@ -655,6 +655,7 @@ def main():
     from posting.scheduler import start_posting_scheduler
     from routes.backup_api import run_auto_backup_scheduler
     from mirror.watcher import run_drift_watcher
+    from polling.trello_sync import run_trello_scheduler
 
     threads = [
         ("Uvicorn",             lambda: _start_server(args.host, args.port)),
@@ -662,6 +663,11 @@ def main():
         ("Telegram bot",        _start_telegram_bot),
         ("Posting scheduler",   start_posting_scheduler),
         ("Auto-backup",         run_auto_backup_scheduler),
+        # Trello sync (spec 005). Self-gates on interval_min, on the board being
+        # configured, and on THIS instance owning it -- commissions are SHR, so
+        # both the desktop and the server hold them and only the claiming
+        # instance may drive the board.
+        ("Trello sync",         run_trello_scheduler),
         # Detects drift against the paired server; never applies anything.
         # Self-gates on mirror_auto_check + paired mode, re-read each tick, so
         # it costs nothing when off (3.18.0).

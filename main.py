@@ -496,6 +496,15 @@ def run_standalone():
     autobackup_thread = threading.Thread(target=run_auto_backup_scheduler, daemon=True, name="Auto-backup")
     autobackup_thread.start()
 
+    # Trello sync (spec 005). Self-throttles on interval_min, on the board being
+    # configured, and on THIS instance owning it -- the desktop and the server
+    # both hold the same commissions, so only the claiming instance may drive the
+    # board or they would fight over every field.
+    logger.info("Starting Trello sync scheduler...")
+    from polling.trello_sync import run_trello_scheduler
+    trello_thread = threading.Thread(target=run_trello_scheduler, daemon=True, name="Trello sync")
+    trello_thread.start()
+
     # --- Step 3: System tray icon (initially hidden) ---
     _tray_icon = _create_tray_icon()
     # pystray's default setup callback sets visible=True, which would show

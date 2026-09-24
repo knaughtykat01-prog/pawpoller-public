@@ -60,7 +60,9 @@ def test_class_counts_match_the_spec(conn):
     assert counts["SHR"] == 28
     assert counts["HANDOFF"] == 2
     assert counts["DER"] == 1
-    assert counts["LOC"] == 8  # + this stage's own outbox, + promos (4.16.0), + podcast feeds / episodes (4.21.1)
+    # +2 in 4.36.0: trello_links / trello_conflicts (spec 005). Board state
+    # belongs to the one instance that claims the board -- see the rules.
+    assert counts["LOC"] == 10  # + this stage's own outbox, + promos (4.16.0), + podcast feeds / episodes (4.21.1)
 
 
 def test_unregistered_table_raises_rather_than_defaulting():

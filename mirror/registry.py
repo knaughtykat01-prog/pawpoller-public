@@ -392,7 +392,7 @@ _RULES += [
     ),
 ]
 
-# ── LOC (4, plus this stage's own outbox) ─────────────────────
+# ── LOC (10 — see the count assertion in tests/test_mirror_registry.py) ──
 _RULES += [
     TableRule(
         "session_cache", LOC,
@@ -440,6 +440,26 @@ _RULES += [
         "point at images the other box does not have. A card is a generated "
         "teaser, not truth about the story; it is remade from its spec where it "
         "is needed.",
+    ),
+    TableRule(
+        "trello_links", LOC,
+        "Which Trello card a commission has, plus the baseline the sync compares "
+        "against (spec 005). Board state belongs to the ONE instance that claims "
+        "the board: `commissions` is SHR, so both boxes hold the same rows, and "
+        "replicating a card id would hand the other one links to cards it must "
+        "not write while making the single-owner rule unexpressible in the data. "
+        "Note the rows are keyed by (client_name, created_at) for the same reason "
+        "commissions is -- `commissions.id` is excluded from the mirror and is "
+        "therefore a local accident.",
+        lazy=True,
+    ),
+    TableRule(
+        "trello_conflicts", LOC,
+        "Fields where PawPoller and the board disagree, awaiting the operator "
+        "(spec 005). Local for the same reason as trello_links: a disagreement is "
+        "between one instance and the board it owns, so syncing it would show the "
+        "other box a conflict it cannot resolve and did not have.",
+        lazy=True,
     ),
 ]
 

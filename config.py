@@ -693,6 +693,10 @@ CREDENTIAL_FIELDS = frozenset({
     # plaintext as non-secret config; only the password is vaulted).
     "smtp_password",
     "github_pat",
+    # Trello (spec 005 — commissions sync). BOTH are secrets: the key identifies
+    # the app but the token is bearer-equivalent, and Trello echoes query
+    # parameters in some error bodies, so neither may reach plaintext or a log.
+    "trello_api_key", "trello_token",
     "turnstile_site_key", "turnstile_secret_key",
     # Server ↔ desktop
     "posting_server_url", "posting_server_api_key",
@@ -707,6 +711,11 @@ SYNC_EXCLUDE = frozenset({
     # is "standalone" or "paired_desktop"). Syncing it would let one side
     # overwrite the other's mode, which is exactly what we don't want.
     "setup_mode",
+    # Which instance this is, for the Trello board claim (spec 005). The `trello`
+    # block itself DOES sync -- both sides must agree which board and who owns it
+    # -- but the tag naming *this* box must not, or every instance would read as
+    # the owner and they would fight over every field on the board.
+    "trello_instance_tag",
     # ── Who may log in: NEVER syncs, in either direction (3.5.3) ──
     # These decide *access to the instance*, so they must stay per-device.
     # `auth_session_secret` was already excluded — the session secret was
@@ -789,6 +798,11 @@ PLATFORM_CREDENTIAL_FIELDS = {
     "e621": ["e621_username", "e621_api_key"],
     # Telegram channel (Posts-module broadcast target; post-only, not polled).
     "tg": ["tg_bot_token", "tg_channel"],
+    # Trello (spec 005). Not a posting platform -- a work-tracking board the
+    # commissions module syncs with. Listed here so it inherits the credential
+    # vault, the log scrubber and the per-account Test button (4.30.0) rather
+    # than growing its own of each.
+    "trello": ["trello_api_key", "trello_token"],
     "pod": ["pod_feed_slug"],                     # 4.21.1: the feed this account publishes to (not a secret)
     # FurryNetwork (poll+post gallery). Email + password → OAuth token/refresh.
     "fn": ["fn_username", "fn_password", "fn_refresh_token", "fn_access_token"],
@@ -1225,7 +1239,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.35.0"
+APP_VERSION = "4.36.1"
 
 # ── Inkbunny API settings ──
 INKBUNNY_API_BASE = "https://inkbunny.net"     # Inkbunny API root URL

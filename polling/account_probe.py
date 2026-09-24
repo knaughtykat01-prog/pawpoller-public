@@ -177,6 +177,14 @@ def _b_ws(c, pk):
     return WeasylClient(api_key=c.get("ws_api_key", ""), **pk)
 
 
+def _b_trello(c, pk):
+    # ⚠ No proxy kwargs. Trello is a plain public REST API reached directly; the
+    # proxy exists for the platforms that block datacentre egress, and threading
+    # one through here would add a failure mode for no benefit.
+    from clients.trello.client import TrelloClient
+    return TrelloClient(key=c.get("trello_api_key", ""), token=c.get("trello_token", ""))
+
+
 def _b_ib(c, pk):
     from clients.ib.client import InkbunnyClient
     return InkbunnyClient(username=c.get("username", ""), password=c.get("password", ""), **pk)
@@ -205,6 +213,7 @@ PROBES = {
     "wp":   (lambda c: bool(c.get("wp_target_user")), _b_wp, "wp_user", False),
     "ws":   (lambda c: bool(c.get("ws_api_key")), _b_ws, "ws_key", False),
     "ib":   (lambda c: bool(c.get("username") and c.get("password")), _b_ib, "ib_login", False),
+    "trello": (lambda c: bool(c.get("trello_api_key") and c.get("trello_token")), _b_trello, "session_str", False),
 }
 
 

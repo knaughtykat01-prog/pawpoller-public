@@ -48,6 +48,7 @@ from routes.artwork_api import artwork_router
 from routes.posts_api import posts_router
 from routes.collections_api import collections_router
 from routes.commissions_api import commissions_router
+from routes.trello_api import trello_router
 from routes.artists_api import artists_router
 from routes.characters_api import characters_router
 from routes.server_update_api import server_update_router
@@ -513,6 +514,11 @@ _SENSITIVE_WHEN_OPEN_PREFIXES = (
     # on the operator's channel under their own brand, irreversibly. Cheaper to
     # reach than any other publish endpoint here, so it belongs on this list.
     "/api/tg/channel",
+    # Spec 005: the Trello routes write to a board the operator shares with
+    # whoever they shared it with, and /test takes a key+token straight from the
+    # body -- on an open instance that is a credential-probing oracle as well as
+    # a write primitive. Same reasoning as the channel routes above.
+    "/api/trello",
 )
 
 
@@ -616,6 +622,7 @@ app.include_router(feed_router)     # The public feed surface (/feed/*) — auth
 app.include_router(works_router)    # Unified Submissions hub (/api/works)
 app.include_router(collections_router)  # Collections (master container) routes (/api/collections/*)
 app.include_router(commissions_router)  # Commissions (client tracker) routes (/api/commissions/*)
+app.include_router(trello_router)  # Trello sync for commissions (spec 005) (/api/trello/*)
 app.include_router(masterpieces_router)  # Masterpieces (master image record) routes (/api/masterpieces/*)
 app.include_router(artists_router)       # Artist registry (/api/artists/*)
 app.include_router(characters_router)    # Character registry (/api/characters/*)

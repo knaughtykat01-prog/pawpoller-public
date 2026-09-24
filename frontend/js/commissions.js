@@ -198,9 +198,15 @@ window.Commissions = {
                     </div>
                     <div class="comm-files" id="comm-files"><div class="muted">Loading attachments…</div></div>
                 </section>
+
+                <section class="comm-attach">
+                    <h3 class="comm-h3">Trello</h3>
+                    <div id="comm-trello"></div>
+                </section>
             </article>`;
         this._wireAttachments(c.id);
         this._loadFiles(c.id);
+        this._loadTrello(c);
         this._renderDetailNav(c.id);
     },
 
@@ -225,6 +231,53 @@ window.Commissions = {
             href: n => `#/commissions/${encodeURIComponent(n)}`,
             // "archived" is the archived BOARD, not a commission.
             routeTest: h => /^#\/commissions\/[^/]/.test(h) && !/^#\/commissions\/archived/.test(h),
+        });
+    },
+
+
+    /* ── Trello (spec 005) ────────────────────────────────────────────────────
+     * Per-commission link state, and any field the board and PawPoller currently
+     * disagree about.
+     *
+     * ⚠ A conflict is shown with BOTH values and which side each came from. It is
+     * never resolved here by guessing, and there is no "take theirs for
+     * everything" — a bulk button on a screen whose whole purpose is comparing two
+     * values defeats the screen. */
+    async _loadTrello(c) {
+        const host = document.getElementById('comm-trello');
+        if (!host) return;
+        let conflicts = [];
+        try {
+            const r = await API.getTrelloConflicts();
+            conflicts = (r.conflicts || []).filter(x =>
+                x.client_name === c.client_name && x.created_at === c.created_at);
+        } catch (e) {
+            host.innerHTML = '';
+            return;   // not configured, or Trello is unreachable — say nothing
+        }
+        if (!conflicts.length) {
+            host.innerHTML = `<p class="muted" style="font-size:12.5px">In step with the board.</p>`;
+            return;
+        }
+        host.innerHTML = conflicts.map(x => `
+            <div class="alert alert-warning" style="margin-bottom:8px">
+                <div style="font-weight:600;text-transform:capitalize">${this.esc(x.field)} &mdash; changed in both places</div>
+                <div style="font-size:12.5px;margin:4px 0">
+                    Here: <strong>${this.esc(x.local_value)}</strong> &nbsp;&middot;&nbsp;
+                    On the board: <strong>${this.esc(x.remote_value)}</strong>
+                </div>
+                <button class="btn btn-sm" data-conflict-keep="local" data-field="${this.esc(x.field)}">Keep mine</button>
+                <button class="btn btn-sm" data-conflict-keep="remote" data-field="${this.esc(x.field)}">Take the board&rsquo;s</button>
+            </div>`).join('');
+
+        host.querySelectorAll('[data-conflict-keep]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                await API.resolveTrelloConflict({
+                    client_name: c.client_name, created_at: c.created_at,
+                    field: btn.dataset.field, side: btn.dataset.conflictKeep,
+                });
+                this.renderDetail(c.id);
+            });
         });
     },
 
