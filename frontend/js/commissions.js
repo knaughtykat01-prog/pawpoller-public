@@ -83,6 +83,7 @@ window.Commissions = {
         } else if (archivedCount > 0) {
             tb.innerHTML = `<a href="#/commissions/archived" class="btn btn-sm btn-outline">&#128230; Archived (${archivedCount})</a>`;
         }
+        this._trelloStrip(archived);
         const board = document.getElementById('comm-board');
         if (!items.length) {
             board.className = '';
@@ -234,6 +235,93 @@ window.Commissions = {
         });
     },
 
+
+
+    /* Trello strip on the board toolbar (spec 005).
+     *
+     * Three states, because the useful thing to show differs completely between
+     * them: not set up (how do I start?), set up (what is the board doing?), and
+     * owned by the other install (why is nothing happening?).
+     *
+     * ⚠ Sync here PREVIEWS and then shows an Apply button. A one-press sync on the
+     * board page would write to something other people can see, from a button next
+     * to "+ New commission". */
+    async _trelloStrip(archived) {
+        const tb = document.getElementById('comm-toolbar');
+        if (!tb || archived) return;           // the archive is not a live board
+
+        let st;
+        try {
+            st = await API.getTrelloStatus();
+        } catch (e) {
+            return;                            // route missing or unreachable — say nothing
+        }
+
+        const wrap = document.createElement('span');
+        wrap.style.cssText = 'display:inline-flex;gap:8px;align-items:center;margin-left:8px;flex-wrap:wrap';
+
+        if (!st.configured) {
+            wrap.innerHTML = `
+                <button class="btn btn-sm btn-outline" data-trello-connect>&#128279; Connect Trello</button>
+                <span class="muted" style="font-size:12px">Work these on a board you can drag on your phone.</span>`;
+        } else if (!st.is_owner) {
+            wrap.innerHTML = `<span class="muted" style="font-size:12px">
+                &#128279; Trello is driven by your other PawPoller install.</span>`;
+        } else {
+            const conflicts = Number(st.open_conflicts || 0);
+            wrap.innerHTML = `
+                <button class="btn btn-sm btn-outline" data-trello-sync>&#128260; Sync Trello</button>
+                ${conflicts ? `<span class="badge badge-warning" title="Changed in both places — pick a side">
+                    ${conflicts} to resolve</span>` : ''}
+                <span class="muted" style="font-size:12px">${Number(st.linked || 0)} on the board</span>
+                <span id="comm-trello-msg" class="muted" style="font-size:12px"></span>`;
+        }
+        tb.appendChild(wrap);
+
+        wrap.querySelector('[data-trello-connect]')?.addEventListener('click', () => {
+            // The guide first, not Settings: the key and token come from Trello's
+            // Power-Up admin, and nobody finds that page or knows what to put in
+            // the iframe box without being told.
+            if (window.Guides) window.Guides.openModal('trello');
+            else location.hash = '#/settings';
+        });
+
+        wrap.querySelector('[data-trello-sync]')?.addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            const msg = document.getElementById('comm-trello-msg');
+            btn.disabled = true;
+            msg.textContent = 'Looking at the board…';
+            try {
+                const r = await API.previewTrello();
+                const c = r.counts || {};
+                const total = ['created', 'moved', 'updated', 'archived', 'unlinked']
+                    .reduce((n, k) => n + (c[k] || 0), 0);
+                if (r.errors && r.errors.length) {
+                    msg.textContent = r.errors[0];
+                } else if (!total) {
+                    msg.textContent = 'Already in step.';
+                } else if (confirm(
+                        `Apply ${total} change(s) to the board and your commissions?\n\n` +
+                        `${c.created || 0} card(s) to create, ${c.moved || 0} to move, ` +
+                        `${c.updated || 0} field(s) to update, ${c.archived || 0} to archive, ` +
+                        `${c.unlinked || 0} to unlink.` +
+                        (c.conflicted ? `\n\n${c.conflicted} field(s) changed in both places — ` +
+                                        `those are left alone for you to pick.` : ''))) {
+                    const applied = await API.syncTrello(true);
+                    msg.textContent = applied.applied
+                        ? 'Done.'
+                        : (applied.errors?.[0] || 'Previewed only.');
+                    this.render(false);
+                    return;
+                } else {
+                    msg.textContent = 'Nothing written.';
+                }
+            } catch (err) {
+                msg.textContent = 'Could not reach Trello.';
+            }
+            btn.disabled = false;
+        });
+    },
 
     /* ── Trello (spec 005) ────────────────────────────────────────────────────
      * Per-commission link state, and any field the board and PawPoller currently

@@ -551,6 +551,141 @@
         'YouTube does not allow sexually explicit content: an adult-rated piece is refused before anything is sent.',
       ],
     },
+
+    // ── Trello (commissions board, spec 005) ─────────────────
+    // Not a publishing platform, so it has no entry in PLATFORMS and does not
+    // appear on the Getting Started hub. Reached from Settings → Trello and from
+    // the Connect button on the commissions board.
+    trello: {
+      title: 'Trello', kind: 'Commissions board', difficulty: 'Medium',
+      summary: 'Put your commissions on a Trello board you can drag on your phone — both ways.',
+      need: ['A free Trello account', 'A board for your commissions (a new, empty one is fine)'],
+      steps: [
+        { t: 'Make a board for your commissions',
+          b: 'In Trello, make a board with a column for each stage you use. PawPoller has five: ' +
+             '<b>Quote</b>, <b>Accepted</b>, <b>In progress</b>, <b>Paid</b> and <b>Delivered</b>. ' +
+             'Name the columns whatever you like — you will match them up later, and renaming one ' +
+             'afterwards changes nothing.',
+          link: { label: 'trello.com', url: 'https://trello.com' } },
+
+        { t: 'Open Trello\'s developer page',
+          b: 'Go to <b>trello.com/power-ups/admin</b> and sign in. This is where Trello hands out ' +
+             'API keys. It looks like a page for app developers, and it is — but it is also the ' +
+             'only way to get a key, so everyone has to come through here.',
+          link: { label: 'trello.com/power-ups/admin', url: 'https://trello.com/power-ups/admin' } },
+
+        { t: 'Start a new app',
+          b: 'Click <b>New</b>. Trello calls this an "app" or a "Power-Up" — it is the thing ' +
+             'Trello issues an API key to, and you have to have one before it will give you a key.' },
+
+        { t: 'Pick "My app doesn\'t use Power-up capabilities"',
+          b: 'This is the whole trick, and it is the <b>first thing on the form</b>, above the ' +
+             'name box.<br><br>' +
+             'Two radio buttons: <b>My app will use Power-up capabilities</b> (selected for you) ' +
+             'and <b>My app doesn\'t use Power-up capabilities</b>. Choose the <b>second</b> one. ' +
+             'The <b>Iframe connector URL</b> box disappears the moment you do — it only exists ' +
+             'for apps that add buttons and panels inside Trello itself, which PawPoller does not. ' +
+             'That is why you cannot leave it blank: with the first option chosen, Trello will not ' +
+             'let you save without a URL you have no reason to own.<br><br>' +
+             '\u26a0 Trello says this <b>cannot be changed after the app is created</b>, so pick it ' +
+             'now. If you have already made an app the other way, see the last note at the bottom ' +
+             'of this guide — it still works.' },
+
+        { t: 'Fill in the rest and create it',
+          b: 'What is left is short:<br><br>' +
+             '&bull; <b>App name</b> — anything. "PawPoller" is fine; you can change it later.<br>' +
+             '&bull; <b>Workspace</b> — the one your board is in.<br>' +
+             '&bull; <b>Email</b> and <b>Support contact</b> — yours.<br>' +
+             '&bull; <b>Author</b> — your name.<br><br>' +
+             'Press <b>Create</b>.' },
+
+        { t: 'Generate the API key',
+          b: 'You land on your app\'s settings. In the list down the left, click ' +
+             '<b>Authorization</b>, then <b>Trello Auth</b> underneath it. Press ' +
+             '<b>Generate a new Trello Auth API key for this app</b> and copy the long string it ' +
+             'shows you. That is your <b>API key</b> — the first of the two things PawPoller ' +
+             'needs.<br><br>' +
+             'Trello suggests OAuth 2.0 on the same page. Ignore it: that is for apps other ' +
+             'people install, and it needs a web address to send people back to. You are setting ' +
+             'up your own copy.' },
+
+        { t: 'Paste the key into PawPoller first',
+          b: 'Go to <b>Settings &rarr; Trello</b> and paste the API key into the top box. Do this ' +
+             'before fetching the token — PawPoller builds the token link for you out of the key, ' +
+             'so you do not have to assemble a web address by hand.' },
+
+        { t: 'Get the token',
+          b: 'Press <b>Get my token</b> next to the key box. Trello opens and asks whether to let ' +
+             'PawPoller use your account; press <b>Allow</b>. The next page shows a second long ' +
+             'string — that is your <b>token</b>. Copy it and paste it into the token box.<br><br>' +
+             '<b>You do not need a callback URL.</b> The link asks Trello to simply show you the ' +
+             'token instead of sending it somewhere, so there is nothing to redirect to and ' +
+             'nothing to add to the Power-Up\'s allowed origins. If you ever see a page about ' +
+             'blocked redirects, you are on the wrong link — use the button.<br><br>' +
+             'The link also asks for a token that <b>never expires</b>. One with an expiry date ' +
+             'would stop the sync on that day with no warning.' },
+
+        { t: 'Check it worked',
+          b: 'With both boxes filled, press <b>Test</b>. It should answer with your Trello ' +
+             'username. If it does not, the two values have most likely ended up in the wrong ' +
+             'boxes — the key is the one you generated, the token is the one Trello showed you ' +
+             'after you pressed Allow.' },
+
+        { t: 'Pick your board',
+          b: 'Press <b>Load my boards</b>, then choose the board you made in step 1 from the ' +
+             'dropdown.' },
+
+        { t: 'Say which column is which',
+          b: 'A row appears for each of the five statuses. Choose the matching column for each ' +
+             'one. You can leave a status on <b>not synced</b> — commissions at that status are ' +
+             'then simply left alone, and PawPoller tells you which ones.' },
+
+        { t: 'Set how often it checks, and save',
+          b: 'Choose how many minutes between checks — <b>30</b> is a sensible start. <b>0</b> ' +
+             'turns the timer off without switching the feature off; you can still sync by hand ' +
+             'whenever you like. Press <b>Save</b>.' },
+
+        { t: 'Preview before anything happens',
+          b: 'Press <b>Preview a sync</b>. Nothing is written yet — you get a list of exactly what ' +
+             'would be created, moved or changed. Read it. If it looks right, press <b>Apply</b>.' +
+             '<br><br>The very first sync always previews, even if you ask it to apply. That is ' +
+             'deliberate: a wrong first sync would be visible on the board to anyone you have ' +
+             'shared it with, straight away.' },
+      ],
+      paste: 'Settings → Trello → API key + Token',
+      renew: {
+        when: 'Only if you revoke the token, or chose an expiry date when you approved it',
+        how: 'Generate a new token from the same Power-Up page and paste it into ' +
+             'Settings → Trello. You can see and revoke what you have approved at ' +
+             'trello.com/my/account, under Applications.',
+      },
+      notes: [
+        '<b>It works both ways.</b> Drag a card to another column and the commission follows; ' +
+        'change a commission here and the card follows.',
+        '<b>If you change the same thing in both places, nothing is overwritten.</b> You are shown ' +
+        'both values and which side each came from, and you pick. Until you do, that one field is ' +
+        'left alone — everything else keeps syncing.',
+        '<b>Nothing is ever deleted.</b> Cards are archived, never deleted. If a card disappears ' +
+        'from the board, the commission is kept and simply unlinked. If a lot of cards vanish at ' +
+        'once, the sync stops and asks rather than assuming you meant it.',
+        '<b>Your attachments stay here.</b> Contracts, reference sheets and WIPs are not uploaded ' +
+        'to Trello; the card links back to PawPoller instead.',
+        '<b>Prices live in a small block at the bottom of the card description.</b> Trello has ' +
+        'nowhere else to put a number. You can read it, but leave it alone — PawPoller rewrites ' +
+        'it on the next sync.',
+        '<b>Only one PawPoller can drive a board.</b> If you run both the desktop app and a ' +
+        'server, whichever one you set up first keeps the board; the other says so and stays out ' +
+        'of the way.',
+        '<b>If you already made an app the other way</b>, you do not have to start again. Put any ' +
+        'https address you own in the <b>Iframe connector URL</b> box — ' +
+        '<code>https://pawpoller.pages.dev/</code> will do. Trello only ever fetches that page if ' +
+        'the app declares capabilities, and yours declares none, so it is never loaded. Making a ' +
+        'fresh app with the right option chosen is tidier, but either works.',
+        'Cards on the board that PawPoller did not create are left alone. If one is sitting in a ' +
+        'mapped column it is offered to you as something you <i>could</i> import — it never ' +
+        'becomes a commission on its own.',
+      ],
+    },
   };
 
   function _plat(code) {
@@ -564,7 +699,10 @@
 
   function label(code) {
     const p = _plat(code);
-    return (p && p.label) || code.toUpperCase();
+    // `title` is for guides with no PLATFORMS entry -- Trello is a commissions
+    // board, not a publishing platform, so it has no registry row to take a
+    // label from and would otherwise render as "TRELLO".
+    return (p && p.label) || (GUIDES[code] && GUIDES[code].title) || code.toUpperCase();
   }
   function emoji(code) {
     const p = _plat(code);

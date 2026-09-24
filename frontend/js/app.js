@@ -4090,8 +4090,10 @@ const App = {
                 <label style="font-size:13px;color:var(--text-muted)">Token</label>
                 <input type="password" id="trello-token" class="search-input" style="max-width:420px"
                        placeholder="${cfg.has_credentials ? "•••• saved" : ""}">
-                <div style="display:flex;gap:8px;align-items:center">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                     <button class="btn btn-sm" id="trello-test-btn">Test</button>
+                    <button class="btn btn-sm" id="trello-token-btn" type="button">Get my token</button>
+                    <button class="btn btn-sm btn-outline" id="trello-guide-btn" type="button">Setup guide</button>
                     <span id="trello-test-msg" style="font-size:12.5px;color:var(--text-muted)"></span>
                 </div>
             </div>
@@ -4166,6 +4168,36 @@ const App = {
             } catch (e) {
                 msg.textContent = "That did not work.";
             }
+        });
+
+        /* Build Trello's own authorize URL out of the key the operator just pasted.
+           ⚠ `response_type=token` with NO `return_url` and NO `callback_method` is
+           what makes this need no callback URL at all: Trello shows the token in the
+           browser instead of redirecting, so there is nothing to add to the
+           Power-Up's allowed origins. Asking someone to assemble this address by
+           hand is how they end up on a redirect flow they cannot complete.
+
+           `expiration=never` matters too -- a token with an expiry stops the sync on
+           its day with no warning. */
+        document.getElementById("trello-token-btn")?.addEventListener("click", () => {
+            const msg = document.getElementById("trello-test-msg");
+            const key = (document.getElementById("trello-key").value || "").trim();
+            if (!key) {
+                msg.textContent = "Paste your API key first — the link is built from it.";
+                document.getElementById("trello-key").focus();
+                return;
+            }
+            const url = "https://trello.com/1/authorize"
+                + "?expiration=never&scope=read,write&response_type=token"
+                + "&name=PawPoller&key=" + encodeURIComponent(key);
+            window.open(url, "_blank", "noopener");
+            msg.textContent = "Approve it in the new tab, then paste the token below.";
+        });
+
+        // Where the key and token actually come from. Trello only issues them
+        // through the Power-Up admin, which is not a page anyone finds by looking.
+        document.getElementById("trello-guide-btn")?.addEventListener("click", () => {
+            if (window.Guides) window.Guides.openModal("trello");
         });
 
         document.getElementById("trello-boards-btn")?.addEventListener("click", async () => {

@@ -14,6 +14,8 @@ None of those shows up in a test of `trello.sync`.
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -341,3 +343,174 @@ class TestBothEntryPointsStartTheScheduler:
                           "run_trello_scheduler"):
             assert scheduler in main_src, f"{scheduler} is missing from main.py"
             assert scheduler in table, f"{scheduler} is missing from server.py's thread table"
+
+
+
+def _guide_text() -> str:
+    """The Trello guide as a READER sees it.
+
+    ⚠ The source joins prose with `' + '` across line breaks, so a phrase that is
+    plainly in the guide is often not a substring of the file. Assertions that
+    searched the raw source failed three times on text that was right there.
+    """
+    src = open("frontend/js/platform_guides.js", encoding="utf-8").read()
+    i = src.index("    trello: {")
+    block = src[i:src.index("\n    },", i)]
+    return re.sub(r"'\s*\+\s*'", "", block)
+
+
+class TestTheSetupGuideAndTheConnectButton:
+    """Getting a Trello API key is the hard part of this feature, and none of it is
+    in PawPoller: you have to create a "Power-Up" on a developer page nobody finds
+    by accident, and the form asks for an **Iframe connector URL** that a REST-only
+    integration does not have. Someone who guesses at that box is stuck before they
+    reach anything this codebase controls -- so the guide is part of the feature,
+    not decoration around it.
+    """
+
+    def _guide(self):
+        return _guide_text()
+
+    def test_there_is_a_trello_guide(self):
+        from pathlib import Path
+        src = open("frontend/js/platform_guides.js", encoding="utf-8").read()
+        assert "    trello: {" in src
+        assert Path("frontend/img/guides/trello/guide.pdf").exists(), \
+            "re-run deploy/make_guide_pdfs.py"
+
+    def test_it_answers_the_iframe_connector_url_question(self):
+        """⚠ The single question that blocks setup, and the answer is NOT "leave it
+        blank" -- Trello refuses to save a Power-Up without one. An earlier draft of
+        this guide said blank; this assertion exists so it cannot drift back.
+
+        The deeper assertion lives in TestGettingTheTokenNeedsNoCallbackUrl; this
+        one just pins that the step is present and names an address."""
+        g = self._guide()
+        assert "Iframe connector URL" in g
+        # The real answer, read off the live form: a radio ABOVE the name box.
+        # Choosing "doesn't use Power-up capabilities" removes the field entirely.
+        assert "use Power-up capabilities" in g
+        assert "cannot be changed after" in g, \
+            "the choice is permanent -- the guide has to say so"
+
+    def test_it_says_where_the_key_and_token_come_from(self):
+        g = self._guide()
+        assert "power-ups/admin" in g
+        # Verified against the live admin: Authorization -> Trello Auth -> Generate.
+        # There is no "API Key" tab; older docs say there is.
+        assert "Authorization" in g and "Trello Auth" in g
+        assert "Generate a new Trello Auth API key" in g
+
+    def test_it_warns_about_a_token_that_expires(self):
+        """A token with an expiry stops the sync on its day with no warning."""
+        g = self._guide()
+        assert "never expires" in g.lower() or "never expire" in g.lower()
+
+    def test_the_guide_has_the_fields_the_renderer_needs(self):
+        g = self._guide()
+        for field in ("steps:", "paste:", "renew:", "need:", "notes:"):
+            assert field in g, field
+
+    def test_a_guide_with_no_platform_row_still_gets_a_readable_title(self):
+        """Trello is not in PLATFORMS -- it is a commissions board, not a place you
+        post to -- so label() would render it "TRELLO" without the fallback."""
+        src = open("frontend/js/platform_guides.js", encoding="utf-8").read()
+        i = src.index("function label(code)")
+        assert "GUIDES[code].title" in src[i:i + 400]
+        assert "title: 'Trello'" in self._guide()
+
+    def test_settings_offers_the_guide(self):
+        src = open("frontend/js/app.js", encoding="utf-8").read()
+        assert "trello-guide-btn" in src
+        assert 'openModal("trello")' in src
+
+    def test_the_commissions_board_has_a_connect_button(self):
+        src = open("frontend/js/commissions.js", encoding="utf-8").read()
+        assert "data-trello-connect" in src
+        assert "_trelloStrip" in src
+
+    def test_connect_opens_the_guide_rather_than_dumping_you_in_settings(self):
+        """Settings has two empty boxes and no way to fill them; the guide is the
+        part that is actually missing."""
+        src = open("frontend/js/commissions.js", encoding="utf-8").read()
+        i = src.index("data-trello-connect]")
+        assert "openModal('trello')" in src[i:i + 500]
+
+    def test_the_board_button_previews_before_it_applies(self):
+        """⚠ A one-press sync sitting next to "+ New commission" would write to a
+        board other people can see."""
+        src = open("frontend/js/commissions.js", encoding="utf-8").read()
+        i = src.index("data-trello-sync]")
+        block = src[i:i + 2500]
+        assert "previewTrello()" in block
+        assert "confirm(" in block
+        j = block.index("syncTrello(true)")
+        assert "confirm(" in block[:j], "it applies without asking first"
+
+
+class TestGettingTheTokenNeedsNoCallbackUrl:
+    """⚠ The two questions that actually block setup, and the answers they need.
+
+    Trello will not save a Power-Up without an **Iframe connector URL**, and the
+    authorize flow looks like it wants a **callback URL**. Neither has an obvious
+    answer for an app that runs on your own machine, and guessing at either leaves
+    you stuck before you reach anything this codebase controls.
+
+    The token half is answered in code rather than in prose: PawPoller builds the
+    authorize URL itself, using `response_type=token` with no `return_url` and no
+    `callback_method`, so Trello displays the token instead of redirecting and
+    there is nothing to add to the Power-Up's allowed origins.
+    """
+
+    def _handler(self):
+        src = open("frontend/js/app.js", encoding="utf-8").read()
+        i = src.index('trello-token-btn")?.addEventListener')
+        return src[i:i + 1400]
+
+    def test_the_panel_builds_the_authorize_url(self):
+        src = open("frontend/js/app.js", encoding="utf-8").read()
+        assert "trello-token-btn" in src
+        assert "trello.com/1/authorize" in src
+
+    def test_it_asks_trello_to_display_the_token_not_redirect(self):
+        """This single parameter is why no callback URL is needed."""
+        h = self._handler()
+        assert "response_type=token" in h
+
+    def test_it_sends_no_return_url_and_no_callback_method(self):
+        """⚠ Either one turns this into a redirect flow, which then REQUIRES the
+        origin to be on the Power-Up's allow-list -- the exact dead end the button
+        exists to avoid."""
+        h = self._handler()
+        assert "return_url" not in h
+        assert "callback_method" not in h
+
+    def test_the_token_is_asked_to_never_expire(self):
+        """An expiring token stops the sync on its day, silently."""
+        assert "expiration=never" in self._handler()
+
+    def test_it_asks_for_write_as_well_as_read(self):
+        """Read-only would sync one way and fail every push with a 401."""
+        assert "scope=read,write" in self._handler()
+
+    def test_the_key_is_url_encoded(self):
+        assert "encodeURIComponent" in self._handler()
+
+    def test_it_refuses_politely_with_no_key(self):
+        """The link is built FROM the key, so there is nothing to open without one."""
+        h = self._handler()
+        assert "if (!key)" in h
+
+    def test_the_guide_answers_the_iframe_box_rather_than_dodging_it(self):
+        """⚠ An earlier draft of this guide said to leave the box blank. Trello does
+        not allow that -- it will not save the Power-Up -- so the guide has to name
+        something to put in it."""
+        g = _guide_text()
+        assert "Iframe connector URL" in g
+        assert "not let you save" in g, \
+            "the guide must say the field is mandatory, not optional"
+        # And the escape hatch for an app already created the other way.
+        assert "pawpoller.pages.dev" in g
+
+    def test_the_guide_says_no_callback_url_is_needed(self):
+        assert "callback URL" in _guide_text()
