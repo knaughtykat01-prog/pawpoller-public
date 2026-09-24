@@ -533,3 +533,59 @@ class TestGettingTheTokenNeedsNoCallbackUrl:
 
     def test_the_guide_says_no_callback_url_is_needed(self):
         assert "callback URL" in _guide_text()
+
+
+class TestSavingTheCredentials:
+    """⚠ The gap that made setup impossible for three releases.
+
+    `/boards` reads the STORED key and token, never the request body, so something
+    has to put them there before "Load my boards" can work. The panel called a
+    general settings-save helper that does not exist in this codebase, threw a
+    TypeError before reaching the network, and reported "Could not load your
+    boards" -- an error about a request that was never made.
+    """
+
+    def test_the_route_stores_both_values(self, client):
+        import config
+        client.post("/api/trello/credentials",
+                    json={"key": "k" * 16, "token": "t" * 16})
+        s = config.get_settings()
+        assert s.get("trello_api_key") == "k" * 16
+        assert s.get("trello_token") == "t" * 16
+
+    def test_saving_only_one_does_not_blank_the_other(self):
+        """Re-entering a key should not wipe a token that still works."""
+        import config
+        config.save_settings({"trello_api_key": "old-key", "trello_token": "keep-me"})
+        from routes import trello_api
+        trello_api.save_credentials({"key": "new-key"})
+        s = config.get_settings()
+        assert s.get("trello_api_key") == "new-key"
+        assert s.get("trello_token") == "keep-me"
+
+    def test_an_empty_body_is_refused(self, client):
+        assert client.post("/api/trello/credentials", json={}).status_code == 400
+
+    def test_it_reports_presence_without_echoing_the_values(self, client):
+        body = client.post("/api/trello/credentials",
+                           json={"key": KEY, "token": TOKEN}).json()
+        assert body["saved"] is True
+        assert KEY not in str(body) and TOKEN not in str(body)
+
+    def test_the_stored_pair_is_what_the_client_is_built_from(self, client):
+        """The round trip the panel actually depends on: save, then a route that
+        takes no credentials of its own still finds them."""
+        import config
+        from trello import sync
+        client.post("/api/trello/credentials", json={"key": KEY, "token": TOKEN})
+        assert sync.credentials() == (KEY, TOKEN)
+
+    def test_both_values_land_in_the_vault_not_plaintext(self):
+        """They are in CREDENTIAL_FIELDS, so save_settings routes them to the
+        encrypted store and settings.json never holds either."""
+        import json
+        import config
+        config.save_settings({"trello_api_key": "vault-me", "trello_token": "vault-me-too"})
+        plain = json.loads(config.SETTINGS_PATH.read_text(encoding="utf-8"))
+        assert "trello_api_key" not in plain
+        assert "trello_token" not in plain

@@ -251,6 +251,7 @@ const API = {
        happens on the board comes back. `syncTrello()` PREVIEWS unless told to
        confirm -- a bare call must never write to a board other people see. */
     testTrello(key, token) { return this.post('/api/trello/test', { key, token }); },
+    saveTrelloCredentials(key, token) { return this.post('/api/trello/credentials', { key, token }); },
     getTrelloBoards() { return this.get('/api/trello/boards'); },
     getTrelloLists(boardId) { return this.get(`/api/trello/boards/${boardId}/lists`); },
     getTrelloConfig() { return this.get('/api/trello/config'); },

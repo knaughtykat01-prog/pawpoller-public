@@ -4205,7 +4205,7 @@ const App = {
             const token = (document.getElementById("trello-token").value || "").trim();
             // Saving first is what makes "Load my boards" work on a fresh setup:
             // the route reads the STORED credentials, not the form.
-            if (key && token) await API.saveSettings({ trello_api_key: key, trello_token: token });
+            if (key && token) await API.saveTrelloCredentials(key, token);
             const sel = document.getElementById("trello-board");
             try {
                 const r = await API.getTrelloBoards();
@@ -4239,7 +4239,7 @@ const App = {
             const msg = document.getElementById("trello-sync-msg");
             const key = (document.getElementById("trello-key").value || "").trim();
             const token = (document.getElementById("trello-token").value || "").trim();
-            if (key && token) await API.saveSettings({ trello_api_key: key, trello_token: token });
+            if (key && token) await API.saveTrelloCredentials(key, token);
             const listMap = {};
             document.querySelectorAll("[data-trello-map]").forEach(sel => {
                 listMap[sel.dataset.trelloMap] = sel.value || "";

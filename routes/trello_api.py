@@ -59,6 +59,31 @@ def test_credentials(body: dict):
     return {"ok": True, "member": me}
 
 
+@trello_router.post("/credentials")
+def save_credentials(body: dict):
+    """Store the key and token.
+
+    ⚠ This route exists because there is no general "save a setting" endpoint to
+    lean on -- an earlier version of the panel called one that does not exist, so
+    "Load my boards" threw before it ever reached the network. `/boards` reads the
+    STORED credentials rather than the form, so they have to land somewhere first.
+
+    Both fields are in `config.CREDENTIAL_FIELDS`, so `save_settings` routes them
+    into the vault and hands them to the log scrubber. Nothing is echoed back.
+    """
+    key = str(body.get("key") or "").strip()
+    token = str(body.get("token") or "").strip()
+    if not key and not token:
+        raise HTTPException(status_code=400, detail="Nothing to save.")
+    update = {}
+    if key:
+        update["trello_api_key"] = key
+    if token:
+        update["trello_token"] = token
+    config.save_settings(update)
+    return {"saved": True, "has_credentials": bool(sync.credentials()[0] and sync.credentials()[1])}
+
+
 @trello_router.get("/boards")
 def list_boards():
     client = _client_or_400()
