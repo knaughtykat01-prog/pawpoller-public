@@ -602,28 +602,38 @@
         { t: 'Generate the API key',
           b: 'You land on your app\'s settings. In the list down the left, click ' +
              '<b>Authorization</b>, then <b>Trello Auth</b> underneath it. Press ' +
-             '<b>Generate a new Trello Auth API key for this app</b> and copy the long string it ' +
-             'shows you. That is your <b>API key</b> — the first of the two things PawPoller ' +
-             'needs.<br><br>' +
+             '<b>Generate a new Trello Auth API key for this app</b>.<br><br>' +
              'Trello suggests OAuth 2.0 on the same page. Ignore it: that is for apps other ' +
-             'people install, and it needs a web address to send people back to. You are setting ' +
-             'up your own copy.' },
+             'people install, and it needs a web address to send them back to. You are setting up ' +
+             'your own copy.' },
 
-        { t: 'Paste the key into PawPoller first',
-          b: 'Go to <b>Settings &rarr; Trello</b> and paste the API key into the top box. Do this ' +
-             'before fetching the token — PawPoller builds the token link for you out of the key, ' +
-             'so you do not have to assemble a web address by hand.' },
+        { t: 'Three boxes appear \u2014 you need one of them',
+          b: '\u26a0 This page shows <b>three</b> long strings and it is easy to grab the wrong ' +
+             'one.<br><br>' +
+             '&bull; <b>API key</b> \u2014 <b>this is the one PawPoller wants.</b> Copy it.<br>' +
+             '&bull; <b>Allowed origins</b> \u2014 leave empty. It only controls where Trello may ' +
+             'redirect after an authorisation, and nothing here redirects anywhere.<br>' +
+             '&bull; <b>Secret</b> \u2014 <b>do not paste this into PawPoller</b>, or anywhere else. ' +
+             'It is for a different, older way of connecting that PawPoller does not use. Trello ' +
+             'offers no way to reset it, so treat it like a password you cannot change.' },
 
         { t: 'Get the token',
-          b: 'Press <b>Get my token</b> next to the key box. Trello opens and asks whether to let ' +
-             'PawPoller use your account; press <b>Allow</b>. The next page shows a second long ' +
-             'string — that is your <b>token</b>. Copy it and paste it into the token box.<br><br>' +
-             '<b>You do not need a callback URL.</b> The link asks Trello to simply show you the ' +
-             'token instead of sending it somewhere, so there is nothing to redirect to and ' +
-             'nothing to add to the Power-Up\'s allowed origins. If you ever see a page about ' +
-             'blocked redirects, you are on the wrong link — use the button.<br><br>' +
-             'The link also asks for a token that <b>never expires</b>. One with an expiry date ' +
-             'would stop the sync on that day with no warning.' },
+          b: 'Under the API key there is a sentence ending in a <b>Token</b> link \u2014 click it. ' +
+             'Trello asks whether to let your app use your account; press <b>Allow</b>. The next ' +
+             'page shows one more long string: that is your <b>token</b>. Copy it.<br><br>' +
+             'If you would rather not hunt for that link, paste the API key into ' +
+             '<b>Settings &rarr; Trello</b> first and press <b>Get my token</b> \u2014 PawPoller ' +
+             'opens the same page for you, and asks for slightly fewer permissions while it is ' +
+             'there (it does not need access to your profile).<br><br>' +
+             '<b>You do not need a callback URL</b>, whichever way you go. The link asks Trello to ' +
+             'simply show you the token rather than send it somewhere, so there is nothing to ' +
+             'redirect to and nothing to put in <b>Allowed origins</b>. It also asks for a token ' +
+             'that <b>never expires</b> \u2014 one with an expiry date would stop the sync on that ' +
+             'day with no warning.' },
+
+        { t: 'Paste both into PawPoller',
+          b: 'In <b>Settings &rarr; Trello</b>: the <b>API key</b> in the first box, the ' +
+             '<b>token</b> in the second.' },
 
         { t: 'Check it worked',
           b: 'With both boxes filled, press <b>Test</b>. It should answer with your Trello ' +
@@ -676,6 +686,9 @@
         '<b>Only one PawPoller can drive a board.</b> If you run both the desktop app and a ' +
         'server, whichever one you set up first keeps the board; the other says so and stays out ' +
         'of the way.',
+        '<b>The Secret on the API key page is not used by PawPoller.</b> Three long strings sit ' +
+        'on that one page and only the API key and the token are wanted. Trello offers no way to ' +
+        'reset the Secret, so do not paste it anywhere.',
         '<b>If you already made an app the other way</b>, you do not have to start again. Put any ' +
         'https address you own in the <b>Iframe connector URL</b> box — ' +
         '<code>https://pawpoller.pages.dev/</code> will do. Trello only ever fetches that page if ' +

@@ -406,6 +406,25 @@ class TestTheSetupGuideAndTheConnectButton:
         g = self._guide()
         assert "never expires" in g.lower() or "never expire" in g.lower()
 
+    def test_it_warns_off_the_api_secret(self):
+        """⚠ Read off the live API key page: it shows THREE long strings -- API key,
+        Allowed origins, and a **Secret** -- and only the first is wanted. The Secret
+        is for OAuth 1, which PawPoller does not use, and Trello states outright that
+        it offers no way to reset it. Pasting it somewhere is the one mistake on that
+        page that cannot be undone, so the guide has to name it before the reader
+        gets there."""
+        g = _guide_text()
+        assert "Secret" in g
+        assert "do not paste this into PawPoller" in g or "not used by PawPoller" in g
+        assert "no way to reset" in g
+
+    def test_it_says_allowed_origins_stays_empty(self):
+        """The box sits directly under the API key and looks like something to fill
+        in. It only constrains redirects, and nothing here redirects."""
+        g = _guide_text()
+        assert "Allowed origins" in g
+        assert "leave empty" in g.lower() or "nothing to put in" in g.lower()
+
     def test_the_guide_has_the_fields_the_renderer_needs(self):
         g = self._guide()
         for field in ("steps:", "paste:", "renew:", "need:", "notes:"):
