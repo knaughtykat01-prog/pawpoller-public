@@ -76,6 +76,24 @@ def option_default(settings: dict, platform: str, key: str, hard: bool) -> bool:
     return hard
 
 
+def option_value(settings: dict, platform: str, key: str, hard):
+    """The fallback for an announce option that is NOT a yes/no (4.35.0).
+
+    Same three rungs as :func:`option_default` — per-piece wins, this decides what
+    "Default" MEANS, ``hard`` is the built-in — but for values that have more than
+    two states. Bluesky's content label was the first; the link mode and the picked
+    platform order are the reason this exists as a function rather than a second
+    copy of the lookup.
+
+    Returns ``hard`` unchanged when nothing is configured, so it is a no-op on an
+    install that has never opened the setting.
+    """
+    block = (settings or {}).get(_DEFAULTS_KEY) or {}
+    per = block.get(platform) or {}
+    val = per.get(key)
+    return hard if val in (None, "") else val
+
+
 def flag(value, default: bool) -> bool:
     """Read a tri-state option: unset falls back, anything else is coerced.
 
@@ -110,7 +128,8 @@ def hashtags(tags: list[str]) -> str:
     return " ".join(out)
 
 
-def resolve_links(package: StoryUploadPackage) -> list[str]:
+def resolve_links(package: StoryUploadPackage, settings: dict | None = None,
+                  platform: str = "") -> list[str]:
     """Which of the work's URLs the post carries, and in what order (4.3.0).
 
     Inputs ride in ``package.extra`` (all optional):
@@ -141,12 +160,19 @@ def resolve_links(package: StoryUploadPackage) -> list[str]:
     The first link matters most: it is the one Telegram and X preview.
     """
     x = package.extra or {}
-    mode = str(x.get("link_mode") or "auto").strip().lower()
+    # 4.35.0: the piece still wins, but "unset" now means the operator's default
+    # rather than a constant. Before this, "never link off-site from X" had to be
+    # set on every piece for ever -- the same gap ANNOUNCEDEF closed for the on/off
+    # options, left open for the one that decides what leaves the site.
+    _default_mode = option_value(settings, platform, "link_mode", "auto") if platform else "auto"
+    mode = str(x.get("link_mode") or _default_mode or "auto").strip().lower()
     if mode not in LINK_MODES:
         mode = "auto"
     if mode == "none":
         return []
     raw_order = x.get("link_platforms")
+    if not isinstance(raw_order, (list, tuple)) and platform:
+        raw_order = option_value(settings, platform, "link_platforms", None)
     order = [str(c) for c in raw_order] if isinstance(raw_order, (list, tuple)) else []
 
     def pairs(key: str) -> list[tuple[str, str]]:
@@ -246,7 +272,8 @@ def body_text(package: StoryUploadPackage, *, is_art: bool) -> str:
 
 
 def compose(package: StoryUploadPackage, *, is_art: bool, with_tags: bool,
-            limit: int, measure: Callable[[str], int], with_links: bool = True) -> str:
+            limit: int, measure: Callable[[str], int], with_links: bool = True,
+            settings: dict | None = None, platform: str = "") -> str:
     """Body + links + hashtags, fitted to *limit* under *measure*.
 
     Fitting order, most disposable first:
@@ -263,7 +290,7 @@ def compose(package: StoryUploadPackage, *, is_art: bool, with_tags: bool,
     cut on the live site has a line in the log saying why.
     """
     body = body_text(package, is_art=is_art)
-    links = "\n".join(resolve_links(package)) if with_links else ""
+    links = "\n".join(resolve_links(package, settings, platform)) if with_links else ""
     tags = hashtags(package.tags) if with_tags else ""
 
     def join(*parts: str) -> str:

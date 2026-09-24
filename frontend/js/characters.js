@@ -59,6 +59,9 @@ window.Characters = {
             ]);
             this._all = d.characters || [];
             this._people = people.artists || [];
+            // From the characters payload, not the artists one: these are the
+            // operator's personas, which is who a character can belong to.
+            this._personas = d.personas || [];
         } catch (err) {
             document.getElementById('ch-list').innerHTML =
                 `<div class="empty-state">Could not load the registry: ${this.esc(err.message || err)}</div>`;
@@ -79,14 +82,15 @@ window.Characters = {
 
     _draw() {
         const chips = [
-            ['all', 'All'], ['owned', 'Has an owner'], ['notag', 'No booru tag'],
+            ['all', 'All'], ['mine', 'Mine'], ['owned', 'Has an owner'], ['notag', 'No booru tag'],
             ['unused', 'No pieces'],
         ];
-        const counts = { all: 0, owned: 0, notag: 0, unused: 0 };
+        const counts = { all: 0, mine: 0, owned: 0, notag: 0, unused: 0 };
         for (const c of this._all) {
             if (!this._hit(c)) continue;
             counts.all++;
-            if (c.owner) counts.owned++;
+            if (c.owner || c.persona) counts.owned++;
+            if (c.persona) counts.mine++;
             if (!c.booru_tag) counts.notag++;
             if (!(c.works || 0)) counts.unused++;
         }
@@ -96,7 +100,8 @@ window.Characters = {
 
         const rows = this._all.filter(c => {
             if (!this._hit(c)) return false;
-            if (this._filter === 'owned') return !!c.owner;
+            if (this._filter === 'owned') return !!(c.owner || c.persona);
+            if (this._filter === 'mine') return !!c.persona;
             if (this._filter === 'notag') return !c.booru_tag;
             if (this._filter === 'unused') return !(c.works || 0);
             return true;
@@ -107,23 +112,32 @@ window.Characters = {
 
     _row(c) {
         const k = this.esc(c.key);
-        const owner = c.owner
-            ? `<span class="ar-badge">${this.esc(c.owner.name)}’s</span>` : '';
+        const owner = c.persona
+            ? `<span class="ar-badge ar-badge--mine">yours · ${this.esc(c.persona.name)}</span>`
+            : (c.owner ? `<span class="ar-badge">${this.esc(c.owner.name)}’s</span>` : '');
         const works = c.works || 0;
         const aliases = (c.aliases || []).length
             ? `<span class="ar-alias">also: ${c.aliases.map(x => this.esc(x)).join(', ')}</span>` : '';
-        // "You" first and labelled (4.34.1). The list is People rows by name, and
-        // nothing said which one is YOU — so the commonest answer, "this is my
-        // character", meant knowing which of your own names you filed yourself under.
-        // A People row is you when it carries a persona link ("this person is me").
-        const _mine = this._people.filter(p => p.persona_id != null);
-        const _others = this._people.filter(p => p.persona_id == null);
-        const _opt = (p, mine) =>
-            `<option value="${this.esc(p.key)}"${p.key === c.owner_key ? ' selected' : ''}>`
-            + `${mine ? 'you · ' : ''}${this.esc(p.name)}</option>`;
-        const ownerOpts = `<option value=""${c.owner_key ? '' : ' selected'}>Owner unknown</option>`
-            + _mine.map(p => _opt(p, true)).join('')
-            + _others.map(p => _opt(p, false)).join('');
+        // Your own personas ARE options here (4.35.0), not just People rows.
+        //
+        // 4.34.1 tried to answer "this one is mine" by labelling any People row that
+        // carried a persona link. It was correct and it was unusable: the People
+        // registry exists to credit OTHER artists, so answering the commonest question
+        // meant first creating a row about yourself in it and then linking that row to a
+        // persona. Measured on the live database: 46 People rows, none persona-linked,
+        // so the "you ·" group was always empty and nobody ever saw it.
+        //
+        // The personas come down in the same payload, so this needs no setup at all.
+        // A persona option carries `persona:<id>`; a People row carries its key. The
+        // two are mutually exclusive and the backend clears whichever was not chosen.
+        const _opt = (val, label, sel) =>
+            `<option value="${this.esc(val)}"${sel ? ' selected' : ''}>${this.esc(label)}</option>`;
+        const ownerOpts =
+            _opt('', 'Owner unknown', !c.owner_key && c.persona_id == null)
+            + (this._personas || []).map(p =>
+                _opt(`persona:${p.persona_id}`, `mine · ${p.name}`,
+                     c.persona_id === p.persona_id)).join('')
+            + this._people.map(p => _opt(p.key, p.name, p.key === c.owner_key)).join('');
         const field = (label, prop, placeholder, hint) => `
             <div class="ar-h">
                 <span${hint ? ` title="${this.esc(hint)}"` : ''}>${label}</span>
@@ -198,16 +212,32 @@ window.Characters = {
             if (k === key) body[prop] = (el.value || '').trim();
         });
         const osel = document.querySelector(`[data-ch-owner="${CSS.escape(key)}"]`);
-        if (osel) body.owner_key = osel.value;
+        if (osel) {
+            // One control, two destinations. Always send BOTH keys so clearing is
+            // possible: sending only the chosen one would leave the previous answer
+            // in place (the backend treats an absent field as "leave alone"), and a
+            // character moved from a friend to yourself would claim both.
+            const v = osel.value || '';
+            if (v.startsWith('persona:')) {
+                body.persona_id = parseInt(v.slice(8), 10);
+                body.owner_key = '';
+            } else {
+                body.owner_key = v;
+                body.persona_id = null;
+            }
+        }
         this._msg(key, 'Saving…');
         try {
             const updated = await API.saveCharacter(body);
             // The row comes back without its resolved owner (the upsert has no reason to
             // read People), so fill it from the list already in hand.
             const owner = this._people.find(p => p.key === updated.character.owner_key);
+            const persona = (this._personas || []).find(
+                p => p.persona_id === updated.character.persona_id);
             Object.assign(c, updated.character, {
                 works: c.works,
                 owner: owner ? { key: owner.key, name: owner.name } : null,
+                persona: persona ? { persona_id: persona.persona_id, name: persona.name } : null,
             });
             // Redraw THIS card only — a full _draw() would discard edits in progress
             // on every other card.

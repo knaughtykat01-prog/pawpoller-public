@@ -133,6 +133,7 @@ class TelegramPoster(PlatformPoster):
             image = package.file_path if (is_art and not is_media) else package.thumbnail_path
             opts = _resolve_options(package, settings)
             text = _build_caption(package, has_image=bool(image) or is_media, is_art=is_art,
+                                  settings=settings,
                                   with_tags=opts["tags"]) if opts["caption"] else ""
 
             if is_media:
@@ -249,14 +250,16 @@ class TelegramPoster(PlatformPoster):
             image = image if image and os.path.isfile(image) else None
 
         # A post with neither text nor image would be an empty broadcast.
-        if not image and not is_media and not _build_caption(package, has_image=False, is_art=is_art).strip():
+        if not image and not is_media and not _build_caption(
+                package, has_image=False, is_art=is_art, settings=s).strip():
             errors.append("Nothing to post — no image and no text")
 
         # ⚠ Warn rather than truncate silently. The caption cap is 1,024 and an
         # artwork description clears it easily; slicing without a word is how a
         # broadcast goes out mangled to real subscribers.
         limit = CAPTION_LIMIT if (image or is_media) else MESSAGE_LIMIT
-        body = _build_caption(package, has_image=bool(image) or is_media, is_art=is_art)
+        body = _build_caption(package, has_image=bool(image) or is_media,
+                              is_art=is_art, settings=s)
         if len(body) > limit:
             errors.append(
                 f"Text is {len(body)} characters — Telegram's limit "
@@ -324,7 +327,7 @@ _resolve_links = announce.resolve_links
 
 
 def _build_caption(package: StoryUploadPackage, *, has_image: bool, is_art: bool,
-                   with_tags: bool = True) -> str:
+                   with_tags: bool = True, settings: dict | None = None) -> str:
     """Artwork caption, or a story announcement.
 
     Artwork: description (or title) + hashtags — the same shape instagram.py
@@ -352,7 +355,7 @@ def _build_caption(package: StoryUploadPackage, *, has_image: bool, is_art: bool
     # Links, for BOTH kinds since 4.3.0 — artwork never had any, because nothing
     # in the repo produced extra['links'] for it (publish_flow spec §6). Which
     # links and in what order is the piece's link_mode / link_platforms.
-    links = _resolve_links(package)
+    links = _resolve_links(package, settings, "tg")
     if links:
         parts.append("\n".join(links))
 

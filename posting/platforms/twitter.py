@@ -114,7 +114,10 @@ class TwitterPoster(PlatformPoster):
             return PostResult(success=False, duration_seconds=self._elapsed(_t),
                               error="X isn't connected for this account — Settings → X, or Browser login")
 
-        opts = _resolve_options(package, config.get_settings())
+        # Bound once: the link defaults need it too, and two get_settings() calls
+        # in one post path is a re-read of the same file.
+        _settings = config.get_settings()
+        opts = _resolve_options(package, _settings)
         is_video = _is_video(package)
         is_art = bool(package.file_path
                       and (package.file_type.lower() in announce.IMAGE_TYPES or package.media_kind in ("video", "audio")))
@@ -123,7 +126,8 @@ class TwitterPoster(PlatformPoster):
         image = None if is_video else (
             package.file_path if (is_art and package.file_type.lower() in announce.IMAGE_TYPES) else package.thumbnail_path)
         text = (announce.compose(package, is_art=is_art, with_tags=opts["tags"],
-                                 limit=announce.TWEET_LIMIT, measure=announce.tweet_length)
+                                 limit=announce.TWEET_LIMIT, measure=announce.tweet_length,
+                                 settings=_settings, platform="tw")
                 if opts["caption"] else "")
         if not text and not image and not is_video:
             return PostResult(success=False, duration_seconds=self._elapsed(_t),

@@ -4010,10 +4010,47 @@ const App = {
                         ${help ? `<span style="color:var(--text-muted);font-size:11.5px">${Utils.escapeHtml(help)}</span>` : ""}
                     </label>`;
                 }).join("")}
+                ${this._linkDefaultRow(code, saved[code] || {})}
             </div>`).join("");
-        host.querySelectorAll("[data-anndef]").forEach(sel => {
-            sel.addEventListener("change", () => this._saveAnnounceDefaults());
+        host.querySelectorAll("[data-anndef], [data-anndef-val]").forEach(el => {
+            el.addEventListener("change", () => this._saveAnnounceDefaults());
         });
+    },
+
+    /* Where a post links OUT to (4.35.0, LINKDEF). Not a yes/no, so it does not fit
+       the tri-state selects above: a piece can link to everywhere it is published,
+       to one place, to a chosen order, or to nowhere.
+
+       The order field only appears for "pick", because it means nothing otherwise —
+       a box that is ignored four times out of five is worse than no box. */
+    LINK_MODE_OPTS: [
+        ["", "Built-in (wherever it lands first)"],
+        ["auto", "Everywhere it is already posted"],
+        ["first", "Just the first one"],
+        ["all", "Every link, including this run"],
+        ["pick", "Only the sites I choose"],
+        ["none", "No links at all"],
+    ],
+
+    _linkDefaultRow(code, cur) {
+        const mode = cur.link_mode || "";
+        const order = Array.isArray(cur.link_platforms) ? cur.link_platforms.join(", ") : "";
+        return `<label style="display:flex;align-items:center;gap:8px;font-size:12.5px">
+            <select class="search-input" data-anndef-val="${code}|link_mode" style="max-width:150px">
+                ${this.LINK_MODE_OPTS.map(([v, l]) =>
+                    `<option value="${v}"${mode === v ? " selected" : ""}>${Utils.escapeHtml(l)}</option>`).join("")}
+            </select>
+            <span>Links out</span>
+            <span style="color:var(--text-muted);font-size:11.5px">where this post points back to</span>
+        </label>
+        <label style="display:${mode === "pick" ? "flex" : "none"};align-items:center;gap:8px;font-size:12.5px"
+               data-anndef-pick="${code}">
+            <input class="search-input" type="text" data-anndef-val="${code}|link_platforms"
+                   style="max-width:150px" value="${Utils.escapeHtml(order)}"
+                   placeholder="fa, ws, bsky">
+            <span>In this order</span>
+            <span style="color:var(--text-muted);font-size:11.5px">site codes, comma separated</span>
+        </label>`;
     },
 
     async _saveAnnounceDefaults() {
@@ -4022,6 +4059,24 @@ const App = {
             const [code, key] = sel.dataset.anndef.split("|");
             if (!sel.value) return;             // built-in — store nothing
             (out[code] = out[code] || {})[key] = sel.value === "on";
+        });
+        // The non-boolean ones. Same rule: blank means "built-in", so it is stored
+        // as nothing rather than as an empty value the backend would have to read
+        // as a choice.
+        document.querySelectorAll("[data-anndef-val]").forEach(el => {
+            const [code, key] = el.dataset.anndefVal.split("|");
+            const raw = (el.value || "").trim();
+            if (!raw) return;
+            (out[code] = out[code] || {})[key] = key === "link_platforms"
+                ? raw.split(",").map(c => c.trim().toLowerCase()).filter(Boolean)
+                : raw;
+        });
+        // Show or hide each "in this order" box to match its mode, without a redraw
+        // that would drop focus mid-edit.
+        document.querySelectorAll("[data-anndef-pick]").forEach(row => {
+            const code = row.dataset.anndefPick;
+            const sel = document.querySelector(`[data-anndef-val="${code}|link_mode"]`);
+            row.style.display = (sel && sel.value === "pick") ? "flex" : "none";
         });
         this._announceDefaults = out;
         try { await API.savePreferences({ announce_defaults: out }); }

@@ -32,6 +32,14 @@
 }
 /* An artist nobody credits is a candidate for tidying, not an error — muted. */
 .ar-badge-zero { opacity: .55; }
+
+/* "yours" reads differently from "someone else's", so it looks different (4.35.0).
+   Accent-tinted rather than a new colour, so it stays inside the theme. */
+.ar-badge--mine {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    color: var(--accent);
+}
 .ar-acts { display: flex; gap: .4rem; margin-left: auto; }
 /* Delete reads as the destructive one without shouting: the confirm carries the
    detail, and nothing in the archive is actually removed. */

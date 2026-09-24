@@ -72,7 +72,10 @@ class BlueskyPoster(PlatformPoster):
         try:
             client = await self._ensure_client()
 
-            opts = _resolve_options(package, config.get_settings())
+            # Bound once; the link defaults read it too. The `settings` on
+            # _ensure_client is a different scope entirely.
+            _settings = config.get_settings()
+            opts = _resolve_options(package, _settings)
             is_art = bool(package.file_path
                           and (package.file_type in ("png", "jpg", "jpeg", "gif", "webp")
                                or package.media_kind in ("video", "audio")))   # 4.18.0: media announces as art
@@ -83,7 +86,8 @@ class BlueskyPoster(PlatformPoster):
             # release must not grow them on upgrade — and become clickable facets
             # when the piece's panel turns them on.
             text = (announce.compose(package, is_art=is_art, with_tags=opts["tags"],
-                                     limit=announce.BSKY_LIMIT, measure=announce.graphemes)
+                                     limit=announce.BSKY_LIMIT, measure=announce.graphemes,
+                                     settings=_settings, platform="bsky")
                     if opts["caption"] else "")
             labels = opts["labels"]
 

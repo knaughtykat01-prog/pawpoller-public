@@ -1496,6 +1496,12 @@ def save_preferences(body: dict):
             "tg": {"tags", "caption", "preview", "silent", "protect", "document",
                    "pin", "spoiler"},
         }
+        # 4.35.0: the link options are per-announcer too. Neither is a flag, so
+        # they are validated by shape rather than coerced with bool() -- a mode
+        # outside LINK_MODES would silently read as "auto" and quietly start
+        # linking off-site from a piece the operator had told not to.
+        for _c in allowed:
+            allowed[_c] = allowed[_c] | {"link_mode", "link_platforms"}
         clean: dict = {}
         raw = body.get("announce_defaults") or {}
         if isinstance(raw, dict):
@@ -1511,6 +1517,25 @@ def save_preferences(body: dict):
                         v = str(per[k]).strip().lower()
                         if v in ("nudity", "sexual", "porn", "graphic-media"):
                             out[k] = v
+                        continue
+                    if k == "link_mode":
+                        from posting.announce import LINK_MODES
+                        v = str(per[k]).strip().lower()
+                        if v in LINK_MODES:
+                            out[k] = v
+                        continue
+                    if k == "link_platforms":
+                        # An ordered list of platform codes, deduped, order kept --
+                        # "pick" mode reads it as the order links appear in.
+                        if isinstance(per[k], (list, tuple)):
+                            seen, codes = set(), []
+                            for c in per[k]:
+                                c = str(c).strip().lower()
+                                if c and c not in seen:
+                                    seen.add(c)
+                                    codes.append(c)
+                            if codes:
+                                out[k] = codes
                         continue
                     out[k] = bool(per[k])
                 if out:

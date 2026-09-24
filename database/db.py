@@ -1636,6 +1636,22 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_characters_name ON characters(name)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_characters_owner ON characters(owner_key)")
 
+    # 4.35.0: a character can belong to one of the OPERATOR'S personas, which is a
+    # different statement from `owner_key` (a People row). Before this, saying "this
+    # one is mine" meant creating a row about yourself inside a registry built for
+    # crediting other artists, then linking it to a persona — two steps of setup for
+    # the commonest answer, which is why the feature shipped in 4.34.1 and was never
+    # used: 46 People rows, none persona-linked.
+    #
+    # The two are mutually exclusive by meaning, not by constraint: setting one
+    # clears the other in upsert_character. NULL = not mine.
+    if "persona_id" not in {r[1] for r in conn.execute("PRAGMA table_info(characters)")}:
+        try:
+            conn.execute("ALTER TABLE characters ADD COLUMN persona_id INTEGER")
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
+
     # People (4.6.0, docs/specs/people_registry.md): a person row may BE one of
     # the operator's personas, and each handle carries whether it may be
     # @-mentioned on that site. Mention defaults OFF: a mention notifies, on

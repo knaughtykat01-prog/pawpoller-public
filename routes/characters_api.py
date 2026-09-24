@@ -60,7 +60,16 @@ def list_characters(q: str = "", limit: int = 500, with_counts: bool = False):
             r["owner"] = {"key": owner["key"], "name": owner["name"]} if owner else None
             if with_counts:
                 r["works"] = len(counts.get(r["key"], []))
-        return {"characters": rows, "totals": cq.count(conn)}
+        # 4.35.0: a character owned by one of the operator's personas resolves its
+        # NAME here, so the page can badge it "yours" without a second request.
+        from database import personas as personas_db
+        mine = {p["persona_id"]: p for p in personas_db.list_personas(conn)}
+        for r in rows:
+            p = mine.get(r.get("persona_id"))
+            r["persona"] = {"persona_id": p["persona_id"], "name": p["name"]} if p else None
+        return {"characters": rows, "totals": cq.count(conn),
+                "personas": [{"persona_id": p["persona_id"], "name": p["name"]}
+                             for p in mine.values()]}
     finally:
         conn.close()
 
@@ -80,19 +89,32 @@ def resolve_character(name: str):
 def upsert_character(body: dict):
     """Create or update one character.
 
-    ``{name, owner_key?, booru_tag?, species?, notes?, aliases?}``. A field left out is
+    ``{name, owner_key?, persona_id?, booru_tag?, species?, notes?, aliases?}``. A field left out is
     left alone: the picker sends a name and an owner, the registry page sends notes and
     a species, and neither should wipe the other's work.
     """
     name = str(body.get("name", "")).strip()
     if not name:
         raise HTTPException(400, detail="A character needs a name")
-    fields = {k: body[k] for k in ("owner_key", "booru_tag", "species", "notes", "aliases")
-              if k in body}
+    fields = {k: body[k] for k in ("owner_key", "persona_id", "booru_tag", "species",
+                                   "notes", "aliases") if k in body}
     conn = get_connection()
     try:
         if fields.get("owner_key") and not aq.get_artist(conn, str(fields["owner_key"])):
             raise HTTPException(400, detail="That owner is not in People")
+        # A persona id has to be one of the operator's own. Accepting an arbitrary
+        # integer would let a character claim to belong to a persona that does not
+        # exist, and the badge would then render blank rather than wrong -- which is
+        # harder to notice than a refusal.
+        if fields.get("persona_id"):
+            from database import personas as personas_db
+            known = {p["persona_id"] for p in personas_db.list_personas(conn)}
+            try:
+                pid = int(fields["persona_id"])
+            except (TypeError, ValueError):
+                raise HTTPException(400, detail="persona_id must be a number")
+            if pid not in known:
+                raise HTTPException(400, detail="That is not one of your personas")
         row = cq.upsert_character(conn, name, **fields)
         conn.commit()
         return {"character": row}

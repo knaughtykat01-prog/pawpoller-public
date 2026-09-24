@@ -55,6 +55,9 @@ def _row(r: sqlite3.Row) -> dict:
         "key": r["character_key"],
         "name": r["name"],
         "owner_key": r["owner_key"] or "",
+        # None = not one of the operator's. An int = "this one is mine", and
+        # WHICH of their personas it belongs to.
+        "persona_id": (r["persona_id"] if "persona_id" in r.keys() else None),
         "booru_tag": r["booru_tag"] or "",
         "species": r["species"] or "",
         "notes": r["notes"] or "",
@@ -64,7 +67,7 @@ def _row(r: sqlite3.Row) -> dict:
 
 def list_characters(conn: sqlite3.Connection, q: str = "", limit: int = 500) -> list[dict]:
     """Every character, or those matching *q* by name, alias or booru tag."""
-    sql = ("SELECT character_key, name, owner_key, booru_tag, species, notes, aliases "
+    sql = ("SELECT character_key, name, owner_key, persona_id, booru_tag, species, notes, aliases "
            "FROM characters")
     params: list = []
     if q:
@@ -78,7 +81,7 @@ def list_characters(conn: sqlite3.Connection, q: str = "", limit: int = 500) -> 
 
 def get_character(conn: sqlite3.Connection, key: str) -> dict | None:
     r = conn.execute(
-        "SELECT character_key, name, owner_key, booru_tag, species, notes, aliases "
+        "SELECT character_key, name, owner_key, persona_id, booru_tag, species, notes, aliases "
         "FROM characters WHERE character_key = ?", (key,)).fetchone()
     return _row(r) if r else None
 
@@ -95,10 +98,28 @@ def find_by_name(conn: sqlite3.Connection, name: str) -> dict | None:
 KEEP = object()
 
 
+def _persona_or_none(value):
+    """An int persona id, or None for "not mine". Accepts the empty string and 0 that
+    a <select> sends for its blank option, so the UI does not have to special-case."""
+    if value in (None, "", 0, "0"):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def upsert_character(conn: sqlite3.Connection, name: str, *,
-                     owner_key=KEEP, booru_tag=KEEP, species=KEEP,
+                     owner_key=KEEP, persona_id=KEEP, booru_tag=KEEP, species=KEEP,
                      notes=KEEP, aliases=KEEP) -> dict:
-    """Create or update one character, leaving unsupplied fields alone."""
+    """Create or update one character, leaving unsupplied fields alone.
+
+    ⚠ ``owner_key`` and ``persona_id`` are two answers to one question and cannot
+    both be true. A character belongs to a People row (someone else) OR to one of
+    the operator's personas ("mine"). Supplying either one CLEARS the other, so a
+    character reassigned from a friend to yourself does not keep claiming both —
+    which would make the badge and the booru tag disagree about whose it is.
+    """
     disp = str(name or "").strip()
     key = character_key(disp)
     if not key:
@@ -107,10 +128,11 @@ def upsert_character(conn: sqlite3.Connection, name: str, *,
     existing = get_character(conn, key)
     if existing is None:
         conn.execute(
-            "INSERT INTO characters (character_key, name, owner_key, booru_tag, species, "
-            "notes, aliases) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO characters (character_key, name, owner_key, persona_id, "
+            "booru_tag, species, notes, aliases) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (key, disp,
              "" if owner_key is KEEP else str(owner_key or ""),
+             None if persona_id is KEEP else _persona_or_none(persona_id),
              "" if booru_tag is KEEP else str(booru_tag or ""),
              "" if species is KEEP else str(species or ""),
              "" if notes is KEEP else str(notes or ""),
@@ -118,6 +140,15 @@ def upsert_character(conn: sqlite3.Connection, name: str, *,
         return get_character(conn, key)
 
     sets, params = ["name = ?", "updated_at = datetime('now')"], [disp]
+    # Whichever side of the ownership question was answered, clear the other.
+    if owner_key is not KEEP and str(owner_key or ""):
+        sets.append("persona_id = NULL")
+    if persona_id is not KEEP:
+        pid = _persona_or_none(persona_id)
+        sets.append("persona_id = ?")
+        params.append(pid)
+        if pid is not None:
+            sets.append("owner_key = ''")
     for field, val in (("owner_key", owner_key), ("booru_tag", booru_tag),
                        ("species", species), ("notes", notes)):
         if val is not KEEP:
