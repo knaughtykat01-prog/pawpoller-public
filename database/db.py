@@ -459,8 +459,29 @@ def _rebuild_publications(conn: sqlite3.Connection, _accounts) -> None:
             "WHERE platform = ? AND (account_id = 0 OR account_id IS NULL)",
             (aid, plat),
         )
-    conn.execute("DROP TABLE publications")
-    conn.execute("ALTER TABLE publications_new RENAME TO publications")
+    # The swap is one transaction (4.34.0). `_run_table_rebuilds` runs in autocommit
+    # (isolation_level = None, needed for the PRAGMA foreign_keys toggle), so without
+    # this the DROP commits on its own — and a crash in that window leaves the new
+    # table orphaned while the next boot's CREATE TABLE IF NOT EXISTS makes an empty
+    # `publications`, with no error and no history.
+    # `_run_table_rebuilds` runs in autocommit (isolation_level = None, needed for the
+    # PRAGMA foreign_keys toggle), so open one explicitly — otherwise the DROP commits
+    # on its own and a crash in that window orphans the new table while the next boot's
+    # CREATE TABLE IF NOT EXISTS makes an empty `publications`, with no error and no
+    # history. A caller that already holds a transaction (a test, a nested migration)
+    # is already atomic, so do not start a second one — sqlite refuses that outright.
+    _own_txn = not conn.in_transaction
+    if _own_txn:
+        conn.execute("BEGIN")
+    try:
+        conn.execute("DROP TABLE publications")
+        conn.execute("ALTER TABLE publications_new RENAME TO publications")
+        if _own_txn:
+            conn.execute("COMMIT")
+    except Exception:
+        if _own_txn:
+            conn.execute("ROLLBACK")
+        raise
     conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_story ON publications(story_name)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_platform ON publications(platform)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_status ON publications(status)")
@@ -531,8 +552,29 @@ def _rebuild_publications_content_type(conn: sqlite3.Connection, _accounts) -> N
              word_count
         FROM publications"""
     )
-    conn.execute("DROP TABLE publications")
-    conn.execute("ALTER TABLE publications_ct_new RENAME TO publications")
+    # The swap is one transaction (4.34.0). `_run_table_rebuilds` runs in autocommit
+    # (isolation_level = None, needed for the PRAGMA foreign_keys toggle), so without
+    # this the DROP commits on its own — and a crash in that window leaves the new
+    # table orphaned while the next boot's CREATE TABLE IF NOT EXISTS makes an empty
+    # `publications`, with no error and no history.
+    # `_run_table_rebuilds` runs in autocommit (isolation_level = None, needed for the
+    # PRAGMA foreign_keys toggle), so open one explicitly — otherwise the DROP commits
+    # on its own and a crash in that window orphans the new table while the next boot's
+    # CREATE TABLE IF NOT EXISTS makes an empty `publications`, with no error and no
+    # history. A caller that already holds a transaction (a test, a nested migration)
+    # is already atomic, so do not start a second one — sqlite refuses that outright.
+    _own_txn = not conn.in_transaction
+    if _own_txn:
+        conn.execute("BEGIN")
+    try:
+        conn.execute("DROP TABLE publications")
+        conn.execute("ALTER TABLE publications_ct_new RENAME TO publications")
+        if _own_txn:
+            conn.execute("COMMIT")
+    except Exception:
+        if _own_txn:
+            conn.execute("ROLLBACK")
+        raise
     conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_story ON publications(story_name)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_platform ON publications(platform)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_status ON publications(status)")
@@ -613,8 +655,29 @@ def _rebuild_publications_variant_key(conn: sqlite3.Connection, _accounts=None) 
              word_count
         FROM publications"""
     )
-    conn.execute("DROP TABLE publications")
-    conn.execute("ALTER TABLE publications_vk_new RENAME TO publications")
+    # The swap is one transaction (4.34.0). `_run_table_rebuilds` runs in autocommit
+    # (isolation_level = None, needed for the PRAGMA foreign_keys toggle), so without
+    # this the DROP commits on its own — and a crash in that window leaves the new
+    # table orphaned while the next boot's CREATE TABLE IF NOT EXISTS makes an empty
+    # `publications`, with no error and no history.
+    # `_run_table_rebuilds` runs in autocommit (isolation_level = None, needed for the
+    # PRAGMA foreign_keys toggle), so open one explicitly — otherwise the DROP commits
+    # on its own and a crash in that window orphans the new table while the next boot's
+    # CREATE TABLE IF NOT EXISTS makes an empty `publications`, with no error and no
+    # history. A caller that already holds a transaction (a test, a nested migration)
+    # is already atomic, so do not start a second one — sqlite refuses that outright.
+    _own_txn = not conn.in_transaction
+    if _own_txn:
+        conn.execute("BEGIN")
+    try:
+        conn.execute("DROP TABLE publications")
+        conn.execute("ALTER TABLE publications_vk_new RENAME TO publications")
+        if _own_txn:
+            conn.execute("COMMIT")
+    except Exception:
+        if _own_txn:
+            conn.execute("ROLLBACK")
+        raise
     conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_story ON publications(story_name)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_platform ON publications(platform)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_publications_status ON publications(status)")
@@ -651,6 +714,14 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         _accounts.seed_default_accounts(conn, config.get_settings())
     except Exception as e:  # never let seeding block startup migrations
         logger.warning("Default-account seeding skipped: %s", e)
+    # 4.34.2 (PLATAUDIT): repair handles that are empty or hold a URL. Runs AFTER
+    # seeding so a freshly-seeded row is included, and is idempotent -- it only ever
+    # replaces a bad value with one the account's own stored credentials already
+    # name, never with a guess.
+    try:
+        _accounts.backfill_account_handles(conn, config.get_settings())
+    except Exception as e:
+        logger.warning("Account-handle backfill skipped: %s", e)
 
     # Migration 0b: Inkbunny account_id discriminator (additive columns).
     # Adds account_id to the IB analytics tables and backfills all existing rows
@@ -1238,6 +1309,70 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             if "duplicate column" not in str(e).lower():
                 raise
 
+    # Migration: DeviantArt rows still keyed on the API GUID (4.34.1, DAID).
+    #
+    # DA has TWO ids for one deviation: the API's GUID (`deviationid`) and the integer
+    # at the end of the public URL. Everything in PawPoller speaks the integer — the
+    # poller writes it into `da_submissions`, and image hashes, publications and
+    # Masterpiece members are all keyed on it. Posting used to store the GUID, so a post
+    # made THROUGH PawPoller joined to nothing it had ever polled: DA views and faves
+    # never pooled into the work's totals, and the piece kept offering its own upload
+    # back under "is this the same image?".
+    #
+    # The posting path was fixed to derive the integer from the returned URL, but the
+    # rows written before that are still GUIDs. They are repairable with no API call,
+    # because the URL sitting in the same row carries the integer.
+    if "publications" in tables:
+        try:
+            from clients.da.client import _int_id_from_url
+            moved = 0
+            for pub_id, ext, url in conn.execute(
+                    "SELECT pub_id, external_id, external_url FROM publications "
+                    "WHERE platform = 'da' AND external_id LIKE '%-%'").fetchall():
+                num = _int_id_from_url(url or "")
+                if num is None:
+                    continue          # no URL to read — leave it, a dangling id beats none
+                conn.execute("UPDATE publications SET external_id = ? WHERE pub_id = ?",
+                             (str(num), pub_id))
+                if "masterpiece_members" in tables:
+                    conn.execute(
+                        "UPDATE OR IGNORE masterpiece_members SET submission_id = ? "
+                        "WHERE platform = 'da' AND submission_id = ?", (str(num), str(ext)))
+                moved += 1
+            if moved:
+                logger.info("DA: re-keyed %d publication(s) from the API GUID to the "
+                            "numeric deviation id", moved)
+        except Exception as e:                    # a bad row must not stop the boot
+            logger.warning("DA id normalisation skipped: %s", e)
+
+    # Migration: FA posted dates stored as prose (4.34.1, FADATES). FA renders the date
+    # as "August 7, 2019 11:57:56 PM" in the popup_date title, and it was stored
+    # verbatim alongside ISO rows written later. `posted_at` is TEXT, so a text sort put
+    # every month name before every "2026-…" — MIN/MAX and date-windowed analytics over
+    # FA were wrong wherever a prose row was involved.
+    #
+    # One-way and idempotent: a row already in the sortable shape normalises to itself,
+    # and an unparseable value is LEFT ALONE rather than blanked — losing the only record
+    # of when something was posted would be a worse bug than the one being fixed.
+    if "fa_submissions" in tables:
+        try:
+            from database.platform_metrics import normalize_posted
+            rows = conn.execute(
+                "SELECT submission_id, posted_at FROM fa_submissions "
+                "WHERE posted_at IS NOT NULL AND posted_at != ''").fetchall()
+            fixed = 0
+            for r in rows:
+                raw = r[1]
+                norm = normalize_posted(raw)
+                if norm and norm != raw:
+                    conn.execute("UPDATE fa_submissions SET posted_at = ? "
+                                 "WHERE submission_id = ?", (norm, r[0]))
+                    fixed += 1
+            if fixed:
+                logger.info("FA: normalised %d posted_at value(s) to a sortable form", fixed)
+        except sqlite3.Error as e:
+            logger.warning("FA posted_at normalisation skipped: %s", e)
+
     # Migration: which render a queued post is (4.34.0, VARSPLIT). Additive; every
     # existing row is the piece's own image. Without it a queued or retried render post
     # silently becomes whatever the rating would pick — and for an alternate render,
@@ -1374,6 +1509,23 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
                 except sqlite3.OperationalError as e:
                     if "duplicate column" not in str(e).lower():
                         raise
+
+    # e621: uploader_id — who e621 says uploaded the post (4.34.2, PLATAUDIT).
+    # `username` was never a reading: the client stamped its own configured name on
+    # every row, so a post polled under one account ASSERTED that account owned it.
+    # The audit found a post filed under one account that e621 reports as another's,
+    # and it could not be checked locally because no local column held the answer.
+    # Additive, guarded, idempotent; existing rows stay '' until re-polled.
+    if conn.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name='e621_submissions'").fetchone():
+        if "uploader_id" not in {r[1] for r in conn.execute(
+                "PRAGMA table_info(e621_submissions)").fetchall()}:
+            try:
+                conn.execute("ALTER TABLE e621_submissions ADD COLUMN "
+                             "uploader_id TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
 
     # Migration: posting_queue.claimed_by — which instance is running this item.
     # The desktop and the server BOTH start the posting scheduler (main.py and

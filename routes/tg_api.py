@@ -317,3 +317,110 @@ def export_tg_snapshots(id: str | None = Query(None)):
         return _csv_response(snaps, f"tg_snapshots{'_' + id[:20] if id else ''}.csv")
     finally:
         conn.close()
+
+
+# -- Channel broadcast actions (TGBROADCAST phases 3 + 4, 4.34.2) ---------------
+#
+# ⚠ "/channel/..." deliberately, NOT "/poll/...": in this router a poll is a
+# polling cycle. A Telegram poll is a different thing entirely and sharing the
+# prefix would have made /poll/trigger ambiguous forever.
+#
+# Every route here broadcasts to real subscribers, so each one supports dry_run
+# and the bulk-facing ones default to it (spec §6.5).
+
+
+@tg_router.post("/channel/announce")
+async def tg_channel_announce(body: dict):
+    """Linked mode: announce a piece that is already published elsewhere.
+
+    Uploads nothing -- and takes no path from the caller to upload. An image_path
+    in the body would be a server-side file read with egress to a public channel.
+    Reads `publications` for where the work is live and posts a
+    message pointing at it — and does NOT write a publication row of its own,
+    because Telegram is announcing the work, not holding it.
+    """
+    from posting import tg_linked
+    story_name = (body.get("story_name") or "").strip()
+    if not story_name:
+        raise HTTPException(400, "story_name is required")
+    ci = body.get("chapter_index")
+    conn = get_connection()
+    try:
+        result = await tg_linked.announce_existing(
+            conn,
+            story_name=story_name,
+            content_type=(body.get("content_type") or "story"),
+            chapter_index=int(ci) if ci is not None else None,
+            title=(body.get("title") or ""),
+            blurb=(body.get("blurb") or ""),
+            tags=body.get("tags") or [],
+            account_id=int(body.get("account_id") or 0),
+            link_mode=(body.get("link_mode") or "auto"),
+            link_platforms=body.get("link_platforms") or [],
+            dry_run=bool(body.get("dry_run", False)))
+    finally:
+        conn.close()
+    # "not_yet" is a 200: the piece simply is not live anywhere yet, which is a
+    # state of the work, not a fault in the request.
+    if result.get("status") == "error":
+        raise HTTPException(502, result.get("error", "Telegram refused the post"))
+    return result
+
+
+@tg_router.post("/channel/poll")
+async def tg_channel_poll(body: dict):
+    """Post a poll to the channel. The one action that asks subscribers something.
+
+    Supports `dry_run` like its two siblings: a poll has no edit and no preview of
+    its own, so validating without sending is the only way to check one first.
+    """
+    import config
+    from clients.tg.client import TgClient
+    settings = config.get_settings()
+    token = (settings.get("tg_bot_token") or "").strip()
+    channel = (settings.get("tg_channel") or "").strip()
+    if not token or not channel:
+        raise HTTPException(400, "Telegram channel posting needs its own bot token and "
+                                 "a channel (Settings → Telegram → Channel posting)")
+    qa = body.get("quiz_answer")
+    op = body.get("open_period")
+    try:
+        client = TgClient(bot_token=token, channel=channel)
+        result = await client.create_poll(
+            (body.get("question") or ""),
+            body.get("options") or [],
+            anonymous=bool(body.get("anonymous", True)),
+            multiple=bool(body.get("multiple", False)),
+            quiz_answer=int(qa) if qa is not None else None,
+            explanation=(body.get("explanation") or ""),
+            open_period=int(op) if op is not None else None,
+            silent=bool(body.get("silent", False)),
+            protect=bool(body.get("protect", False)),
+            pin=bool(body.get("pin", False)),
+            dry_run=bool(body.get("dry_run", False)))
+    except ValueError as e:
+        # Every limit is checked before the request, so this is the user's input
+        # being wrong rather than Telegram being unavailable.
+        raise HTTPException(400, str(e))
+    if not result:
+        raise HTTPException(502, getattr(client, "last_error", "") or
+                            "Telegram refused the poll")
+    return {"status": "success", **result}
+
+
+@tg_router.post("/channel/digest")
+def tg_channel_digest(body: dict | None = None):
+    """Post the weekly digest to the channel. Same numbers as the email digest.
+
+    Defaults to a dry run: this one goes out to every subscriber and is the most
+    likely of the three to be fired by accident.
+    """
+    from polling import email_digest
+    body = body or {}
+    result = email_digest.send_weekly_digest_to_channel(
+        # Defaults FALSE so the operator's tg_channel_digest_enabled toggle is
+        # respected and last_tg_channel_digest_sent_at still gets written --
+        # force=True skips both, which is a test-send, not the normal path.
+        force=bool(body.get("force", False)),
+        dry_run=bool(body.get("dry_run", True)))
+    return result

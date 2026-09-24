@@ -53,7 +53,7 @@
             this._wire();
             const app = document.getElementById('app');
             app.innerHTML = `
-                <div class="work-back"><a href="#/library">&larr; Library</a></div>
+                ${ItemFrame.backBar({ href: '#/library', label: 'Library' })}
                 <div id="sb-detail"><div class="loading-spinner">Opening the story…</div></div>`;
             let d, meta;
             try {
@@ -74,9 +74,35 @@
             this._budget = null;
             this._linkPreview = null;
             this._paint(name, d, meta);
+            this._renderDetailNav(name);
             this._loadTagPreview();
             this._loadChart(d);
             this._loadPromos();
+        },
+
+        /* Prev/next across the Library's stories (4.34.3, UNIFORMITEM contract
+         * "fixed navigation"). Before this the story page was a dead end: back to
+         * the grid, find your place, click the next one -- the one affordance
+         * masterpieces had and no other item type did (spec 1.3).
+         *
+         * Reuses the Library's already-loaded list when there is one and fetches
+         * otherwise, because arriving by deep link, from search or from the Publish
+         * Check matrix has no list -- and arrows over a list that is not the one you
+         * came from would lie. ItemNav renders nothing when it cannot place the
+         * current item, so a failed fetch leaves the plain back link. */
+        async _renderDetailNav(name) {
+            if (!window.ItemNav) return;
+            let works = (window.Bookshelf && Bookshelf._works) || null;
+            if (!works || !works.length) {
+                try { works = ((await API.getWorks()) || {}).works || []; }
+                catch (e) { return; }
+            }
+            const names = works.filter(w => w.content_type === 'story').map(w => w.name);
+            ItemNav.mount({
+                names, current: name,
+                href: n => `#/library/work/${encodeURIComponent(n)}`,
+                routeTest: h => /^#\/library\/work\/[^/]/.test(h),
+            });
         },
 
         /* ── Composition (spec §5.7) ─────────────────────────────────────── */
@@ -147,14 +173,20 @@
                             <div class="chip-row">${meta}${live}${warns}</div>
                             ${chars ? `<div class="chip-row">${chars}</div>` : ''}
                         </div>
-                        <div class="board-stats">
-                            <div class="n">${num(d.total_words)}<small>Words</small></div>
-                            <div class="n">${num(d.total_chapters)}<small>Chapters</small></div>
-                            <div class="n">${num(v.totals.views)}<small>Reads</small></div>
-                            <div class="n">${num(v.totals.faves)}<small>Faves</small></div>
-                            <div class="n">${num(v.totals.comments)}<small>Comments</small></div>
-                            <div class="n">${v.published.length}<small>Sites</small></div>
-                        </div>
+                        ${ItemFrame.statRow([
+                            // Words and Chapters are story-specific and lead;
+                            // the four after them are the contract's headline row
+                            // and are spelled the same on every item page. They
+                            // used to read "Reads" and "Faves" here and "Views"
+                            // and "Favourites" on the masterpiece page -- the exact
+                            // drift the fixed vocabulary exists to stop (4.34.4).
+                            { value: d.total_words, label: 'Words' },
+                            { value: d.total_chapters, label: 'Chapters' },
+                            { value: v.totals.views, label: 'Views' },
+                            { value: v.totals.faves, label: 'Favourites' },
+                            { value: v.totals.comments, label: 'Comments' },
+                            { value: v.published.length, label: 'Sites' },
+                        ])}
                     </div>
                     <div class="board-hero-actions">
                         <a class="btn btn-sm btn-primary" href="#/editor/${encodeURIComponent(name)}">✎ Open in editor</a>

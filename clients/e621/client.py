@@ -355,7 +355,10 @@ class E621Client:
             "post_uri": pid,
             "title": title,
             "full_text": description,
+            # The configured account, NOT a reading of who uploaded this. Kept for
+            # display continuity; uploader_id below is the fact (4.34.2, PLATAUDIT).
             "username": self.username,
+            "uploader_id": str(p.get("uploader_id") or ""),
             "posted_at": p.get("created_at", "") or "",
             "content_type": content_type,
             "rating": _RATING_MAP.get((p.get("rating") or "").lower(), ""),
@@ -378,6 +381,7 @@ class E621Client:
             "title": f"#{uri}" if uri else "",
             "full_text": "",
             "username": self.username,
+            "uploader_id": "",
             "posted_at": "",
             "content_type": "image",
             "rating": "",

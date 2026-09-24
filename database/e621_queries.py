@@ -27,8 +27,9 @@ def upsert_e621_submission(conn: sqlite3.Connection, sub: dict, account_id: int)
         """INSERT INTO e621_submissions
            (submission_id, account_id, title, full_text, username, posted_at, content_type,
             rating, description, keywords, link, thumbnail_url, file_url,
-            score, up_score, down_score, favorites_count, comments_count, has_media, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            score, up_score, down_score, favorites_count, comments_count, has_media,
+            uploader_id, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
            ON CONFLICT(submission_id) DO UPDATE SET
             title=excluded.title, full_text=excluded.full_text,
             username=excluded.username, content_type=excluded.content_type,
@@ -39,6 +40,11 @@ def upsert_e621_submission(conn: sqlite3.Connection, sub: dict, account_id: int)
             favorites_count=excluded.favorites_count,
             comments_count=excluded.comments_count,
             has_media=excluded.has_media,
+            -- Never blank a recorded uploader with an empty one: a detail fetch that
+            -- failed answers the stub, and losing attribution is worse than a stale
+            -- value that at least disagrees visibly.
+            uploader_id=CASE WHEN excluded.uploader_id != '' THEN excluded.uploader_id
+                             ELSE e621_submissions.uploader_id END,
             updated_at=datetime('now')
         """,
         (
@@ -49,7 +55,7 @@ def upsert_e621_submission(conn: sqlite3.Connection, sub: dict, account_id: int)
             sub.get("link", ""), sub.get("thumbnail_url", ""), sub.get("file_url", ""),
             sub.get("score", 0), sub.get("up_score", 0), sub.get("down_score", 0),
             sub.get("favorites_count", 0), sub.get("comments_count", 0),
-            sub.get("has_media", 0),
+            sub.get("has_media", 0), str(sub.get("uploader_id", "") or ""),
         ),
     )
 
@@ -331,3 +337,53 @@ def get_e621_submission_deltas(conn: sqlite3.Connection) -> dict[str, dict]:
            ) old ON s.submission_id = old.submission_id"""
     ).fetchall()
     return {r["submission_id"]: dict(r) for r in rows}
+
+
+def audit_uploader_disagreements(conn: sqlite3.Connection) -> list[dict]:
+    """e621 rows whose recorded uploader disagrees with the rest of their account's.
+
+    4.34.2 (PLATAUDIT finding 1). The audit found one post filed under one account
+    that e621's API reports as another account's upload, and could not confirm it
+    locally because no column held the answer -- `username` was the account we
+    polled with, stamped on by the client, not a reading of the payload.
+
+    Now that `uploader_id` is stored, the disagreement is a local query. Note what
+    this does and does not claim:
+
+    * It reports that a row **disagrees with its siblings** -- 199 posts under one
+      account naming uploader A and one naming uploader B.
+    * It does NOT say who owns the piece. Ownership is knowable only from e621, and
+      inferring it from a local column is the mistake [[SFHANDLE]] cost a day to.
+
+    So this repairs nothing and is safe to call anywhere. The majority is computed
+    per account and blank uploaders are ignored entirely -- a row never re-polled
+    since the column was added is silent, not suspicious.
+    """
+    rows = conn.execute(
+        "SELECT submission_id, account_id, uploader_id, title, link, posted_at "
+        "FROM e621_submissions WHERE COALESCE(uploader_id, '') != ''").fetchall()
+    per_account: dict[int, dict[str, int]] = {}
+    for r in rows:
+        per_account.setdefault(r["account_id"], {})
+        counts = per_account[r["account_id"]]
+        counts[r["uploader_id"]] = counts.get(r["uploader_id"], 0) + 1
+    out = []
+    for r in rows:
+        counts = per_account[r["account_id"]]
+        if len(counts) < 2:
+            continue                       # nothing to disagree with
+        majority = max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
+        if r["uploader_id"] == majority:
+            continue
+        out.append({
+            "submission_id": r["submission_id"],
+            "account_id": r["account_id"],
+            "uploader_id": r["uploader_id"],
+            "account_usual_uploader_id": majority,
+            "title": r["title"],
+            "link": r["link"],
+            "posted_at": r["posted_at"],
+            "siblings_agreeing": counts[majority],
+        })
+    out.sort(key=lambda x: (x["account_id"], x["submission_id"]))
+    return out

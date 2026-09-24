@@ -23,13 +23,22 @@ import pytest
 from mirror import registry, shr, tombstones
 
 
-def _make_db(path):
+def _make_db(path, template):
+    """A fresh, fully-initialised database at *path*.
+
+    Copies the session template (conftest `_db_template`) rather than calling
+    `init_db()`. These tests build TWO databases each, and `init_db` reads ~20 schema
+    files and runs the whole migration chain — about a second a time, so 37 tests paid
+    ~70s between them and this file alone was a fifth of the suite. The byte copy is the
+    same trick `_isolated_db` already uses for every other test; these two files simply
+    predated it and kept rolling their own.
+    """
     import config
     from database import db as db_mod
+    path.write_bytes(template)
     saved = config.DB_PATH
     config.DB_PATH = path
     try:
-        db_mod.init_db()
         conn = db_mod.get_connection()
     finally:
         config.DB_PATH = saved
@@ -37,15 +46,15 @@ def _make_db(path):
 
 
 @pytest.fixture
-def desktop(tmp_path):
-    c = _make_db(tmp_path / "desktop.db")
+def desktop(tmp_path, _db_template):
+    c = _make_db(tmp_path / "desktop.db", _db_template)
     yield c
     c.close()
 
 
 @pytest.fixture
-def server(tmp_path):
-    c = _make_db(tmp_path / "server.db")
+def server(tmp_path, _db_template):
+    c = _make_db(tmp_path / "server.db", _db_template)
     yield c
     c.close()
 

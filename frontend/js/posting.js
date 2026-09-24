@@ -1,6 +1,6 @@
 /* ── Posting Module — Frontend Pages ─────────────────────────── */
 /*
- *   1. Detail     (#/posting/story/{name}) — Single story detail with platform controls
+ *   1. Detail     — retired 4.5.0; the story page is #/library/work/{name} (story_board.js).
  *   2. Queue      (#/posting/queue)        — Pending/scheduled items
  *   3. Published  (#/posting/published)    — Registry of what's posted where (legacy, redirects to stories)
  *   4. History    (#/posting/log)          — Audit log of all posting actions
@@ -127,7 +127,7 @@ const Posting = {
                     ? `<span class="story-warning" title="${Utils.escapeHtml(s.warnings.join(', '))}">⚠</span>` : '';
 
                 return `
-                    <a href="#/posting/story/${Utils.escapeHtml(s.name)}" class="story-card">
+                    <a href="#/library/work/${Utils.escapeHtml(s.name)}" class="story-card">
                         ${coverHtml}
                         <div class="story-card-body">
                             <div class="story-card-header">
@@ -422,7 +422,7 @@ const Posting = {
                     typeIcon = '&#128444;&#65039;';    // 🖼️
                     chap = '&mdash;';
                 } else {
-                    href = `#/posting/story/${encodeURIComponent(item.story_name)}`;
+                    href = `#/library/work/${encodeURIComponent(item.story_name)}`;
                     name = Utils.escapeHtml((item.story_name || '').replace(/_/g, ' '));
                     // Drip rows (gap G1) carry their "💧 drip i/N" label in
                     // title_override — display-only (the scheduler never passes
@@ -558,7 +558,7 @@ const Posting = {
                 const ct = it.content_type || 'story';
                 if (ct === 'post') window.location.hash = '#/posts';
                 else if (ct === 'artwork') window.location.hash = `#/artwork/image/${encodeURIComponent(it.story_name)}`;
-                else window.location.hash = `#/posting/story/${encodeURIComponent(it.story_name)}`;
+                else window.location.hash = `#/library/work/${encodeURIComponent(it.story_name)}`;
             }));
     },
 
@@ -661,7 +661,7 @@ const Posting = {
                 const isArt = entry.content_type === 'artwork';
                 const href = isArt
                     ? `#/artwork/image/${encodeURIComponent(entry.story_name || '')}`
-                    : `#/posting/story/${Utils.escapeHtml(entry.story_name)}`;
+                    : `#/library/work/${Utils.escapeHtml(entry.story_name)}`;
                 return `<tr>
                     <td data-label="Time">${Utils.escapeHtml(entry.created_at || '')}</td>
                     <td data-label="Work"><a href="${href}">${Utils.escapeHtml((entry.story_name || '').replace(/_/g, ' '))}</a>

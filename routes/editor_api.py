@@ -1671,6 +1671,14 @@ async def verify_publications(story_name: str):
         try:
             posting_queries.upsert_publication(
                 conn, canonical, ch_idx, plat,
+                # account_id and content_type were both omitted (4.34.1). Without them
+                # the write lands on the platform DEFAULT account and as content_type
+                # "story" — so verifying a deleted ARTWORK publication left the artwork
+                # row untouched and created a phantom story row beside it, and a
+                # multi-account platform flipped the wrong account's publication.
+                account_id=pub.get("account_id"),
+                content_type=pub.get("content_type") or "story",
+                variant_key=pub.get("variant_key") or "",
                 external_id=ext_id,
                 external_url=pub["external_url"],
                 title_used=pub.get("title_used") or "",

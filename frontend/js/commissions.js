@@ -65,6 +65,10 @@ window.Commissions = {
         try {
             const d = await API.getCommissions(archived);
             items = d.commissions || [];
+            // Board order, kept for the detail page's prev/next (4.34.4). This is
+            // deliberately whichever board you came from -- active or archived --
+            // because that is the list you were stepping through.
+            this._items = items;
             archivedCount = d.archived_count || 0;
             if (Array.isArray(d.statuses) && d.statuses.length) this._statuses = d.statuses;
         } catch (err) {
@@ -140,7 +144,7 @@ window.Commissions = {
     // ── Detail ───────────────────────────────────────────────────
     async renderDetail(id) {
         const app = document.getElementById('app');
-        app.innerHTML = `<div class="work-back"><a href="#/commissions">&larr; Commissions</a></div>
+        app.innerHTML = `${ItemFrame.backBar({ href: '#/commissions', label: 'Commissions' })}
             <div id="comm-detail"><div class="loading-spinner">Loading…</div></div>`;
         let c;
         try {
@@ -197,6 +201,31 @@ window.Commissions = {
             </article>`;
         this._wireAttachments(c.id);
         this._loadFiles(c.id);
+        this._renderDetailNav(c.id);
+    },
+
+    /* Prev/next across the commission board (4.34.4, UNIFORMITEM phase 3).
+     *
+     * ⚠ No headline stat row here, unlike the other item types. The contract says a
+     * type fills the slots it HAS and omits the rest rather than reinventing them
+     * (§2), and a commission has no views / faves / comments -- it has a price, a
+     * status and a due date, which the field list above already shows. Inventing a
+     * four-up row of different numbers under the same styling would make the two
+     * pages look alike while meaning different things, which is the opposite of the
+     * ask. */
+    async _renderDetailNav(id) {
+        if (!window.ItemNav) return;
+        let items = this._items;
+        if (!items || !items.length) {
+            try { items = ((await API.getCommissions(false)) || {}).commissions || []; }
+            catch (e) { return; }
+        }
+        ItemNav.mount({
+            names: items.map(c => String(c.id)), current: String(id),
+            href: n => `#/commissions/${encodeURIComponent(n)}`,
+            // "archived" is the archived BOARD, not a commission.
+            routeTest: h => /^#\/commissions\/[^/]/.test(h) && !/^#\/commissions\/archived/.test(h),
+        });
     },
 
     // ── Attachments (2.188) ──────────────────────────────────────

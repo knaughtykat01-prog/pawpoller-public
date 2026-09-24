@@ -533,13 +533,65 @@ def _start_server(host: str, port: int):
 
 # ── Main ──────────────────────────────────────────────────────
 
+def _reset_password() -> int:
+    """Set a new dashboard password from the machine's own console (4.34.1, PWRESET).
+
+    There was no way back from a forgotten password on a frozen install. The old guides
+    promised `auth.reset_admin_password(...)`, which does not exist, and "change
+    DASHBOARD_PASSWORD in .env", which is ignored once a hash exists —
+    `migrate_dashboard_auth` only seeds an EMPTY vault. Docker users can run Python
+    inside the container; a packaged .exe has no Python to run, so they were simply
+    locked out of their own install.
+
+    Why this is safe to expose, and why it is a flag rather than a screen: running it
+    requires a shell on the machine, and anyone with that already has the data directory
+    — the vault, the database and every stored credential sit there. It grants nothing
+    that position did not already give. A loopback-only reset SCREEN would be weaker:
+    it would answer the network, and "loopback only" is exactly the assumption an
+    X-Forwarded-For spoof attacks (see config.py on why PAWPOLLER_FORWARDED_IPS must
+    never be `*`).
+
+    The password is read from a prompt, never an argument, so it does not land in shell
+    history or in the process list where any local user could read it.
+    """
+    import getpass
+
+    try:
+        pw = getpass.getpass("New dashboard password: ")
+        again = getpass.getpass("Type it again: ")
+    except (EOFError, KeyboardInterrupt):
+        print("")
+        print("Cancelled — nothing was changed.")
+        return 1
+    if pw != again:
+        print("Those did not match — nothing was changed.")
+        return 1
+    if len(pw) < 8:
+        print("Too short — use at least 8 characters. Nothing was changed.")
+        return 1
+    try:
+        config.save_settings({"auth_password_hash": config.hash_password(pw)})
+    except Exception as e:
+        print(f"Could not save the new password: {e}")
+        return 1
+    print("Password changed. Start PawPoller again and sign in with it.")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="PawPoller headless server")
     parser.add_argument("--port", type=int, default=config.DASHBOARD_PORT,
                         help="Dashboard port (default: %(default)s)")
     parser.add_argument("--host", type=str, default="0.0.0.0",
                         help="Bind address (default: %(default)s)")
+    parser.add_argument("--reset-password", action="store_true",
+                        help="Set a new dashboard password and exit. Must be run on "
+                             "the machine itself; asks for the new password at the "
+                             "prompt so it never lands in shell history.")
     args = parser.parse_args()
+
+    if args.reset_password:
+        raise SystemExit(_reset_password())
 
     # SECURITY: don't silently expose an unauthenticated dashboard.
     if args.host not in ("127.0.0.1", "::1", "localhost") and not config.is_dashboard_auth_required():

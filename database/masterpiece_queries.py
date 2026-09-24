@@ -111,7 +111,14 @@ def set_member_variant(conn: sqlite3.Connection, name: str, platform: str,
 
 
 def clear_variant_members(conn: sqlite3.Connection, name: str, variant_key: str) -> None:
-    """Re-key a deleted variant's members back to primary ('')."""
+    """Re-key a variant's members to primary ('').
+
+    ⚠ This is a positive claim that those submissions hold the piece's OWN image, so it
+    is only correct when that is actually true. Demoting a variant is NOT such a case —
+    the file stays and the live submissions still hold that render — which is why
+    `masterpieces_api.remove_variant` stopped calling this in 4.34.0 (VARMEMKEY). Kept
+    for a deliberate "these really are the primary" correction.
+    """
     conn.execute(
         "UPDATE masterpiece_members SET variant_key = '' WHERE masterpiece_name = ? "
         "AND variant_key = ?", (name, variant_key))

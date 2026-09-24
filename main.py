@@ -356,6 +356,15 @@ def _sync_settings_on_startup():
 
 def main():
     """Entry: the update gate first, then whichever mode this install is in."""
+    # Locked out of your own install? (4.34.1, PWRESET) There was no way back from a
+    # forgotten dashboard password on a packaged build — the old guides pointed at a
+    # function that does not exist and at a .env value that is ignored once a hash is
+    # set. Checked before the update gate so it works even when an update is failing.
+    # Same reasoning as the server flag: it needs a shell on this machine, and anyone
+    # with that already has the vault and the database sitting in the data directory.
+    if "--reset-password" in sys.argv[1:]:
+        import server
+        raise SystemExit(server._reset_password())
     try:
         import update_gate
         _gate = update_gate.run()
@@ -504,28 +513,55 @@ def run_standalone():
     # --- Step 4: Wait for the server to accept connections ---
     # The uvicorn server runs in a daemon thread and takes a moment to bind
     # the port.  We poll with TCP connect attempts (socket handshake only,
-    # no HTTP request) until the port is open, with a 15-second timeout.
+    # no HTTP request) until the port is open, or the wait below gives up.
     # This prevents pywebview from opening a window to a server that is
     # not yet ready, which would show a blank or error page.
     url = f"http://{config.DASHBOARD_HOST}:{config.DASHBOARD_PORT}"
     logger.info("Waiting for server at %s:%d ...", config.DASHBOARD_HOST, config.DASHBOARD_PORT)
-    deadline = time.time() + 15  # Absolute deadline -- 15 seconds from now
+    # 4.34.1 (LOGSWEEP): a tester's log had this time out TWICE — "SERVER DID NOT START
+    # within 15s after 13 attempts!" — and then start fine. Three things were wrong.
+    #
+    # 1. **13 attempts, not 75.** The 200ms sleep suggests the loop polls ~75 times in
+    #    15s; it does not. A refused connection is instant, but on a machine where the
+    #    port is not yet bound the connect BLOCKS, so each attempt costs up to its 1.0s
+    #    timeout. 15s bought thirteen tries. The timeout is now 0.35s, so the deadline
+    #    means roughly what it reads as.
+    # 2. **15s is not long enough for a cold start.** Before the port binds, boot reads
+    #    ~20 schema files, runs the migration chain and opens the vault — on a slow disk
+    #    that is most of the budget on its own.
+    # 3. **The failure was the wrong shape.** Exiting because the server is SLOW kills a
+    #    working app; exiting because the server thread DIED is correct and should be
+    #    immediate rather than after a fixed wait. Those are now told apart.
+    started = time.time()
+    deadline = started + 60
     attempts = 0
+    ready = False
     while time.time() < deadline:
         attempts += 1
         try:
             # A successful TCP connection means uvicorn is listening
-            with socket.create_connection((config.DASHBOARD_HOST, config.DASHBOARD_PORT), timeout=1.0):
-                logger.info("Server ready after %d attempts (%.1fs)", attempts, time.time() - (deadline - 15))
+            with socket.create_connection((config.DASHBOARD_HOST, config.DASHBOARD_PORT),
+                                          timeout=0.35):
+                logger.info("Server ready after %d attempts (%.1fs)",
+                            attempts, time.time() - started)
+                ready = True
                 break
         except OSError as e:
-            if attempts % 10 == 0:  # Log every ~2 seconds (10 * 0.2s) to avoid spam
-                logger.info("Still waiting for server... attempt %d (%s)", attempts, e)
-            time.sleep(0.2)  # 200ms between connection attempts
-    else:
-        # for/else: this block runs if the loop exhausted without break
-        logger.error("SERVER DID NOT START within 15s after %d attempts!", attempts)
-        logger.error("Server thread alive: %s", server_thread.is_alive())
+            # The thread dying is the REAL failure, and waiting out the deadline for it
+            # only delays a message the user needs now.
+            if not server_thread.is_alive():
+                logger.error("The server thread stopped before the port opened "
+                             "(after %.1fs, %d attempts): %s",
+                             time.time() - started, attempts, e)
+                sys.exit(1)
+            if attempts % 10 == 0:
+                logger.info("Still waiting for server... attempt %d, %.1fs elapsed (%s)",
+                            attempts, time.time() - started, e)
+            time.sleep(0.2)
+    if not ready:
+        logger.error("SERVER DID NOT START within %ds (%d attempts). Server thread "
+                     "alive: %s", int(deadline - started), attempts,
+                     server_thread.is_alive())
         sys.exit(1)
 
     # --- Step 5: Open the native desktop window ---

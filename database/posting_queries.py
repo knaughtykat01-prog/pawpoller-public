@@ -35,13 +35,20 @@ def upsert_publication(
     content_type: str = "story",
     external_id: str = "",
     external_url: str = "",
-    title_used: str = "",
-    description_used: str = "",
+    # Merge, never blank (4.34.1, PUBDESCWIPE). None means "not supplied" and keeps what
+    # is stored; "" means "deliberately empty". The UPDATE used to write every field
+    # unconditionally, so a caller that passed only an id and a title — sync.py's
+    # "Verify posted" does exactly that — silently erased the description, tags and
+    # rating. Those columns are the only local record of what was actually SENT to a
+    # platform, and a "what did we post?" audit reads them, so losing one is not
+    # cosmetic: it makes the record untrustworthy without any sign that it happened.
+    title_used: str | None = None,
+    description_used: str | None = None,
     tags_used: list[str] | None = None,
-    rating_used: str = "",
-    format_file: str = "",
-    file_hash: str = "",
-    word_count: int = 0,
+    rating_used: str | None = None,
+    format_file: str | None = None,
+    file_hash: str | None = None,
+    word_count: int | None = None,
     status: str = "posted",
     variant_key: str = "",
 ) -> int:
@@ -56,7 +63,9 @@ def upsert_publication(
         from database import accounts as _accts
         account_id = _accts.get_default_account_id(conn, platform, create=True)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    tags_json = json.dumps(tags_used or [])
+    # None has to survive to the UPDATE below as "not supplied"; the INSERT substitutes
+    # the empty defaults itself, because a NEW row genuinely has nothing to preserve.
+    tags_json = None if tags_used is None else json.dumps(tags_used)
 
     # Check if exists (scoped to the account + content_type).
     # variant_key is part of the identity (4.34.0): two renders of one piece on one
@@ -72,17 +81,25 @@ def upsert_publication(
     if row:
         pub_id = row["pub_id"]
         update_count = row["update_count"] + 1
-        conn.execute(
-            """UPDATE publications SET
-                external_id = ?, external_url = ?, title_used = ?,
-                description_used = ?, tags_used = ?, rating_used = ?,
-                format_file = ?, file_hash = ?, word_count = ?, status = ?,
-                last_updated_at = ?, update_count = ?
-            WHERE pub_id = ?""",
-            (external_id, external_url, title_used, description_used,
-             tags_json, rating_used, format_file, file_hash, word_count, status,
-             now, update_count, pub_id),
-        )
+        # Only the fields this caller actually supplied. The ids and status always
+        # travel — they are what the call is FOR — and anything left None keeps the
+        # value recorded when the post went out.
+        sets = ["external_id = ?", "external_url = ?", "status = ?",
+                "last_updated_at = ?", "update_count = ?"]
+        vals: list = [external_id, external_url, status, now, update_count]
+        for col, val in (("title_used", title_used),
+                         ("description_used", description_used),
+                         ("tags_used", tags_json),
+                         ("rating_used", rating_used),
+                         ("format_file", format_file),
+                         ("file_hash", file_hash),
+                         ("word_count", word_count)):
+            if val is not None:
+                sets.append(f"{col} = ?")
+                vals.append(val)
+        vals.append(pub_id)
+        conn.execute("UPDATE publications SET " + ", ".join(sets) + " WHERE pub_id = ?",
+                     vals)
     else:
         cursor = conn.execute(
             """INSERT INTO publications
@@ -93,8 +110,9 @@ def upsert_publication(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (content_type, story_name, chapter_index, platform, account_id,
              variant_key or "", external_id, external_url,
-             title_used, description_used, tags_json, rating_used,
-             format_file, file_hash, word_count, status, now),
+             title_used or "", description_used or "", tags_json or "[]",
+             rating_used or "", format_file or "", file_hash or "",
+             word_count or 0, status, now),
         )
         pub_id = cursor.lastrowid
 
@@ -196,21 +214,32 @@ def get_publication_by_story(
     platform: str,
     account_id: int | None = None,
     content_type: str = "story",
+    variant_key: str | None = None,
 ) -> dict | None:
     """Get a publication by its (content_type, story, chapter, platform[, account]) key.
 
     account_id None resolves to the platform's default account so existing
     single-account callers keep getting the default account's row. content_type
     defaults to "story"; the Artwork hub passes "artwork".
+
+    ``variant_key`` narrows to one render (4.34.0). Left None the key is no longer
+    unique — a piece can hold several submissions on one site — so the row is chosen
+    **deterministically**: the primary ('') first, then the rest alphabetically. It used
+    to be whichever row SQLite happened to yield, which made an audit-trail mislink
+    depend on insert order. Callers that care which render they mean should say so.
     """
     if account_id is None:
         from database import accounts as _accts
         account_id = _accts.get_default_account_id(conn, platform, create=True)
-    row = conn.execute(
-        "SELECT * FROM publications WHERE content_type = ? AND story_name = ? "
-        "AND chapter_index = ? AND platform = ? AND account_id = ?",
-        (content_type, story_name, chapter_index, platform, account_id),
-    ).fetchone()
+    sql = ("SELECT * FROM publications WHERE content_type = ? AND story_name = ? "
+           "AND chapter_index = ? AND platform = ? AND account_id = ?")
+    params: list = [content_type, story_name, chapter_index, platform, account_id]
+    if variant_key is not None:
+        sql += " AND variant_key = ?"
+        params.append(variant_key or "")
+    # "" sorts before any real key, so the primary wins a tie rather than insert order.
+    sql += " ORDER BY variant_key LIMIT 1"
+    row = conn.execute(sql, params).fetchone()
     return dict(row) if row else None
 
 

@@ -167,14 +167,8 @@
 .mp-mislink-info .muted { font-size: .78rem; }
 .mp-mislink-acts { display: flex; align-items: center; gap: .6rem; flex-shrink: 0; }
 
-/* Prev/next detail nav (2.190.0) — scoped to the masterpiece back-bar so the
-   shared .work-back elsewhere is untouched. */
-.work-back.mp-detail-topnav {
-    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-}
-.mp-nav { display: flex; align-items: center; gap: .5rem; }
-.mp-nav-pos { font-size: .8rem; white-space: nowrap; }
-.mp-nav .is-disabled { opacity: .4; cursor: default; pointer-events: none; }
+/* Prev/next detail nav moved to bookshelf.css beside .work-back itself (4.34.3):
+   it is no longer the masterpiece back-bar, it is every item page's. */
 
 /* Variant manager (2.189.0) — collapsed by default; the chips above stay the
    viewer, this is the rename / separate surface. */

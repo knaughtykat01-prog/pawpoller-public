@@ -72,7 +72,22 @@ def _summarize(body: str) -> str:
         elif s:
             break          # entry opens with prose → no summary block
     if quote:
-        return " ".join(x for x in quote if x).strip()
+        # Bullets keep their own line; wrapped prose is rejoined (4.34.1).
+        #
+        # This used to " ".join() the whole block, so a summary written as dot points
+        # arrived as one run-on paragraph however it was authored — and the popup already
+        # renders bullets through `_mdLite`, so flattening here was the only reason it
+        # read as a wall of text. But joining on a newline is wrong too: every entry
+        # before 4.34.1 is soft-wrapped prose, and hard-breaking those mid-sentence would
+        # turn one paragraph into six stubby ones. So a line that STARTS a bullet starts
+        # a new line, and anything else continues the one above it.
+        out: list[str] = []
+        for part in (x for x in quote if x):
+            if part.lstrip().startswith(("- ", "* ")) or not out:
+                out.append(part)
+            else:
+                out[-1] = out[-1] + " " + part          # a wrapped continuation
+        return chr(10).join(out).strip()
 
     # Fallback: first paragraph, minus any leading markdown heading.
     para = body.split("\n\n", 1)[0].strip()

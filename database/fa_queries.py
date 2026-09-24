@@ -26,6 +26,27 @@ from typing import Any
 
 # ── FA Submissions ────────────────────────────────────────────
 
+def _sortable_date(raw) -> str:
+    """FA's posted date in a form that sorts as TIME, not as text (4.34.1, FADATES).
+
+    FA renders the date as prose in the `popup_date` title attribute — "August 7, 2019
+    11:57:56 PM" — and it was stored verbatim. Newer rows are ISO, so the column held
+    both shapes, and `posted_at` is TEXT: text-sorted, "August…" orders alphabetically
+    against "2026-…", so MIN/MAX and every date-windowed query over FA was wrong
+    wherever a prose row was involved. Invisible until somebody trusts a date filter,
+    which is the worst kind of wrong.
+
+    `normalize_posted` already knew every one of these shapes — it was simply applied on
+    the way OUT (platform_metrics) and never on the way in, so raw SQL never saw it.
+
+    An unparseable value keeps its raw text rather than becoming "": a date nobody can
+    sort still beats no date at all, and dropping it would destroy the only record of
+    when something was posted.
+    """
+    from database.platform_metrics import normalize_posted
+    return normalize_posted(raw) or (str(raw) if raw else "")
+
+
 def upsert_fa_submission(conn: sqlite3.Connection, sub: dict, account_id: int) -> None:
     """Insert or update an FA submission's metadata and latest stats.
 
@@ -59,7 +80,7 @@ def upsert_fa_submission(conn: sqlite3.Connection, sub: dict, account_id: int) -
         """,
         (
             sub["submission_id"], account_id, sub.get("title", ""), sub.get("username", ""),
-            sub.get("posted_at"), sub.get("category", ""), sub.get("theme", ""),
+            _sortable_date(sub.get("posted_at")), sub.get("category", ""), sub.get("theme", ""),
             sub.get("species", ""), sub.get("gender", ""), sub.get("rating", ""),
             sub.get("thumbnail_url", ""), sub.get("download_url", ""),
             sub.get("description", ""), keywords_json, sub.get("link", ""),

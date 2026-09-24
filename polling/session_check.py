@@ -37,7 +37,8 @@ _lock = threading.Lock()
 
 # Platforms with a real validate_session() network check. Order = check order.
 CHECKABLE: tuple[str, ...] = ("ao3", "sf", "sqw", "bsky", "mast", "tum", "pix",
-                              "thr", "ig", "e621", "fn", "fbr", "tg", "sc", "ng", "yt")
+                              "thr", "ig", "e621", "fn", "fbr", "tg", "sc", "ng", "yt",
+                              "tw")
 
 # Human labels for log/UI fallback (the frontend has its own map too).
 LABELS = {
@@ -45,7 +46,7 @@ LABELS = {
     "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads",
     "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "sc": "SoundCloud",
     "ng": "Newgrounds", "yt": "YouTube",
-    "tg": "Telegram",
+    "tg": "Telegram", "tw": "X/Twitter",
 }
 
 # What to tell the user when a check comes back CONFIRMED-failed. The default
@@ -91,6 +92,15 @@ def _configured(code: str, s: dict) -> bool:
         return bool(s.get("ng_cookie"))
     if code == "yt":
         return bool(s.get("yt_client_id") and s.get("yt_client_secret") and s.get("yt_refresh_token"))
+    if code == "tw":
+        # Either backend can authenticate on its own: the official API needs only a
+        # Bearer token, the scrapers only cookies. routes/api.py gates health on the
+        # cookies alone, which understates a token-only install (4.34.2). The token
+        # only counts when the backend setting has not disabled that path, or a user
+        # who picked "graphql" with a stale token would look configured and never be.
+        from clients.tw import official_api
+        return bool((s.get("tw_auth_token") and s.get("tw_ct0"))
+                    or (official_api.is_enabled(s) and s.get("tw_api_bearer_token")))
     if code == "fbr":
         return bool(s.get("fbr_username"))   # public read API — username is enough
     if code == "tg":
@@ -160,6 +170,13 @@ async def _validate(code: str, s: dict):
     elif code == "mast":
         from polling.mast_poller import _get_or_create_client
         c = _get_or_create_client(s, s.get("mast_instance_url", ""), s.get("mast_access_token", ""))
+        # 4.34.2 (PLATAUDIT): validate_session returns the real "@user@instance".
+        # Persisting it here means an install already connected before the fix heals
+        # on its next check instead of waiting for someone to reconnect by hand.
+        handle = await c.validate_session()
+        if handle and str(handle) != s.get("mast_handle", ""):
+            config.save_settings({"mast_handle": str(handle)})
+        return handle
     elif code == "tum":
         from polling.tum_poller import _get_or_create_client
         c = _get_or_create_client(s, s.get("tum_api_key", ""), s.get("tum_blog", ""))
@@ -192,6 +209,39 @@ async def _validate(code: str, s: dict):
         from polling.yt_poller import _get_or_create_client
         c = _get_or_create_client({k: s.get(k, "") for k in (
             "yt_client_id", "yt_client_secret", "yt_access_token", "yt_refresh_token", "yt_token_expires_at")})
+    elif code == "tw":
+        # The point of this check (spec status_and_sort.md 1.4 step 2, and
+        # documentation_guide 55): a session that is ALIVE is not a session that is
+        # YOURS. validate_cookies() proves some backend can authenticate;
+        # session_owner() is the only thing that says WHOSE cookies these are. A post
+        # goes out as the session owner whatever the account row says -- observed
+        # 2026-09-04: three X account rows, one session, a post "as" the second
+        # landed on the first.
+        from polling.tw_poller import _get_or_create_client
+        c = _get_or_create_client(s, s.get("tw_auth_token", ""), s.get("tw_ct0", ""),
+                                  s.get("tw_target_user", ""))
+        if not await c.validate_cookies():
+            return False
+        target = (s.get("tw_target_user") or "").strip().lstrip("@")
+        owners = [o for o in (await c.session_owner()) if o]
+        if not owners:
+            if not (s.get("tw_auth_token") and s.get("tw_ct0")):
+                # Bearer-token-only install: polling works and posting is not
+                # configured at all, so there is no owner to be wrong about.
+                return True
+            # Cookies that authenticate while X declines to say who they belong to is
+            # exactly the DeviantArt bug. Unknown must not render as a confident yes,
+            # so raise -- which lands as "error" (amber, could not verify), not as a
+            # confirmed expiry.
+            raise RuntimeError("X would not say which account these cookies belong to, "
+                               "so who a post would go out as cannot be confirmed.")
+        if target and target.lower() not in [o.lower() for o in owners]:
+            return {"ok": False,
+                    "detail": "These cookies belong to " + ", ".join(owners[:3])
+                              + " - not " + target + ". Polling a public timeline still"
+                              + " works, but a post would go out as " + owners[0]
+                              + ". Re-enter cookies taken from " + target + "."}
+        return True
     elif code == "tg":
         c = _TgSessionProbe(s)
     elif code == "ng":
@@ -215,10 +265,15 @@ async def check_platform(code: str, s: dict | None = None) -> dict:
         return entry
     try:
         result = await _validate(code, s)
-        ok = bool(result)
+        # A platform that can explain its own verdict answers a dict; the rest answer
+        # a bool and take the per-code message. Needed where the reason is RUNTIME
+        # data (which account a session actually belongs to) rather than a constant.
+        detail_override = result.get("detail") if isinstance(result, dict) else None
+        ok = bool(result.get("ok")) if isinstance(result, dict) else bool(result)
         entry = {
             "status": "valid" if ok else "expired",
-            "detail": None if ok else _EXPIRED_DETAIL.get(code, _DEFAULT_EXPIRED_DETAIL),
+            "detail": None if ok else (detail_override
+                                       or _EXPIRED_DETAIL.get(code, _DEFAULT_EXPIRED_DETAIL)),
             "checked_at": now,
         }
     except Exception as e:

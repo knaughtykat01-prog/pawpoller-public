@@ -1319,6 +1319,12 @@ const App = {
             if (window.Posts) window.Posts.renderContacts();
         } else if (parts[0] === 'posts' && parts[1] === 'new') {
             if (window.Posts) window.Posts.renderCompose();
+        } else if (parts[0] === 'posts' && parts[1]) {
+            /* The post item page (4.34.4, UNIFORMITEM phase 4). Posts were the one
+               item type with no page to click into: a post goes to up to six
+               platforms and every one writes a publication row, but the feed was
+               the whole surface, so "how did that post do" had no answer. */
+            if (window.PostBoard) window.PostBoard.render(parts[1]);
         } else if (parts[0] === 'posts') {
             if (window.Posts) window.Posts.render();
         } else if (parts[0] === 'submissions' && parts[1] === 'triage') {
@@ -1824,18 +1830,25 @@ const App = {
      *
      * Reads that verdict via PlatformHealth (/api/platforms/sessions) and
      * reuses the card's four states. For the platforms nothing validates
-     * (da/wp/ik/tw) it says "not verified" — deliberately less reassuring
+     * (da/wp/ik) it says "not verified" — deliberately less reassuring
      * than "Connected", because the old text bought reassurance with
      * accuracy. Also surfaces the last poll's error where the user is looking,
-     * rather than only in a dismissable notification. */
+     * rather than only in a dismissable notification.
+     *
+     * 4.34.2: tw joined CHECKABLE, and its verdict carries a REASON the generic
+     * wording cannot express — "these cookies belong to someone else" is not
+     * "credentials expired", and sending someone to re-enter without saying which
+     * account to take them from is the advice that wasted the original report.
+     * So a session detail, when the check supplies one, replaces the constant. */
     _credStatus(code, username) {
         const h = (window.PlatformHealth && window.PlatformHealth.get(code)) || {};
         const sess = (h.session && h.session.status) || null;
+        const why = (h.session && h.session.detail) ? Utils.escapeHtml(String(h.session.detail)) : '';
         const who = username ? ` — tracking ${Utils.escapeHtml(username)}` : '';
         let cls, text;
         if (sess === 'valid')        { cls = 'connected';    text = `Connected${who}`; }
-        else if (sess === 'expired') { cls = 'disconnected'; text = 'Credentials expired — re-enter to resume polling'; }
-        else if (sess === 'error')   { cls = 'warn';         text = 'Could not verify — last check failed'; }
+        else if (sess === 'expired') { cls = 'disconnected'; text = why || 'Credentials expired — re-enter to resume polling'; }
+        else if (sess === 'error')   { cls = 'warn';         text = why || 'Could not verify — last check failed'; }
         else                         { cls = 'muted';        text = `Credentials saved — not verified${who}`; }
         let extra = '';
         if (h.last_poll_status === 'error' && h.last_poll_error) {

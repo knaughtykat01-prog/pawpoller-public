@@ -584,6 +584,9 @@ window.Posts = {
         try {
             const data = await API.getPosts();
             posts = (data && data.posts) || [];
+            // Feed order, kept so the post item page can step prev/next through the
+            // list you were actually looking at (4.34.4).
+            this._feed = posts;
         } catch (err) {
             feed.innerHTML = `<div class="card error">Failed to load posts: ${this.esc(err.message)}</div>`;
             return;
@@ -617,7 +620,7 @@ window.Posts = {
                 <div class="post-card-main">
                     <div class="post-card-body">
                         ${rating}
-                        <p class="post-card-text">${this.esc(p.body) || '<span class="muted">(image only)</span>'}${p.thread_count ? ` <span class="muted" style="font-size:11px">🧵 ${p.thread_count + 1} parts</span>` : ''}</p>
+                        <p class="post-card-text"><a href="#/posts/${p.post_id}" class="post-card-link">${this.esc(p.body) || '<span class="muted">(image only)</span>'}</a>${p.thread_count ? ` <span class="muted" style="font-size:11px">🧵 ${p.thread_count + 1} parts</span>` : ''}</p>
                         <div class="post-card-pubs">${pubs || '<span class="muted">not published</span>'}</div>
                         <div class="post-card-meta muted">${this.esc(p.created_at)}</div>
                     </div>

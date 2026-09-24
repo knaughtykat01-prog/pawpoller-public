@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS e621_submissions (
     favorites_count INTEGER DEFAULT 0,
     comments_count  INTEGER DEFAULT 0,
     has_media       INTEGER DEFAULT 0,
+    -- Who e621 says uploaded the post (4.34.2, PLATAUDIT). `username` holds the
+    -- account we POLLED WITH, which is an assumption, not a reading -- the client
+    -- stamped its own configured name on every row. This is the payload's own
+    -- uploader_id, so attribution becomes a stored fact that can disagree.
+    uploader_id     TEXT DEFAULT '',
     updated_at      TEXT DEFAULT (datetime('now'))
 );
 

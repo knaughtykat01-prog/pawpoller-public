@@ -714,6 +714,15 @@ def mirror_restart():
         updater.spawn_relauncher()
     except RuntimeError as e:
         raise HTTPException(400, detail=str(e))
+    except OSError as e:
+        # A relaunch script that cannot be written is a 400 with a reason, not a 500
+        # (4.34.1). Only RuntimeError was caught, so the read-only AppImage mount
+        # surfaced as an unhandled server error with nothing for the user to act on.
+        logger.warning("Restart: could not write the relaunch script: %s", e)
+        raise HTTPException(400, detail=(
+            "Could not write the file that restarts the app, so nothing was stopped — "
+            "close PawPoller and open it again yourself. Your data is safe and any "
+            "pending database update is applied on the next start."))
 
     from pathlib import Path as _P
     pending = core.pending_snapshot_path(_P(config.DB_PATH)).exists()

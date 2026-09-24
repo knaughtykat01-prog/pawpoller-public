@@ -20,11 +20,18 @@ from mirror import handoff
 
 
 @pytest.fixture
-def conn(tmp_path, monkeypatch):
+def conn(tmp_path, monkeypatch, _db_template):
+    """Copies the session template instead of running `init_db()` per test.
+
+    `init_db` reads ~20 schema files and runs the whole migration chain — about a second
+    each time, and 32 tests here paid it. Same trick `_isolated_db` already uses for
+    every other test in the suite; this file predated it.
+    """
     import config
     from database import db as db_mod
-    monkeypatch.setattr(config, "DB_PATH", tmp_path / "pawpoller.db")
-    db_mod.init_db()
+    path = tmp_path / "pawpoller.db"
+    path.write_bytes(_db_template)
+    monkeypatch.setattr(config, "DB_PATH", path)
     c = db_mod.get_connection()
     yield c
     c.close()

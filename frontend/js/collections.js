@@ -63,6 +63,10 @@ window.Collections = {
         try {
             const d = await API.getCollections();
             items = d.collections || [];
+            // Grid order, kept for the detail page's prev/next (4.34.4). Stepping
+            // has to follow the list you arrived from, not a fresh fetch in some
+            // other order.
+            this._items = items;
         } catch (err) {
             document.getElementById('coll-grid').innerHTML =
                 `<div class="card error">Failed to load collections: ${this.esc(err.message)}</div>`;
@@ -193,7 +197,7 @@ window.Collections = {
     async renderDetail(id) {
         const app = document.getElementById('app');
         app.innerHTML = `
-            <p style="margin:.2rem 0 .8rem;"><a href="#/collections">← Collections</a></p>
+            ${ItemFrame.backBar({ href: '#/collections', label: 'Collections' })}
             <div id="coll-detail">Loading…</div>`;
         await this._loadPersonas();
         let c;
@@ -252,19 +256,19 @@ window.Collections = {
                 ${Components.statCard('Views', t.views || 0)}
                 ${Components.statCard('Favourites', t.favorites || 0)}
                 ${Components.statCard('Comments', t.comments || 0)}
-                ${Components.statCard('Platforms', t.platforms || 0)}
+                ${Components.statCard('Sites', t.platforms || 0)}
             </div>
             <div class="card" id="coll-chart-card" style="margin:1rem 0;display:none;">
-                <h3>Combined growth</h3>
+                <h3>Growth</h3>
                 <p class="muted" style="margin:.1rem 0 .6rem;">Summed views/faves/comments across every location over time.</p>
                 <div class="chart-wrap"><canvas id="coll-combined-chart"></canvas></div>
             </div>
-            ${c.story ? `<div class="card" style="margin-bottom:1rem;"><h3>Companion story</h3>
-                <p><a href="#/posting/story/${encodeURIComponent(c.story.name)}">${this.esc(c.story.name.replace(/_/g, ' '))}</a></p></div>` : ''}
+            ${c.story ? `<div class="card" style="margin-bottom:1rem;"><h3>Related</h3>
+                <p><a href="#/library/work/${encodeURIComponent(c.story.name)}">${this.esc(c.story.name.replace(/_/g, ' '))}</a></p></div>` : ''}
             <div class="card" style="margin-bottom:1rem;">
-                <h3>Locations</h3>
+                <h3>Published to</h3>
                 ${locRows ? `<table class="data-table"><thead><tr><th></th><th>Platform</th><th>Title</th><th>Views</th><th>Faves</th><th>Comments</th><th></th></tr></thead><tbody>${locRows}</tbody></table>`
-                          : '<p class="muted">No resolvable locations yet — add works or submissions below.</p>'}
+                          : '<p class="muted">Not published anywhere yet — add works or submissions below.</p>'}
             </div>
             ${tags ? `<div class="card" style="margin-bottom:1rem;"><h3>Tags</h3><div class="coll-tags">${tags}</div></div>` : ''}
             <div class="card">
@@ -290,6 +294,24 @@ window.Collections = {
                 }
             }
         } catch (e) { /* chart is optional */ }
+        this._renderDetailNav(id);
+    },
+
+    /* Prev/next across the collections grid (4.34.4, UNIFORMITEM phase 3).
+     * Same contract as every other item page; ItemNav renders nothing when it
+     * cannot place this collection, so a failed fetch leaves the plain back link. */
+    async _renderDetailNav(id) {
+        if (!window.ItemNav) return;
+        let items = this._items;
+        if (!items || !items.length) {
+            try { items = ((await API.getCollections()) || {}).collections || []; }
+            catch (e) { return; }
+        }
+        ItemNav.mount({
+            names: items.map(c => String(c.id)), current: String(id),
+            href: n => `#/collections/${encodeURIComponent(n)}`,
+            routeTest: h => /^#\/collections\/[^/]/.test(h),
+        });
     },
 
     // ── Actions (delegated) ─────────────────────────────────────

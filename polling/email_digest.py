@@ -37,6 +37,8 @@ except Exception:  # pragma: no cover - zoneinfo is stdlib on 3.9+
 import config
 from database.db import get_connection
 
+from posting import announce
+
 logger = logging.getLogger(__name__)
 
 # Default SMTP host so the settings form pre-fills something sensible. Gmail is
@@ -440,3 +442,62 @@ def send_weekly_email_digest(force: bool = False) -> dict:
     logger.info("Weekly email digest sent to %d recipient(s)%s",
                 len(recipients), " (test)" if force else "")
     return {"sent": True, "recipients": recipients, "subject": subject}
+
+
+def send_weekly_digest_to_channel(force: bool = False, dry_run: bool = False) -> dict:
+    """Post the weekly digest to the Telegram channel (4.34.2, TGBROADCAST phase 4).
+
+    Routing only -- the numbers are the SAME ones the email digest computes, so the
+    two can never disagree. It deliberately does not build its own view of the week:
+    a second implementation that drifted would be worse than no channel digest.
+
+    ⚠ Separate from the digest that already goes to a private Telegram CHAT. That one
+    is for the operator; this is a broadcast to subscribers, and it uses the posting
+    bot for the reason the two bots exist at all (4.8.0): a six-hour digest once
+    landed in a public channel because one bot did both jobs.
+
+    ``dry_run`` returns the exact text without sending -- the default for anything
+    bulk, per the spec, because a mistake here is seen immediately.
+    """
+    import asyncio
+
+    settings = config.get_settings()
+    if not force and not settings.get("tg_channel_digest_enabled", False):
+        return {"sent": False, "reason": "disabled"}
+
+    token = (settings.get("tg_bot_token") or "").strip()
+    channel = (settings.get("tg_channel") or "").strip()
+    if not token or not channel:
+        return {"sent": False, "reason": "no channel configured"}
+
+    days = int(settings.get("email_digest_interval_days", 7) or 7)
+    conn = get_connection()
+    try:
+        data = build_weekly_digest_data(
+            conn, days=days, tz_name=settings.get("display_timezone", "UTC"))
+    finally:
+        conn.close()
+
+    from clients.tg.client import MESSAGE_LIMIT, TgClient
+    text = render_weekly_digest_text(data)
+    if len(text) > MESSAGE_LIMIT:
+        # Telegram slices silently at 4096. Cutting on a line boundary with a visible
+        # marker beats a digest that stops mid-number and looks like a bug.
+        cut = text[:MESSAGE_LIMIT - 40].rsplit("\n", 1)[0]
+        text = cut + "\n\n(truncated)"
+
+    if dry_run:
+        return {"sent": False, "reason": "dry run", "text": text}
+
+    client = TgClient(bot_token=token, channel=channel)
+    result = asyncio.run(client.create_post(
+        text, silent=announce.option_default(settings, "tg", "silent", False),
+        preview=False))
+    if not result:
+        return {"sent": False,
+                "reason": getattr(client, "last_error", "") or "Telegram refused the post"}
+    if not force:
+        config.save_settings(
+            {"last_tg_channel_digest_sent_at": datetime.now(timezone.utc).isoformat()})
+    logger.info("Weekly digest posted to the Telegram channel%s", " (test)" if force else "")
+    return {"sent": True, "message_id": result.get("id", ""), "url": result.get("url", "")}

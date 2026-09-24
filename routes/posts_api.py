@@ -183,16 +183,96 @@ def import_discovered_post(platform: str, submission_id: str):
 
 @posts_router.get("/{post_id}")
 def get_post(post_id: int):
+    """One post, with every place it went and how each is doing.
+
+    4.34.4 (UNIFORMITEM phase 4): a post goes to up to six platforms and each one
+    writes a `post_publications` row, but until now there was no item page and the
+    answer to "how did that post do" was nothing. `post_publications` records only
+    WHERE it went -- the numbers live in each platform's own submissions table, keyed
+    by the external_id -- so the publications are resolved against those here, using
+    the same batched helper the Collection and Masterpiece rollups use (ONE query per
+    platform, not one per publication).
+    """
     conn = get_connection()
     try:
         post = posts_queries.get_post(conn, post_id)
         if not post:
             raise HTTPException(404, "Post not found")
-        post["publications"] = posts_queries.get_post_publications(conn, post_id)
+        pubs = posts_queries.get_post_publications(conn, post_id)
+        post["publications"] = _resolve_post_publications(conn, pubs)
+        post["totals"] = _post_totals(post["publications"])
+        # Thread parts 2+ are full post rows; the item page shows them with the
+        # first so the Record section is the whole thing that went out.
+        post["thread_parts"] = posts_queries.get_thread_parts(conn, post_id)
         return post
     finally:
         conn.close()
 
+
+def _resolve_post_publications(conn, pubs: list[dict]) -> list[dict]:
+    """Attach live stats to each publication. Never drops a row.
+
+    A publication with no stored submission row still appears, with null stats --
+    "posted, not measured yet" and "not posted" are different states and a page that
+    renders them alike is the kind of confident-wrong surface this spec exists to
+    remove.
+    """
+    from database import collections_queries as cq
+    live = [(p.get("platform"), str(p.get("external_id") or ""))
+            for p in pubs if p.get("external_id")]
+    rows = cq._submission_rows_bulk(conn, live) if live else {}
+    out = []
+    for p in pubs:
+        row = dict(p)
+        sid = str(p.get("external_id") or "")
+        loc = cq._location_from_row(
+            p.get("platform"), sid, rows.get((p.get("platform"), sid)),
+            url=p.get("external_url") or "", account_id=p.get("account_id"),
+            source="post") if sid else None
+        row["stats"] = (loc or {}).get("stats") or {
+            "views": None, "favorites": None, "comments": None}
+        row["thumbnail_url"] = (loc or {}).get("thumbnail_url") or ""
+        row["title"] = (loc or {}).get("title") or ""
+        out.append(row)
+    return out
+
+
+def _post_totals(pubs: list[dict]) -> dict:
+    """The headline row. Sums only what is known -- a None stays out of the sum
+    rather than counting as 0, so "not tracked" never reads as "zero engagement"."""
+    t = {"views": 0, "favorites": 0, "comments": 0, "sites": 0}
+    for p in pubs:
+        if p.get("status") == "posted":
+            t["sites"] += 1
+        s = p.get("stats") or {}
+        for k in ("views", "favorites", "comments"):
+            if s.get(k) is not None:
+                t[k] += int(s[k] or 0)
+    return t
+
+
+@posts_router.get("/{post_id}/snapshots")
+def get_post_snapshots(post_id: int):
+    """Combined time-series across every platform this post went to (4.34.4).
+
+    Routing only: `analytics_queries.get_combined_snapshots` already does this for
+    Collections over (platform, submission_id) pairs, and a post's publications are
+    the same shape. A second implementation would drift from the one the Collection
+    chart uses and the two would disagree about the same numbers.
+    """
+    conn = get_connection()
+    try:
+        if not posts_queries.get_post(conn, post_id):
+            raise HTTPException(404, "Post not found")
+        from database import analytics_queries
+        pairs = [(p["platform"], str(p["external_id"]))
+                 for p in posts_queries.get_post_publications(conn, post_id)
+                 if p.get("external_id")]
+        if not pairs:
+            return {"snapshots": []}
+        return {"snapshots": analytics_queries.get_combined_snapshots(conn, pairs)}
+    finally:
+        conn.close()
 
 @posts_router.post("")
 async def create_post(

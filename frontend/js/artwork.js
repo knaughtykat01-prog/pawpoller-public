@@ -257,10 +257,7 @@ window.Artwork = {
      */
 
     _key(platform, sid) { return String(platform) + ':' + String(sid); },
-    _unkey(k) {
-        const i = k.indexOf(':');
-        return { platform: k.slice(0, i), submission_id: k.slice(i + 1) };
-    },
+    /* _unkey (the inverse) was deleted in 4.34.4 — nothing had called it. */
 
     /* Group discovered art tiles that share a submission_link into masters,
        returning the masters plus the still-standalone tiles. A link becomes a
@@ -1330,9 +1327,9 @@ window.Artwork = {
         const el = document.querySelector(`.art-tg-desc[data-platform="${code}"]`);
         return el ? el.value.trim() : null;
     },
-    _collectTgDesc() { return this._collectPlatDesc('tg'); },
-
-    _collectTgOpts() { return this._collectPlatOpts('tg'); },
+    /* _collectTgDesc / _collectTgOpts were deleted in 4.34.4 — hardcoded 'tg'
+       wrappers left behind when the announcer panels went per-platform; every
+       caller passes a code to _collectPlatDesc / _collectPlatOpts directly. */
 
     /* One announcer's panel, read back. Only EXPLICIT choices are stored. */
     _collectPlatOpts(code) {

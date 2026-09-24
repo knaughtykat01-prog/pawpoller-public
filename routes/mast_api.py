@@ -49,7 +49,7 @@ def mast_auth_status():
     return {
         "has_credentials": has_credentials,
         "has_data": has_data,
-        "username": settings.get("mast_instance_url", ""),
+        "username": settings.get("mast_handle", "") or settings.get("mast_instance_url", ""),
         "flavour": settings.get("mast_instance_flavour", ""),
     }
 
@@ -102,6 +102,11 @@ async def mast_connect(body: dict):
         "mast_access_token": access_token,
         "mast_notifications_enabled": True,
         "mast_instance_flavour": flavour,
+        # 4.34.2 (PLATAUDIT): the account row used to derive its handle from the
+        # INSTANCE URL, so every account on one instance looked identical on the
+        # (platform, handle) key. validate_session() has always returned the real
+        # "@user@instance"; it was simply thrown away.
+        "mast_handle": handle,
     })
 
     msg = f"Connected — tracking {handle}"
@@ -113,7 +118,8 @@ async def mast_connect(body: dict):
 @mast_router.post("/auth/disconnect")
 def mast_disconnect():
     """Clear Mastodon credentials from settings."""
-    config.delete_settings_keys(["mast_instance_url", "mast_access_token", "mast_instance_flavour"])
+    config.delete_settings_keys(["mast_instance_url", "mast_access_token",
+                                 "mast_instance_flavour", "mast_handle"])
     config.save_settings({"mast_notifications_enabled": False})
     return {"status": "success", "message": "Mastodon disconnected"}
 

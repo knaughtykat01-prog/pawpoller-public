@@ -62,16 +62,11 @@ window.Bookshelf = {
         return (window.Utils && Utils.formatNumber) ? Utils.formatNumber(n || 0) : String(n || 0);
     },
 
-    /* Per-platform metric names differ (views/hits/reads, faves/kudos/votes);
-       pull the first present. */
-    _pick(stats, keys) {
-        if (!stats) return 0;
-        for (const k of keys) if (stats[k] != null) return Number(stats[k]) || 0;
-        return 0;
-    },
-    _views(s) { return this._pick(s, ['views', 'hits', 'reads']); },
-    _faves(s) { return this._pick(s, ['favorites_count', 'kudos', 'votes', 'favorites']); },
-    _comments(s) { return this._pick(s, ['comments_count', 'comments']); },
+    /* _pick / _views / _faves / _comments were deleted in 4.34.4 (UNIFORMITEM
+       phase 5). They read a work's per-platform stats for `_paintWork`, the work
+       detail page retired in 4.5.0; nothing has called them since. story_board.js
+       carries its own copies of the same three getters for the page that replaced
+       it. */
 
     /* ── Library home ──────────────────────────────────────────── */
 

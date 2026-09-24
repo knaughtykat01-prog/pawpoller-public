@@ -112,9 +112,18 @@ window.Characters = {
         const works = c.works || 0;
         const aliases = (c.aliases || []).length
             ? `<span class="ar-alias">also: ${c.aliases.map(x => this.esc(x)).join(', ')}</span>` : '';
-        const ownerOpts = `<option value=""${c.owner_key ? '' : ' selected'}>Owner unknown</option>` +
-            this._people.map(p =>
-                `<option value="${this.esc(p.key)}"${p.key === c.owner_key ? ' selected' : ''}>${this.esc(p.name)}</option>`).join('');
+        // "You" first and labelled (4.34.1). The list is People rows by name, and
+        // nothing said which one is YOU — so the commonest answer, "this is my
+        // character", meant knowing which of your own names you filed yourself under.
+        // A People row is you when it carries a persona link ("this person is me").
+        const _mine = this._people.filter(p => p.persona_id != null);
+        const _others = this._people.filter(p => p.persona_id == null);
+        const _opt = (p, mine) =>
+            `<option value="${this.esc(p.key)}"${p.key === c.owner_key ? ' selected' : ''}>`
+            + `${mine ? 'you · ' : ''}${this.esc(p.name)}</option>`;
+        const ownerOpts = `<option value=""${c.owner_key ? '' : ' selected'}>Owner unknown</option>`
+            + _mine.map(p => _opt(p, true)).join('')
+            + _others.map(p => _opt(p, false)).join('');
         const field = (label, prop, placeholder, hint) => `
             <div class="ar-h">
                 <span${hint ? ` title="${this.esc(hint)}"` : ''}>${label}</span>
@@ -143,8 +152,8 @@ window.Characters = {
                     </div>
                 </div>
                 <div class="ar-handles">
-                    ${field('Booru tag', 'booru_tag', '—',
-                            'Added automatically when a piece featuring them posts to e621 or Furbooru. Usually name_(owner).')}
+                    ${field('Booru tag', 'booru_tag', 'name_(owner)',
+                            'The tag this character already uses on e621 / Furbooru — lowercase, underscores for spaces, the owner in brackets. Added automatically when a piece featuring them posts there. Leave it empty and nothing is added.')}
                     ${field('Species', 'species', '—', '')}
                     ${field('Notes', 'notes', '—', 'Yours to read — never posted anywhere.')}
                 </div>

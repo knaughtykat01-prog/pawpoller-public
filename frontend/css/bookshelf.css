@@ -197,6 +197,16 @@
 .work-back a { color: var(--text-secondary); text-decoration: none; font-size: .9rem; }
 .work-back a:hover { color: var(--accent); }
 
+/* Prev/next item nav (2.190.0 on masterpieces; every item page since 4.34.3).
+   Lives here, beside .work-back, because the back-bar it extends is shared --
+   it sat in masterpieces.css only for as long as one page had it. */
+.work-back.item-detail-topnav {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.item-nav { display: flex; align-items: center; gap: .5rem; }
+.item-nav-pos { font-size: .8rem; white-space: nowrap; }
+.item-nav .is-disabled { opacity: .4; cursor: default; pointer-events: none; }
+
 /* The work page's hero, margin rail and pub list went in 4.5.0: #/library/work/
    is the story board (board.css). .work-back, .work-card and the chapter-reach
    rows below are still used — by the board, and by other pages. */

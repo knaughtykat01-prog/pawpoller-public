@@ -65,7 +65,10 @@ class TestArtworkOptionsUI:
         """An untouched option must stay ABSENT, so it keeps following the
         channel default rather than being frozen at today's value."""
         js = open("frontend/js/artwork.js", encoding="utf-8").read()
-        i = js.index("_collectTgOpts()")
+        # Anchored on the generic collector since 4.34.4 — the `_collectTgOpts()`
+        # wrapper this used to point at was a dead hardcoded-'tg' shim, and the
+        # behaviour being tested always lived in the generic one.
+        i = js.index("_collectPlatOpts(code) {")
         block = js[i:i + 500]
         assert "=== 'on'" in block and "=== 'off'" in block, (
             "collector must record only explicit on/off, never the empty default")

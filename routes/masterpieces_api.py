@@ -623,19 +623,27 @@ async def upload_variant(name: str, file: UploadFile = File(...),
 
 @masterpieces_router.delete("/{name}/variants/{key}")
 def delete_variant(name: str, key: str):
-    """Demote a variant back to a plain alt image (file stays; members re-key
-    to primary '')."""
+    """Demote a variant back to a plain alt image. The file stays, and so does the
+    members' `variant_key` (4.34.0, VARMEMKEY).
+
+    This used to re-key those members to primary (''), which is a positive claim and a
+    false one: the submissions on those sites still hold the DEMOTED render's bytes, not
+    the piece's own image. An edit then pushed the primary's rating, tags and description
+    over them — and an edit sets `skip_content_refresh`, so the image stays put. On a piece
+    rated below one of its renders that is a rating DOWNGRADE on live adult work.
+
+    Leaving the key means `update_artwork` refuses those members with "this site holds the
+    'x' render, which the piece no longer declares — re-link or re-post it", which is true
+    and actionable. Nothing else reads a stale key destructively: the rollup still groups
+    them (they really are that render) and the locations list falls back to showing the raw
+    key as its label.
+    """
     variants = _raw_variants(name)
     if not any(v["key"] == key for v in variants):
         raise HTTPException(404, detail="variant not found")
     _write_variants(name, [v for v in variants if v["key"] != key])
-    conn = get_connection()
-    try:
-        mq.clear_variant_members(conn, name, key)
-        conn.commit()
-    finally:
-        conn.close()
-    return {"status": "removed", "key": key}
+    return {"status": "removed", "key": key,
+            "members_kept": True}
 
 
 def _artist_from_body(raw) -> dict | None:

@@ -631,7 +631,7 @@ window.Masterpieces = {
         this._init();
         const app = document.getElementById('app');
         app.innerHTML = `
-            <div class="work-back"><a href="#/library">&larr; Library</a></div>
+            ${ItemFrame.backBar({ href: '#/library', label: 'Library' })}
             <div id="mp-detail"><div class="loading-spinner">Opening the masterpiece…</div></div>`;
         await this._loadPersonas();
         let m;
@@ -647,9 +647,13 @@ window.Masterpieces = {
         this._renderDetailNav(name);
     },
 
-    /* Prev/next navigation across the grid list (2.190.0). Uses the cached grid
-     * order (active pieces); on a deep link with no cache, fetches it. Arrows +
-     * a position counter go in the top back-bar; ←/→ keys step too. */
+    /* Prev/next navigation across the grid list (2.190.0; generalised 4.34.3).
+     *
+     * The rendering, the counter and the arrow keys now live in ItemNav, which the
+     * story board uses too — this keeps only what is genuinely masterpiece-shaped:
+     * which list to step through (active pieces, in grid order) and where a name
+     * points. Two consumers is the point at which that split is observed rather
+     * than guessed (UNIFORMITEM §3). */
     async _renderDetailNav(name) {
         let list = this._cache;
         if (!list) {
@@ -658,35 +662,14 @@ window.Masterpieces = {
         }
         // Active pieces in grid order; if the open piece is junk, fall back to all.
         let names = list.filter(m => m.status !== 'junk').map(m => m.name);
-        let idx = names.indexOf(name);
-        if (idx === -1) { names = list.map(m => m.name); idx = names.indexOf(name); }
-        if (idx === -1) return;
-        const prev = idx > 0 ? names[idx - 1] : null;
-        const next = idx < names.length - 1 ? names[idx + 1] : null;
-        this._navPrev = prev; this._navNext = next;
-        const back = document.querySelector('.work-back');
-        if (!back || back.querySelector('.mp-nav')) return;
-        back.classList.add('mp-detail-topnav');
-        const btn = (n, cls, label, title) => n
-            ? `<a class="btn btn-sm ${cls}" href="#/masterpieces/${encodeURIComponent(n)}" title="${title}">${label}</a>`
-            : `<span class="btn btn-sm is-disabled" aria-disabled="true">${label}</span>`;
-        back.insertAdjacentHTML('beforeend', `
-            <span class="mp-nav">
-                ${btn(prev, 'mp-nav-prev', '&lsaquo; Prev', 'Previous (←)')}
-                <span class="mp-nav-pos muted">${idx + 1} / ${names.length}</span>
-                ${btn(next, 'mp-nav-next', 'Next &rsaquo;', 'Next (→)')}
-            </span>`);
-    },
-
-    /* ←/→ step through pieces while on a masterpiece detail (not while typing). */
-    _onNavKey(e) {
-        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-        // Both routes render this page (2.193.0), so arrow-stepping works on either.
-        const h = location.hash || '';
-        if (!/^#\/masterpieces\/[^/]/.test(h) && !/^#\/artwork\/image\/[^/]/.test(h)) return;
-        if (e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
-        const to = e.key === 'ArrowLeft' ? this._navPrev : this._navNext;
-        if (to) { e.preventDefault(); location.hash = `#/masterpieces/${encodeURIComponent(to)}`; }
+        if (names.indexOf(name) === -1) names = list.map(m => m.name);
+        if (!window.ItemNav) return;
+        ItemNav.mount({
+            names, current: name,
+            href: n => `#/masterpieces/${encodeURIComponent(n)}`,
+            // Both routes render this page (2.193.0), so arrow-stepping works on either.
+            routeTest: h => /^#\/masterpieces\/[^/]/.test(h) || /^#\/artwork\/image\/[^/]/.test(h),
+        });
     },
 
     _ratingCls(r) {
@@ -928,12 +911,12 @@ window.Masterpieces = {
                         <div class="chip-row">${rating}${livePill}${junkBadge}${personas ? `<span class="mp-personas">${personas}</span>` : ''}</div>
                         ${gallery ? `<div class="chip-row">${gallery}${vstatsLine}</div>` : ''}
                     </div>
-                    <div class="board-stats">
-                        <div class="n">${this._fmt(t.views)}<small>Views</small></div>
-                        <div class="n">${this._fmt(t.favorites)}<small>Favourites</small></div>
-                        <div class="n">${this._fmt(t.comments)}<small>Comments</small></div>
-                        <div class="n">${t.locations || 0}<small>Sites</small></div>
-                    </div>
+                    ${ItemFrame.statRow([
+                        { value: t.views, label: 'Views' },
+                        { value: t.favorites, label: 'Favourites' },
+                        { value: t.comments, label: 'Comments' },
+                        { value: t.locations || 0, label: 'Sites' },
+                    ])}
                 </div>
                 <div class="board-hero-actions">
                     <button class="btn btn-sm btn-primary" data-mp-sync type="button"
@@ -1665,7 +1648,7 @@ window.Masterpieces = {
     _init() {
         if (this._wired) return;
         this._wired = true;
-        document.addEventListener('keydown', (e) => this._onNavKey(e));
+        // Arrow stepping is ItemNav's, bound once in item_nav.js (4.34.3).
         // The add-tag box (§13): Enter commits a comma list, Escape cancels,
         // Backspace on an empty box removes the last chip.
         document.addEventListener('keydown', (e) => {

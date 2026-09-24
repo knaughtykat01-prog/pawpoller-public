@@ -327,9 +327,14 @@ class TestPanelUI:
         block = self.js[i:i + 900]
         assert "sel.dataset.kind === 'choice' && sel.value" in block
 
-    def test_the_old_telegram_entry_points_still_exist(self):
-        assert "_collectTgOpts() { return this._collectPlatOpts('tg'); }" in self.js
-        assert "_collectTgDesc() { return this._collectPlatDesc('tg'); }" in self.js
+    def test_the_generic_collectors_are_the_entry_points(self):
+        """Was `test_the_old_telegram_entry_points_still_exist`, pinning the two
+        hardcoded 'tg' wrappers. They were deleted in 4.34.4 (UNIFORMITEM phase 5):
+        once the panels went per-platform every caller passed a code, so the wrappers
+        had no caller at all. What has to exist is the generic pair they wrapped."""
+        assert "_collectPlatOpts(code) {" in self.js
+        assert "_collectPlatDesc(code) {" in self.js
+        assert "_collectTgOpts()" not in self.js, "the dead wrapper should not return"
 
     def test_the_edit_form_renders_a_panel_per_announcer(self):
         # The live form is the Masterpiece page (4.5.0 deleted the old one):

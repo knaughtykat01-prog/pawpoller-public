@@ -79,7 +79,17 @@ EXCLUDE_GLOBS: tuple[str, ...] = (
 # `*.bak.<unix-ts>` — the undo file written beside anything the app rewrites.
 # Same rule the artwork mirror has always applied (`mirror/core.py:_BAK_RE`);
 # applying it here makes one class of file mean one thing across both stores.
-BAK_RE = re.compile(r"\.bak\.\d+$")
+# 4.34.1 (BAKNONNUMERIC): `.bak.` followed by ANYTHING, not just digits. The rule
+# was `\.bak\.\d+$`, which matched the 111 machine-written backups and missed the
+# one a human had named `MASTER.md.bak.pre-revision-20260515-130936` — so a 140 KB
+# backup crossed as canonical content in both directions.
+#
+# Widened rather than renaming the file: the file is the operator's, the rule is
+# ours, and a rule that only recognises backups it wrote itself is the thing that
+# is wrong. `[^.]+$` is the trailing segment only, so a `.bak.` sitting mid-name in
+# a legitimate file (`My.bak.notes.md`) is still NOT excluded — `.+$` would have
+# swallowed that too.
+BAK_RE = re.compile(r"\.bak\.[^.]+$")
 
 
 def is_excluded(rel_path: str) -> bool:

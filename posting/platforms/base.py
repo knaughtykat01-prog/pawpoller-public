@@ -7,9 +7,12 @@ consistent interface so the PostingManager can treat all platforms the same.
 
 from __future__ import annotations
 
+import logging
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -196,6 +199,47 @@ class PlatformPoster(ABC):
             config.account_setting_key(acct_id, field, is_default): value
             for field, value in values.items()
         })
+        self._push_rotated_creds(platform)
+
+    @staticmethod
+    def _push_rotated_creds(platform: str) -> None:
+        """Send a just-rotated credential to the paired server (4.34.1, DATOKENROTSYNC).
+
+        The same defect class as the incident above — *a rotated secret not written back
+        to where it was read from* — but across MACHINES rather than across accounts, so
+        writing the right local key does not reach it.
+
+        Refresh tokens are single-use and DA's `requires_mode` is `"any"`, so either
+        install may post. Settings auto-sync is **pull-only**: the desktop pulls every
+        five minutes and `push_now()` is a manual button. So a desktop post rotated the
+        token locally, the server never learned, and the server's copy was a spent token
+        — dead. Worse, the next pull then overwrote the desktop's fresh one with the
+        server's spent one, killing the account on both machines from one post.
+
+        Pushing here closes both halves: the server gets the live token, so the next pull
+        hands back what the desktop already has instead of clobbering it.
+
+        Deliberately best-effort and off-thread. A credential has ALREADY been saved
+        locally by the time this runs, so the post must not fail, stall or roll back
+        because a server was unreachable — `push_now()` does synchronous HTTP and this
+        is called from an async posting path. It self-gates: unpaired installs (and the
+        server itself) have no sync target and it returns immediately.
+        """
+        def _go():
+            try:
+                import auto_sync
+                n = auto_sync.push_now()
+                if n >= 0:
+                    logger.info("%s: pushed the rotated credential to the paired "
+                                "server (%d key(s) merged)", platform, n)
+            except Exception as e:                 # never break a post over this
+                logger.warning("%s: could not push the rotated credential to the "
+                               "paired server — it still has the spent one and will "
+                               "need re-authorising there: %s", platform, e)
+
+        import threading
+        threading.Thread(target=_go, daemon=True,
+                         name=f"cred-push-{platform}").start()
 
     @abstractmethod
     async def post(self, package: StoryUploadPackage) -> PostResult:

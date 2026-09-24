@@ -719,8 +719,25 @@ Your key can read but not post. Check that site's row in [Platform credentials](
   Log in with `admin` and the new password straight away; no restart is needed. (Changing
   `DASHBOARD_PASSWORD` in `.env` does **not** work once a password exists. That line is only read
   the very first time.)
-- **Paths A and B:** there is no reset button yet. Your stats and settings are safe; ask for help on
-  the project page.
+- **Path A (the app on your computer):** close PawPoller, then open a Command Prompt and run the
+  app with `--reset-password`:
+
+  ```
+  "C:\Program Files\PawPoller\PawPoller.exe" --reset-password
+  ```
+
+  It asks for the new password twice, then closes. Start PawPoller normally and sign in with it.
+
+- **Path B (your own computer as a server):** the same, using the server program:
+
+  ```
+  "C:\Program Files\PawPoller\PawPoller-Server.exe" --reset-password
+  ```
+
+  You'll see *Password changed.* Start it again and sign in.
+
+  You have to be sitting at that computer — this only works from its own keyboard, never over the
+  network. It never asks for your old password, so a forgotten one is not a problem.
 
 **The phone can't open my address (Paths B and C).**
 Open the Tailscale app on the phone and check it says **Connected**, and that it's signed in to the

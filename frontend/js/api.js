@@ -1240,6 +1240,8 @@ const API = {
     /* ── Posts (microblog) module ─────────────────────────────── */
     getPosts() { return this.get('/api/posts'); },
     getPost(id) { return this.get(`/api/posts/${id}`); },
+    /* Combined growth across every platform the post went to (4.34.4). */
+    getPostSnapshots(id) { return this.get(`/api/posts/${id}/snapshots`); },
     createPost(formData) {
         // multipart (optional image rides along) — let the browser set the boundary.
         return fetch('/api/posts', { method: 'POST', body: formData })

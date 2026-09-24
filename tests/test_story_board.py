@@ -131,10 +131,19 @@ class TestDeletions:
         assert "_renderComparisonChart(" in POSTING, "the chart renderer stays — the board calls it"
         assert "_updateSingle(" in POSTING and "_updateAll(" in POSTING
 
-    def test_the_library_work_page_is_gone_but_the_grid_helpers_stay(self):
+    def test_the_library_work_page_is_gone(self):
         assert "_paintWork(" not in SHELF and "renderWork(" not in SHELF
-        for keep in ("_views(", "_faves(", "_comments(", "_num("):
-            assert keep in SHELF, keep
+
+    def test_the_stat_helpers_went_with_it(self):
+        """4.34.4 (UNIFORMITEM phase 5). This test used to assert the opposite —
+        that `_views` / `_faves` / `_comments` STAYED when `_paintWork` was deleted
+        in 4.5.0, on the belief that the grid still used them. It did not: they had
+        no caller anywhere from that day on, so the assertion was pinning dead code
+        rather than a live contract. `_num` is left alone — also unused here, but a
+        one-line formatter is not worth a second deletion on the same evidence."""
+        for gone in ("_views(", "_faves(", "_comments(", "_pick(stats"):
+            assert gone not in SHELF, f"{gone} has no caller; it should not be back"
+        assert "deleted in 4.34.4" in SHELF, "say where they went"
 
     def test_the_dead_artwork_renderer_is_gone(self):
         assert "_renderDetailLegacy" not in ART

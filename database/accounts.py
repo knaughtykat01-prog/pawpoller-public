@@ -139,7 +139,14 @@ _HANDLE_KEYS = {
     "ik": ["ik_target_user"],
     "bsky": ["bsky_identifier"],
     "tw": ["tw_target_user"],
-    "mast": ["mast_instance_url"],
+    # 4.34.2 (PLATAUDIT): the instance URL is a SERVER, not an identity. Every
+    # account on one instance derived the same handle, and resolve_account_id
+    # matches on (platform, handle) -- so two Mastodon accounts on mastodon.social
+    # collided on the natural key. The client already computes the real
+    # "@user@instance" in validate_session(); it is now persisted as mast_handle.
+    # The URL stays as a LAST resort so an install that has not re-checked yet
+    # keeps the label it had rather than going blank.
+    "mast": ["mast_handle", "mast_instance_url"],
     "tum": ["tum_blog"],
     "pix": ["pix_user_id"],
     "thr": ["thr_username", "thr_user_id"],
@@ -203,6 +210,63 @@ def _default_handle(platform: str, settings: dict) -> str:
 def derive_handle(platform: str, source: dict) -> str:
     """Best-effort display handle from a creds/settings-shaped dict."""
     return _default_handle(platform, source)
+
+
+def _looks_like_a_url(value: str) -> bool:
+    """A handle is an identity. No platform here writes one as a URL -- Mastodon
+    uses ``@user@instance``, Telegram ``@name`` or ``-100…``, the rest a bare
+    username -- so a scheme is proof the field holds the wrong KIND of thing."""
+    return value.strip().lower().startswith(("http://", "https://"))
+
+
+def derive_account_handle(platform: str, account_id: int, is_default: bool,
+                          settings: dict | None = None) -> str:
+    """The handle for ONE account, reading that account's own credential keys.
+
+    4.34.2 (PLATAUDIT): :func:`_default_handle` reads FLAT settings, which hold the
+    default account's values. A second account keeps its username under
+    ``acct_<id>_<field>``, so its handle could never be derived and stayed empty --
+    which is why a FurryNetwork account had nothing to cross-check against and the
+    artist-credit renderer could not link it. Falls back to the flat lookup, so the
+    default account behaves exactly as before.
+    """
+    import config
+    creds = config.resolve_account_credentials(platform, account_id, is_default, settings)
+    handle = _default_handle(platform, creds)
+    if not handle and settings is not None:
+        handle = _default_handle(platform, settings) if is_default else ""
+    return handle
+
+
+def backfill_account_handles(conn: sqlite3.Connection,
+                             settings: dict | None = None) -> int:
+    """Fill in a handle that is missing, or that holds a URL instead of an identity.
+
+    4.34.2 (PLATAUDIT), closing two of the audit's three findings at their source.
+    Idempotent, and it NEVER invents: a row is touched only when the account's own
+    stored credentials yield a better value than what is there. A handle that is
+    merely unfamiliar is left alone -- the audit's lesson (and [[SFHANDLE]]'s) is
+    that ownership is read, never inferred.
+    """
+    import config
+    settings = settings if settings is not None else config.get_settings()
+    ensure_accounts_table(conn)
+    fixed = 0
+    for row in conn.execute("SELECT account_id, platform, handle, is_default "
+                            "FROM accounts").fetchall():
+        current = (row["handle"] or "").strip()
+        if current and not _looks_like_a_url(current):
+            continue
+        better = derive_account_handle(row["platform"], row["account_id"],
+                                       bool(row["is_default"]), settings).strip()
+        if not better or better == current or _looks_like_a_url(better):
+            continue
+        conn.execute("UPDATE accounts SET handle = ? WHERE account_id = ?",
+                     (better, row["account_id"]))
+        fixed += 1
+    if fixed:
+        logger.info("accounts: filled in %d handle(s) that were empty or held a URL", fixed)
+    return fixed
 
 
 def get_default_account_id(conn: sqlite3.Connection, platform: str,

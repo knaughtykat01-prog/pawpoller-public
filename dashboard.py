@@ -507,6 +507,12 @@ _SENSITIVE_WHEN_OPEN_PREFIXES = (
     # archive, which is a write primitive, not just a read.
     "/api/mirror",
     "/api/artwork/sync/upload",
+    # 4.34.4: the channel routes BROADCAST to real subscribers, and a poll needs
+    # nothing but a question and two options -- no story, no publication, no
+    # upload. On an unconfigured instance that is a remote caller putting words
+    # on the operator's channel under their own brand, irreversibly. Cheaper to
+    # reach than any other publish endpoint here, so it belongs on this list.
+    "/api/tg/channel",
 )
 
 

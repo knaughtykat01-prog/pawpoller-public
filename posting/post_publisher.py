@@ -237,7 +237,14 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
                             "(check logs)")
                         return result
                     media_ids.append(mid)
-                r = await client.create_tweet(text, media_ids=media_ids or None)
+                # Flag adult media (4.34.0, TWSENS). Every other platform on this path
+                # already reads the post's rating — Bluesky's label, Mastodon's
+                # sensitive, Telegram's spoiler — and X was the one that did not, so
+                # every microblog post went out unflagged whatever its rating said.
+                # An unflagged adult image is how an ACCOUNT gets restricted rather than
+                # how a post gets refused: it fails later, elsewhere, and quietly.
+                r = await client.create_tweet(text, media_ids=media_ids or None,
+                                              sensitive=(rating in _SENSITIVE_RATINGS))
             finally:
                 await client.close()
             if r and r.get("id"):

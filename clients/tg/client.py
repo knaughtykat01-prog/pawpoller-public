@@ -15,6 +15,7 @@ than leaking a raw Telegram payload to the caller.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 
@@ -338,6 +339,96 @@ class TgClient:
             return None
         mid = res.get("message_id")
         return {"id": str(mid), "url": self._public_url(mid)}
+
+    # sendPoll's own limits, enforced here rather than discovered as a 400.
+    POLL_QUESTION_LIMIT = 300
+    POLL_OPTION_LIMIT = 100
+    POLL_MIN_OPTIONS = 2
+    POLL_MAX_OPTIONS = 10
+
+    async def create_poll(self, question: str, options: list[str], *,
+                          anonymous: bool = True, multiple: bool = False,
+                          quiz_answer: int | None = None, explanation: str = "",
+                          open_period: int | None = None,
+                          silent: bool = False, protect: bool = False,
+                          pin: bool = False, dry_run: bool = False) -> dict | None:
+        """Post a poll to the channel (4.34.2, TGBROADCAST phase 4).
+
+        A channel poll is the one thing here that asks subscribers for something
+        rather than showing them something: "which of these should I finish first".
+
+        ``quiz_answer`` turns it into a quiz: the index of the correct option, which
+        is what the Bot API wants and the only mode that accepts ``explanation``.
+        ``open_period`` (5-600s) auto-closes it.
+
+        Raises ValueError for anything the API would reject, BEFORE the request --
+        a poll is visible to every subscriber the moment it lands, so a malformed
+        one should not be discovered by posting it.
+        """
+        if not self.token or not self.channel:
+            raise ValueError("Telegram bot token and channel are both required")
+        question = (question or "").strip()
+        if not question:
+            raise ValueError("A poll needs a question")
+        if len(question) > self.POLL_QUESTION_LIMIT:
+            raise ValueError(
+                f"Poll question is {len(question)} characters; Telegram allows "
+                f"{self.POLL_QUESTION_LIMIT}")
+        cleaned = [str(o).strip() for o in (options or []) if str(o).strip()]
+        if not (self.POLL_MIN_OPTIONS <= len(cleaned) <= self.POLL_MAX_OPTIONS):
+            raise ValueError(
+                f"A poll needs between {self.POLL_MIN_OPTIONS} and "
+                f"{self.POLL_MAX_OPTIONS} options; got {len(cleaned)}")
+        too_long = [o for o in cleaned if len(o) > self.POLL_OPTION_LIMIT]
+        if too_long:
+            raise ValueError(
+                f"Poll option over {self.POLL_OPTION_LIMIT} characters: "
+                f"{too_long[0][:40]}...")
+        if quiz_answer is not None and not (0 <= quiz_answer < len(cleaned)):
+            raise ValueError(
+                f"quiz_answer {quiz_answer} is not one of the {len(cleaned)} options")
+        if quiz_answer is not None and multiple:
+            # The API refuses this combination; saying so is more use than its 400.
+            raise ValueError("A quiz has one correct answer, so it cannot allow "
+                             "multiple answers")
+
+        data = {
+            "chat_id": self.channel,
+            "question": question,
+            "options": json.dumps(cleaned),
+            "is_anonymous": "true" if anonymous else "false",
+            "allows_multiple_answers": "true" if multiple else "false",
+        }
+        if quiz_answer is not None:
+            data["type"] = "quiz"
+            data["correct_option_id"] = str(quiz_answer)
+            if explanation:
+                data["explanation"] = explanation[:200]
+        if open_period is not None:
+            data["open_period"] = str(open_period)
+        if silent:
+            data["disable_notification"] = "true"
+        if protect:
+            data["protect_content"] = "true"
+        if dry_run:
+            # Validated but NOT sent. A poll has no edit and no preview of its own,
+            # and it reaches every subscriber the instant it lands -- so the only
+            # way to check one before committing is not to send it.
+            return {"dry_run": True, "payload": {k: v for k, v in data.items()
+                                                 if k != "chat_id"}}
+        try:
+            async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+                r = await client.post(self._url("sendPoll"), data=data)
+                res = self._ok(r.json())
+                if not res:
+                    return None
+                mid = res.get("message_id")
+                if pin:
+                    await self._pin(client, mid)
+                return {"id": str(mid), "url": self._public_url(mid)}
+        except httpx.HTTPError as e:
+            logger.warning("Telegram poll failed (%s)", e)
+            raise
 
     async def _send_message(self, client, text, common=None, preview=True) -> dict | None:
         r = await client.post(self._url("sendMessage"), data={
