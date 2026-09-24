@@ -257,8 +257,8 @@ class TestWhatIsUnreachableIsGone:
         """Old bookmarks and anything outside the repo still have to land."""
         assert "#/library/work/" in _read("frontend/js/app.js")
 
-    def test_what_was_not_deleted_is_written_down(self):
-        """artwork.js has more dead-looking code, but one sibling that shares its
-        selectors is referenced, so phase 5's confirm-before-delete rule says leave
-        it and log it."""
-        assert "ARTPHANTOMDOM" in _read("docs/BACKLOG.md")
+    # The assertion that phase 5's deliberate non-deletion is logged as
+    # ARTPHANTOMDOM lives in tests/test_public_copy.py, because it reads
+    # docs/BACKLOG.md and the public copy strips that file by name. A test that
+    # reads a private-only doc cannot run in the public checkout, and the public
+    # CI is what builds the installers.
