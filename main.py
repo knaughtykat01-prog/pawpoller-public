@@ -496,14 +496,15 @@ def run_standalone():
     autobackup_thread = threading.Thread(target=run_auto_backup_scheduler, daemon=True, name="Auto-backup")
     autobackup_thread.start()
 
-    # Trello sync (spec 005). Self-throttles on interval_min, on the board being
-    # configured, and on THIS instance owning it -- the desktop and the server
-    # both hold the same commissions, so only the claiming instance may drive the
-    # board or they would fight over every field.
-    logger.info("Starting Trello sync scheduler...")
-    from polling.trello_sync import run_trello_scheduler
-    trello_thread = threading.Thread(target=run_trello_scheduler, daemon=True, name="Trello sync")
-    trello_thread.start()
+    # Trello board mirror (spec 006): a read thread and an outbox (write) thread.
+    # Both self-gate on credentials and on THIS instance owning the connection --
+    # two instances each driving Trello from their own mirror would fight over
+    # every field. Must match server.py's thread table (the 4.36.1 lesson).
+    logger.info("Starting Trello mirror...")
+    from polling.trello_mirror import run_trello_mirror, run_trello_outbox
+    for _name, _target in (("Trello mirror", run_trello_mirror),
+                           ("Trello outbox", run_trello_outbox)):
+        threading.Thread(target=_target, daemon=True, name=_name).start()
 
     # --- Step 3: System tray icon (initially hidden) ---
     _tray_icon = _create_tray_icon()

@@ -247,27 +247,71 @@ const API = {
     createCommission(body) { return this.post('/api/commissions', body); },
     updateCommission(id, body) { return this.patch(`/api/commissions/${id}`, body); },
     deleteCommission(id) { return this.del(`/api/commissions/${id}`); },
-    /* Trello sync (spec 005). Two-way: the board mirrors PawPoller and what
-       happens on the board comes back. `syncTrello()` PREVIEWS unless told to
-       confirm -- a bare call must never write to a board other people see. */
+    /* Trello board mirror (spec 006). Every read comes from PawPoller's own copy;
+       every write updates the copy and queues the change for Trello, returning at
+       once with `pending: true` -- none of these waits on Trello. Ids are Trello's
+       (a new card's id starts `tmp_` until Trello confirms it). */
+    // Connection + sync
     testTrello(key, token) { return this.post('/api/trello/test', { key, token }); },
-    saveTrelloCredentials(key, token) { return this.post('/api/trello/credentials', { key, token }); },
-    getTrelloBoards() { return this.get('/api/trello/boards'); },
-    getTrelloLists(boardId) { return this.get(`/api/trello/boards/${boardId}/lists`); },
+    saveTrelloCredentials(body) { return this.post('/api/trello/credentials', body); },   // {key?, token?, secret?}
     getTrelloConfig() { return this.get('/api/trello/config'); },
     saveTrelloConfig(body) { return this.put('/api/trello/config', body); },
-    previewTrello() { return this.post('/api/trello/preview', {}); },
-    syncTrello(confirm = false, confirmUnlinks = false) {
-        return this.post('/api/trello/sync', { confirm, confirm_unlinks: confirmUnlinks });
-    },
     getTrelloStatus() { return this.get('/api/trello/status'); },
-    getTrelloConflicts() { return this.get('/api/trello/conflicts'); },
-    resolveTrelloConflict(body) { return this.post('/api/trello/conflicts/resolve', body); },
-    getTrelloCandidates() { return this.get('/api/trello/candidates'); },
-    importTrelloCard(cardId) { return this.post('/api/trello/candidates/import', { card_id: cardId }); },
-    unlinkTrello(clientName, createdAt) {
-        return this.post('/api/trello/unlink', { client_name: clientName, created_at: createdAt });
+    startTrelloImport() { return this.post('/api/trello/import', {}); },
+    dismissTrelloOp(seq) { return this.post(`/api/trello/outbox/${encodeURIComponent(seq)}/dismiss`, {}); },
+    enableTrelloWebhooks() { return this.post('/api/trello/webhooks/enable', {}); },
+    disableTrelloWebhooks() { return this.post('/api/trello/webhooks/disable', {}); },
+    // Boards + lists
+    getTrelloBoards(includeHidden = false) { return this.get('/api/trello/boards', includeHidden ? { include_hidden: 1 } : {}); },
+    getTrelloBoard(id, includeArchived = false) {
+        return this.get(`/api/trello/boards/${encodeURIComponent(id)}`, includeArchived ? { include_archived: 1 } : {});
     },
+    setTrelloBoardHidden(id, hidden) { return this.patch(`/api/trello/boards/${encodeURIComponent(id)}`, { hidden }); },
+    createTrelloList(boardId, name) { return this.post(`/api/trello/boards/${encodeURIComponent(boardId)}/lists`, { name }); },
+    updateTrelloList(id, body) { return this.patch(`/api/trello/lists/${encodeURIComponent(id)}`, body); },
+    moveTrelloList(id, beforeId, afterId) {
+        return this.post(`/api/trello/lists/${encodeURIComponent(id)}/move`, { before_id: beforeId, after_id: afterId });
+    },
+    // Cards
+    createTrelloCard(listId, name) { return this.post(`/api/trello/lists/${encodeURIComponent(listId)}/cards`, { name }); },
+    getTrelloCard(id) { return this.get(`/api/trello/cards/${encodeURIComponent(id)}`); },
+    updateTrelloCard(id, body) { return this.patch(`/api/trello/cards/${encodeURIComponent(id)}`, body); },
+    moveTrelloCard(id, listId, beforeId, afterId) {
+        return this.post(`/api/trello/cards/${encodeURIComponent(id)}/move`,
+            { list_id: listId, before_id: beforeId, after_id: afterId });
+    },
+    addTrelloCardLabel(cardId, labelId) { return this.post(`/api/trello/cards/${encodeURIComponent(cardId)}/labels`, { label_id: labelId }); },
+    removeTrelloCardLabel(cardId, labelId) {
+        return this.del(`/api/trello/cards/${encodeURIComponent(cardId)}/labels/${encodeURIComponent(labelId)}`);
+    },
+    setTrelloCover(cardId, body) { return this.put(`/api/trello/cards/${encodeURIComponent(cardId)}/cover`, body); },   // {} removes
+    uploadTrelloCover(cardId, file) {
+        const fd = new FormData();
+        fd.append('file', file, file.name);
+        return this._sendForm('POST', `/api/trello/cards/${encodeURIComponent(cardId)}/cover`, fd);
+    },
+    // Labels, checklists, comments. Deletes carry ?confirm=1 -- the route refuses
+    // without it (FR-027), so a stray call can never remove one.
+    createTrelloLabel(boardId, name, color) { return this.post(`/api/trello/boards/${encodeURIComponent(boardId)}/labels`, { name, color }); },
+    updateTrelloLabel(id, body) { return this.patch(`/api/trello/labels/${encodeURIComponent(id)}`, body); },
+    deleteTrelloLabel(id) { return this.del(`/api/trello/labels/${encodeURIComponent(id)}?confirm=1`); },
+    createTrelloChecklist(cardId, name) { return this.post(`/api/trello/cards/${encodeURIComponent(cardId)}/checklists`, { name }); },
+    renameTrelloChecklist(id, name) { return this.patch(`/api/trello/checklists/${encodeURIComponent(id)}`, { name }); },
+    deleteTrelloChecklist(id) { return this.del(`/api/trello/checklists/${encodeURIComponent(id)}?confirm=1`); },
+    addTrelloCheckItem(checklistId, name) { return this.post(`/api/trello/checklists/${encodeURIComponent(checklistId)}/items`, { name }); },
+    updateTrelloCheckItem(id, body) { return this.patch(`/api/trello/items/${encodeURIComponent(id)}`, body); },
+    deleteTrelloCheckItem(id) { return this.del(`/api/trello/items/${encodeURIComponent(id)}?confirm=1`); },
+    addTrelloComment(cardId, text) { return this.post(`/api/trello/cards/${encodeURIComponent(cardId)}/comments`, { text }); },
+    updateTrelloComment(id, text) { return this.patch(`/api/trello/comments/${encodeURIComponent(id)}`, { text }); },
+    deleteTrelloComment(id) { return this.del(`/api/trello/comments/${encodeURIComponent(id)}?confirm=1`); },
+    // Conflicts
+    getTrelloConflicts() { return this.get('/api/trello/conflicts'); },
+    resolveTrelloConflict(body) { return this.post('/api/trello/conflicts/resolve', body); },   // {object_type, object_id, field, keep}
+    // Commissions on the board
+    markTrelloCommission(cardId, body) { return this.post(`/api/trello/cards/${encodeURIComponent(cardId)}/commission`, body); },
+    unmarkTrelloCommission(cardId) { return this.del(`/api/trello/cards/${encodeURIComponent(cardId)}/commission`); },
+    previewTrelloMigration() { return this.get('/api/trello/migrate-005'); },
+    applyTrelloMigration() { return this.post('/api/trello/migrate-005', { confirm: true }); },
 
     /* Attachments (2.188) — any file, ≤25 MB. */
     getCommissionFiles(id) { return this.get(`/api/commissions/${id}/files`); },

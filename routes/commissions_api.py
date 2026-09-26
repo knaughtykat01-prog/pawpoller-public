@@ -136,17 +136,29 @@ def update_commission(cid: int, body: dict):
     status = body.get("status")
     if status is not None and status not in cq.STATUSES:
         raise HTTPException(400, detail=f"status must be one of: {', '.join(cq.STATUSES)}")
+    archived = body.get("archived")
     conn = get_connection()
     try:
-        if not cq.get_commission(conn, cid):
+        before = cq.get_commission(conn, cid)
+        if not before:
             raise HTTPException(404, detail="Commission not found")
+        # ⚠ `archived` was dropped here until 4.37.0, so the page's Archive button
+        # reported success and changed nothing.
         cq.update_commission(
             conn, cid, client_name=body.get("client_name"),
             description=body.get("description"), price=body.get("price"),
             currency=body.get("currency"), status=status,
             due_date=body.get("due_date"), artwork_name=body.get("artwork_name"),
-            deliver_sites=body.get("deliver_sites"), notes=body.get("notes"))
+            deliver_sites=body.get("deliver_sites"), notes=body.get("notes"),
+            archived=None if archived is None else bool(archived))
         conn.commit()
+        # A commission on the Trello board moves / archives its card to match
+        # (spec 006, R10). Queued through the outbox; a no-op when not linked.
+        if (status and status != before["status"]) or archived is not None:
+            from trello import commission, runtime
+            if commission.push_change(conn, before, status=status,
+                                      archived=None if archived is None else bool(archived)):
+                runtime.kick_outbox()
         return {"status": "updated"}
     finally:
         conn.close()

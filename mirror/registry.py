@@ -111,6 +111,17 @@ def _srv(name: str, reason: str, **kw) -> TableRule:
     return TableRule(name, SRV, reason, **kw)
 
 
+# The Trello board mirror (spec 006). One reason for all ten: the mirror, its
+# outbox and its conflicts belong to the ONE instance that owns the Trello
+# connection. A connected desktop has no database and reads the server's copy; a
+# paired desktop receiving a copy would hold rows it must not drive, and two
+# instances each draining an outbox against their own `agreed` values would fight
+# over every field on every board (research R1).
+_TRELLO_MIRROR_REASON = (
+    "Trello board mirror (spec 006): owned by the one instance that holds the "
+    "Trello connection; replicating it would let two instances drive the same "
+    "boards from different agreed states.")
+
 _RULES: list[TableRule] = []
 
 # ── SRV (68) — server-authoritative telemetry ─────────────────
@@ -460,6 +471,36 @@ _RULES += [
         "between one instance and the board it owns, so syncing it would show the "
         "other box a conflict it cannot resolve and did not have.",
         lazy=True,
+    ),
+    TableRule(
+        "trello_boards", LOC, _TRELLO_MIRROR_REASON, lazy=True,
+    ),
+    TableRule(
+        "trello_lists", LOC, _TRELLO_MIRROR_REASON, lazy=True,
+    ),
+    TableRule(
+        "trello_cards", LOC, _TRELLO_MIRROR_REASON, lazy=True,
+    ),
+    TableRule(
+        "trello_labels", LOC, _TRELLO_MIRROR_REASON, lazy=True,
+    ),
+    TableRule(
+        "trello_checklists", LOC, _TRELLO_MIRROR_REASON, lazy=True,
+    ),
+    TableRule(
+        "trello_check_items", LOC, _TRELLO_MIRROR_REASON, lazy=True,
+    ),
+    TableRule(
+        "trello_comments", LOC, _TRELLO_MIRROR_REASON, lazy=True,
+    ),
+    TableRule(
+        "trello_covers", LOC, _TRELLO_MIRROR_REASON, lazy=True,
+    ),
+    TableRule(
+        "trello_outbox", LOC, _TRELLO_MIRROR_REASON, lazy=True,
+    ),
+    TableRule(
+        "trello_mirror_conflicts", LOC, _TRELLO_MIRROR_REASON, lazy=True,
     ),
 ]
 

@@ -697,6 +697,10 @@ CREDENTIAL_FIELDS = frozenset({
     # the app but the token is bearer-equivalent, and Trello echoes query
     # parameters in some error bodies, so neither may reach plaintext or a log.
     "trello_api_key", "trello_token",
+    # The Trello app Secret (spec 006) signs webhook deliveries -- a forged
+    # delivery with it could make the mirror re-read on demand, nothing more,
+    # but it is a signing key and is treated as one.
+    "trello_secret",
     "turnstile_site_key", "turnstile_secret_key",
     # Server ↔ desktop
     "posting_server_url", "posting_server_api_key",
@@ -802,7 +806,7 @@ PLATFORM_CREDENTIAL_FIELDS = {
     # commissions module syncs with. Listed here so it inherits the credential
     # vault, the log scrubber and the per-account Test button (4.30.0) rather
     # than growing its own of each.
-    "trello": ["trello_api_key", "trello_token"],
+    "trello": ["trello_api_key", "trello_token", "trello_secret"],
     "pod": ["pod_feed_slug"],                     # 4.21.1: the feed this account publishes to (not a secret)
     # FurryNetwork (poll+post gallery). Email + password → OAuth token/refresh.
     "fn": ["fn_username", "fn_password", "fn_refresh_token", "fn_access_token"],
@@ -1239,7 +1243,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.36.4"
+APP_VERSION = "4.37.0"
 
 # ── Inkbunny API settings ──
 INKBUNNY_API_BASE = "https://inkbunny.net"     # Inkbunny API root URL

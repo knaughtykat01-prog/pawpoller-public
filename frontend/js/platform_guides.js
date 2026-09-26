@@ -558,7 +558,7 @@
     // the Connect button on the commissions board.
     trello: {
       title: 'Trello', kind: 'Commissions board', difficulty: 'Medium',
-      summary: 'Put your commissions on a Trello board you can drag on your phone — both ways.',
+      summary: 'Your Trello boards inside PawPoller — drag cards here or on your phone, and both stay in step.',
       need: ['A free Trello account', 'A board for your commissions (a new, empty one is fine)'],
       steps: [
         { t: 'Make a board for your commissions',
@@ -607,15 +607,15 @@
              'people install, and it needs a web address to send them back to. You are setting up ' +
              'your own copy.' },
 
-        { t: 'Three boxes appear \u2014 you need one of them',
-          b: '\u26a0 This page shows <b>three</b> long strings and it is easy to grab the wrong ' +
-             'one.<br><br>' +
-             '&bull; <b>API key</b> \u2014 <b>this is the one PawPoller wants.</b> Copy it.<br>' +
+        { t: 'Three boxes appear \u2014 here is what each one is',
+          b: '\u26a0 This page shows <b>three</b> long strings and it is easy to mix them up.<br><br>' +
+             '&bull; <b>API key</b> \u2014 the first one. Copy it; it goes in PawPoller\'s ' +
+             '<b>API key</b> box.<br>' +
              '&bull; <b>Allowed origins</b> \u2014 leave empty. It only controls where Trello may ' +
              'redirect after an authorisation, and nothing here redirects anywhere.<br>' +
-             '&bull; <b>Secret</b> \u2014 <b>do not paste this into PawPoller</b>, or anywhere else. ' +
-             'It is for a different, older way of connecting that PawPoller does not use. Trello ' +
-             'offers no way to reset it, so treat it like a password you cannot change.' },
+             '&bull; <b>Secret</b> \u2014 the third one. You only need it for <b>live updates</b> ' +
+             '(step 12). Trello offers no way to reset it, so treat it like a password you cannot ' +
+             'change: paste it into PawPoller and nowhere else.' },
 
         { t: 'Get the token',
           b: 'Under the API key there is a sentence ending in a <b>Token</b> link \u2014 click it. ' +
@@ -641,28 +641,35 @@
              'boxes — the key is the one you generated, the token is the one Trello showed you ' +
              'after you pressed Allow.' },
 
-        { t: 'Pick your board',
-          b: 'Press <b>Load my boards</b>, then choose the board you made in step 1 from the ' +
-             'dropdown.' },
+        { t: 'Save',
+          b: 'Press <b>Save</b>. Your boards start arriving by themselves — open ' +
+             '<b>Boards</b> in the menu to watch them come in.' },
 
-        { t: 'Say which column is which',
-          b: 'A row appears for each of the five statuses. Choose the matching column for each ' +
-             'one. You can leave a status on <b>not synced</b> — commissions at that status are ' +
-             'then simply left alone, and PawPoller tells you which ones.' },
+        { t: 'Optional: copy the Secret, for live updates',
+          b: 'Go back to Trello\'s API key page from step 7. The <b>third</b> long string, labelled ' +
+             '<b>Secret</b>, is the one you want. Click <b>Show</b> next to it if it is hidden, then ' +
+             'copy it.<br><br>' +
+             'You only need this if PawPoller runs on a <b>server</b>. It lets Trello tell PawPoller ' +
+             'about a change within seconds. The desktop app cannot be reached by Trello, so it checks ' +
+             'every minute or so instead, and does not need the Secret.' },
 
-        { t: 'Set how often it checks, and save',
-          b: 'Choose how many minutes between checks — <b>30</b> is a sensible start. <b>0</b> ' +
-             'turns the timer off without switching the feature off; you can still sync by hand ' +
-             'whenever you like. Press <b>Save</b>.' },
+        { t: 'Paste the Secret into PawPoller',
+          b: 'In <b>Settings &rarr; Trello</b>, paste it into the <b>Secret</b> box and press ' +
+             '<b>Save</b>. Keep it private — do not paste it anywhere else, because Trello ' +
+             'offers no way to reset it.' },
 
-        { t: 'Preview before anything happens',
-          b: 'Press <b>Preview a sync</b>. Nothing is written yet — you get a list of exactly what ' +
-             'would be created, moved or changed. Read it. If it looks right, press <b>Apply</b>.' +
-             '<br><br>The very first sync always previews, even if you ask it to apply. That is ' +
-             'deliberate: a wrong first sync would be visible on the board to anyone you have ' +
-             'shared it with, straight away.' },
+        { t: 'Turn on live updates',
+          b: 'Still in <b>Settings &rarr; Trello</b>, press <b>Turn on live updates</b>. PawPoller ' +
+             'says how many boards it is now watching. If it says Trello could not reach it, nothing ' +
+             'is broken — it simply keeps checking on the timer.' },
+
+        { t: 'Optional: pick your commission board',
+          b: 'Under <b>Commission board</b>, choose the board from step 1. A row appears for each ' +
+             'of its lists; choose which status each list means, or leave it on ' +
+             '<b>not a status</b>. Press <b>Save commission board</b>. The Commissions page now ' +
+             'shows that board.' },
       ],
-      paste: 'Settings → Trello → API key + Token',
+      paste: 'Settings → Trello → API key + Token (+ Secret for live updates)',
       renew: {
         when: 'Only if you revoke the token, or chose an expiry date when you approved it',
         how: 'Generate a new token from the same Power-Up page and paste it into ' +
@@ -680,23 +687,18 @@
         'once, the sync stops and asks rather than assuming you meant it.',
         '<b>Your attachments stay here.</b> Contracts, reference sheets and WIPs are not uploaded ' +
         'to Trello; the card links back to PawPoller instead.',
-        '<b>Prices live in a small block at the bottom of the card description.</b> Trello has ' +
-        'nowhere else to put a number. You can read it, but leave it alone — PawPoller rewrites ' +
-        'it on the next sync.',
+        '<b>Prices stay in PawPoller.</b> A card marked as a commission keeps its client, price ' +
+        'and notes here; none of it is written onto the card in Trello.',
         '<b>Only one PawPoller can drive a board.</b> If you run both the desktop app and a ' +
         'server, whichever one you set up first keeps the board; the other says so and stays out ' +
         'of the way.',
-        '<b>The Secret on the API key page is not used by PawPoller.</b> Three long strings sit ' +
-        'on that one page and only the API key and the token are wanted. Trello offers no way to ' +
-        'reset the Secret, so do not paste it anywhere.',
         '<b>If you already made an app the other way</b>, you do not have to start again. Put any ' +
         'https address you own in the <b>Iframe connector URL</b> box — ' +
         '<code>https://pawpoller.pages.dev/</code> will do. Trello only ever fetches that page if ' +
         'the app declares capabilities, and yours declares none, so it is never loaded. Making a ' +
         'fresh app with the right option chosen is tidier, but either works.',
-        'Cards on the board that PawPoller did not create are left alone. If one is sitting in a ' +
-        'mapped column it is offered to you as something you <i>could</i> import — it never ' +
-        'becomes a commission on its own.',
+        'A card only becomes a commission when you open it and press <b>Mark as commission</b> ' +
+        '\u2014 never on its own.',
       ],
     },
   };

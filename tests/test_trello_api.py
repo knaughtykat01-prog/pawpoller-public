@@ -1,19 +1,19 @@
-"""Route-level tests for the Trello API (spec 005).
+"""Route-level tests for the Trello mirror API (spec 006).
 
-`test_trello_sync.py` proves the engine and the orchestration. These prove the
-*wiring*, which is where the damage would be:
+`test_trello_mirror.py` and `test_trello_outbox.py` prove the engine. These prove
+the *wiring*, which is where the damage would be:
 
-* a sync route that applies without confirmation writes to a board other people
-  can see, immediately and visibly;
-* a `/test` route that echoes the upstream body hands back the credential it was
-  given, because Trello repeats query parameters in some error bodies;
-* an ungated route on an instance with no dashboard password is a remote caller
-  driving the operator's board.
-
-None of those shows up in a test of `trello.sync`.
+* a route that talks to Trello directly would block the page on the network and
+  skip the outbox's ordering and retry;
+* a `/test` route that echoes the upstream body hands back the credential;
+* an ungated route on an instance with no password is a remote caller driving the
+  operator's boards;
+* a delete route without its confirmation is an unrecoverable action one click
+  away.
 """
 from __future__ import annotations
 
+import json
 import re
 
 import pytest
@@ -21,55 +21,71 @@ from fastapi.testclient import TestClient
 
 import config
 from clients.trello.client import TrelloAuthError
+from database.db import get_connection
 from routes import trello_api
-from trello import mapping, sync
-
-LISTS = {"quote": "L1", "accepted": "L2", "wip": "L3", "paid": "L4", "delivered": "L5"}
+from trello import mapping, mirror
 
 KEY = "abcdef0123456789"
 TOKEN = "fedcba9876543210"
 
 
-class FakeTrello:
-    def __init__(self, fail=None):
-        self.fail = fail
+class FakeClient:
+    fail = None
+
+    def __init__(self, key, token):
+        pass
 
     def me(self):
-        if self.fail:
-            raise self.fail
-        return {"id": "m1", "username": "someone", "full_name": "Some One"}
+        if FakeClient.fail:
+            raise FakeClient.fail
+        return {"id": "M1", "username": "someone", "full_name": "Some One"}
 
-    def boards(self):
-        return [{"id": "B1", "name": "Board", "closed": False}]
 
-    def lists(self, board_id):
-        return [{"id": v, "name": k, "pos": i} for i, (k, v) in enumerate(LISTS.items())]
-
-    def cards(self, board_id):
-        return []
-
-    def card(self, card_id):
-        return None
+def _seed():
+    conn = get_connection()
+    try:
+        read = {"id": "B1", "name": "Sample board", "prefs": {},
+                "lists": [{"id": "L1", "name": "To do", "pos": 1},
+                          {"id": "L2", "name": "Done", "pos": 2}],
+                "cards": [{"id": f"C{i}", "name": f"Card {i}", "pos": i, "idList": "L1",
+                           "idLabels": [], "badges": {}} for i in (1, 2, 3)],
+                "labels": [{"id": "LB1", "name": "Urgent", "color": "red"}],
+                "checklists": [{"id": "K1", "idCard": "C1", "name": "Steps", "pos": 1,
+                                "checkItems": [{"id": "I1", "name": "a", "pos": 1,
+                                                "state": "incomplete"}]}]}
+        mirror.apply_board(conn, read, [
+            {"id": "A1", "date": "2026-01-01", "idMemberCreator": "M1",
+             "memberCreator": {"fullName": "Some One"}, "data": {"text": "mine", "card": {"id": "C1"}}},
+            {"id": "A2", "date": "2026-01-02", "idMemberCreator": "M2",
+             "memberCreator": {"fullName": "Other"}, "data": {"text": "theirs", "card": {"id": "C1"}}}])
+        conn.commit()
+    finally:
+        conn.close()
 
 
 @pytest.fixture
 def client(monkeypatch):
     # /api/trello is in _SENSITIVE_WHEN_OPEN_PREFIXES, so an unconfigured instance
     # refuses it to a non-loopback caller — and TestClient is not loopback.
-    # Authenticate properly rather than weakening the middleware.
     monkeypatch.setattr(config, "is_dashboard_auth_required", lambda: True)
     monkeypatch.setattr(config, "validate_api_key", lambda token: token == "pp_test")
-    fake = FakeTrello()
-    monkeypatch.setattr(trello_api, "_client_or_400", lambda body=None: fake)
-    monkeypatch.setattr(sync, "client_from_settings", lambda settings=None: fake)
+    FakeClient.fail = None
+    monkeypatch.setattr(trello_api, "TrelloClient", FakeClient)
     config.save_settings({"trello_api_key": KEY, "trello_token": TOKEN})
-    mapping.save_config(board_id="B1", list_map=dict(LISTS), first_sync_done=True)
-
+    mapping.save_config(member={"id": "M1", "username": "someone", "full_name": "Some One"})
+    _seed()
     import dashboard
-    c = TestClient(dashboard.app, raise_server_exceptions=False,
-                   headers={"Authorization": "Bearer pp_test"})
-    c.fake = fake
-    return c
+    return TestClient(dashboard.app, raise_server_exceptions=False,
+                      headers={"Authorization": "Bearer pp_test"})
+
+
+def _ops():
+    conn = get_connection()
+    try:
+        return [(r["op"], r["object_id"], json.loads(r["fields"]))
+                for r in conn.execute("SELECT * FROM trello_outbox ORDER BY seq")]
+    finally:
+        conn.close()
 
 
 class TestTheRoutesAreGated:
@@ -79,16 +95,14 @@ class TestTheRoutesAreGated:
         monkeypatch.setattr(config, "validate_api_key", lambda token: False)
         import dashboard
         anon = TestClient(dashboard.app, raise_server_exceptions=False)
-        for method, path in (("get", "/api/trello/config"),
-                             ("get", "/api/trello/status"),
-                             ("post", "/api/trello/preview"),
-                             ("post", "/api/trello/sync")):
-            r = (anon.get(path) if method == "get" else anon.post(path, json={}))
+        for method, path in (("get", "/api/trello/config"), ("get", "/api/trello/status"),
+                             ("get", "/api/trello/boards"), ("post", "/api/trello/import"),
+                             ("patch", "/api/trello/cards/C1"),
+                             ("get", "/api/trello/covers/abc")):
+            r = getattr(anon, method)(path, **({} if method == "get" else {"json": {}}))
             assert r.status_code in (401, 403), f"{path} answered {r.status_code}"
 
     def test_the_prefix_is_on_the_sensitive_list(self):
-        """An instance with no dashboard password still refuses these to a remote
-        caller — the board is outward-facing and /test takes a credential."""
         import dashboard
         assert "/api/trello" in dashboard._SENSITIVE_WHEN_OPEN_PREFIXES
 
@@ -96,254 +110,231 @@ class TestTheRoutesAreGated:
 class TestCredentialsNeverTravelBack:
 
     def test_a_good_test_returns_the_account_not_the_credential(self, client):
-        body = client.post("/api/trello/test",
-                           json={"key": KEY, "token": TOKEN}).json()
-        assert body["ok"] is True
-        assert body["member"]["username"] == "someone"
+        body = client.post("/api/trello/test", json={"key": KEY, "token": TOKEN}).json()
+        assert body["ok"] is True and body["member"]["username"] == "someone"
         assert KEY not in str(body) and TOKEN not in str(body)
 
     def test_a_failure_says_so_without_echoing_anything(self, client):
-        client.fake.fail = TrelloAuthError(
-            "Trello did not accept that API key and token. Check them in "
-            "Settings -> Trello.")
-        body = client.post("/api/trello/test",
-                           json={"key": KEY, "token": TOKEN}).json()
+        FakeClient.fail = TrelloAuthError("Trello did not accept that API key and token.")
+        body = client.post("/api/trello/test", json={"key": KEY, "token": TOKEN}).json()
         assert body["ok"] is False
         assert KEY not in body["error"] and TOKEN not in body["error"]
 
     def test_the_config_route_reports_presence_not_the_values(self, client):
+        config.save_settings({"trello_secret": "s" * 32})
         body = client.get("/api/trello/config").json()
-        assert body["has_credentials"] is True
+        assert body["has_credentials"] is True and body["has_secret"] is True
+        assert KEY not in str(body) and TOKEN not in str(body) and "s" * 32 not in str(body)
+
+
+class TestSavingTheCredentials:
+    """⚠ 4.36.4: the panel once called a save helper that never existed, so nothing
+    was ever stored. The route and the round trip are pinned here."""
+
+    def test_the_route_stores_all_three(self, client):
+        client.post("/api/trello/credentials",
+                    json={"key": "k" * 16, "token": "t" * 16, "secret": "s" * 16})
+        s = config.get_settings()
+        assert (s.get("trello_api_key"), s.get("trello_token"), s.get("trello_secret")) == \
+            ("k" * 16, "t" * 16, "s" * 16)
+
+    def test_saving_only_one_does_not_blank_the_others(self, client):
+        config.save_settings({"trello_api_key": "old-key", "trello_token": "keep-me"})
+        client.post("/api/trello/credentials", json={"secret": "new-secret"})
+        s = config.get_settings()
+        assert s.get("trello_api_key") == "old-key" and s.get("trello_token") == "keep-me"
+
+    def test_an_empty_body_is_refused(self, client):
+        assert client.post("/api/trello/credentials", json={}).status_code == 400
+
+    def test_it_reports_presence_without_echoing_the_values(self, client):
+        body = client.post("/api/trello/credentials", json={"key": KEY, "token": TOKEN}).json()
+        assert body["saved"] is True
         assert KEY not in str(body) and TOKEN not in str(body)
 
+    def test_connecting_claims_the_connection(self, client):
+        mapping.save_config(owner_tag="")
+        client.post("/api/trello/credentials", json={"key": KEY, "token": TOKEN})
+        assert mapping.get_config()["owner_tag"] == mapping.instance_tag()
 
-class TestSyncWritesOnlyWhenTold:
-
-    def test_preview_is_never_applied(self, client):
-        assert client.post("/api/trello/preview").json()["applied"] is False
-
-    def test_sync_without_confirm_previews(self, client):
-        """⚠ The dangerous default. A sync that applies on a bare POST writes to a
-        board other people can see."""
-        assert client.post("/api/trello/sync", json={}).json()["applied"] is False
-
-    def test_sync_with_confirm_applies(self, client):
-        assert client.post("/api/trello/sync", json={"confirm": True}).json()["applied"] is True
-
-    def test_the_first_sync_previews_even_with_confirm(self, client):
-        """The rule lives in trello/sync.py, not in the route — a board-level rule
-        does not belong in a request flag."""
-        mapping.save_config(first_sync_done=False)
-        body = client.post("/api/trello/sync", json={"confirm": True}).json()
-        assert body["applied"] is False
-        assert body["errors"]
-
-    def test_a_second_sync_is_refused_rather_than_run_twice(self, client):
-        trello_api._sync_lock.acquire()
-        try:
-            assert client.post("/api/trello/preview").status_code == 409
-        finally:
-            trello_api._sync_lock.release()
+    def test_all_three_land_in_the_vault_not_plaintext(self):
+        config.save_settings({"trello_api_key": "a1", "trello_token": "b2", "trello_secret": "c3"})
+        plain = json.loads(config.SETTINGS_PATH.read_text(encoding="utf-8"))
+        assert not {"trello_api_key", "trello_token", "trello_secret"} & set(plain)
 
 
-class TestConfiguration:
+class TestReadsComeFromTheMirror:
 
-    def test_boards_and_lists_come_from_trello(self, client):
-        assert client.get("/api/trello/boards").json()["boards"][0]["id"] == "B1"
-        assert len(client.get("/api/trello/boards/B1/lists").json()["lists"]) == 5
+    def test_the_board_list(self, client):
+        boards = client.get("/api/trello/boards").json()["boards"]
+        assert [b["id"] for b in boards] == ["B1"] and boards[0]["imported"] is True
 
-    def test_picking_a_board_claims_it(self, client):
-        body = client.put("/api/trello/config",
-                          json={"board_id": "B2", "board_name": "Other"}).json()
-        assert body["claimed"] is True
-        assert body["owner_tag"] == mapping.instance_tag()
-        assert body["first_sync_done"] is False
+    def test_a_board_carries_everything_the_face_needs_in_order(self, client):
+        b = client.get("/api/trello/boards/B1").json()
+        assert [l["id"] for l in b["lists"]] == ["L1", "L2"]
+        assert [c["id"] for c in b["cards"]] == ["C1", "C2", "C3"]
+        c1 = b["cards"][0]
+        assert c1["checklist"] == {"done": 0, "total": 1}
+        assert set(c1) >= {"labels", "cover", "cover_url", "has_desc", "comment_count",
+                           "is_commission", "pending", "conflict"}
 
-    def test_the_mapping_can_be_saved(self, client):
-        body = client.put("/api/trello/config",
-                          json={"list_map": {"wip": "L9"}}).json()
-        assert body["list_map"]["wip"] == "L9"
+    def test_a_card_view_marks_only_my_comments_editable(self, client):
+        v = client.get("/api/trello/cards/C1").json()
+        mine = {c["text"]: c["is_mine"] for c in v["comments"]}
+        assert mine == {"mine": True, "theirs": False}
+        assert v["checklists"][0]["items"][0]["id"] == "I1"
 
-    def test_an_empty_body_is_refused_rather_than_saving_nothing(self, client):
-        assert client.put("/api/trello/config", json={}).status_code == 400
-
-    def test_status_reports_without_touching_trello(self, client):
-        body = client.get("/api/trello/status").json()
-        assert body["configured"] is True and body["is_owner"] is True
-        assert body["open_conflicts"] == 0
+    def test_hiding_a_board_is_local_only(self, client):
+        client.patch("/api/trello/boards/B1", json={"hidden": True})
+        assert client.get("/api/trello/boards").json()["boards"] == []
+        assert _ops() == []
 
 
-class TestConflictResolution:
+class TestWritesQueueRatherThanCallTrello:
+
+    def test_a_new_card_gets_a_temp_id_and_one_create_op(self, client):
+        r = client.post("/api/trello/lists/L2/cards", json={"name": "New"}).json()
+        assert r["id"].startswith("tmp_") and r["pending"] is True
+        assert _ops() == [("card.create", r["id"], {"list_id": "L2", "name": "New",
+                                                     "pos": r["pos"]})]
+
+    def test_a_drop_between_two_cards_lands_between_them(self, client):
+        r = client.post("/api/trello/cards/C3/move",
+                        json={"list_id": "L1", "before_id": "C1", "after_id": "C2"}).json()
+        assert 1 < r["pos"] < 2
+        assert [c["id"] for c in client.get("/api/trello/boards/B1").json()["cards"]] == \
+            ["C1", "C3", "C2"]
+
+    def test_a_patch_queues_only_the_fields_given(self, client):
+        client.patch("/api/trello/cards/C1", json={"desc": "x", "due_complete": True})
+        assert _ops() == [("card.update", "C1", {"desc": "x", "due_complete": True})]
+
+    def test_a_label_toggle_queues_the_target_set(self, client):
+        client.post("/api/trello/cards/C1/labels", json={"label_id": "LB1"})
+        assert _ops()[-1] == ("card.labels", "C1", {"labels": ["LB1"]})
+
+    def test_a_cover_upload_must_really_be_an_image(self, client):
+        """The declared type is the browser's claim; the bytes must agree."""
+        r = client.post("/api/trello/cards/C1/cover",
+                        files={"file": ("x.png", b"<svg onload=alert(1)>", "image/png")})
+        assert r.status_code == 400
+        ok = client.post("/api/trello/cards/C1/cover",
+                         files={"file": ("x.png", b"\x89PNG\r\n\x1a\n" + b"0" * 32, "image/png")})
+        assert ok.status_code == 200 and _ops()[-1][0] == "cover.upload"
+
+    def test_an_unknown_cover_colour_is_refused(self, client):
+        assert client.put("/api/trello/cards/C1/cover", json={"color": "chartreuse"}).status_code == 400
+
+    @pytest.mark.parametrize("path", ["/api/trello/items/I1", "/api/trello/checklists/K1",
+                                      "/api/trello/labels/LB1", "/api/trello/comments/A1"])
+    def test_every_delete_needs_its_confirmation(self, client, path):
+        """FR-027: Trello has no undo for these."""
+        assert client.delete(path).status_code == 400
+        assert client.delete(path + "?confirm=1").status_code == 200
+
+    def test_someone_elses_comment_cannot_be_changed(self, client):
+        assert client.patch("/api/trello/comments/A2", json={"text": "no"}).status_code == 403
+        assert client.delete("/api/trello/comments/A2?confirm=1").status_code == 403
+
+    def test_there_is_no_route_that_deletes_a_card_list_or_board(self):
+        for route in trello_api.trello_router.routes:
+            if "DELETE" in getattr(route, "methods", set()):
+                assert not re.fullmatch(r"/api/trello/(cards|lists|boards)/\{[a-z_]+\}", route.path), \
+                    route.path
+
+
+class TestConflicts:
 
     def _conflict(self, client):
-        from database import trello_queries as tq
-        from database.db import get_connection
+        client.patch("/api/trello/cards/C1", json={"desc": "mine"})
         conn = get_connection()
         try:
-            tq.create_link(conn, client_name="Sample Client", created_at="2026-01-01",
-                           card_id="C1", board_id="B1")
-            tq.open_conflict(conn, client_name="Sample Client",
-                             created_at="2026-01-01", field="price",
-                             baseline_value="100.0", local_value="150.0",
-                             remote_value="200.0")
+            read = json.loads(json.dumps({"id": "B1", "name": "Sample board", "prefs": {},
+                    "lists": [{"id": "L1", "pos": 1}, {"id": "L2", "pos": 2}],
+                    "cards": [{"id": f"C{i}", "name": f"Card {i}", "pos": i, "idList": "L1",
+                               "desc": "theirs" if i == 1 else "", "badges": {}} for i in (1, 2, 3)],
+                    "labels": [{"id": "LB1", "name": "Urgent", "color": "red"}],
+                    "checklists": [{"id": "K1", "idCard": "C1", "name": "Steps", "pos": 1,
+                                    "checkItems": [{"id": "I1", "name": "a", "pos": 1}]}]}))
+            mirror.apply_board(conn, read)
+            conn.commit()
         finally:
             conn.close()
 
-    def test_a_conflict_is_listed_with_both_values(self, client):
+    def test_a_conflict_shows_both_values_on_the_card(self, client):
         self._conflict(client)
-        row = client.get("/api/trello/conflicts").json()["conflicts"][0]
-        assert row["local_value"] == "150.0" and row["remote_value"] == "200.0"
+        c = client.get("/api/trello/cards/C1").json()["conflicts"]
+        assert [(x["field"], x["local"], x["remote"]) for x in c] == [("desc", "mine", "theirs")]
+
+    def test_keeping_trellos_drops_our_op(self, client):
+        self._conflict(client)
+        client.post("/api/trello/conflicts/resolve", json={
+            "object_type": "card", "object_id": "C1", "field": "desc", "keep": "trello"})
+        assert _ops() == []
+        assert client.get("/api/trello/cards/C1").json()["card"]["desc"] == "theirs"
+
+    def test_keeping_ours_releases_the_held_op(self, client):
+        self._conflict(client)
+        client.post("/api/trello/conflicts/resolve", json={
+            "object_type": "card", "object_id": "C1", "field": "desc", "keep": "pawpoller"})
+        conn = get_connection()
+        try:
+            assert conn.execute("SELECT state FROM trello_outbox").fetchone()["state"] == "pending"
+        finally:
+            conn.close()
 
     def test_resolving_needs_a_real_side(self, client):
-        self._conflict(client)
-        r = client.post("/api/trello/conflicts/resolve",
-                        json={"client_name": "Sample Client", "created_at": "2026-01-01",
-                              "field": "price", "side": "whichever"})
+        r = client.post("/api/trello/conflicts/resolve", json={
+            "object_type": "card", "object_id": "C1", "field": "desc", "keep": "both"})
         assert r.status_code == 400
-
-    def test_resolving_needs_a_known_field(self, client):
-        self._conflict(client)
-        r = client.post("/api/trello/conflicts/resolve",
-                        json={"client_name": "Sample Client", "created_at": "2026-01-01",
-                              "field": "notes", "side": "local"})
-        assert r.status_code == 400, "notes is not synced and cannot conflict"
-
-    def test_an_unknown_conflict_is_a_404_not_a_silent_ok(self, client):
-        r = client.post("/api/trello/conflicts/resolve",
-                        json={"client_name": "Nobody", "created_at": "2026-01-01",
-                              "field": "price", "side": "local"})
-        assert r.status_code == 404
-
-    def test_keeping_ours_clears_the_conflict_without_writing_to_trello(self, client):
-        self._conflict(client)
-        r = client.post("/api/trello/conflicts/resolve",
-                        json={"client_name": "Sample Client", "created_at": "2026-01-01",
-                              "field": "price", "side": "local"})
-        assert r.json()["resolved"] is True
-        assert client.get("/api/trello/conflicts").json()["conflicts"] == []
-
-    def test_there_is_no_resolve_all_route(self, client):
-        """A bulk button on a screen whose whole purpose is 'look at these two
-        values' defeats the screen."""
-        import dashboard
-        paths = {r.path for r in dashboard.app.routes if hasattr(r, "path")}
-        assert not any("resolve-all" in p or "resolve_all" in p for p in paths)
-
-
-class TestUnlink:
-
-    def test_unlink_keeps_the_commission(self, client):
-        from database import commissions_queries as cq
-        from database import trello_queries as tq
-        from database.db import get_connection
-        conn = get_connection()
-        try:
-            cid = cq.create_commission(conn, client_name="Sample Client", price=10)
-            conn.commit()
-            row = cq.get_commission(conn, cid)
-            tq.create_link(conn, client_name=row["client_name"],
-                           created_at=row["created_at"], card_id="C9", board_id="B1")
-        finally:
-            conn.close()
-
-        r = client.post("/api/trello/unlink",
-                        json={"client_name": row["client_name"],
-                              "created_at": row["created_at"]})
-        assert r.json()["unlinked"] is True
-
-        conn = get_connection()
-        try:
-            assert cq.get_commission(conn, cid) is not None
-            assert tq.get_link(conn, row["client_name"], row["created_at"]) is None
-        finally:
-            conn.close()
 
 
 class TestNothingPersonalLeavesTheApp:
-    """Commission rows carry client names and prices. The repo, the fixtures and
-    every log line have to stay clean of them (FR-025, FR-027)."""
 
-    def test_an_upstream_body_is_never_quoted(self):
-        """⚠ The leak that was found in review. A 4xx from a card write echoes the
-        card back, and a card's title IS the client's name -- so quoting Trello's
-        body put personal data into the sync report and the log. Redacting the
-        credential was not enough, because the credential was not the only secret
-        in it."""
-        src = open("clients/trello/client.py", encoding="utf-8").read()
-        i = src.index("if r.status_code >= 400:")
-        block = src[i:i + 600]
-        assert "r.text" not in block, "the upstream body is back in the error"
-
-    def test_the_scheduler_logs_counts_not_content(self):
-        # The LOG CALLS only -- an earlier version of this test read the whole
-        # function and matched its own comment about not logging prices, which is
-        # the "anchor matched a comment" trap rather than a finding.
-        src = open("polling/trello_sync.py", encoding="utf-8").read()
-        calls = [l for l in src.splitlines()
-                 if "logger." in l or l.strip().startswith(("c.get(", '"Trello sync:'))]
-        joined = " ".join(calls)
-        for leaky in ("client_name", "price", "title", "description"):
-            assert leaky not in joined, f"the scheduler log can carry {leaky}"
-
-    def test_no_module_logs_a_credential(self):
-        for path in ("clients/trello/client.py", "trello/sync.py",
-                     "routes/trello_api.py", "polling/trello_sync.py"):
+    def test_no_log_call_is_handed_a_credential_or_board_content(self):
+        """What a log call is GIVEN, not what its message says: every argument after
+        the format string must be an exception or its type name. Card text,
+        comments, member names and client names are personal data (FR-034)."""
+        allowed = {"e", "type(e).__name__"}
+        for path in ("clients/trello/client.py", "routes/trello_api.py",
+                     "routes/trello_hooks.py", "polling/trello_mirror.py",
+                     "trello/mirror.py", "trello/outbox.py", "trello/covers.py",
+                     "trello/webhooks.py", "trello/commission.py"):
             src = open(path, encoding="utf-8").read()
-            for line in src.splitlines():
-                if "logger." in line:
-                    assert "token" not in line and "api_key" not in line, \
-                        f"{path}: {line.strip()}"
-
-    def test_the_client_has_no_delete_method(self):
-        """⚠ Enforcement, not decoration: a method that does not exist cannot be
-        called by mistake, and Trello's card delete is immediate with no undo."""
-        from clients.trello.client import TrelloClient
-        assert not any("delete" in n.lower() for n in dir(TrelloClient))
-        src = open("clients/trello/client.py", encoding="utf-8").read()
-        assert '"DELETE"' not in src
+            for m in re.finditer(r"logger\.\w+\(\s*(\"[^\"]*\"|'[^']*')\s*(,(.*))?\)\s*$", src,
+                                 re.MULTILINE):
+                args = {a.strip() for a in (m.group(3) or "").split(",") if a.strip()}
+                assert args <= allowed, f"{path}: {m.group(0)}"
 
 
-class TestBothEntryPointsStartTheScheduler:
-    """⚠ Found on the 4.36.0 deploy, not by a test.
+class TestBothEntryPointsStartTheMirror:
+    """⚠ Found on the 4.36.0 deploy, not by a test: a thread wired into `main.py`
+    but not `server.py`'s own table runs on the desktop and silently never on the
+    server. Both mirror threads must be in both."""
 
-    The scheduler thread was wired into `main.py` (the desktop entry point) and
-    the server was deployed, came up clean, reported the right version -- and
-    never started it. `server.py` is the container's entry point and has its own
-    thread table; a feature wired into one of them looks completely healthy from
-    the other, because nothing fails, the thread simply is not there.
-
-    Sync-now would still have worked through the API, which is what makes it the
-    bad kind of bug: the feature appears to work and only the SCHEDULED half is
-    missing, so it is discovered days later as "it does not sync on its own".
-    """
-
-    def test_the_desktop_entry_point_starts_it(self):
+    def test_the_desktop_entry_point_starts_both(self):
         src = open("main.py", encoding="utf-8").read()
-        assert "run_trello_scheduler" in src
+        assert "run_trello_mirror" in src and "run_trello_outbox" in src
 
-    def test_the_server_entry_point_starts_it(self):
-        src = open("server.py", encoding="utf-8").read()
-        assert "run_trello_scheduler" in src
-
-    def test_it_is_in_the_servers_thread_table(self):
-        """Importing the name is not starting it."""
+    def test_both_are_in_the_servers_thread_table(self):
         src = open("server.py", encoding="utf-8").read()
         i = src.index("threads = [")
         table = src[i:src.index("]", i)]
-        assert "run_trello_scheduler" in table
+        assert "run_trello_mirror" in table and "run_trello_outbox" in table
 
     def test_every_scheduler_the_desktop_runs_the_server_runs_too(self):
-        """The general form of the same mistake, so the next one is caught here
-        rather than on a deploy."""
         main_src = open("main.py", encoding="utf-8").read()
         server_src = open("server.py", encoding="utf-8").read()
         i = server_src.index("threads = [")
         table = server_src[i:server_src.index("]", i)]
         for scheduler in ("start_posting_scheduler", "run_auto_backup_scheduler",
-                          "run_trello_scheduler"):
+                          "run_trello_mirror", "run_trello_outbox"):
             assert scheduler in main_src, f"{scheduler} is missing from main.py"
             assert scheduler in table, f"{scheduler} is missing from server.py's thread table"
 
+    def test_the_005_scheduler_is_gone_from_both(self):
+        for path in ("main.py", "server.py"):
+            assert "run_trello_scheduler" not in open(path, encoding="utf-8").read()
 
 
 def _guide_text() -> str:
@@ -406,18 +397,16 @@ class TestTheSetupGuideAndTheConnectButton:
         g = self._guide()
         assert "never expires" in g.lower() or "never expire" in g.lower()
 
-    def test_it_warns_off_the_api_secret(self):
+    def test_it_explains_what_the_secret_is_for(self):
         """⚠ Read off the live API key page: it shows THREE long strings -- API key,
-        Allowed origins, and a **Secret** -- and only the first is wanted. The Secret
-        is for OAuth 1, which PawPoller does not use, and Trello states outright that
-        it offers no way to reset it. Pasting it somewhere is the one mistake on that
-        page that cannot be undone, so the guide has to name it before the reader
-        gets there."""
+        Allowed origins, and a **Secret**. Until 4.37.0 the Secret was unused and the
+        guide warned readers off it; live updates (spec 006) sign every webhook
+        with it, so the guide now says what it is for -- and still says it cannot
+        be reset, which is the reason to keep it in one place."""
         g = _guide_text()
         assert "Secret" in g
-        assert "do not paste this into PawPoller" in g or "not used by PawPoller" in g
+        assert "live updates" in g.lower()
         assert "no way to reset" in g
-
     def test_it_says_allowed_origins_stays_empty(self):
         """The box sits directly under the API key and looks like something to fill
         in. It only constrains redirects, and nothing here redirects."""
@@ -454,17 +443,6 @@ class TestTheSetupGuideAndTheConnectButton:
         src = open("frontend/js/commissions.js", encoding="utf-8").read()
         i = src.index("data-trello-connect]")
         assert "openModal('trello')" in src[i:i + 500]
-
-    def test_the_board_button_previews_before_it_applies(self):
-        """⚠ A one-press sync sitting next to "+ New commission" would write to a
-        board other people can see."""
-        src = open("frontend/js/commissions.js", encoding="utf-8").read()
-        i = src.index("data-trello-sync]")
-        block = src[i:i + 2500]
-        assert "previewTrello()" in block
-        assert "confirm(" in block
-        j = block.index("syncTrello(true)")
-        assert "confirm(" in block[:j], "it applies without asking first"
 
 
 class TestGettingTheTokenNeedsNoCallbackUrl:
@@ -535,57 +513,3 @@ class TestGettingTheTokenNeedsNoCallbackUrl:
         assert "callback URL" in _guide_text()
 
 
-class TestSavingTheCredentials:
-    """⚠ The gap that made setup impossible for three releases.
-
-    `/boards` reads the STORED key and token, never the request body, so something
-    has to put them there before "Load my boards" can work. The panel called a
-    general settings-save helper that does not exist in this codebase, threw a
-    TypeError before reaching the network, and reported "Could not load your
-    boards" -- an error about a request that was never made.
-    """
-
-    def test_the_route_stores_both_values(self, client):
-        import config
-        client.post("/api/trello/credentials",
-                    json={"key": "k" * 16, "token": "t" * 16})
-        s = config.get_settings()
-        assert s.get("trello_api_key") == "k" * 16
-        assert s.get("trello_token") == "t" * 16
-
-    def test_saving_only_one_does_not_blank_the_other(self):
-        """Re-entering a key should not wipe a token that still works."""
-        import config
-        config.save_settings({"trello_api_key": "old-key", "trello_token": "keep-me"})
-        from routes import trello_api
-        trello_api.save_credentials({"key": "new-key"})
-        s = config.get_settings()
-        assert s.get("trello_api_key") == "new-key"
-        assert s.get("trello_token") == "keep-me"
-
-    def test_an_empty_body_is_refused(self, client):
-        assert client.post("/api/trello/credentials", json={}).status_code == 400
-
-    def test_it_reports_presence_without_echoing_the_values(self, client):
-        body = client.post("/api/trello/credentials",
-                           json={"key": KEY, "token": TOKEN}).json()
-        assert body["saved"] is True
-        assert KEY not in str(body) and TOKEN not in str(body)
-
-    def test_the_stored_pair_is_what_the_client_is_built_from(self, client):
-        """The round trip the panel actually depends on: save, then a route that
-        takes no credentials of its own still finds them."""
-        import config
-        from trello import sync
-        client.post("/api/trello/credentials", json={"key": KEY, "token": TOKEN})
-        assert sync.credentials() == (KEY, TOKEN)
-
-    def test_both_values_land_in_the_vault_not_plaintext(self):
-        """They are in CREDENTIAL_FIELDS, so save_settings routes them to the
-        encrypted store and settings.json never holds either."""
-        import json
-        import config
-        config.save_settings({"trello_api_key": "vault-me", "trello_token": "vault-me-too"})
-        plain = json.loads(config.SETTINGS_PATH.read_text(encoding="utf-8"))
-        assert "trello_api_key" not in plain
-        assert "trello_token" not in plain

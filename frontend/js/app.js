@@ -903,6 +903,19 @@ const App = {
         window.location.hash = path;
     },
 
+    /* #/commissions (spec 006): the commission board as a Trello board when one is
+       set and imported, else the status-column hub as before. The board check is
+       two requests, so paint a spinner first rather than leave the old page up. */
+    async _renderCommissionsBoard(cardId) {
+        const app = document.getElementById('app');
+        if (!document.getElementById('tb-board') && app) app.innerHTML = '<div class="loading-spinner">Loading&hellip;</div>';
+        const shown = window.TrelloBoard ? await window.TrelloBoard.renderCommissions(cardId) : false;
+        if (!shown && /^#\/commissions(\/c\/|\/?$)/.test(window.location.hash.replace(/\?.*$/, ''))
+                && window.Commissions) {
+            window.Commissions.render();
+        }
+    },
+
     /* route() — Main SPA router. Parses hash, toggles sidebar, dispatches to renderer. */
     route() {
         this._stopAutoRefresh();
@@ -996,6 +1009,9 @@ const App = {
                Masterpieces live inside Library (grid + #/masterpieces/{name} detail), so
                keep "Library" lit for those routes too. */
             if (!active && (parts[0] === 'library' || parts[0] === 'masterpieces') && href === '#/library') active = true;
+            /* A board, a card over it, and the commission board's sub-routes (spec 006). */
+            if (!active && parts[0] === 'boards' && href === '#/boards') active = true;
+            if (!active && parts[0] === 'commissions' && href === '#/commissions') active = true;
             link.classList.toggle('active', active);
         });
 
@@ -1016,6 +1032,15 @@ const App = {
 
         /* Destroy old Chart.js instances to free canvas memory */
         Charts.destroyAll();
+
+        /* The Trello card view is a modal on <body>, so it outlives #app. Take it
+           down on any route that is not a card — "Open commission" inside it, or a
+           nav click, would otherwise leave it covering the next page. */
+        const _boardRoute = (parts[0] === 'boards' && parts[1])
+            || (parts[0] === 'commissions' && (!parts[1] || parts[1] === 'c'));   // these open/close it themselves
+        if (window.TrelloBoard && !_boardRoute) {
+            window.TrelloBoard.closeCard(true);
+        }
 
         /* Guided tours — after the page's renderer runs, give the tour engine
            a chance to auto-fire. It self-gates: getting-started fires once on
@@ -1344,12 +1369,24 @@ const App = {
             if (window.Artists) window.Artists.render();
         } else if (parts[0] === 'characters') {
             if (window.Characters) window.Characters.render();
+        } else if (parts[0] === 'boards' && parts[1]) {
+            // #/boards/<id>[/c/<card>] — a Trello board, and a card over it (spec 006).
+            // Trello ids are hex (a new card's is `tmp_…`), so they need no decoding.
+            if (window.TrelloBoard) window.TrelloBoard.route(parts[1], parts[2] === 'c' && parts[3] ? parts[3] : null);
+        } else if (parts[0] === 'boards') {
+            if (window.TrelloBoard) window.TrelloBoard.renderPicker();
         } else if (parts[0] === 'commissions' && parts[1] === 'archived') {
             if (window.Commissions) window.Commissions.render(true);
+        } else if (parts[0] === 'commissions' && parts[1] === 'list') {
+            // The status-column hub, kept as "List view" once the commission board exists.
+            if (window.Commissions) window.Commissions.render();
+        } else if (parts[0] === 'commissions' && parts[1] === 'c' && parts[2]) {
+            // A card on the commission board. No board set (or not imported yet) → the list.
+            this._renderCommissionsBoard(parts[2]);
         } else if (parts[0] === 'commissions' && parts[1]) {
             if (window.Commissions) window.Commissions.renderDetail(parts[1]);
         } else if (parts[0] === 'commissions') {
-            if (window.Commissions) window.Commissions.render();
+            this._renderCommissionsBoard(null);
         } else if (parts[0] === 'masterpieces' && parts[1] === 'duplicates') {
             // Duplicate-finder / merge review (2.144.0).
             if (window.Masterpieces) window.Masterpieces.renderDuplicates();
@@ -1451,6 +1488,7 @@ const App = {
             library: 'Library', posting: 'Stories', editor: 'Story Editor',
             analytics: 'Analytics', inbox: 'Inbox', laurels: 'Laurels', ledger: 'Activity', groups: 'Groups', 'cross-platform': 'Cross-Platform',
             accounts: 'Accounts', settings: 'Settings',
+            boards: 'Boards', commissions: 'Commissions',
         };
         let crumb;
         if (p0 === 'posting' && parts[1] === 'queue') {
@@ -2133,7 +2171,7 @@ const App = {
         { key: 'appearance', group: 'Account', label: 'Appearance', blurb: '' },
         { key: 'platforms', group: 'Publishing', label: 'Platforms', blurb: 'Connect a site once; it then shows up in the publish pickers and polls on the Polling schedule.' },
         { key: 'publishing', group: 'Publishing', label: 'Publishing defaults', blurb: '' },
-        { key: 'trello', group: 'Publishing', label: 'Trello', blurb: 'Your commissions board, kept in step both ways.' },
+        { key: 'trello', group: 'Publishing', label: 'Trello', blurb: 'Your Trello boards inside PawPoller, kept in step both ways.' },
         { key: 'polling', group: 'Monitoring', label: 'Polling', blurb: 'How often the numbers come in.' },
         { key: 'notifications', group: 'Monitoring', label: 'Notifications', blurb: 'Who gets told, and about what.' },
         { key: 'telegram', group: 'Monitoring', label: 'Telegram', blurb: 'The bot, what it reports, and channel posting.' },
@@ -4054,15 +4092,16 @@ const App = {
         </label>`;
     },
 
-    /* ── Settings → Trello (spec 005) ────────────────────────────────────────
-       Two-way sync for commissions. The panel's job is that nobody has to type an
-       identifier: test the credentials, pick a board from a list, map each status
-       to a real column from a list.
+    /* ── Settings → Trello (spec 006) ────────────────────────────────────────
+       Every board on the account is mirrored into PawPoller and kept in step both
+       ways (Boards in the nav). This panel only connects the account, says how
+       changes arrive, and picks which board holds commissions -- nobody types an
+       identifier anywhere.
 
-       ⚠ The Sync button PREVIEWS. Applying is a second, deliberate press on the
-       preview's own result — a board is outward-facing and a wrong first sync is
-       seen by whoever the board is shared with, immediately. */
-    async _drawTrello() {
+       Four sections: Connection (key / token / Secret), Sync (live updates vs a
+       timer), Commission board (which list means which status), and -- only while
+       there is something to move -- the upgrade from 005's commissions sync. */
+    async _drawTrello(force = false) {
         const host = document.getElementById("trello-body");
         if (!host) return;
         let cfg;
@@ -4074,99 +4113,209 @@ const App = {
         }
         this._trelloCfg = cfg;
 
+        /* The commission board's lists, for the status mapping. Fetched whenever we
+           do not already have them (a saved mapping you cannot see is worse than
+           none), and again on Reload. */
+        if (cfg.commission_board_id && (force || !(this._trelloLists || []).length)) {
+            try {
+                const b = await API.getTrelloBoard(cfg.commission_board_id);
+                this._trelloLists = (b.lists || []).filter(l => !l.closed);
+            } catch (e) {
+                this._trelloLists = [];
+            }
+        }
+        if (force || !this._trelloBoards) {
+            try {
+                this._trelloBoards = cfg.has_credentials ? ((await API.getTrelloBoards(true)).boards || []) : [];
+            } catch (e) {
+                this._trelloBoards = [];
+            }
+        }
+
+        const esc = (s) => Utils.escapeHtml(String(s == null ? "" : s));
         const notOwner = cfg.is_owner === false;
+        const member = cfg.member;
+        const legacy = cfg.legacy_005 || {};
+        const pollS = Number(cfg.poll_seconds || 60);
+        const live = cfg.mode === "webhook";
         host.innerHTML = `
             ${notOwner ? `<div class="alert alert-warning" style="margin-bottom:10px">
-                Another PawPoller install (<code>${Utils.escapeHtml(cfg.owner_tag)}</code>) owns this
-                board, so this one will not sync it. Only one install can drive a board.</div>` : ""}
+                Another PawPoller install (<code>${esc(cfg.owner_tag)}</code>) talks to Trello for this
+                account, so this one shows its copy and sends nothing. Only one install can drive it.</div>` : ""}
             <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
-                Your commissions appear as cards; dragging a card here comes back. Changes on
-                both sides at once are never guessed at &mdash; you are shown both and pick.</p>
+                Every board you belong to appears under <a href="#/boards">Boards</a>, and a change on either
+                side shows on the other. Changes to the same thing on both sides are never guessed at &mdash;
+                you are shown both and pick.</p>
 
+            <h4 style="margin:4px 0 8px;font-size:13.5px">Connection</h4>
+            ${member ? `<p style="font-size:13px;margin:0 0 8px">Connected as <strong>${esc(member.full_name || member.username)}</strong>
+                ${member.username ? `(@${esc(member.username)})` : ""}</p>` : ""}
             <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
-                <label style="font-size:13px;color:var(--text-muted)">API key</label>
-                <input type="password" id="trello-key" class="search-input" style="max-width:420px"
+                <label style="font-size:13px;color:var(--text-muted)" for="trello-key">API key</label>
+                <input type="password" id="trello-key" class="search-input" style="max-width:420px" autocomplete="off"
                        placeholder="${cfg.has_credentials ? "•••• saved" : "from trello.com/power-ups/admin"}">
-                <label style="font-size:13px;color:var(--text-muted)">Token</label>
-                <input type="password" id="trello-token" class="search-input" style="max-width:420px"
+                <label style="font-size:13px;color:var(--text-muted)" for="trello-token">Token</label>
+                <input type="password" id="trello-token" class="search-input" style="max-width:420px" autocomplete="off"
                        placeholder="${cfg.has_credentials ? "•••• saved" : ""}">
+                <label style="font-size:13px;color:var(--text-muted)" for="trello-secret">Secret <span style="font-size:11.5px">(only for live updates)</span></label>
+                <input type="password" id="trello-secret" class="search-input" style="max-width:420px" autocomplete="off"
+                       placeholder="${cfg.has_secret ? "•••• saved" : "the third string on the API key page"}">
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                    <button class="btn btn-sm" id="trello-test-btn">Test</button>
+                    <button class="btn btn-sm btn-primary" id="trello-save-creds-btn" type="button">Save</button>
+                    <button class="btn btn-sm" id="trello-test-btn" type="button">Test</button>
                     <button class="btn btn-sm" id="trello-token-btn" type="button">Get my token</button>
                     <button class="btn btn-sm btn-outline" id="trello-guide-btn" type="button">Setup guide</button>
+                    <button class="btn btn-sm btn-outline" id="trello-reload-btn" type="button"
+                            title="Re-read the saved settings and your boards">&#8635; Reload</button>
                     <span id="trello-test-msg" style="font-size:12.5px;color:var(--text-muted)"></span>
                 </div>
             </div>
 
-            <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;margin-top:12px">
-                <label style="font-size:13px;color:var(--text-muted)">Board</label>
-                <div style="display:flex;gap:8px;align-items:center">
-                    <select class="search-input" id="trello-board" style="max-width:300px">
-                        <option value="">${cfg.board_name ? Utils.escapeHtml(cfg.board_name) : "— pick a board —"}</option>
-                    </select>
-                    <button class="btn btn-sm" id="trello-boards-btn">Load my boards</button>
+            <h4 style="margin:18px 0 8px;font-size:13.5px">Sync</h4>
+            <div id="trello-status-line" style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px">Checking&hellip;</div>
+            <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
+                <label style="font-size:13px;color:var(--text-muted)" for="trello-poll">Check Trello every</label>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <input type="number" id="trello-poll" class="search-input" min="30" step="10"
+                           style="max-width:110px" value="${pollS}">
+                    <span style="font-size:12.5px;color:var(--text-muted)">seconds (30 or more)</span>
+                    <button class="btn btn-sm" id="trello-poll-save" type="button">Save</button>
                 </div>
             </div>
-
-            <div id="trello-map" style="margin-top:12px"></div>
-
-            <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px;margin-top:12px">
-                <label style="font-size:13px;color:var(--text-muted)">Check the board every</label>
-                <div style="display:flex;gap:8px;align-items:center">
-                    <input type="number" id="trello-interval" class="search-input" min="0" step="5"
-                           style="max-width:110px" value="${Number(cfg.interval_min || 0)}">
-                    <span style="font-size:12.5px;color:var(--text-muted)">minutes &mdash; 0 turns the timer off; Sync now still works</span>
-                </div>
-            </div>
-
-            <div style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <button class="btn btn-primary" id="trello-save-btn">Save</button>
-                <button class="btn" id="trello-preview-btn">Preview a sync</button>
+            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-sm" id="trello-import-btn" type="button">Import / refresh now</button>
+                ${cfg.has_secret
+                    ? (live
+                        ? `<button class="btn btn-sm btn-outline" id="trello-live-off" type="button">Turn off live updates</button>`
+                        : `<button class="btn btn-sm" id="trello-live-on" type="button">Turn on live updates</button>`)
+                    : ""}
                 <span id="trello-sync-msg" style="font-size:12.5px;color:var(--text-muted)"></span>
             </div>
-            <div id="trello-report" style="margin-top:10px"></div>`;
+            <p style="font-size:11.5px;color:var(--text-muted);margin:8px 0 0">
+                Live updates show a change made in Trello within seconds, but they need the Secret and only work
+                on a server Trello can reach &mdash; a desktop install checks every ${pollS} seconds instead.</p>
+
+            <h4 style="margin:18px 0 8px;font-size:13.5px">Commission board</h4>
+            <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:6px">
+                <label style="font-size:13px;color:var(--text-muted)" for="trello-comm-board">Which board holds your commissions</label>
+                <select class="search-input" id="trello-comm-board" style="max-width:300px">
+                    <option value="">&mdash; none &mdash;</option>
+                    ${(this._trelloBoards || []).filter(b => !b.closed || b.id === cfg.commission_board_id).map(b =>
+                        `<option value="${esc(b.id)}"${b.id === cfg.commission_board_id ? " selected" : ""}>${esc(b.name)}</option>`).join("")}
+                </select>
+            </div>
+            <div id="trello-map" style="margin-top:10px"></div>
+            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-primary btn-sm" id="trello-save-btn" type="button">Save commission board</button>
+                <span id="trello-map-msg" style="font-size:12.5px;color:var(--text-muted)"></span>
+            </div>
+
+            ${legacy.links > 0 && !legacy.migrated ? `
+                <h4 style="margin:18px 0 8px;font-size:13.5px">Upgrade from the old commissions sync</h4>
+                <p style="font-size:12.5px;color:var(--text-muted);margin:0 0 8px">
+                    ${Number(legacy.links)} commission(s) were linked to cards by the old sync. Preview what moving
+                    them onto the board will change first; nothing is written until you press Apply.</p>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <button class="btn btn-sm" id="trello-mig-preview" type="button">Preview</button>
+                    <span id="trello-mig-msg" style="font-size:12.5px;color:var(--text-muted)"></span>
+                </div>
+                <div id="trello-mig-report" style="margin-top:10px"></div>` : ""}`;
 
         this._drawTrelloMap(cfg, this._trelloLists || []);
         this._wireTrello();
+        this._drawTrelloStatus();
     },
 
+    /* One plain line: how changes arrive, what is waiting, what went wrong. */
+    async _drawTrelloStatus() {
+        const host = document.getElementById("trello-status-line");
+        if (!host) return;
+        let st;
+        try {
+            st = await API.getTrelloStatus();
+        } catch (e) {
+            host.textContent = "Could not read the sync status.";
+            return;
+        }
+        if (!st.connected) {
+            host.textContent = "Not connected yet — save your API key and token above.";
+            return;
+        }
+        const bits = [st.mode === "webhook" ? "Live updates are on" : `Checks Trello every ${Number(st.poll_seconds || 0)} seconds`];
+        const imp = st.import || {};
+        if (imp.running || (imp.total && imp.done < imp.total)) bits.push(`importing ${Number(imp.done || 0)} of ${Number(imp.total || 0)} boards`);
+        const ob = st.outbox || {};
+        if (ob.pending) bits.push(`${Number(ob.pending)} change(s) on the way`);
+        if (ob.held) bits.push(`${Number(ob.held)} waiting for Trello`);
+        if (ob.failed) bits.push(`${Number(ob.failed)} refused (see Boards)`);
+        if (st.conflicts) bits.push(`${Number(st.conflicts)} to resolve`);
+        if (st.last_poll_at) bits.push(`last checked ${Utils.timeAgo(st.last_poll_at)}`);
+        host.textContent = bits.join(" · ") + (st.last_error ? ` — ${st.last_error}` : "");
+    },
+
+    /* One row per open list of the commission board: which status it means. */
     _drawTrelloMap(cfg, lists) {
         const host = document.getElementById("trello-map");
         if (!host) return;
-        if (!cfg.board_id) {
-            host.innerHTML = `<p style="font-size:12.5px;color:var(--text-muted)">Pick a board to map its columns.</p>`;
+        if (!cfg.commission_board_id) {
+            host.innerHTML = `<p style="font-size:12.5px;color:var(--text-muted);margin:0">Pick a board to say which of its lists is which status.</p>`;
             return;
         }
-        const opts = (id) => [`<option value="">— not synced —</option>`]
-            .concat(lists.map(l =>
-                `<option value="${Utils.escapeHtml(l.id)}"${l.id === id ? " selected" : ""}>${Utils.escapeHtml(l.name)}</option>`))
+        if (!lists.length) {
+            host.innerHTML = `<p style="font-size:12.5px;color:var(--text-muted);margin:0">That board has no open lists yet.</p>`;
+            return;
+        }
+        const map = cfg.list_status || {};
+        const opts = (cur) => [`<option value="">— not a status —</option>`]
+            .concat((cfg.statuses || []).map(st =>
+                `<option value="${Utils.escapeHtml(st)}"${st === cur ? " selected" : ""}>${Utils.escapeHtml(st)}</option>`))
             .join("");
         host.innerHTML = `
-            <div style="font-weight:600;font-size:13px;margin-bottom:6px">Which column is which</div>
-            ${(cfg.statuses || []).map(st => `
-                <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-top:4px">
-                    <span style="min-width:90px;text-transform:capitalize">${Utils.escapeHtml(st)}</span>
-                    <select class="search-input" data-trello-map="${Utils.escapeHtml(st)}" style="max-width:220px">
-                        ${opts((cfg.list_map || {})[st] || "")}
-                    </select>
+            <div style="font-weight:600;font-size:13px;margin-bottom:6px">Which list is which status</div>
+            ${lists.map(l => `
+                <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-top:4px;flex-wrap:wrap">
+                    <span style="min-width:140px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(l.name)}</span>
+                    <select class="search-input" data-trello-map="${Utils.escapeHtml(l.id)}" style="max-width:200px">${opts(map[l.id] || "")}</select>
                 </label>`).join("")}
             <p style="font-size:11.5px;color:var(--text-muted);margin:8px 0 0">
-                A status left unsynced is simply skipped, and you are told which ones.</p>`;
+                A commission takes the status of the list its card is in. A card in a list that is not a status
+                keeps its last one.</p>`;
     },
 
     _wireTrello() {
+        const val = (id) => ((document.getElementById(id) || {}).value || "").trim();
+        const say = (id, text) => { const m = document.getElementById(id); if (m) m.textContent = text; };
+        const errText = (e) => (window.TrelloBoard ? window.TrelloBoard._errText(e) : String(e && e.message || e));
+
         document.getElementById("trello-test-btn")?.addEventListener("click", async () => {
-            const msg = document.getElementById("trello-test-msg");
-            const key = (document.getElementById("trello-key").value || "").trim();
-            const token = (document.getElementById("trello-token").value || "").trim();
-            msg.textContent = "Checking…";
+            const key = val("trello-key");
+            const token = val("trello-token");
+            say("trello-test-msg", "Checking…");
             try {
                 const r = await API.testTrello(key, token);
-                msg.textContent = r.ok
-                    ? `Connected as ${r.member.username || r.member.full_name}`
-                    : (r.error || "That did not work.");
+                say("trello-test-msg", r.ok
+                    ? `Connected as ${(r.member || {}).username || (r.member || {}).full_name || "your account"}`
+                    : (r.error || "That did not work."));
             } catch (e) {
-                msg.textContent = "That did not work.";
+                say("trello-test-msg", "That did not work.");
+            }
+        });
+
+        // Only the boxes the operator filled are sent: an empty box keeps what is saved.
+        document.getElementById("trello-save-creds-btn")?.addEventListener("click", async () => {
+            const body = {};
+            const key = val("trello-key"), token = val("trello-token"), secret = val("trello-secret");
+            if (key) body.key = key;
+            if (token) body.token = token;
+            if (secret) body.secret = secret;
+            if (!Object.keys(body).length) { say("trello-test-msg", "Nothing to save — the boxes are empty."); return; }
+            say("trello-test-msg", "Saving…");
+            try {
+                await API.saveTrelloCredentials(body);
+                await this._drawTrello(true);
+                say("trello-test-msg", "Saved.");
+            } catch (e) {
+                say("trello-test-msg", "Could not save: " + errText(e));
             }
         });
 
@@ -4179,6 +4328,17 @@ const App = {
 
            `expiration=never` matters too -- a token with an expiry stops the sync on
            its day with no warning. */
+        /* Re-read everything from the server. Useful after editing the board
+           elsewhere, and after a failed setup attempt -- it saves a page reload. */
+        document.getElementById("trello-reload-btn")?.addEventListener("click", async () => {
+            const msg = document.getElementById("trello-test-msg");
+            if (msg) msg.textContent = "Reloading…";
+            this._trelloLists = [];
+            await this._drawTrello(true);
+            const after = document.getElementById("trello-test-msg");
+            if (after) after.textContent = "Reloaded.";
+        });
+
         document.getElementById("trello-token-btn")?.addEventListener("click", () => {
             const msg = document.getElementById("trello-test-msg");
             const key = (document.getElementById("trello-key").value || "").trim();
@@ -4194,111 +4354,156 @@ const App = {
             msg.textContent = "Approve it in the new tab, then paste the token below.";
         });
 
-        // Where the key and token actually come from. Trello only issues them
-        // through the Power-Up admin, which is not a page anyone finds by looking.
+        // Where the key, token and Secret actually come from. Trello only issues
+        // them through the Power-Up admin, which is not a page anyone finds by looking.
         document.getElementById("trello-guide-btn")?.addEventListener("click", () => {
             if (window.Guides) window.Guides.openModal("trello");
         });
 
-        document.getElementById("trello-boards-btn")?.addEventListener("click", async () => {
-            const key = (document.getElementById("trello-key").value || "").trim();
-            const token = (document.getElementById("trello-token").value || "").trim();
-            // Saving first is what makes "Load my boards" work on a fresh setup:
-            // the route reads the STORED credentials, not the form.
-            if (key && token) await API.saveTrelloCredentials(key, token);
-            const sel = document.getElementById("trello-board");
+        document.getElementById("trello-poll-save")?.addEventListener("click", async () => {
+            const n = Math.max(30, Math.round(Number(val("trello-poll")) || 0));
             try {
-                const r = await API.getTrelloBoards();
-                sel.innerHTML = [`<option value="">— pick a board —</option>`]
-                    .concat((r.boards || []).map(b =>
-                        `<option value="${Utils.escapeHtml(b.id)}"${b.id === this._trelloCfg.board_id ? " selected" : ""}>${Utils.escapeHtml(b.name)}</option>`))
-                    .join("");
+                this._trelloCfg = await API.saveTrelloConfig({ poll_seconds: n });
+                const inp = document.getElementById("trello-poll");
+                if (inp) inp.value = this._trelloCfg.poll_seconds || n;
+                say("trello-sync-msg", "Saved.");
+                this._drawTrelloStatus();
             } catch (e) {
-                sel.innerHTML = `<option value="">Could not load your boards</option>`;
+                say("trello-sync-msg", "Could not save: " + errText(e));
             }
         });
 
-        document.getElementById("trello-board")?.addEventListener("change", async (e) => {
-            const boardId = e.target.value;
-            if (!boardId) return;
-            const name = e.target.options[e.target.selectedIndex].text;
-            // ⚠ Picking a board CLAIMS it for this install and resets the
-            // first-sync preview gate. A different board has never been reviewed.
-            this._trelloCfg = await API.saveTrelloConfig({ board_id: boardId, board_name: name });
+        document.getElementById("trello-import-btn")?.addEventListener("click", async (e) => {
+            e.currentTarget.disabled = true;
+            say("trello-sync-msg", "Starting…");
             try {
-                this._trelloLists = (await API.getTrelloLists(boardId)).lists || [];
+                await API.startTrelloImport();
+                say("trello-sync-msg", "Import started — boards appear under Boards as each one arrives.");
+                this._drawTrelloStatus();
             } catch (err) {
-                this._trelloLists = [];
+                say("trello-sync-msg", "Could not start: " + errText(err));
             }
-            this._trelloCfg.statuses = this._trelloCfg.statuses
-                || ["quote", "accepted", "wip", "paid", "delivered"];
+            const b = document.getElementById("trello-import-btn");
+            if (b) b.disabled = false;
+        });
+
+        document.getElementById("trello-live-on")?.addEventListener("click", async (e) => {
+            e.currentTarget.disabled = true;
+            say("trello-sync-msg", "Asking Trello…");
+            try {
+                const r = await API.enableTrelloWebhooks();
+                if (r.ok) {
+                    await this._drawTrello();
+                    say("trello-sync-msg", `Live updates are on for ${Number(r.registered || 0)} board(s).`);
+                } else {
+                    say("trello-sync-msg", r.error || "Trello could not reach this install, so it keeps checking on the timer.");
+                    const b = document.getElementById("trello-live-on");
+                    if (b) b.disabled = false;
+                }
+            } catch (err) {
+                say("trello-sync-msg", "Could not turn them on: " + errText(err));
+                const b = document.getElementById("trello-live-on");
+                if (b) b.disabled = false;
+            }
+        });
+
+        document.getElementById("trello-live-off")?.addEventListener("click", async (e) => {
+            e.currentTarget.disabled = true;
+            try {
+                await API.disableTrelloWebhooks();
+                await this._drawTrello();
+                say("trello-sync-msg", "Live updates are off — PawPoller checks on the timer instead.");
+            } catch (err) {
+                say("trello-sync-msg", "Could not turn them off: " + errText(err));
+                const b = document.getElementById("trello-live-off");
+                if (b) b.disabled = false;
+            }
+        });
+
+        document.getElementById("trello-comm-board")?.addEventListener("change", async (e) => {
+            const boardId = e.target.value;
+            this._trelloCfg = Object.assign({}, this._trelloCfg, { commission_board_id: boardId || null });
+            this._trelloLists = [];
+            if (boardId) {
+                try {
+                    this._trelloLists = ((await API.getTrelloBoard(boardId)).lists || []).filter(l => !l.closed);
+                } catch (err) {
+                    say("trello-map-msg", "Could not read that board's lists: " + errText(err));
+                }
+            }
             this._drawTrelloMap(this._trelloCfg, this._trelloLists);
         });
 
         document.getElementById("trello-save-btn")?.addEventListener("click", async () => {
-            const msg = document.getElementById("trello-sync-msg");
-            const key = (document.getElementById("trello-key").value || "").trim();
-            const token = (document.getElementById("trello-token").value || "").trim();
-            if (key && token) await API.saveTrelloCredentials(key, token);
-            const listMap = {};
+            const listStatus = {};
             document.querySelectorAll("[data-trello-map]").forEach(sel => {
-                listMap[sel.dataset.trelloMap] = sel.value || "";
+                if (sel.value) listStatus[sel.dataset.trelloMap] = sel.value;
             });
-            await API.saveTrelloConfig({
-                list_map: listMap,
-                interval_min: Number(document.getElementById("trello-interval").value || 0),
-            });
-            msg.textContent = "Saved.";
+            try {
+                this._trelloCfg = await API.saveTrelloConfig({
+                    commission_board_id: val("trello-comm-board") || null,
+                    list_status: listStatus,
+                });
+                say("trello-map-msg", "Saved.");
+            } catch (e) {
+                say("trello-map-msg", "Could not save: " + errText(e));
+            }
         });
 
-        document.getElementById("trello-preview-btn")?.addEventListener("click", async () => {
-            const msg = document.getElementById("trello-sync-msg");
-            msg.textContent = "Looking at the board…";
+        document.getElementById("trello-mig-preview")?.addEventListener("click", async () => {
+            say("trello-mig-msg", "Looking…");
             try {
-                this._trelloReport = await API.previewTrello();
-                msg.textContent = "";
-                this._drawTrelloReport(this._trelloReport);
+                const r = await API.previewTrelloMigration();
+                say("trello-mig-msg", "");
+                this._drawTrelloMigration(r);
             } catch (e) {
-                msg.textContent = "Could not reach Trello.";
+                say("trello-mig-msg", "Could not preview: " + errText(e));
             }
         });
     },
 
-    /* The preview and its Apply button. The counts are the summary; the detail is
-       there because "3 updated" is not something anyone can agree to. */
-    _drawTrelloReport(report) {
-        const host = document.getElementById("trello-report");
+    /* The upgrade preview and its Apply button. A count is not something anyone
+       can agree to, so every card and commission it touches is listed. */
+    _drawTrelloMigration(r) {
+        const host = document.getElementById("trello-mig-report");
         if (!host) return;
-        const c = report.counts || {};
-        const total = ["created", "moved", "updated", "archived", "unlinked"]
-            .reduce((n, k) => n + (c[k] || 0), 0);
-        const line = (label, n) => n ? `<li>${label}: <strong>${n}</strong></li>` : "";
+        const esc = (s) => Utils.escapeHtml(String(s == null ? "" : s));
+        const strip = r.strip || [], create = r.create || [];
+        const map = r.list_status || {};
+        const listName = (id) => {
+            const l = (this._trelloLists || []).find(x => x.id === id);
+            return l ? l.name : id;
+        };
+        const mapRows = Object.keys(map);
+        const total = strip.length + create.length;
         host.innerHTML = `
-            ${(report.errors || []).map(e =>
-                `<div class="alert alert-warning" style="margin-bottom:8px">${Utils.escapeHtml(e)}</div>`).join("")}
-            ${total || c.conflicted || c.candidates ? `
-                <ul style="font-size:12.5px;margin:0 0 8px;padding-left:18px">
-                    ${line("Cards to create", c.created)}
-                    ${line("Cards to move", c.moved)}
-                    ${line("Fields to update", c.updated)}
-                    ${line("Cards to archive", c.archived)}
-                    ${line("Commissions to unlink", c.unlinked)}
-                    ${line("Conflicts (nothing will be written)", c.conflicted)}
-                    ${line("Cards you could import", c.candidates)}
-                    ${line("Skipped", c.skipped)}
-                </ul>
-                ${total ? `<button class="btn btn-primary btn-sm" id="trello-apply-btn">Apply these ${total} change(s)</button>` : ""}`
-            : `<p style="font-size:12.5px;color:var(--text-muted)">Nothing to do &mdash; the board already matches.</p>`}`;
-
-        document.getElementById("trello-apply-btn")?.addEventListener("click", async () => {
-            const msg = document.getElementById("trello-sync-msg");
-            msg.textContent = "Syncing…";
+            <div style="font-size:12.5px">
+                <div style="font-weight:600;margin-bottom:4px">Cards whose old price block will be tidied out of the description (${strip.length})</div>
+                ${strip.length ? `<ul style="margin:0 0 10px;padding-left:18px">${strip.map(x => `<li>${esc(x.name)}</li>`).join("")}</ul>`
+                    : `<p style="margin:0 0 10px;color:var(--text-muted)">None.</p>`}
+                <div style="font-weight:600;margin-bottom:4px">Commissions that will get a new card on the commission board (${create.length})</div>
+                ${create.length ? `<ul style="margin:0 0 10px;padding-left:18px">${create.map(x =>
+                    `<li>${esc(x.client_name)} <span style="color:var(--text-muted)">(${esc(x.status)})</span></li>`).join("")}</ul>`
+                    : `<p style="margin:0 0 10px;color:var(--text-muted)">None.</p>`}
+                <div style="font-weight:600;margin-bottom:4px">Which list becomes which status</div>
+                ${mapRows.length ? `<ul style="margin:0 0 10px;padding-left:18px">${mapRows.map(id =>
+                    `<li>${esc(listName(id))} &rarr; ${esc(map[id])}</li>`).join("")}</ul>`
+                    : `<p style="margin:0 0 10px;color:var(--text-muted)">None.</p>`}
+                <button class="btn btn-primary btn-sm" id="trello-mig-apply" type="button">Apply${total ? ` these ${total} change(s)` : ""}</button>
+            </div>`;
+        document.getElementById("trello-mig-apply")?.addEventListener("click", async (e) => {
+            e.currentTarget.disabled = true;
+            const msg = document.getElementById("trello-mig-msg");
+            if (msg) msg.textContent = "Applying…";
             try {
-                const r = await API.syncTrello(true);
-                msg.textContent = r.applied ? "Done." : "Previewed only — see above.";
-                this._drawTrelloReport(r);
-            } catch (e) {
-                msg.textContent = "The sync could not finish.";
+                const res = await API.applyTrelloMigration();
+                await this._drawTrello(true);
+                const m2 = document.getElementById("trello-sync-msg");
+                if (m2) m2.textContent = `Upgrade done: ${Number(res.stripped || 0)} card(s) tidied, ${Number(res.created || 0)} card(s) made.`;
+            } catch (err) {
+                if (msg) msg.textContent = "Could not apply: " + (window.TrelloBoard ? window.TrelloBoard._errText(err) : err.message);
+                const b = document.getElementById("trello-mig-apply");
+                if (b) b.disabled = false;
             }
         });
     },
@@ -13179,7 +13384,7 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-page="trello" id="trello-accordion">
-                    <summary>Trello <span class="summary-meta">&mdash; your commissions, on a board you can drag on your phone</span></summary>
+                    <summary>Trello <span class="summary-meta">&mdash; your Trello boards inside PawPoller, kept in step both ways</span></summary>
                     <div class="accordion-body" id="trello-body">
                         <p style="font-size:13px;color:var(--text-muted)">Loading&hellip;</p>
                     </div>
@@ -15986,7 +16191,7 @@ const App = {
                 ? prefs.announce_defaults : {};
             this._drawAnnounceDefaults();
 
-            // ── Trello (Settings → Trello, spec 005) ─────────────────
+            // ── Trello (Settings → Trello, spec 006) ─────────────────
             this._drawTrello();
             const creditAdd = document.getElementById('credit-add-btn');
             const creditName = document.getElementById('credit-name');

@@ -62,7 +62,9 @@ def test_class_counts_match_the_spec(conn):
     assert counts["DER"] == 1
     # +2 in 4.36.0: trello_links / trello_conflicts (spec 005). Board state
     # belongs to the one instance that claims the board -- see the rules.
-    assert counts["LOC"] == 10  # + this stage's own outbox, + promos (4.16.0), + podcast feeds / episodes (4.21.1)
+    # +10 in 4.37.0: the Trello board mirror (spec 006) -- boards, lists, cards,
+    # labels, checklists, check items, comments, covers, outbox, conflicts.
+    assert counts["LOC"] == 20  # + this stage's own outbox, + promos (4.16.0), + podcast feeds / episodes (4.21.1)
 
 
 def test_unregistered_table_raises_rather_than_defaulting():

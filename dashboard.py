@@ -49,6 +49,7 @@ from routes.posts_api import posts_router
 from routes.collections_api import collections_router
 from routes.commissions_api import commissions_router
 from routes.trello_api import trello_router
+from routes.trello_hooks import hooks_router as trello_hooks_router
 from routes.artists_api import artists_router
 from routes.characters_api import characters_router
 from routes.server_update_api import server_update_router
@@ -487,6 +488,10 @@ _AUTH_EXEMPT_PATHS = frozenset({
     # gated instead by a loopback check inside the route (only a process on the
     # host can reach it), so a remote client can never claim/trigger an update.
     "/api/server/update-claim",
+    # 4.37.0: Trello's webhook callback (spec 006). Trello carries no session;
+    # the route verifies Trello's HMAC signature (app Secret), caps the body,
+    # rate-limits per address, and can only mark a board for re-reading.
+    "/hooks/trello",
 })
 _AUTH_EXEMPT_PREFIXES = ("/css/", "/js/", "/vendor/", "/img/", "/api/ig/pubmedia/", "/share/", "/feed/")
 
@@ -622,7 +627,8 @@ app.include_router(feed_router)     # The public feed surface (/feed/*) — auth
 app.include_router(works_router)    # Unified Submissions hub (/api/works)
 app.include_router(collections_router)  # Collections (master container) routes (/api/collections/*)
 app.include_router(commissions_router)  # Commissions (client tracker) routes (/api/commissions/*)
-app.include_router(trello_router)  # Trello sync for commissions (spec 005) (/api/trello/*)
+app.include_router(trello_router)  # Trello board mirror (spec 006) (/api/trello/*)
+app.include_router(trello_hooks_router)  # Trello webhook callback (spec 006) (/hooks/trello, auth-exempt)
 app.include_router(masterpieces_router)  # Masterpieces (master image record) routes (/api/masterpieces/*)
 app.include_router(artists_router)       # Artist registry (/api/artists/*)
 app.include_router(characters_router)    # Character registry (/api/characters/*)

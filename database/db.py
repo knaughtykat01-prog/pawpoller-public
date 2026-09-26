@@ -57,6 +57,7 @@ _POSTS_SCHEMA_PATH = config.resource_path("database/posts_schema.sql")      # Po
 _COLLECTIONS_SCHEMA_PATH = config.resource_path("database/collections_schema.sql")  # Collections (master container) tables
 _COMMISSIONS_SCHEMA_PATH = config.resource_path("database/commissions_schema.sql")  # Commissions (client tracker) tables
 _TRELLO_SCHEMA_PATH = config.resource_path("database/trello_schema.sql")  # Trello sync links + conflicts (spec 005)
+_TRELLO_MIRROR_SCHEMA_PATH = config.resource_path("database/trello_mirror_schema.sql")  # Trello board mirror (spec 006)
 
 
 def get_connection() -> sqlite3.Connection:
@@ -181,6 +182,7 @@ def init_db() -> None:
         conn.executescript(commissions_schema_sql)
         trello_schema_sql = _TRELLO_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(trello_schema_sql)
+        conn.executescript(_TRELLO_MIRROR_SCHEMA_PATH.read_text(encoding="utf-8"))
         # Apply any migrations for tables added after the original schema release.
         _run_migrations(conn)
         conn.commit()
