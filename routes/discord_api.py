@@ -80,13 +80,39 @@ async def discord_announce(body: dict):
     title = (body.get("title") or "").strip()
     if not title:
         raise HTTPException(400, "A title is required.")
+    # 4.41.0 (spec 008): the message is built by the same code as the auto-announce.
+    # Pass ``artwork_name`` to send that piece's picture and its own Discord choices;
+    # ``url`` (legacy) becomes a single link. A public ``thumbnail`` URL is no longer
+    # used — the picture travels with the message instead.
+    image_path = piece = None
+    rating = body.get("rating") or None
+    name = (body.get("artwork_name") or "").strip()
+    if name:
+        from posting import artwork_reader
+        from posting.manager import _discord_preview_source
+        try:
+            art = artwork_reader.load_artwork(name)
+        except Exception:
+            raise HTTPException(404, "No such artwork.")
+        image_path = _discord_preview_source(art)
+        piece = (art.categories_by_platform or {}).get("discord")
+        # The blur follows the PIECE's rating, never the caller's: a request that
+        # names an adult piece and leaves the rating out must still blur it.
+        rating = art.rating or rating
+    raw_links = body.get("site_links") or []
+    if not isinstance(raw_links, list) or not all(isinstance(p, (list, tuple)) and len(p) == 2 for p in raw_links):
+        raise HTTPException(400, "site_links must be a list of [site, url] pairs.")
+    links = [(str(c), str(u)) for c, u in raw_links if u]
+    if not links and body.get("url"):
+        links = [("", str(body["url"]))]
     ok = await discord.announce(
         body.get("kind") or "post",
         title,
-        url=body.get("url") or None,
-        thumbnail=body.get("thumbnail") or None,
-        rating=body.get("rating") or None,
+        rating=rating,
+        body=body.get("body") or "",
+        site_links=links or None,
         platforms=body.get("platforms") or None,
+        image_path=image_path, piece=piece,
     )
     if not ok:
         raise HTTPException(502, "Discord rejected the post — check the webhook URL.")

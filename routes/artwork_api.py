@@ -497,6 +497,8 @@ async def publish_artwork(body: dict):
         "description_overrides": {"tg": "…"}   // optional: this post only (4.3.0)
         "variant_overrides": {"fa": "alt"}     // optional: post a named render (4.33.0)
         "renders": ["", "alt"]                 // optional: one submission per render (4.34.0)
+        "discord": true                        // optional: announce to Discord this time (4.41.0);
+                                               // absent = the announce-on-publish switch
     }
     """
     from posting import manager
@@ -512,6 +514,9 @@ async def publish_artwork(body: dict):
     # A LIST of renders, each posted as its own submission (4.34.0). Outranks
     # variant_overrides, which names one render per site.
     renders = body.get("renders") or None
+    # This publish's Discord choice (spec 008). Only a real bool counts; anything else
+    # is "not said", which follows the Settings switch rather than guessing.
+    announce_discord = body.get("discord") if isinstance(body.get("discord"), bool) else None
     if renders is not None:
         if not isinstance(renders, list):
             raise HTTPException(400, detail="renders must be a list of render names")
@@ -542,7 +547,8 @@ async def publish_artwork(body: dict):
         results = await manager.post_artwork(
             artwork_name, platforms, account_ids=account_ids, persona_id=persona_id,
             description_overrides=description_overrides,
-            variant_overrides=variant_overrides, renders=renders)
+            variant_overrides=variant_overrides, renders=renders,
+            announce_discord=announce_discord)
         successes = sum(1 for r in results if r.get("success"))
         return {
             "status": "completed",

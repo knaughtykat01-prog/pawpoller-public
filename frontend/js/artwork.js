@@ -17,8 +17,10 @@ window.Artwork = {
      * lives, hashtags — and therefore the ones whose row carries the per-piece
      * options panel (Telegram since 4.0.10; X and Bluesky since 4.3.7). Mirrors
      * posting/announce.py ANNOUNCERS. */
-    _ANNOUNCERS: ['tg', 'tw', 'bsky'],
-    _PANEL_TITLES: { tg: 'Telegram options', tw: 'X options', bsky: 'Bluesky options' },
+    // 'discord' (4.41.0, spec 008) is an announcer of OPTIONS only: it has no platform
+    // row of its own, just the Discord row _renderPlatformRows adds when a webhook is set.
+    _ANNOUNCERS: ['tg', 'tw', 'bsky', 'discord'],
+    _PANEL_TITLES: { tg: 'Telegram options', tw: 'X options', bsky: 'Bluesky options', discord: 'Discord options' },
     /* The per-piece text box's cap per platform — the box, not the post: links
      * and hashtags share the real limit, which the poster fits to. */
     _TEXT_CAPS: { tg: 900, tw: 280, bsky: 300 },
@@ -624,7 +626,52 @@ window.Artwork = {
                     ${ann ? this._tgOptRows(o, { ...(extras[code] || {}), code }) : ''}
                 </details>
             </div>`;
-        }).join('');
+        }).join('') + '<div data-discord-slot></div>';
+        this._fillDiscordRow(el, opts.discord || {}, extras.discord || {});
+    },
+
+    /* The Discord row (4.41.0, spec 008). Not a platform: a tick for "announce this
+     * publish" plus the shared options panel. Only when a webhook is configured, and
+     * pre-ticked to match the announce-on-publish switch. Filled after one status
+     * fetch, so a page without Discord pays one small request and shows nothing. */
+    async _fillDiscordRow(el, opts, extra) {
+        const slot = el && el.querySelector('[data-discord-slot]');
+        if (!slot) return;
+        let st = null;
+        try { st = await (await fetch('/api/discord')).json(); } catch (e) { return; }
+        if (!st || !st.configured || !slot.isConnected) return;
+        const set = Object.values(opts || {}).some(v => v !== undefined && v !== null && v !== '');
+        slot.innerHTML = `
+            <div class="artwork-plat-row" data-platform="discord" data-announce-only>
+                <label class="artwork-plat-toggle">
+                    <input type="checkbox" class="art-discord-check"${st.announce_on_publish ? ' checked' : ''}>
+                    <span class="artwork-plat-emoji">💬</span>
+                    <span class="artwork-plat-name">Announce on Discord</span>
+                </label>
+                <details class="artwork-plat-adv">
+                    <summary>${this._PANEL_TITLES.discord}${set ? ' · set' : ''}</summary>
+                    ${this._tgOptRows(opts || {}, { live: (extra || {}).live || [], code: 'discord' })}
+                </details>
+            </div>`;
+    },
+
+    /* This publish's Discord choice: true / false, or undefined when there is no
+     * Discord row (then the server follows the announce-on-publish switch). */
+    _discordChoice() {
+        const cb = document.querySelector('.art-discord-check');
+        return cb ? cb.checked : undefined;
+    },
+
+    /* Every announcer panel on the page, read back — only explicit choices. The
+     * new-artwork page showed these panels but never saved them until 4.41.0. */
+    _collectCategories() {
+        const out = {};
+        this._ANNOUNCERS.forEach(code => {
+            if (!document.querySelector(`.art-tg-opt[data-platform="${code}"]`)) return;
+            const o = this._collectPlatOpts(code);
+            if (Object.keys(o).length) out[code] = o;
+        });
+        return out;
     },
 
     /* A per-platform map, or the pre-4.3.7 Telegram-only value read as {tg}. */
@@ -931,10 +978,12 @@ window.Artwork = {
             if (checked.includes(sel.dataset.platform)) accountIds[sel.dataset.platform] = parseInt(sel.value, 10);
         });
 
+        const categories = this._collectCategories();
         return {
             title, description, rating, tags,
             alt_text: altText,
             platforms: checked,
+            ...(Object.keys(categories).length ? { categories } : {}),
             _accountIds: accountIds,
         };
     },
@@ -1006,6 +1055,7 @@ window.Artwork = {
                 // Each ticked version posts as its own submission (4.34.0). Absent
                 // when the piece has no renders, so the ordinary path is unchanged.
                 renders: conf.renders,
+                discord: this._discordChoice(),   // spec 008: this publish's Discord tick
                 confirm_live: true,
             });
             const ok = res.successes || 0;
@@ -1101,8 +1151,22 @@ window.Artwork = {
     /* The rows for one announcer's panel. Keys mirror the poster's
      * _resolve_options \u2014 a test holds the two lists to each other. */
     _optsFor(code) {
-        return code === 'tw' ? this._TW_OPTS : code === 'bsky' ? this._BSKY_OPTS : this._TG_OPTS;
+        return code === 'tw' ? this._TW_OPTS : code === 'bsky' ? this._BSKY_OPTS
+            : code === 'discord' ? this._DISCORD_OPTS : this._TG_OPTS;
     },
+
+    /* Discord (4.41.0, spec 008) — posting/discord.py BUILT_INS / resolve_options. */
+    _DISCORD_OPTS: [
+        ['image',   'Show the image',
+         'Sent with the message, so it works for an image that only exists on this machine.'],
+        ['spoiler', 'Blur the image',
+         'Follows the rating unless set here — adult work is blurred until clicked; Off here is the only way to show it unblurred.'],
+        ['silent',  'Post silently',
+         'Delivered with no notification ping.'],
+        ['caption', 'Include the description', ''],
+        ['tags',    'Include hashtags',
+         'Off unless set — Discord doesn’t use hashtags.'],
+    ],
 
     /* X (4.3.7) \u2014 posting/platforms/twitter.py _resolve_options. */
     _TW_OPTS: [
@@ -1177,7 +1241,8 @@ window.Artwork = {
         // Link picker (spec \u00a78.4, \u00a710 Q3). The stored order comes first so the
         // user's ranking survives a reload; live sites not yet ranked follow.
         // Each panel's list leaves ITSELF out \u2014 a post does not link to itself.
-        const mode = ['auto', 'first', 'all', 'pick', 'none'].includes(opts.link_mode) ? opts.link_mode : 'auto';
+        const mode = ['auto', 'first', 'all', 'pick', 'none'].includes(opts.link_mode) ? opts.link_mode
+            : (code === 'discord' ? 'all' : 'auto');   // Discord's card lists every site by default
         const order = Array.isArray(opts.link_platforms) ? opts.link_platforms.map(String) : [];
         const live = (extra.live || []).filter(c => c !== code);
         const listed = [...order, ...live.filter(c => !order.includes(c))];
@@ -1187,7 +1252,7 @@ window.Artwork = {
             ['all',   'All links', 'every site it is on, in the order below'],
             ['pick',  'Pick\u2026', 'only the ticked sites, in that order'],
             ['none',  'No links', ''],
-        ].map(([v, l, h]) => `<label title="${this.esc(h)}"><input type="radio" class="art-tg-linkmode" data-platform="${code}" name="tg-linkmode-${uid}" value="${v}"${mode === v ? ' checked' : ''}> ${l}</label>`).join('');
+        ].filter(([v]) => !(code === 'discord' && v === 'auto')).map(([v, l, h]) => `<label title="${this.esc(h)}"><input type="radio" class="art-tg-linkmode" data-platform="${code}" name="tg-linkmode-${uid}" value="${v}"${mode === v ? ' checked' : ''}> ${l}</label>`).join('');
         const list = listed.map(c => {
             const lp = this._plat(c);
             return `<li class="art-tg-link" data-code="${c}">
@@ -1203,6 +1268,8 @@ window.Artwork = {
                 ${listed.length
                     ? `<ul class="art-tg-linklist"${mode === 'pick' || mode === 'all' ? '' : ' hidden'}>${list}</ul>
                        <span class="muted" style="font-size:11.5px">The first link is the one the post previews.</span>`
+                    : code === 'discord'
+                    ? `<span class="muted" style="font-size:11.5px">Nothing published yet \u2014 the message links every site this publish lands on.</span>`
                     : `<span class="muted" style="font-size:11.5px">Nothing published yet \u2014 <em>Automatic</em> links wherever this lands first when you publish to several sites at once.</span>`}
             </div>`;
         return rows + descHtml + linksHtml;
@@ -1263,11 +1330,14 @@ window.Artwork = {
             else if (sel.dataset.kind === 'choice' && sel.value) out[sel.dataset.tgopt] = sel.value;
         });
         // Link picker (4.3.0). NOT booleans \u2014 the poster reads these two raw.
-        // 'auto' is the default and is stored as absence, like the tri-states.
+        // The default ('auto'; Discord's is 'all') is stored as absence, like the tri-states.
+        const dflt = code === 'discord' ? 'all' : 'auto';
         const modeEl = document.querySelector(`.art-tg-linkmode[data-platform="${code}"]:checked`);
-        if (modeEl && modeEl.value && modeEl.value !== 'auto') out.link_mode = modeEl.value;
+        if (modeEl && modeEl.value && modeEl.value !== dflt) out.link_mode = modeEl.value;
         const picks = Array.from(document.querySelectorAll(`.art-tg-linkpick[data-platform="${code}"]:checked`)).map(c => c.value);
-        if (picks.length && (!modeEl || modeEl.value === 'pick' || modeEl.value === 'all')) out.link_platforms = picks;
+        // Discord's untouched 'all' saves nothing, so a piece isn't pinned to today's sites.
+        const keepOrder = modeEl && (modeEl.value === 'pick' || (modeEl.value === 'all' && code !== 'discord'));
+        if (picks.length && (!modeEl || keepOrder)) out.link_platforms = picks;
         return out;
     },
 
@@ -1859,6 +1929,7 @@ window.Artwork = {
                 const res = await API.publishArtwork({ artwork_name: name, platforms, account_ids: accountIds,
                     persona_id: this._qpPersonaId(opt),
                     description_overrides: descOverrides,
+                    discord: this._discordChoice(),
                     confirm_live: true });
                 const ok = res.successes || 0;
                 const fail = Components.showPublishResults(msg, res.results);

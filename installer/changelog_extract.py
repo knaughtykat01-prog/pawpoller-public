@@ -14,13 +14,39 @@ from pathlib import Path
 
 ver = sys.argv[1].lstrip("v") if len(sys.argv) > 1 else ""
 
+
+def which_file(v: str) -> str:
+    """The top of every release page: which of the ~12 files a person wants.
+
+    GitHub lists release files alphabetically, so the Windows installer sits 9th,
+    under server packages and checksum files. Most people should never need to
+    work that out (2026-09-27). Plain words, no identifiers. The names must match
+    what build.yml actually uploads (tests/test_release_notes.py checks).
+    """
+    return (
+        "### Which file do I download?\n\n"
+        "| On this computer | Download this file | Then |\n"
+        "|---|---|---|\n"
+        f"| **Windows** | `PawPoller-Setup-{v}.exe` | Open it and click through the installer. If Windows says "
+        "\"Windows protected your PC\", click **More info**, then **Run anyway**. |\n"
+        f"| **Linux** | `PawPoller-{v}-x86_64.AppImage` | Right-click it, **Properties**, **Permissions**, tick "
+        "**Allow executing file as program**, then double-click it. |\n"
+        "| **Mac** | Not available yet | Run it on a server and open it in your browser: see "
+        "[the setup guide](https://github.com/knaughtykat01-prog/pawpoller-public/blob/main/docs/SETUP.md). |\n\n"
+        "You can ignore the other files. `PawPoller-windows-x64.zip` is a portable Windows copy that needs no "
+        "installing, the `PawPoller-Server-…` files are for running PawPoller on your own server, and the "
+        "`.sha256` files are fingerprints the app uses to check its own updates.\n\n"
+        "Easiest of all: [pawpoller.pages.dev/download](https://pawpoller.pages.dev/download/) picks the "
+        "right one for you.\n\n---\n\n"
+    )
+
 # The public distribution ships without CHANGELOG.md on purpose. Degrade to a
 # minimal note so a tagged build still produces a release rather than failing
 # the whole job on a missing input.
 _src = Path("CHANGELOG.md")
 if not _src.is_file():
     Path("RELEASE_NOTES.md").write_text(
-        f"PawPoller {ver}\n\nSee the project README for what this release contains.\n",
+        which_file(ver) + f"PawPoller {ver}\n\nSee the project README for what this release contains.\n",
         encoding="utf-8",
     )
     print(f"CHANGELOG.md not present - wrote a minimal RELEASE_NOTES.md for {ver!r}")
@@ -37,5 +63,5 @@ if m:
 else:
     body = f"PawPoller {ver or '(unknown version)'}. See CHANGELOG.md for details.\n"
 
-Path("RELEASE_NOTES.md").write_text(body, encoding="utf-8")
+Path("RELEASE_NOTES.md").write_text(which_file(ver) + body, encoding="utf-8")
 print(f"Wrote RELEASE_NOTES.md ({len(body)} chars) for version '{ver}'")

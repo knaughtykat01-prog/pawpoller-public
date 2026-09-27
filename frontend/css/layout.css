@@ -539,7 +539,9 @@ body.sidebar-collapsed .poll-progress-bar { left: var(--sidebar-w-collapsed); }
     .filter-select { width: 100%; }
 
     .settings-row { flex-direction: column; align-items: stretch; gap: 8px; }
-    .settings-row input, .settings-row select { width: 100%; min-height: 44px; }
+    /* Text fields only: a checkbox given width:100% + 44px ballooned into a huge white
+       square and pushed its label off-screen (Telegram channel defaults, 2026-09-27). */
+    .settings-row input:not([type="checkbox"]):not([type="radio"]), .settings-row select { width: 100%; min-height: 44px; }
     .settings-section { padding: 14px; }
 
     .date-range-bar { gap: 4px; }

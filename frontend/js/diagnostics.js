@@ -182,6 +182,16 @@
                         <button class="btn btn-xs" data-sample="update">Failed update</button>
                     </div>
                     ${last ? `<ul class="tech-last">${last}</ul>` : '<p style="color:var(--text-muted)">No reports yet.</p>'}
+                    <h3 style="margin-top:16px">Count this copy</h3>
+                    <div class="tech-row">
+                        <label class="toggle-switch"><input type="checkbox" id="tech-usage" ${st.usage === true ? 'checked' : ''}><span class="toggle-slider"></span></label>
+                        <span>Let the tech centre count this copy of PawPoller</span>
+                    </div>
+                    <p>${st.usage === true
+                        ? `On — this copy says "still running" every few minutes${st.last_checkin ? ` (last: ${esc(String(st.last_checkin).replace('T', ' ').replace('Z', ' UTC'))})` : ''}.`
+                        : st.usage === false ? 'Off — nothing is sent.' : 'Not decided yet.'}
+                       Anonymous: the version, operating system, how it was installed, which sites are connected (not the accounts), a size range for the library and a random id for this copy; the tech centre also notes the country the connection comes from. Never names, handles, your address or anything you made.</p>
+                    <details id="tech-usage-preview"><summary>Exactly what is sent</summary><pre class="tech-pre">Loading…</pre></details>
                 </div>`;
         },
 
@@ -219,6 +229,22 @@
                     this._tech = await r.json();
                 } catch (err) { msg('Could not save: ' + (err.message || err), true); return; }
                 this._paintTech(root);
+            });
+            root.querySelector('#tech-usage')?.addEventListener('change', async (e) => {
+                try {
+                    const r = await post('/api/tech/usage', { value: e.target.checked });
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    this._tech = await r.json();
+                } catch (err) { msg('Could not save: ' + (err.message || err), true); return; }
+                this._paintTech(root);
+            });
+            root.querySelector('#tech-usage-preview')?.addEventListener('toggle', async (e) => {
+                if (!e.target.open) return;
+                const pre = e.target.querySelector('pre');
+                try {
+                    const d = await fetch('/api/tech/checkin-preview', { credentials: 'same-origin' }).then(r => r.json());
+                    pre.textContent = JSON.stringify(d, null, 1);
+                } catch (err) { pre.textContent = 'Could not load: ' + (err.message || err); }
             });
             root.querySelector('#tech-test')?.addEventListener('click', async () => {
                 msg('Sending…');

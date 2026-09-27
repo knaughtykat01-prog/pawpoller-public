@@ -379,6 +379,10 @@ def invalidate_csp_cache() -> None:
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
+    # "Dashboard open" for the opt-in usage check-in (4.42.0): a browser's API
+    # call, not a paired desktop's (those carry an Authorization header).
+    if request.url.path.startswith("/api/") and "authorization" not in request.headers:
+        techcentre.note_ui()
     response = await call_next(request)
     for header, value in _BASE_SECURITY_HEADERS.items():
         response.headers[header] = value

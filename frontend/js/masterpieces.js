@@ -1566,6 +1566,7 @@ window.Masterpieces = {
                 artwork_name: name, platforms, account_ids: accountIds,
                 persona_id: personaId,
                 description_overrides: window.Artwork ? window.Artwork._pubDescOverrides(conf) : undefined,
+                discord: window.Artwork ? window.Artwork._discordChoice() : undefined,   // spec 008
                 confirm_live: true,
             });
             const ok = res.successes || 0;

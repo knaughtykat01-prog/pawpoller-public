@@ -1495,6 +1495,8 @@ def save_preferences(body: dict):
             "bsky": {"tags", "caption", "label"},
             "tg": {"tags", "caption", "preview", "silent", "protect", "document",
                    "pin", "spoiler"},
+            # 4.41.0 (spec 008): Discord's announcement options — posting/discord.BUILT_INS.
+            "discord": {"image", "spoiler", "silent", "caption", "tags"},
         }
         # 4.35.0: the link options are per-announcer too. Neither is a flag, so
         # they are validated by shape rather than coerced with bool() -- a mode

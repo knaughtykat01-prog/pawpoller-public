@@ -2231,6 +2231,15 @@ const App = {
             ['spoiler',  'Blur behind a spoiler', false,
              'A FLOOR, like X\u2019s sensitive flag: adult work is always blurred whatever this says.'],
         ] },
+        // 4.41.0 (spec 008). Mirrors posting/discord.BUILT_INS.
+        discord: { label: 'Discord', opts: [
+            ['image',   'Show the image', true, 'Sent with the message, so it works for images that only exist on this machine.'],
+            ['spoiler', 'Blur the image', false,
+             'A FLOOR, like Telegram\u2019s: adult work is always blurred whatever this says. Only a single piece can lift it.'],
+            ['silent',  'Post silently', false, 'No notification ping for the channel.'],
+            ['caption', 'Include the description', true, ''],
+            ['tags',    'Include hashtags', false, 'Discord doesn\u2019t use them, so they are off unless you want them.'],
+        ] },
     },
 
     SETTINGS_PAGES: [
@@ -2993,7 +3002,11 @@ const App = {
                         <li><strong style="color:var(--text-primary)">Never sent:</strong> account names, cookies, tokens, passwords, artwork, story text, or file paths with your name in them.</li>
                         <li>Problems you can fix yourself — an expired login, no network, a full disk — are never sent; the app tells you instead.</li>
                     </ul>
-                    <p style="color:var(--text-muted);font-size:12px;margin-bottom:16px">You can change this any time in Settings → Diagnostics.</p>
+                    <label style="display:flex;gap:8px;align-items:flex-start;text-align:left;color:var(--text-secondary);font-size:13px;margin:0 0 12px;padding:10px;border:1px solid var(--border);border-radius:8px;cursor:pointer">
+                        <input type="checkbox" id="setup-usage" style="margin-top:3px;flex:0 0 auto">
+                        <span><strong style="color:var(--text-primary)">Also count this copy of PawPoller.</strong> Every few minutes it says "still running", anonymously, so the developer knows how many people use it and on what: the version, Windows or Linux, how it was installed, which sites you have connected (not the accounts), roughly how big your library is (a range, never a number), plus a random id for this copy so it is counted once and the country your connection comes from (never your address). No names, nothing you made.</span>
+                    </label>
+                    <p style="color:var(--text-muted);font-size:12px;margin-bottom:16px">You can change both any time in Settings → Diagnostics.</p>
                     <div style="display:flex;gap:8px">
                         <button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
                         <button class="btn btn-primary login-btn" id="setup-tech-yes" style="flex:1">Yes, send them</button>
@@ -3115,8 +3128,14 @@ const App = {
             /* Tech Centre consent (4.10.0) — both answers are answers: store, advance. */
             for (const [id, value] of [['setup-tech-yes', true], ['setup-tech-no', false]]) {
                 document.getElementById(id)?.addEventListener('click', async () => {
+                    // Read the tick BEFORE the await — goNext() re-renders the step.
+                    const usage = !!document.getElementById('setup-usage')?.checked;
                     try { await API.setTechConsent(value); }
                     catch (err) { console.warn('[Setup] tech consent save failed:', err); }
+                    // "Count this copy" (4.42.0) is its own answer: unticked is a no, so
+                    // this install is never asked again after the wizard.
+                    try { await API.setTechUsage(usage); }
+                    catch (err) { console.warn('[Setup] usage consent save failed:', err); }
                     goNext();
                 });
             }
@@ -4154,7 +4173,9 @@ const App = {
         return `<label style="display:flex;align-items:center;gap:8px;font-size:12.5px">
             <select class="search-input" data-anndef-val="${code}|link_mode" style="max-width:150px">
                 ${this.LINK_MODE_OPTS.map(([v, l]) =>
-                    `<option value="${v}"${mode === v ? " selected" : ""}>${Utils.escapeHtml(l)}</option>`).join("")}
+                    // Discord's built-in is "all" (its card lists every site), not "auto".
+                    `<option value="${v}"${mode === v ? " selected" : ""}>${Utils.escapeHtml(
+                        v === "" && code === "discord" ? "Built-in (every site it went to)" : l)}</option>`).join("")}
             </select>
             <span>Links out</span>
             <span style="color:var(--text-muted);font-size:11.5px">where this post points back to</span>
@@ -4820,8 +4841,55 @@ const App = {
         this._techPromptLast = now;
         let st;
         try { st = await API.getTechStatus(); } catch (e) { return; }
-        if (!st || !st.enabled || st.asked || !st.prompt) return;
-        this._showTechPromptModal(st.prompt);
+        if (!st || !st.enabled) return;
+        if (!st.asked && st.prompt) { this._showTechPromptModal(st.prompt); return; }
+        // "Count this copy" (4.42.0, spec 009): installs from before the question
+        // are asked once. Never on top of the What's-new popup — the next route asks.
+        if (!st.usage_asked && !this._usageSnoozed
+            && !document.getElementById('whatsnew-ov')?.classList.contains('open')) {
+            this._showUsagePromptModal();
+        }
+    },
+
+    async _showUsagePromptModal() {
+        const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
+        let preview = {};
+        try { preview = await API.getCheckinPreview(); } catch (e) { /* the modal still explains it */ }
+        let ov = document.getElementById('usageprompt-ov');
+        if (!ov) { ov = document.createElement('div'); ov.id = 'usageprompt-ov'; ov.className = 'wn-ov'; document.body.appendChild(ov); }
+        ov.innerHTML = `
+            <div class="wn-modal" role="dialog" aria-modal="true" aria-label="Count this copy of PawPoller?">
+                <div class="wn-top">
+                    <h2>📊 Count this copy of PawPoller?</h2>
+                    <button class="wn-x" type="button" aria-label="Not now">×</button>
+                </div>
+                <div class="wn-scroll">
+                    <p>Knowing how many people use PawPoller, and on what, decides what gets fixed and built next.</p>
+                    <p>If you say yes, every few minutes this copy says "still running", anonymously: the version, Windows or Linux, how it was installed, which sites you have connected (not the accounts), roughly how big your library is (a range, never a number), plus a random id for this copy so it is counted once. The tech centre also notes which country the connection comes from — never your address.</p>
+                    <p><strong>Never sent:</strong> names, account handles, passwords, your address, file names, artwork or story text.</p>
+                    <details><summary>Exactly what would be sent</summary><pre class="tech-pre">${esc(JSON.stringify(preview, null, 1))}</pre></details>
+                    <p style="color:var(--text-muted);font-size:12px">Change your mind any time in Settings → Diagnostics.</p>
+                </div>
+                <div class="wn-foot" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                    <button class="btn" type="button" data-usage="no">No thanks</button>
+                    <button class="btn btn-primary" type="button" data-usage="yes">Yes, count it</button>
+                </div>
+            </div>`;
+        ov.classList.add('open');
+        this._techPromptOpen = true;
+        const close = () => { ov.classList.remove('open'); this._techPromptOpen = false; };
+        ov.querySelector('.wn-x').addEventListener('click', () => { this._usageSnoozed = true; close(); });
+        ov.querySelectorAll('[data-usage]').forEach(btn => btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            const yes = btn.dataset.usage === 'yes';
+            try {
+                await API.setTechUsage(yes);
+                if (window.Utils && Utils.showToast) Utils.showToast(yes ? 'Thanks — this copy will be counted.' : 'Okay — nothing will be sent.');
+            } catch (e) {
+                if (window.Utils && Utils.showToast) Utils.showToast('Could not save that: ' + (e.message || e), 'error');
+            }
+            close();
+        }));
     },
 
     _showTechPromptModal(p) {
@@ -13759,7 +13827,7 @@ const App = {
                 </details>
 
                 <details class="settings-accordion" data-page="publishing" id="announce-defaults-accordion">
-                    <summary>What &ldquo;Default&rdquo; means on X, Bluesky and Telegram</summary>
+                    <summary>What &ldquo;Default&rdquo; means on X, Bluesky, Telegram and Discord</summary>
                     <div class="accordion-body">
                     <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
                         Every piece has its own <strong>Default / On / Off</strong> for these. This is what
@@ -13882,7 +13950,9 @@ const App = {
                     <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
                         Post an announcement to a Discord channel whenever you publish. Paste a channel
                         <strong>webhook URL</strong> (Discord → Channel → Edit → Integrations → Webhooks → New Webhook → Copy URL).
-                        Adult pieces announce as a link without the image preview.
+                        Announcements show the picture; adult work is always blurred until someone clicks it.
+                        The picture, blur, silent posting and the rest are under
+                        <strong>Publishing defaults → What &ldquo;Default&rdquo; means</strong>, and any single piece can change them when you publish it.
                     </div>
                     <div class="settings-row">
                         <div style="flex:1">
@@ -13894,7 +13964,7 @@ const App = {
                     <div class="settings-row" style="margin-top:8px">
                         <div>
                             <span class="settings-label"><label style="cursor:pointer"><input type="checkbox" id="discord-auto" style="margin-right:6px;vertical-align:middle">Announce automatically when I publish</label></span>
-                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Fires once per publish (posts + artwork), interactive or scheduled.</div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Fires once per publish (artwork, stories and posts), interactive or scheduled. On the artwork pages you can also untick Discord for one publish.</div>
                         </div>
                         <div style="display:flex;gap:8px">
                             <button class="btn btn-sm btn-secondary" id="discord-save">Save</button>

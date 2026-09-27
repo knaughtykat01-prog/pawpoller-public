@@ -29,6 +29,21 @@ def tech_consent(body: dict):
     return techcentre.status()
 
 
+@tech_router.post("/usage")
+def tech_usage(body: dict):
+    """The "count this copy" switch (4.42.0, spec 009) — separate from error reports."""
+    if "value" not in body:
+        raise HTTPException(400, "value (true/false) required")
+    techcentre.set_usage_consent(bool(body["value"]))
+    return techcentre.status()
+
+
+@tech_router.get("/checkin-preview")
+def tech_checkin_preview():
+    """Exactly what a check-in from this install would send (the Diagnostics preview)."""
+    return techcentre.checkin_payload()
+
+
 @tech_router.post("/prompt")
 def tech_prompt(body: dict):
     decision = str(body.get("decision") or "").strip().lower()

@@ -1,5 +1,8 @@
 """Tech Centre client (4.10.0) — technical errors reach the operator, with consent.
 
+Since 4.42.0 (spec 009) also the opt-in usage check-in: a separate yes
+(``tech_usage``) to "count this copy" — see ``checkin_payload``.
+
 Spec: ``docs/specs/tech_centre.md``. The service side lives in its own repo
 (``syncopates-techcentre``); this module is everything PawPoller does:
 
@@ -505,6 +508,157 @@ def _loop() -> None:
             flush()
         except Exception as e:
             logger.debug("tech centre flush failed: %s", e)
+        try:
+            checkin()
+        except Exception as e:
+            logger.debug("tech centre check-in failed: %s", type(e).__name__)
+
+
+# ── usage check-in (4.42.0, spec 009) ────────────────────────────────────────
+# A SEPARATE yes from error reports: "count this copy". Every few minutes an
+# opted-in install says "still here" with the facts in ``checkin_payload`` —
+# closed sets, bands and codes, nothing that names a person or a machine. The
+# Tech Centre hashes the install id on receipt and never stores the address.
+
+CHECKIN_EVERY = 300               # seconds between check-ins (the service says the same)
+UI_OPEN_WINDOW = 300              # "dashboard open" = a browser API call in this window
+_STARTED = time.time()
+_ui_last = 0.0
+_lib_cache: dict = {"at": 0.0, "value": {}}
+
+
+def usage_consent(settings: dict | None = None) -> bool | None:
+    """True = count this copy, False = never, None = not asked yet."""
+    s = settings if settings is not None else config.get_settings()
+    v = s.get("tech_usage")
+    if v is None or v == "":
+        return None
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    return bool(v)
+
+
+def set_usage_consent(value: bool) -> None:
+    config.save_settings({"tech_usage": bool(value)})
+    if value:
+        with _lock:
+            st = _state()
+            st["next_checkin"] = 0            # say hello on the next tick, not in five minutes
+            _save_state(st)
+        _wake.set()
+
+
+def note_ui() -> None:
+    """The dashboard made a request — called from the HTTP middleware (browser calls only)."""
+    global _ui_last
+    _ui_last = time.time()
+
+
+def band(n: int) -> str:
+    return "0" if n <= 0 else "1-10" if n <= 10 else "11-100" if n <= 100 else "101-1000" if n <= 1000 else "1000+"
+
+
+def packaging() -> str:
+    if Path("/.dockerenv").exists():
+        return "docker"
+    if os.environ.get("APPIMAGE"):
+        return "appimage"
+    if getattr(sys, "frozen", False):
+        if sys.platform == "win32" and (Path(sys.executable).parent / "unins000.exe").exists():
+            return "installer"
+        return "portable"
+    return "source"
+
+
+def _mode(settings: dict | None = None) -> str:
+    s = settings if settings is not None else config.get_settings()
+    m = s.get("setup_mode")
+    if m in ("standalone", "paired_desktop", "connected", "server"):
+        return m
+    return "server" if runtime() == "server" else "unknown"
+
+
+def _platforms() -> list[str]:
+    """Codes of the platforms with at least one enabled account — never the accounts."""
+    try:
+        from database.db import get_connection
+        conn = get_connection()
+        try:
+            rows = conn.execute("SELECT DISTINCT platform FROM accounts WHERE enabled = 1").fetchall()
+        finally:
+            conn.close()
+        return sorted({str(r[0]).lower() for r in rows if r[0] and re.fullmatch(r"[a-z0-9_]{1,16}", str(r[0]).lower())})
+    except Exception:
+        return []
+
+
+def _library() -> dict:
+    """Artwork and story counts as bands, recounted at most hourly."""
+    now = time.time()
+    if now - _lib_cache["at"] < 3600 and _lib_cache["value"]:
+        return _lib_cache["value"]
+    out = {}
+    try:
+        from database.db import get_connection
+        conn = get_connection()
+        try:
+            out["artwork"] = band(conn.execute("SELECT COUNT(*) FROM masterpieces WHERE status != 'junk'").fetchone()[0])
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    try:
+        from posting.story_reader import get_archive_path
+        archive = get_archive_path()
+        if archive.is_dir():
+            out["stories"] = band(sum(1 for e in archive.iterdir() if e.is_dir() and not e.name.startswith(".")
+                                      and e.name != "Reference_Guides"))
+    except Exception:
+        pass
+    _lib_cache.update(at=now, value=out)
+    return out
+
+
+def checkin_payload() -> dict:
+    """Exactly what one check-in sends — also what Settings → Diagnostics shows."""
+    with _lock:
+        rtt = _state().get("rtt_ms")
+    return {
+        "install_id": install_id(), "version": config.APP_VERSION, "runtime": runtime(), "mode": _mode(),
+        "os": _platform.system(), "arch": _platform.machine(), "packaging": packaging(),
+        "open": time.time() - _ui_last < UI_OPEN_WINDOW, "uptime_s": int(time.time() - _STARTED),
+        "rtt_ms": rtt, "platforms": _platforms(), "library": _library(),
+    }
+
+
+def checkin(force: bool = False) -> dict:
+    """Check in when due (and allowed). Never raises; failures back off up to an hour."""
+    if not TECH_CENTRE_URL or usage_consent() is not True:
+        return {"ok": False, "skipped": "off"}
+    now = time.time()
+    with _lock:
+        if not force and now < float(_state().get("next_checkin") or 0):
+            return {"ok": False, "skipped": "not due"}
+    import httpx
+    body = checkin_payload()
+    t0 = time.perf_counter()
+    try:
+        resp = httpx.post(f"{TECH_CENTRE_URL}/api/v1/checkin", json=body, timeout=HTTP_TIMEOUT,
+                          headers={"X-Syncopates-App": APP, "User-Agent": f"PawPoller/{config.APP_VERSION}"})
+        code = resp.status_code
+    except Exception as e:
+        code, resp = 0, type(e).__name__
+    rtt = int((time.perf_counter() - t0) * 1000)
+    with _lock:
+        st = _state()
+        if code == 200:
+            st.update(rtt_ms=rtt, checkin_failures=0, next_checkin=now + CHECKIN_EVERY,
+                      last_checkin=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        else:
+            f = int(st.get("checkin_failures") or 0) + 1
+            st.update(checkin_failures=f, next_checkin=now + min(3600, CHECKIN_EVERY * 2 ** (f - 1)))
+        _save_state(st)
+    return {"ok": code == 200, "status": code}
 
 
 def start() -> None:
@@ -596,10 +750,13 @@ def status() -> dict:
             last.append({**e, "status": e.get("status") or k.get("status", ""), "note": e.get("note") or k.get("note", ""),
                          "fixed_in": e.get("fixed_in") or k.get("fixed_in", "")})
         prompt = _prompt_summary(st.get("prompt"))
+        last_checkin = st.get("last_checkin", "")
     c = consent()
+    u = usage_consent()
     return {"enabled": bool(TECH_CENTRE_URL), "url": TECH_CENTRE_URL, "consent": c, "asked": c is not None,
             "install_id": install_id() if TECH_CENTRE_URL else "", "runtime": runtime(), "pending": pending,
-            "last": last, "prompt": prompt}
+            "last": last, "prompt": prompt,
+            "usage": u, "usage_asked": u is not None, "last_checkin": last_checkin}
 
 
 def resolve_prompt(decision: str) -> dict:

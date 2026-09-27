@@ -557,6 +557,8 @@ const API = {
     // Tech Centre (4.10.0): consent, the first-error prompt, status for Diagnostics.
     getTechStatus() { return this.get('/api/tech/status'); },
     setTechConsent(value) { return this.post('/api/tech/consent', { value }); },
+    setTechUsage(value) { return this.post('/api/tech/usage', { value }); },           // 4.42.0 "count this copy"
+    getCheckinPreview() { return this.get('/api/tech/checkin-preview'); },
     resolveTechPrompt(decision) { return this.post('/api/tech/prompt', { decision }); },
     sendTechTest() { return this.post('/api/tech/test', {}); },
     flushTech() { return this.post('/api/tech/flush', {}); },

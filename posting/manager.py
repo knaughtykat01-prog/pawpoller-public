@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from typing import Any
 
 from database.db import get_connection
@@ -567,6 +568,37 @@ async def post_story(
             if ch_idx != chapter_list[-1]:
                 await poster._rate_limit()
 
+    # Discord announce for stories (4.41.0, spec 008 — stories never announced before).
+    # Once per publish, only if a site succeeded; the picture is the announcement image
+    # the other announcers use, else the thumbnail. Never raises.
+    ok = [r for r in results if r.get("success")]
+    if ok:
+        try:
+            from posting import discord
+            first_ch = min((r.get("chapter_index") or 0) for r in ok)
+            title = getattr(story, "title", "") or story_name.replace("_", " ")
+            if first_ch > 0:
+                title = f"{title} — new chapter"
+            img = getattr(story, "announcement_image", None) or getattr(story, "thumbnail_path", None)
+            if img and not Path(img).is_absolute():
+                img = Path(story.path) / img
+            seen: set[str] = set()
+            links = []
+            for r in ok:
+                if r.get("external_url") and r["platform"] not in seen:
+                    seen.add(r["platform"])
+                    links.append((r["platform"], r["external_url"]))
+            await discord.announce_publish(
+                kind="story", title=title, rating=getattr(story, "rating", "") or "",
+                body=getattr(story, "description", "") or "",
+                tags=list((getattr(story, "tags_by_platform", {}) or {}).get("default")
+                          or (getattr(story, "tags_by_platform", {}) or {}).get("core") or []),
+                site_links=links, platforms=sorted(seen),
+                image_path=img, piece=(getattr(story, "platform_options", None) or {}).get("discord"),
+            )
+        except Exception as e:  # noqa: BLE001 — never break a publish
+            logger.debug("story Discord announce skipped (%s)", type(e).__name__)
+
     return results
 
 
@@ -591,8 +623,12 @@ async def post_artwork(
     description_overrides: dict[str, str] | None = None,
     variant_overrides: dict[str, str] | None = None,
     renders: list[str] | None = None,
+    announce_discord: bool | None = None,
 ) -> list[dict[str, Any]]:
     """Post one artwork (a single image) to multiple platforms.
+
+    ``announce_discord`` is this publish's Discord choice (the tick on the artwork
+    pages, spec 008): True / False, or None to follow the announce-on-publish switch.
 
     The image-posting parallel to ``post_story``: same per-platform posters,
     validation, registry, and desktop-queue/retry fallbacks. The only
@@ -883,18 +919,35 @@ async def post_artwork(
         except OSError:
             pass
 
-    # Discord announce (gap G4) — once per publish if any platform succeeded.
-    # Best-effort; announce_publish self-gates on config + never raises.
+    # Discord announce (gap G4; picture + options 4.41.0, spec 008) — once per publish
+    # if any platform succeeded. Best-effort; announce_publish self-gates and never raises.
     succeeded = [r["platform"] for r in results if r.get("success")]
     if succeeded:
         from posting import discord
-        first_url = next((r.get("external_url") for r in results
-                          if r.get("success") and r.get("external_url")), None)
+        from posting.artwork_reader import _canonical_tag_list
         await discord.announce_publish(
             kind="artwork", title=getattr(artwork, "title", "") or artwork_name,
-            url=first_url, rating=getattr(artwork, "rating", ""), platforms=succeeded,
+            rating=getattr(artwork, "rating", ""), force=announce_discord,
+            body=getattr(artwork, "description", "") or "",
+            tags=_canonical_tag_list(getattr(artwork, "tags_by_platform", {}) or {}),
+            site_links=[(r["platform"], r["external_url"]) for r in results
+                        if r.get("success") and r.get("external_url")],
+            platforms=succeeded,
+            image_path=_discord_preview_source(artwork),
+            piece=(getattr(artwork, "categories_by_platform", {}) or {}).get("discord"),
         )
     return results
+
+
+def _discord_preview_source(artwork) -> Path | None:
+    """The file a Discord preview is made from: the image, or — for a video / audio
+    piece — its poster thumbnail. None when there is nothing to show."""
+    folder = getattr(artwork, "path", None)
+    if not folder:
+        return None
+    kind = getattr(artwork, "media_kind", "image") or "image"
+    name = getattr(artwork, "image", "") if kind == "image" else (getattr(artwork, "thumbnail", "") or "")
+    return Path(folder) / name if name else None
 
 
 async def update_story(

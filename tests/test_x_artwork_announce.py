@@ -50,7 +50,9 @@ class TestAnnounceHelpers:
         assert manager._ANNOUNCES_LAST is announce.ANNOUNCERS
         assert artwork_reader._ANNOUNCERS is announce.ANNOUNCERS
         js = open("frontend/js/artwork.js", encoding="utf-8").read()
-        assert "_ANNOUNCERS: ['tg', 'tw', 'bsky']" in js
+        # The page's list adds 'discord' (4.41.0): an options panel, never a posting
+        # platform, so the backend's post-last list stays the three that post.
+        assert "_ANNOUNCERS: ['tg', 'tw', 'bsky', 'discord']" in js
         assert set(announce.ANNOUNCERS) == {"tg", "tw", "bsky"}
 
     def test_announcers_still_go_last(self):

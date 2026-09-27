@@ -492,11 +492,19 @@ async def publish_post(post_id: int, platforms: list[str],
     succeeded = [platforms[i] for i, r in enumerate(results) if r.get("success")]
     if succeeded:
         from posting import discord
-        first_url = next((r.get("external_url") for r in results
-                          if r.get("success") and r.get("external_url")), None)
+        # 4.41.0 (spec 008): the first image travels with the message, the body is
+        # the description, the sites are named links. The title stays the short line.
+        media = post.get("media") or []
+        if not media and post.get("image_path"):
+            media = [{"path": post["image_path"]}]
+        first_image = next((m["path"] for m in media if m.get("path")), None)
         await discord.announce_publish(
             kind="post",
             title=" ".join((post.get("body") or "").split())[:80] or "New post",
-            url=first_url, rating=post.get("rating"), platforms=succeeded,
+            rating=post.get("rating"), platforms=succeeded,
+            body=post.get("body") or "",
+            site_links=[(platforms[i], r["external_url"]) for i, r in enumerate(results)
+                        if r.get("success") and r.get("external_url")],
+            image_path=first_image,
         )
     return results

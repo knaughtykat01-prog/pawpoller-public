@@ -2853,6 +2853,8 @@ a.stat-card:hover {
     margin-top: 2px;
     flex: 0 0 auto;
 }
+/* A finger-sized box on a phone (the text-field sizing no longer applies to it). */
+html[data-mobile="1"] .tgopt input[type="checkbox"] { width: 20px; height: 20px; margin-top: 0; }
 
 .tgopt strong { color: var(--text-primary); }
 
