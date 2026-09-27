@@ -48,8 +48,10 @@ window.Commissions = {
 
     // ── Hub board ────────────────────────────────────────────────
     async render(archived = false) {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         this._archivedView = archived;
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
                 <div>
@@ -144,7 +146,9 @@ window.Commissions = {
 
     // ── Detail ───────────────────────────────────────────────────
     async renderDetail(id) {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `${ItemFrame.backBar({ href: '#/commissions', label: 'Commissions' })}
             <div id="comm-detail"><div class="loading-spinner">Loading…</div></div>`;
         let c;

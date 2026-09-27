@@ -380,14 +380,17 @@ const Promo = {
     // ── render ───────────────────────────────────────────────────────────────
 
     async render(id = null, query = '') {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
         if (id === 'new') {
             this._state = this.defaultState();
             this._promoId = null; this._bgDirty = false; this._bgCleared = false;
         } else if (id && String(id) !== String(this._promoId)) {
+            if (App._stale(_rt)) return;
             app.innerHTML = '<div class="loading-spinner">Opening the promo…</div>';
             const ok = await this.open(id);
             if (!ok) {
+                if (App._stale(_rt)) return;
                 app.innerHTML = `<div class="page-header"><h1>✨ Promo Maker</h1></div>
                     <div class="card error">That promo no longer exists. <a href="#/promo/new">Make a new one</a></div>`;
                 return;
@@ -408,6 +411,7 @@ const Promo = {
             + `style="background:linear-gradient(135deg,${v.stops[0]},${v.stops[1]})" title="${v.label}"></button>`).join('');
         const custom = s.size.preset === 'custom';
 
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header">
                 <h1>✨ Promo Maker</h1>

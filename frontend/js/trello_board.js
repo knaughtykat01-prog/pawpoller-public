@@ -150,10 +150,12 @@ window.TrelloBoard = {
 
     // ── board picker ─────────────────────────────────────────────────────
     async renderPicker() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         this._stopPoll();
         this.closeCard(true);
         this._boardId = null;
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header">
                 <h1>Boards</h1>
@@ -286,6 +288,7 @@ window.TrelloBoard = {
 
     // ── the board ────────────────────────────────────────────────────────
     async renderBoard(boardId, opts = {}) {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         this._stopPoll();
         this.closeCard(true);
         this._boardId = boardId;
@@ -298,6 +301,7 @@ window.TrelloBoard = {
             ? '<a class="btn btn-sm btn-outline" href="#/commissions/list">&#9776; List view</a>'
             : '<a class="btn btn-sm" href="#/boards">&larr; Boards</a>';
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="tb-page">
                 <div class="tb-head">

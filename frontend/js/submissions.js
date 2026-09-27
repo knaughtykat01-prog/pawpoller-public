@@ -38,7 +38,9 @@ window.Submissions = {
     },
 
     async render() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
                 <div>
@@ -259,7 +261,9 @@ window.Submissions = {
     },
 
     async renderDiscovered() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
                 <div>
@@ -567,7 +571,9 @@ window.Submissions = {
      * forward-only over a snapshot (acted items are done server-side, so we
      * just advance the cursor). */
     async renderTriage() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
                 <div>

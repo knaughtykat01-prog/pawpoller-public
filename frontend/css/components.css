@@ -1815,7 +1815,7 @@ a.stat-card:hover {
     color: var(--text-muted);
 }
 
-.empty-state h3 {
+.empty-state h3, .empty-state h1 {
     font-size: 18px;
     margin-bottom: 8px;
     color: var(--text-secondary);

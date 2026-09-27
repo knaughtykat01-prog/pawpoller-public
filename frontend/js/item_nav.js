@@ -80,6 +80,9 @@
          * this file, so a page only has to call mount(). */
         onKey(e) {
             if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            // Plain arrows only. A modifier means something else: Alt+←/→ reorders a
+            // focused tag chip on the boards (4.39.0) and is the browser's Back/Forward.
+            if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
             if (!this._href) return;
             // Still on the page that mounted this? A hash change does not clear
             // state on its own, so without this the arrows would keep firing on

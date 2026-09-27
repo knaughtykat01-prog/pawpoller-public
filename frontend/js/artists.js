@@ -42,7 +42,9 @@ window.Artists = {
     ],
 
     async render() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
                 <div>

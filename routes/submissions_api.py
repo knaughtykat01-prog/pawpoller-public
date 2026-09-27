@@ -77,6 +77,13 @@ def _posted_dates(conn, pubs: list[dict], artworks: list[dict]) -> dict[tuple, s
     "Earliest" because a piece live on four sites was published once; the
     later ones are reposts, and "when was this made public" is the honest
     reading of "most recent".
+
+    A publication whose site row has not been polled yet — anything PawPoller
+    posted since the last poll, and Telegram, which never gets one — falls back
+    to the publication's own ``first_posted_at`` (4.39.1). Only per ref, only
+    when the row is missing: for a LINKED upload that value is the link day
+    (see the analytics date gotcha), later than the real post, so it never
+    outranks a row.
     """
     wanted: dict[str, set] = {}
     owners: dict[tuple, list[tuple]] = {}
@@ -86,18 +93,19 @@ def _posted_dates(conn, pubs: list[dict], artworks: list[dict]) -> dict[tuple, s
         key = (p.get("content_type", "story"), p["story_name"])
         plat, ext = p.get("platform"), str(p["external_id"])
         wanted.setdefault(plat, set()).add(ext)
-        owners.setdefault(key, []).append((plat, ext))
+        owners.setdefault(key, []).append((plat, ext, p.get("first_posted_at")))
     for a in artworks:
         src = a.get("import_source") or {}
         plat, ext = src.get("platform"), src.get("submission_id")
         if plat and ext:
             wanted.setdefault(plat, set()).add(str(ext))
-            owners.setdefault(("artwork", a["name"]), []).append((plat, str(ext)))
+            owners.setdefault(("artwork", a["name"]), []).append((plat, str(ext), None))
     dates = {plat: platform_metrics.read_posted_at(conn, plat, ids)
              for plat, ids in wanted.items()}
     out: dict[tuple, str] = {}
     for key, refs in owners.items():
-        found = [dates.get(plat, {}).get(ext, "") for plat, ext in refs]
+        found = [dates.get(plat, {}).get(ext) or platform_metrics.normalize_posted(fb)
+                 for plat, ext, fb in refs]
         found = [d for d in found if d]
         if found:
             out[key] = min(found)
@@ -207,6 +215,19 @@ def first_posted_for(content_type: str, name: str, pubs: list[dict],
     finally:
         conn.close()
     return "", ""
+
+
+def recent_key(w: dict) -> tuple:
+    """"Recently posted" order (reverse=True). Anything with a post date ranks
+    above anything without; the undated tail orders by when it was added.
+
+    Until 4.39.1 an undated piece used its added date AMONG the posted ones. On
+    the real library 110 of 172 pieces were never posted, all added by one bulk
+    import, so they sat above every piece posted before that import. Mirrored
+    by bookshelf.js `_recentCmp`.
+    """
+    d = w.get("original_posted_at") or ""
+    return (1, d) if d else (0, w.get("created_at") or "")
 
 
 def assemble_works(
@@ -395,9 +416,8 @@ def assemble_works(
         # Performance sorts (2.147.0) — feed the Overview stat cards' deep-links.
         # `score` joins them now that the booru family's metric survives pooling.
         works.sort(key=lambda w: (w.get("stats") or {}).get(sort, 0), reverse=True)
-    else:  # recent
-        works.sort(key=lambda w: (w.get("original_posted_at") or w.get("created_at") or ""),
-                   reverse=True)
+    else:  # recent — posted work newest first, then never-posted newest-added first
+        works.sort(key=recent_key, reverse=True)
 
     return {
         "works": works,

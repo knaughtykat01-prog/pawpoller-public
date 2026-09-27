@@ -152,7 +152,9 @@ window.Ledger = {
     _events: [],
 
     async render() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="led-head">
                 <div class="led-eyebrow">Almanac</div>

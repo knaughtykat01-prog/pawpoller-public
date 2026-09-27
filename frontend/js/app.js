@@ -131,6 +131,22 @@ const App = {
     async init() {
         /* Listen for hash changes so browser back/forward works */
         window.addEventListener('hashchange', () => this.route());
+        /* A plain click on a link to the address we are already on fires no
+         * hashchange, so nothing reloads — the "it thinks it is that page" bug.
+         * Re-route it. Modified clicks (new tab) and handled clicks are left alone. */
+        document.addEventListener('click', (e) => {
+            if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+            const a = e.target.closest && e.target.closest('a[href^="#/"]');
+            if (!a || a.target || a.getAttribute('href') !== window.location.hash) return;
+            e.preventDefault();
+            this._rerouteSame();
+        });
+
+        /* Tab title = the page's own heading (spec 007, FR-013). Every page has
+         * exactly one <h1> — the page's title, or the item's on a detail page —
+         * so reading it covers every route, including async renders, without
+         * each renderer setting a title it would drift from. */
+        this._watchTitle();
 
         /* ── CSP-safe click delegation ──────────────────────────────
          * Our Content-Security-Policy (dashboard.py) is strict:
@@ -152,7 +168,17 @@ const App = {
             );
             if (!el) return;
             const d = el.dataset;
-            if (d.nav !== undefined) { this.navigate(d.nav); return; }
+            if (d.nav !== undefined) {
+                // A real link (spec 007: the Overview figures carry href so they can be
+                // tabbed to and opened in a new tab). A modified click is the browser's —
+                // new tab / window — and must not ALSO navigate this tab.
+                if (el.tagName === 'A' && el.hasAttribute('href')) {
+                    if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+                    e.preventDefault();
+                }
+                this.navigate(d.nav);
+                return;
+            }
             if (d.poll !== undefined) { this._dashPoll(el, d.poll); return; }
             if (d.resync !== undefined) { this._dashResync(el, d.resync); return; }
             if (d.pausePlat !== undefined) { this._togglePlatformPause(el, d.pausePlat, true); return; }
@@ -900,7 +926,18 @@ const App = {
      * readability (e.g. this.navigate('/login')).
      */
     navigate(path) {
+        // Same address = no hashchange = nothing happens. That left a page stuck when
+        // a slow load had painted the wrong one: the menu item for the page the address
+        // already named did nothing. Re-route instead (4.40.1).
+        if ('#' + String(path).replace(/^#/, '') === window.location.hash) { this._rerouteSame(); return; }
         window.location.hash = path;
+    },
+
+    /* Re-render the current address — a click on the page you are already on.
+     * Not while the story editor holds unsaved edits: re-rendering it would drop them. */
+    _rerouteSame() {
+        if (/^#\/editor\//.test(window.location.hash) && window.Editor && Editor.isDirty) return;
+        this.route();
     },
 
     /* #/commissions (spec 006): the commission board as a Trello board when one is
@@ -919,6 +956,9 @@ const App = {
     /* route() — Main SPA router. Parses hash, toggles sidebar, dispatches to renderer. */
     route() {
         this._stopAutoRefresh();
+        // Every route change bumps this; a slow async render compares it before
+        // painting (see _routeToken / _stale). RESIZERACE, 4.40.1.
+        this._routeGen = (this._routeGen || 0) + 1;
 
         /* Parse hash: '#/fa/submission/42' -> hash='/fa/submission/42', parts=['fa','submission','42']
            A '?key=value' tail is split off BEFORE the path is segmented (2.193.0),
@@ -1440,7 +1480,7 @@ const App = {
         } else if (parts[0] === 'getting-started') {
             if (window.Guides) window.Guides.renderHub();
         } else {
-            this._setContent('<div class="empty-state"><h3>Page not found</h3></div>');
+            this._setContent('<div class="empty-state"><h1>Page not found</h1></div>');
         }
     },
 
@@ -1488,7 +1528,7 @@ const App = {
             library: 'Library', posting: 'Stories', editor: 'Story Editor',
             analytics: 'Analytics', inbox: 'Inbox', laurels: 'Laurels', ledger: 'Activity', groups: 'Groups', 'cross-platform': 'Cross-Platform',
             accounts: 'Accounts', settings: 'Settings',
-            boards: 'Boards', commissions: 'Commissions',
+            boards: 'Boards', commissions: 'Commissions', masterpieces: 'Library',
         };
         let crumb;
         if (p0 === 'posting' && parts[1] === 'queue') {
@@ -1604,6 +1644,34 @@ const App = {
             this.route();   // re-dispatch to the platform render, now scoped
         });
     },
+
+    _watchTitle() {
+        const main = document.getElementById('app');
+        if (!main || typeof MutationObserver === 'undefined') return;
+        let timer = null;
+        const apply = () => {
+            timer = null;
+            const h = main.querySelector('h1');
+            // The heading's own text first: a badge inside it (a video piece's
+            // "▶ 0:22 video") is not part of the name. Falls back to the whole
+            // text for a heading that is all markup (a link, a span).
+            const own = h ? [...h.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join(' ') : '';
+            const name = (own.trim() ? own : (h ? h.textContent : '')).replace(/\s+/g, ' ').trim();
+            const title = name ? `${name} · PawPoller` : 'PawPoller';
+            if (document.title !== title) document.title = title;
+        };
+        new MutationObserver(() => { if (!timer) timer = setTimeout(apply, 120); })
+            .observe(main, { childList: true, subtree: true, characterData: true });
+        apply();
+    },
+
+    /* A slow render takes a token when it starts and checks it before painting:
+     * if the route changed meanwhile (a click, or the resize watcher re-routing),
+     * painting would cover the page the user is now on. RESIZERACE, 4.40.1.
+     * Used by the Overview and every per-platform dashboard (render*Dashboard) —
+     * the pages the resize watcher and auto-refresh re-render. */
+    _routeToken() { return this._routeGen || 0; },
+    _stale(token) { return token !== (this._routeGen || 0); },
 
     /* _setContent() — DOM helper: replaces the #app main content area with the given HTML string. */
     _setContent(html) {
@@ -2401,6 +2469,7 @@ const App = {
      * pp_session cookie and we re-init the app. */
 
     async renderDashboardLogin() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         if (this._statusCheckInterval) {
             clearInterval(this._statusCheckInterval);
             this._statusCheckInterval = null;
@@ -2414,6 +2483,7 @@ const App = {
             turnstileSiteKey = status.turnstile_site_key || '';
         } catch { /* proceed with defaults */ }
 
+        if (this._stale(_rt)) return;
         this._setContent(`
             <div class="login-screen">
                 <div class="login-card">
@@ -2638,6 +2708,7 @@ const App = {
     },
 
     async renderSetupWizard() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         /* Platform definitions for the platform-connect step — reuses emoji + colour from the nav grid */
         const platforms = [
             { key: 'ib', name: 'Inkbunny', emoji: '&#128062;', color: 'var(--platform-ib)', url: 'https://inkbunny.net/login.php' },
@@ -2966,6 +3037,7 @@ const App = {
                     <button class="btn btn-primary login-btn" id="setup-finish">Go to Dashboard</button>`}`;
             }
 
+            if (this._stale(_rt)) return;
             this._setContent(`
                 <div class="login-screen">
                     <div class="login-card setup-wizard">
@@ -3404,6 +3476,7 @@ const App = {
      * status dot (populated by platform_health via #pg-status-{code}).
      * Replaces the old modal popover; driven by window.PLATFORMS. */
     async renderPlatformsHub() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         const plats = window.PLATFORMS || [];
         const fetchers = {
@@ -3467,9 +3540,10 @@ const App = {
                 </a>`;
         }).join('');
 
+        if (this._stale(_rt)) return;
         this._setContent(`
             <div class="page-header">
-                <h2>Platforms</h2>
+                <h1>Platforms</h1>
             </div>
             <div class="hub-grid" id="platform-grid">${tiles}</div>
             <p class="logo-disclaimer">Platform names and logos are trademarks of their respective owners.
@@ -3485,6 +3559,7 @@ const App = {
     },
 
     async renderOverview() {
+        const token = this._routeToken();
         this._loading();
         try {
             /* Fetch every platform's summary + aggregate in parallel, driven by
@@ -3587,6 +3662,7 @@ const App = {
             recentActivity.sort((a, b) => new Date(b.first_seen_at || 0) - new Date(a.first_seen_at || 0));
 
             const prefs = await API.getPreferences().catch(() => ({}));
+            if (this._stale(token)) return;   // the user moved on while we fetched
 
             /* Compact per-platform roll-up. Every widget that shows per-platform
              * numbers (Platform breakdown, Platforms live, Best platform) reads
@@ -3680,6 +3756,7 @@ const App = {
             this._renderDashboard();
             this._startAutoRefresh(() => { if (!this._dashEdit) this.renderOverview(); });
         } catch (err) {
+            if (this._stale(token)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading overview</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -3813,7 +3890,7 @@ const App = {
         const stat = (label, value, nav) => {
             const inner = `<div class="wtitle">${label}${note}</div><div class="w-num">${Utils.formatCompact(value || 0)}</div>`;
             return (nav && !this._dashEdit)
-                ? `<a class="dash-stat-link" data-nav="${nav}" title="View your works">${inner}</a>`
+                ? `<a class="dash-stat-link" href="${nav}" data-nav="${nav}" title="View your works">${inner}</a>`
                 : inner;
         };
         switch (id) {
@@ -3860,7 +3937,7 @@ const App = {
                 const shown = (ctx.platRollup || []).filter(p => vis(p.code));
                 const live = shown.filter(p => p.subs > 0);
                 return `<div class="wtitle">Platforms live${note}</div>`
-                    + `<a class="dash-stat-link" data-nav="#/platforms" title="Open the Platforms hub">`
+                    + `<a class="dash-stat-link" href="#/platforms" data-nav="#/platforms" title="Open the Platforms hub">`
                     + `<div class="w-num">${live.length}<span style="font-size:.45em;color:var(--text-muted)"> / ${shown.length}</span></div>`
                     + `<div class="dash-sub">${live.length ? live.slice(0, 6).map(p => Utils.escapeHtml(p.label)).join(' · ') : 'Nothing posted yet'}</div></a>`;
             }
@@ -3916,7 +3993,7 @@ const App = {
             { nav: '#/podcasts', icon: '\u{1F399}', label: 'Podcasts' },
         ];
         return `<div class="dash-quicklinks">` + links.map(l =>
-            `<a class="dash-ql" data-nav="${l.nav}"><span class="dash-ql-ico">${l.icon}</span>`
+            `<a class="dash-ql" href="${l.nav}" data-nav="${l.nav}"><span class="dash-ql-ico">${l.icon}</span>`
             + `<span>${l.label}</span></a>`).join('') + `</div>`;
     },
 
@@ -3985,7 +4062,7 @@ const App = {
         const P = (window.PLATFORMS || []).find(p => p.code === top.code);
         const runner = ranked[1];
         return `<div class="wtitle">Best platform${note || ''}</div>`
-            + `<a class="dash-stat-link" data-nav="#/${top.code}" title="Open ${Utils.escapeHtml(top.label)}">`
+            + `<a class="dash-stat-link" href="#/${top.code}" data-nav="#/${top.code}" title="Open ${Utils.escapeHtml(top.label)}">`
             + `<div class="dash-spot-title">${P && P.emoji ? P.emoji + ' ' : ''}${Utils.escapeHtml(top.label)}</div>`
             + `<div class="dash-spot-stats"><span><b>${Utils.formatCompact(top.views)}</b> views</span>`
             + `<span><b>${Utils.formatCompact(top.subs)}</b> works</span></div>`
@@ -4008,7 +4085,7 @@ const App = {
                 + `<span class="muted">${Utils.escapeHtml(q.status || 'pending')}</span></div>`;
         }).join('');
         const more = items.length > 6 ? `<div class="dash-sub">+${items.length - 6} more</div>` : '';
-        return `<a class="dash-stat-link" data-nav="#/posting/queue" title="Open the posting queue">${rows}${more}</a>`;
+        return `<a class="dash-stat-link" href="#/posting/queue" data-nav="#/posting/queue" title="Open the posting queue">${rows}${more}</a>`;
     },
 
     /* Credits (Settings → About, 4.32.3): the people the operator wants to thank.
@@ -4880,7 +4957,7 @@ const App = {
         const addTile = edit ? '<button class="dash-addw" id="dash-addw"><span class="dash-addw-plus">+</span>Add widget</button>' : '';
 
         const html = `${this._refreshIndicatorHtml()}`
-            + `<div class="page-header"><h2>Overview</h2>${tools}</div>${hint}`
+            + `<div class="page-header"><h1>Overview</h1>${tools}</div>${hint}`
             + `<div class="dash-grid${edit ? ' editing' : ''}" id="dash-grid">${cells}${addTile}</div>`;
 
         Charts.destroyAll();
@@ -5071,6 +5148,7 @@ const App = {
      * comments. Binds date range bar and starts auto-refresh. */
 
     async renderDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             /* Fetch IB summary stats, aggregate snapshots, pins, and goals in parallel.
@@ -5090,9 +5168,10 @@ const App = {
             const ibHealth = window.PlatformHealth && window.PlatformHealth.get('ib');
             const isUnconfigured = ibHealth && ibHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Inkbunny Dashboard</h2></div>
+                    <div class="page-header"><h1>Inkbunny Dashboard</h1></div>
                     ${Components.platformEmptyState('ib', isUnconfigured ? {} : { reason: 'Inkbunny is configured but no submissions have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -5101,7 +5180,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Inkbunny Dashboard</h2>
+                    <h1>Inkbunny Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="ib">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="ib">Full Resync</button>
@@ -5162,6 +5241,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             // Render charts
@@ -5181,6 +5261,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -5192,6 +5273,7 @@ const App = {
      * (_bindSearch). Starts auto-refresh. */
 
     async renderSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getSubmissions({
@@ -5217,7 +5299,7 @@ const App = {
             const gridHtml = ibGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Submissions</h2></div>
+                <div class="page-header"><h1>Submissions</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search titles and keywords...">
                     <select class="filter-select" id="filter-rating">
@@ -5243,6 +5325,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindTableSort();
@@ -5250,6 +5333,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -5258,6 +5342,7 @@ const App = {
      * time-series chart, faving users table, comments. Date range re-fetches snapshots only. */
 
     async renderDetail(id) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -5273,7 +5358,7 @@ const App = {
                 ${this._refreshIndicatorHtml()}
                 <a href="#/ib/submissions" class="back-link">&larr; Back to Submissions</a>
                 <div class="detail-header">
-                    ${sub.thumb_url ? `<img src="${Utils.thumbUrl(sub.thumb_url)}" class="detail-thumb">` : ''}
+                    ${sub.thumb_url ? `<img src="${Utils.thumbUrl(sub.thumb_url)}" class="detail-thumb" alt="">` : ''}
                     <div class="detail-info">
                         <h2>${Utils.escapeHtml(sub.title)}</h2>
                         <div class="detail-meta">by ${Utils.escapeHtml(sub.username)} &middot; ${Utils.formatDate(sub.create_datetime)} &middot; ${Utils.escapeHtml(sub.type_name)} &middot; ${Utils.escapeHtml(sub.rating_name)}</div>
@@ -5312,6 +5397,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -5328,6 +5414,7 @@ const App = {
             this._bindDetailPinTag('ib', id, allTags.tags || [], () => this.renderDetail(id));
             this._startAutoRefresh(() => this.renderDetail(id));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading submission</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -5337,6 +5424,7 @@ const App = {
      * date changes re-render only the chart via _loadComparisonChart(). */
 
     async renderCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('ib') });
@@ -5353,7 +5441,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare Submissions</h2>
+                    <h1>Compare Submissions</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._compareMetric === 'views' ? 'selected' : ''}>Views</option>
@@ -5374,6 +5462,7 @@ const App = {
                 ${this._compareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 submissions above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             /* Chip click handlers: toggle selection in _compareIds (max 5), re-render page */
@@ -5407,6 +5496,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -5437,6 +5527,7 @@ const App = {
     // and a recent comments panel.
 
     async renderFADashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -5452,9 +5543,10 @@ const App = {
             const faHealth = window.PlatformHealth && window.PlatformHealth.get('fa');
             const isUnconfigured = faHealth && faHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>FurAffinity Dashboard</h2></div>
+                    <div class="page-header"><h1>FurAffinity Dashboard</h1></div>
                     ${Components.platformEmptyState('fa', isUnconfigured ? {} : { reason: 'FurAffinity is configured but no submissions have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -5463,7 +5555,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>FurAffinity Dashboard</h2>
+                    <h1>FurAffinity Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="fa">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="fa">Full Resync</button>
@@ -5521,6 +5613,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             // Render charts only when data exists to avoid empty canvas errors
@@ -5538,6 +5631,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderFADashboard());
             this._startAutoRefresh(() => this.renderFADashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading FA dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -5548,6 +5642,7 @@ const App = {
     // _faSortState. Search/filter is client-side against the full data set.
 
     async renderFASubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             // Fetch all FA submissions, sorted according to current sort state
@@ -5575,7 +5670,7 @@ const App = {
             const gridHtml = faGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>FA Submissions</h2></div>
+                <div class="page-header"><h1>FA Submissions</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search titles and keywords...">
                     <select class="filter-select" id="filter-rating">
@@ -5595,12 +5690,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindFATableSort();
             this._bindFASearch(data.submissions, faGridRenderer);
             this._startAutoRefresh(() => this.renderFASubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading FA submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -5614,6 +5711,7 @@ const App = {
     // because the FA API does not expose who faved a submission.
 
     async renderFADetail(id) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -5629,7 +5727,7 @@ const App = {
                 ${this._refreshIndicatorHtml()}
                 <a href="#/fa/submissions" class="back-link">&larr; Back to FA Submissions</a>
                 <div class="detail-header">
-                    ${sub.thumbnail_url ? `<img src="${Utils.faThumbUrl(sub.thumbnail_url)}" class="detail-thumb">` : ''}
+                    ${sub.thumbnail_url ? `<img src="${Utils.faThumbUrl(sub.thumbnail_url)}" class="detail-thumb" alt="">` : ''}
                     <div class="detail-info">
                         <h2>${Utils.escapeHtml(sub.title)}</h2>
                         <div class="detail-meta">by ${Utils.escapeHtml(sub.username)} &middot; ${Utils.formatDate(sub.posted_at)} &middot; ${Utils.escapeHtml(sub.rating || '')}</div>
@@ -5669,6 +5767,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             // Render the stats-over-time line chart if snapshot data is available
@@ -5687,6 +5786,7 @@ const App = {
             this._bindDetailPinTag('fa', id, allTags.tags || [], () => this.renderFADetail(id));
             this._startAutoRefresh(() => this.renderFADetail(id));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading FA submission</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -5699,6 +5799,7 @@ const App = {
     // and the active metric lives in _faCompareMetric.
 
     async renderFACompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             // Fetch all FA submissions sorted by views to populate the chip selector
@@ -5716,7 +5817,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare FA Submissions</h2>
+                    <h1>Compare FA Submissions</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._faCompareMetric === 'views' ? 'selected' : ''}>Views</option>
@@ -5737,6 +5838,7 @@ const App = {
                 ${this._faCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 submissions above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             // Chip click handlers: toggle selection, cap at 5, re-render to update visual state
@@ -5772,6 +5874,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderFACompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -5801,6 +5904,7 @@ const App = {
     // CSV export button in the header.
 
     async renderWSDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -5816,9 +5920,10 @@ const App = {
             const wsHealth = window.PlatformHealth && window.PlatformHealth.get('ws');
             const isUnconfigured = wsHealth && wsHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Weasyl Dashboard</h2></div>
+                    <div class="page-header"><h1>Weasyl Dashboard</h1></div>
                     ${Components.platformEmptyState('ws', isUnconfigured ? {} : { reason: 'Weasyl is configured but no submissions have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -5827,7 +5932,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Weasyl Dashboard</h2>
+                    <h1>Weasyl Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="ws">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="ws">Full Resync</button>
@@ -5873,6 +5978,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             // Conditionally render each chart only when data exists
@@ -5891,6 +5997,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderWSDashboard());
             this._startAutoRefresh(() => this.renderWSDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading WS dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -5902,6 +6009,7 @@ const App = {
     // the same pattern using _wsSortState and _bindWSSearch/_bindWSTableSort.
 
     async renderWSSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             // Fetch WS submissions with current sort column and direction
@@ -5925,7 +6033,7 @@ const App = {
             const gridHtml = wsGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Weasyl Submissions</h2></div>
+                <div class="page-header"><h1>Weasyl Submissions</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search titles and keywords...">
                     <select class="filter-select" id="filter-rating">
@@ -5945,12 +6053,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindWSTableSort();
             this._bindWSSearch(data.submissions, wsGridRenderer);
             this._startAutoRefresh(() => this.renderWSSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading WS submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -5963,6 +6073,7 @@ const App = {
     // and a stats-over-time chart.
 
     async renderWSDetail(id) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -5978,7 +6089,7 @@ const App = {
                 ${this._refreshIndicatorHtml()}
                 <a href="#/ws/submissions" class="back-link">&larr; Back to WS Submissions</a>
                 <div class="detail-header">
-                    ${sub.thumbnail_url ? `<img src="${Utils.escapeHtml(sub.thumbnail_url)}" class="detail-thumb">` : ''}
+                    ${sub.thumbnail_url ? `<img src="${Utils.escapeHtml(sub.thumbnail_url)}" class="detail-thumb" alt="">` : ''}
                     <div class="detail-info">
                         <h2>${Utils.escapeHtml(sub.title)}</h2>
                         <div class="detail-meta">by ${Utils.escapeHtml(sub.username)} &middot; ${Utils.formatDate(sub.posted_at)} &middot; ${Utils.escapeHtml(sub.rating || '')}</div>
@@ -6007,6 +6118,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             // Render stats-over-time chart if snapshot data exists
@@ -6024,6 +6136,7 @@ const App = {
             this._bindDetailPinTag('ws', id, allTags.tags || [], () => this.renderWSDetail(id));
             this._startAutoRefresh(() => this.renderWSDetail(id));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading WS submission</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6033,6 +6146,7 @@ const App = {
     // comparison pages. Selected IDs in _wsCompareIds, metric in _wsCompareMetric.
 
     async renderWSCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             // Fetch all WS submissions sorted by views for chip population
@@ -6050,7 +6164,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare WS Submissions</h2>
+                    <h1>Compare WS Submissions</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._wsCompareMetric === 'views' ? 'selected' : ''}>Views</option>
@@ -6071,6 +6185,7 @@ const App = {
                 ${this._wsCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 submissions above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             // Chip click handlers: toggle selection in _wsCompareIds (max 5), re-render
@@ -6106,6 +6221,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderWSCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6129,6 +6245,7 @@ const App = {
     // SoFurry-specific dashboard. Same layout as WS dashboard.
 
     async renderSFDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -6146,10 +6263,11 @@ const App = {
             const sfHealth = window.PlatformHealth && window.PlatformHealth.get('sf');
             const isUnconfigured = sfHealth && sfHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
                     <div class="page-header">
-                        <h2>SoFurry Dashboard</h2>
+                        <h1>SoFurry Dashboard</h1>
                     </div>
                     ${Components.platformEmptyState('sf', isUnconfigured
                         ? {}
@@ -6161,7 +6279,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>SoFurry Dashboard</h2>
+                    <h1>SoFurry Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="sf">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="sf">Full Resync</button>
@@ -6212,6 +6330,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -6228,6 +6347,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderSFDashboard());
             this._startAutoRefresh(() => this.renderSFDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading SF dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6235,6 +6355,7 @@ const App = {
     // ── SF Submissions ────────────────────────────────────────
 
     async renderSFSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getSFSubmissions({
@@ -6257,7 +6378,7 @@ const App = {
             const gridHtml = sfGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>SoFurry Submissions</h2></div>
+                <div class="page-header"><h1>SoFurry Submissions</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search titles and keywords...">
                     <select class="filter-select" id="filter-rating">
@@ -6277,12 +6398,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindSFTableSort();
             this._bindSFSearch(data.submissions, sfGridRenderer);
             this._startAutoRefresh(() => this.renderSFSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading SF submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6290,6 +6413,7 @@ const App = {
     // ── SF Submission Detail ──────────────────────────────────
 
     async renderSFDetail(id) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -6305,7 +6429,7 @@ const App = {
                 ${this._refreshIndicatorHtml()}
                 <a href="#/sf/submissions" class="back-link">&larr; Back to SF Submissions</a>
                 <div class="detail-header">
-                    ${sub.thumbnail_url ? `<img src="${Utils.escapeHtml(sub.thumbnail_url)}" class="detail-thumb">` : ''}
+                    ${sub.thumbnail_url ? `<img src="${Utils.escapeHtml(sub.thumbnail_url)}" class="detail-thumb" alt="">` : ''}
                     <div class="detail-info">
                         <h2>${Utils.escapeHtml(sub.title)}</h2>
                         <div class="detail-meta">by ${Utils.escapeHtml(sub.username)} &middot; ${Utils.escapeHtml(sub.posted_at || '')} &middot; ${Utils.escapeHtml(sub.rating || '')}</div>
@@ -6334,6 +6458,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -6349,6 +6474,7 @@ const App = {
             this._bindDetailPinTag('sf', id, allTags.tags || [], () => this.renderSFDetail(id));
             this._startAutoRefresh(() => this.renderSFDetail(id));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading SF submission</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6356,6 +6482,7 @@ const App = {
     // ── SF Compare ────────────────────────────────────────────
 
     async renderSFCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getSFSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('sf') });
@@ -6371,7 +6498,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare SF Submissions</h2>
+                    <h1>Compare SF Submissions</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._sfCompareMetric === 'views' ? 'selected' : ''}>Views</option>
@@ -6392,6 +6519,7 @@ const App = {
                 ${this._sfCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 submissions above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -6423,6 +6551,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderSFCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6443,6 +6572,7 @@ const App = {
     // ── SQW Dashboard ──────────────────────────────────────────
 
     async renderSQWDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -6458,9 +6588,10 @@ const App = {
             const sqwHealth = window.PlatformHealth && window.PlatformHealth.get('sqw');
             const isUnconfigured = sqwHealth && sqwHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>SquidgeWorld Dashboard</h2></div>
+                    <div class="page-header"><h1>SquidgeWorld Dashboard</h1></div>
                     ${Components.platformEmptyState('sqw', isUnconfigured ? {} : { reason: 'SquidgeWorld is configured but no works have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -6469,7 +6600,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>SquidgeWorld Dashboard</h2>
+                    <h1>SquidgeWorld Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="sqw">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="sqw">Full Resync</button>
@@ -6515,6 +6646,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -6531,6 +6663,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderSQWDashboard());
             this._startAutoRefresh(() => this.renderSQWDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading SqW dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6538,6 +6671,7 @@ const App = {
     // ── SQW Submissions ────────────────────────────────────────
 
     async renderSQWSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getSQWSubmissions({
@@ -6560,7 +6694,7 @@ const App = {
             const gridHtml = sqwGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>SquidgeWorld Works</h2></div>
+                <div class="page-header"><h1>SquidgeWorld Works</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search titles and tags...">
                     <select class="filter-select" id="filter-rating">
@@ -6581,12 +6715,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindSQWTableSort();
             this._bindSQWSearch(data.submissions, sqwGridRenderer);
             this._startAutoRefresh(() => this.renderSQWSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading SqW submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6594,6 +6730,7 @@ const App = {
     // ── SQW Submission Detail ──────────────────────────────────
 
     async renderSQWDetail(id) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -6638,6 +6775,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -6653,6 +6791,7 @@ const App = {
             this._bindDetailPinTag('sqw', id, allTags.tags || [], () => this.renderSQWDetail(id));
             this._startAutoRefresh(() => this.renderSQWDetail(id));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading SqW work</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6660,6 +6799,7 @@ const App = {
     // ── SQW Compare ────────────────────────────────────────────
 
     async renderSQWCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getSQWSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('sqw') });
@@ -6675,7 +6815,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare SqW Works</h2>
+                    <h1>Compare SqW Works</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._sqwCompareMetric === 'views' ? 'selected' : ''}>Hits</option>
@@ -6696,6 +6836,7 @@ const App = {
                 ${this._sqwCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 works above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -6727,6 +6868,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderSQWCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6747,6 +6889,7 @@ const App = {
     // ── AO3 Dashboard ──────────────────────────────────────────
 
     async renderAO3Dashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -6762,9 +6905,10 @@ const App = {
             const ao3Health = window.PlatformHealth && window.PlatformHealth.get('ao3');
             const isUnconfigured = ao3Health && ao3Health.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>AO3 Dashboard</h2></div>
+                    <div class="page-header"><h1>AO3 Dashboard</h1></div>
                     ${Components.platformEmptyState('ao3', isUnconfigured ? {} : { reason: 'AO3 is configured but no works have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -6773,7 +6917,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>AO3 Dashboard</h2>
+                    <h1>AO3 Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="ao3">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="ao3">Full Resync</button>
@@ -6819,6 +6963,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -6835,6 +6980,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderAO3Dashboard());
             this._startAutoRefresh(() => this.renderAO3Dashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading AO3 dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6842,6 +6988,7 @@ const App = {
     // ── AO3 Submissions ────────────────────────────────────────
 
     async renderAO3Submissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getAO3Submissions({
@@ -6864,7 +7011,7 @@ const App = {
             const gridHtml = ao3GridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>AO3 Works</h2></div>
+                <div class="page-header"><h1>AO3 Works</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search titles and tags...">
                     <select class="filter-select" id="filter-rating">
@@ -6885,12 +7032,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindAO3TableSort();
             this._bindAO3Search(data.submissions, ao3GridRenderer);
             this._startAutoRefresh(() => this.renderAO3Submissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading AO3 submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6898,6 +7047,7 @@ const App = {
     // ── AO3 Submission Detail ──────────────────────────────────
 
     async renderAO3Detail(id) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -6942,6 +7092,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -6957,6 +7108,7 @@ const App = {
             this._bindDetailPinTag('ao3', id, allTags.tags || [], () => this.renderAO3Detail(id));
             this._startAutoRefresh(() => this.renderAO3Detail(id));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading AO3 work</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -6964,6 +7116,7 @@ const App = {
     // ── AO3 Compare ────────────────────────────────────────────
 
     async renderAO3Compare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getAO3Submissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('ao3') });
@@ -6979,7 +7132,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare AO3 Works</h2>
+                    <h1>Compare AO3 Works</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._ao3CompareMetric === 'views' ? 'selected' : ''}>Hits</option>
@@ -7000,6 +7153,7 @@ const App = {
                 ${this._ao3CompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 works above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -7031,6 +7185,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderAO3Compare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7053,6 +7208,7 @@ const App = {
     // growth rates, top lists (top viewed, top faved, top downloaded), and poll log.
 
     async renderDADashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -7068,9 +7224,10 @@ const App = {
             const daHealth = window.PlatformHealth && window.PlatformHealth.get('da');
             const isUnconfigured = daHealth && daHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>DeviantArt Dashboard</h2></div>
+                    <div class="page-header"><h1>DeviantArt Dashboard</h1></div>
                     ${Components.platformEmptyState('da', isUnconfigured ? {} : { reason: 'DeviantArt is configured but no deviations have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -7079,7 +7236,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>DeviantArt Dashboard</h2>
+                    <h1>DeviantArt Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="da">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="da">Full Resync</button>
@@ -7130,6 +7287,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -7150,6 +7308,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderDADashboard());
             this._startAutoRefresh(() => this.renderDADashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading DA dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7159,6 +7318,7 @@ const App = {
     // Includes Downloads column unique to DeviantArt.
 
     async renderDASubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getDASubmissions({
@@ -7181,7 +7341,7 @@ const App = {
             const gridHtml = daGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>DA Submissions</h2></div>
+                <div class="page-header"><h1>DA Submissions</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search titles and keywords...">
                     <select class="filter-select" id="filter-rating">
@@ -7200,12 +7360,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindDATableSort();
             this._bindDASearch(data.submissions, daGridRenderer);
             this._startAutoRefresh(() => this.renderDASubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading DA submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7214,6 +7376,7 @@ const App = {
     // Individual DA submission detail page with 4 metrics including Downloads.
 
     async renderDADetail(id) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -7229,7 +7392,7 @@ const App = {
                 ${this._refreshIndicatorHtml()}
                 <a href="#/da/submissions" class="back-link">&larr; Back to DA Submissions</a>
                 <div class="detail-header">
-                    ${sub.thumbnail_url ? `<img src="${Utils.escapeHtml(sub.thumbnail_url)}" class="detail-thumb">` : ''}
+                    ${sub.thumbnail_url ? `<img src="${Utils.escapeHtml(sub.thumbnail_url)}" class="detail-thumb" alt="">` : ''}
                     <div class="detail-info">
                         <h2>${Utils.escapeHtml(sub.title)}</h2>
                         <div class="detail-meta">by ${Utils.escapeHtml(sub.username)} &middot; ${Utils.formatDate(sub.posted_at)} &middot; ${Utils.escapeHtml(sub.rating || '')}</div>
@@ -7259,6 +7422,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -7274,6 +7438,7 @@ const App = {
             this._bindDetailPinTag('da', id, allTags.tags || [], () => this.renderDADetail(id));
             this._startAutoRefresh(() => this.renderDADetail(id));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading DA submission</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7282,6 +7447,7 @@ const App = {
     // DA comparison page with Downloads as an additional metric option.
 
     async renderDACompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getDASubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('da') });
@@ -7297,7 +7463,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare DA Submissions</h2>
+                    <h1>Compare DA Submissions</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._daCompareMetric === 'views' ? 'selected' : ''}>Views</option>
@@ -7319,6 +7485,7 @@ const App = {
                 ${this._daCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 submissions above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -7350,6 +7517,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderDACompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7372,6 +7540,7 @@ const App = {
     // Uses Wattpad-specific metric names throughout.
 
     async renderWPDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -7387,9 +7556,10 @@ const App = {
             const wpHealth = window.PlatformHealth && window.PlatformHealth.get('wp');
             const isUnconfigured = wpHealth && wpHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Wattpad Dashboard</h2></div>
+                    <div class="page-header"><h1>Wattpad Dashboard</h1></div>
                     ${Components.platformEmptyState('wp', isUnconfigured ? {} : { reason: 'Wattpad is configured but no stories have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -7398,7 +7568,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Wattpad Dashboard</h2>
+                    <h1>Wattpad Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="wp">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="wp">Full Resync</button>
@@ -7463,6 +7633,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -7474,6 +7645,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderWPDashboard());
             this._startAutoRefresh(() => this.renderWPDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading WP dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7482,6 +7654,7 @@ const App = {
     // Wattpad submissions table with Reads, Votes, Comments, Lists columns.
 
     async renderWPSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getWPSubmissions({
@@ -7504,7 +7677,7 @@ const App = {
             const gridHtml = wpGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>WP Submissions</h2></div>
+                <div class="page-header"><h1>WP Submissions</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search titles...">
                     <div class="view-toggle">
@@ -7518,12 +7691,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindWPTableSort();
             this._bindWPSearch(data.submissions, wpGridRenderer);
             this._startAutoRefresh(() => this.renderWPSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading WP submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7532,6 +7707,7 @@ const App = {
     // Individual Wattpad submission detail with 4 metrics: reads, votes, comments, num_lists.
 
     async renderWPDetail(id) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -7547,7 +7723,7 @@ const App = {
                 ${this._refreshIndicatorHtml()}
                 <a href="#/wp/submissions" class="back-link">&larr; Back to WP Submissions</a>
                 <div class="detail-header">
-                    ${sub.cover_url ? `<img src="${Utils.escapeHtml(sub.cover_url)}" class="detail-thumb">` : ''}
+                    ${sub.cover_url ? `<img src="${Utils.escapeHtml(sub.cover_url)}" class="detail-thumb" alt="">` : ''}
                     <div class="detail-info">
                         <h2>${Utils.escapeHtml(sub.title)}</h2>
                         <div class="detail-meta">by ${Utils.escapeHtml(sub.username)} &middot; ${Utils.formatDate(sub.posted_at)}</div>
@@ -7577,6 +7753,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -7592,6 +7769,7 @@ const App = {
             this._bindDetailPinTag('wp', id, allTags.tags || [], () => this.renderWPDetail(id));
             this._startAutoRefresh(() => this.renderWPDetail(id));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading WP submission</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7600,6 +7778,7 @@ const App = {
     // Wattpad comparison page with reads, votes, comments_count, num_lists metrics.
 
     async renderWPCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getWPSubmissions({ sort_by: 'reads', order: 'desc', account_id: this._acctId('wp') });
@@ -7615,7 +7794,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare WP Submissions</h2>
+                    <h1>Compare WP Submissions</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="reads" ${this._wpCompareMetric === 'reads' ? 'selected' : ''}>Reads</option>
@@ -7637,6 +7816,7 @@ const App = {
                 ${this._wpCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 submissions above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -7668,6 +7848,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderWPCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7689,6 +7870,7 @@ const App = {
     // Itaku dashboard with Likes, Comments, Reshares stat cards (NO views).
 
     async renderIKDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -7704,9 +7886,10 @@ const App = {
             const ikHealth = window.PlatformHealth && window.PlatformHealth.get('ik');
             const isUnconfigured = ikHealth && ikHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Itaku Dashboard</h2></div>
+                    <div class="page-header"><h1>Itaku Dashboard</h1></div>
                     ${Components.platformEmptyState('ik', isUnconfigured ? {} : { reason: 'Itaku is configured but no content has been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -7715,7 +7898,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Itaku Dashboard</h2>
+                    <h1>Itaku Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="ik">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="ik">Full Resync</button>
@@ -7774,6 +7957,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -7785,6 +7969,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderIKDashboard());
             this._startAutoRefresh(() => this.renderIKDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading IK dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7793,6 +7978,7 @@ const App = {
     // Itaku submissions table with Type, Likes, Comments, Reshares columns (no views).
 
     async renderIKSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getIKSubmissions({
@@ -7815,7 +8001,7 @@ const App = {
             const gridHtml = ikGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>IK Submissions</h2></div>
+                <div class="page-header"><h1>IK Submissions</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search titles...">
                     <div class="view-toggle">
@@ -7829,12 +8015,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindIKTableSort();
             this._bindIKSearch(data.submissions, ikGridRenderer);
             this._startAutoRefresh(() => this.renderIKSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading IK submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7843,6 +8031,7 @@ const App = {
     // Individual Itaku submission detail with 3 metrics: likes, comments, reshares (no views).
 
     async renderIKDetail(id) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -7858,7 +8047,7 @@ const App = {
                 ${this._refreshIndicatorHtml()}
                 <a href="#/ik/submissions" class="back-link">&larr; Back to IK Submissions</a>
                 <div class="detail-header">
-                    ${sub.thumbnail_url ? `<img src="${Utils.escapeHtml(sub.thumbnail_url)}" class="detail-thumb">` : ''}
+                    ${sub.thumbnail_url ? `<img src="${Utils.escapeHtml(sub.thumbnail_url)}" class="detail-thumb" alt="">` : ''}
                     <div class="detail-info">
                         <h2>${Utils.escapeHtml(sub.title)}</h2>
                         <div class="detail-meta">by ${Utils.escapeHtml(sub.username)} &middot; ${Utils.formatDate(sub.posted_at)} &middot; ${Utils.escapeHtml(Components.BSKY_TYPE_LABELS[sub.content_type] || sub.content_type || 'Post')}</div>
@@ -7887,6 +8076,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -7902,6 +8092,7 @@ const App = {
             this._bindDetailPinTag('ik', id, allTags.tags || [], () => this.renderIKDetail(id));
             this._startAutoRefresh(() => this.renderIKDetail(id));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading IK submission</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7910,6 +8101,7 @@ const App = {
     // Itaku comparison page with likes, comments_count, reshares metrics (no views).
 
     async renderIKCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getIKSubmissions({ sort_by: 'likes', order: 'desc', account_id: this._acctId('ik') });
@@ -7925,7 +8117,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare IK Submissions</h2>
+                    <h1>Compare IK Submissions</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="likes" ${this._ikCompareMetric === 'likes' ? 'selected' : ''}>Likes</option>
@@ -7946,6 +8138,7 @@ const App = {
                 ${this._ikCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 submissions above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -7977,6 +8170,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderIKCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -7998,6 +8192,7 @@ const App = {
     // Bluesky dashboard with Likes, Reposts, Replies, Quotes stat cards (NO views).
 
     async renderBSKYDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -8013,9 +8208,10 @@ const App = {
             const bskyHealth = window.PlatformHealth && window.PlatformHealth.get('bsky');
             const isUnconfigured = bskyHealth && bskyHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Bluesky Dashboard</h2></div>
+                    <div class="page-header"><h1>Bluesky Dashboard</h1></div>
                     ${Components.platformEmptyState('bsky', isUnconfigured ? {} : { reason: 'Bluesky is configured but no posts have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -8024,7 +8220,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Bluesky Dashboard</h2>
+                    <h1>Bluesky Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="bsky">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="bsky">Full Resync</button>
@@ -8084,6 +8280,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -8095,6 +8292,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderBSKYDashboard());
             this._startAutoRefresh(() => this.renderBSKYDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading BSKY dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8102,6 +8300,7 @@ const App = {
     // ── BSKY Submissions ─────────────────────────────────────────
 
     async renderBSKYSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getBSKYSubmissions({
@@ -8129,7 +8328,7 @@ const App = {
             const gridHtml = bskyGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Bluesky Posts</h2></div>
+                <div class="page-header"><h1>Bluesky Posts</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search posts...">
                     <div class="view-toggle">
@@ -8143,12 +8342,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindBSKYTableSort();
             this._bindBSKYSearch(data.submissions, bskyGridRenderer);
             this._startAutoRefresh(() => this.renderBSKYSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading BSKY submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8156,6 +8357,7 @@ const App = {
     // ── BSKY Submission Detail ───────────────────────────────────
 
     async renderBSKYDetail(rkey) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -8201,6 +8403,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -8216,6 +8419,7 @@ const App = {
             this._bindDetailPinTag('bsky', fullId, allTags.tags || [], () => this.renderBSKYDetail(rkey));
             this._startAutoRefresh(() => this.renderBSKYDetail(rkey));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading BSKY post</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8223,6 +8427,7 @@ const App = {
     // ── BSKY Compare ─────────────────────────────────────────────
 
     async renderBSKYCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getBSKYSubmissions({ sort_by: 'likes', order: 'desc', account_id: this._acctId('bsky') });
@@ -8241,7 +8446,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare Bluesky Posts</h2>
+                    <h1>Compare Bluesky Posts</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="likes" ${this._bskyCompareMetric === 'likes' ? 'selected' : ''}>Likes</option>
@@ -8263,6 +8468,7 @@ const App = {
                 ${this._bskyCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 posts above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -8294,6 +8500,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderBSKYCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8316,6 +8523,7 @@ const App = {
     // Mastodon has no quote metric, so there's no Quotes card (mirrors bsky otherwise).
 
     async renderMASTDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -8331,9 +8539,10 @@ const App = {
             const mastHealth = window.PlatformHealth && window.PlatformHealth.get('mast');
             const isUnconfigured = mastHealth && mastHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Mastodon Dashboard</h2></div>
+                    <div class="page-header"><h1>Mastodon Dashboard</h1></div>
                     ${Components.platformEmptyState('mast', isUnconfigured ? {} : { reason: 'Mastodon is configured but no posts have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -8342,7 +8551,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Mastodon Dashboard</h2>
+                    <h1>Mastodon Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="mast">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="mast">Full Resync</button>
@@ -8401,6 +8610,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -8412,6 +8622,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderMASTDashboard());
             this._startAutoRefresh(() => this.renderMASTDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading MAST dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8419,6 +8630,7 @@ const App = {
     // ── MAST Submissions ─────────────────────────────────────────
 
     async renderMASTSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getMASTSubmissions({
@@ -8445,7 +8657,7 @@ const App = {
             const gridHtml = mastGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Mastodon Posts</h2></div>
+                <div class="page-header"><h1>Mastodon Posts</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search posts...">
                     <div class="view-toggle">
@@ -8459,12 +8671,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindMASTTableSort();
             this._bindMASTSearch(data.submissions, mastGridRenderer);
             this._startAutoRefresh(() => this.renderMASTSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading MAST submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8472,6 +8686,7 @@ const App = {
     // ── MAST Submission Detail ───────────────────────────────────
 
     async renderMASTDetail(rkey) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -8516,6 +8731,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -8531,6 +8747,7 @@ const App = {
             this._bindDetailPinTag('mast', fullId, allTags.tags || [], () => this.renderMASTDetail(rkey));
             this._startAutoRefresh(() => this.renderMASTDetail(rkey));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading MAST post</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8538,6 +8755,7 @@ const App = {
     // ── MAST Compare ─────────────────────────────────────────────
 
     async renderMASTCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getMASTSubmissions({ sort_by: 'likes', order: 'desc', account_id: this._acctId('mast') });
@@ -8556,7 +8774,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare Mastodon Posts</h2>
+                    <h1>Compare Mastodon Posts</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="likes" ${this._mastCompareMetric === 'likes' ? 'selected' : ''}>Likes</option>
@@ -8577,6 +8795,7 @@ const App = {
                 ${this._mastCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 posts above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -8608,6 +8827,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderMASTCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8629,6 +8849,7 @@ const App = {
     // Tumblr dashboard with a single engagement metric: Notes.
 
     async renderTUMDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -8643,9 +8864,10 @@ const App = {
             const tumHealth = window.PlatformHealth && window.PlatformHealth.get('tum');
             const isUnconfigured = tumHealth && tumHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Tumblr Dashboard</h2></div>
+                    <div class="page-header"><h1>Tumblr Dashboard</h1></div>
                     ${Components.platformEmptyState('tum', isUnconfigured ? {} : { reason: 'Tumblr is configured but no posts have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -8654,7 +8876,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Tumblr Dashboard</h2>
+                    <h1>Tumblr Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="tum">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="tum">Full Resync</button>
@@ -8689,6 +8911,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -8699,6 +8922,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderTUMDashboard());
             this._startAutoRefresh(() => this.renderTUMDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading TUM dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8706,6 +8930,7 @@ const App = {
     // ── TUM Submissions ─────────────────────────────────────────
 
     async renderTUMSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getTUMSubmissions({
@@ -8729,7 +8954,7 @@ const App = {
             const gridHtml = tumGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Tumblr Posts</h2></div>
+                <div class="page-header"><h1>Tumblr Posts</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search posts...">
                     <div class="view-toggle">
@@ -8743,12 +8968,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindTUMTableSort();
             this._bindTUMSearch(data.submissions, tumGridRenderer);
             this._startAutoRefresh(() => this.renderTUMSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading TUM submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8756,6 +8983,7 @@ const App = {
     // ── TUM Submission Detail ───────────────────────────────────
 
     async renderTUMDetail(postId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -8796,6 +9024,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -8811,6 +9040,7 @@ const App = {
             this._bindDetailPinTag('tum', fullId, allTags.tags || [], () => this.renderTUMDetail(postId));
             this._startAutoRefresh(() => this.renderTUMDetail(postId));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading TUM post</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8818,6 +9048,7 @@ const App = {
     // ── TUM Compare ─────────────────────────────────────────────
 
     async renderTUMCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getTUMSubmissions({ sort_by: 'notes', order: 'desc', account_id: this._acctId('tum') });
@@ -8832,7 +9063,7 @@ const App = {
 
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Compare Tumblr Posts</h2></div>
+                <div class="page-header"><h1>Compare Tumblr Posts</h1></div>
                 <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Select 2-5 Tumblr posts to compare their notes over time.</p>
                 <div class="compare-select">${chips}</div>
 
@@ -8845,6 +9076,7 @@ const App = {
                 ${this._tumCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 posts above to see their notes compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -8868,6 +9100,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderTUMCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8889,6 +9122,7 @@ const App = {
     // Pixiv dashboard with gallery metrics: Views, Bookmarks, Comments.
 
     async renderPIXDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -8903,9 +9137,10 @@ const App = {
             const pixHealth = window.PlatformHealth && window.PlatformHealth.get('pix');
             const isUnconfigured = pixHealth && pixHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Pixiv Dashboard</h2></div>
+                    <div class="page-header"><h1>Pixiv Dashboard</h1></div>
                     ${Components.platformEmptyState('pix', isUnconfigured ? {} : { reason: 'Pixiv is configured but no works have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -8914,7 +9149,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Pixiv Dashboard</h2>
+                    <h1>Pixiv Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="pix">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="pix">Full Resync</button>
@@ -8960,6 +9195,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -8971,6 +9207,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderPIXDashboard());
             this._startAutoRefresh(() => this.renderPIXDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading PIX dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -8978,6 +9215,7 @@ const App = {
     // ── PIX Submissions ─────────────────────────────────────────
 
     async renderPIXSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getPIXSubmissions({
@@ -9005,7 +9243,7 @@ const App = {
             const gridHtml = pixGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Pixiv Works</h2></div>
+                <div class="page-header"><h1>Pixiv Works</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search works...">
                     <div class="view-toggle">
@@ -9019,12 +9257,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindPIXTableSort();
             this._bindPIXSearch(data.submissions, pixGridRenderer);
             this._startAutoRefresh(() => this.renderPIXSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading PIX submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -9032,6 +9272,7 @@ const App = {
     // ── PIX Submission Detail ───────────────────────────────────
 
     async renderPIXDetail(workId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -9077,6 +9318,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -9092,6 +9334,7 @@ const App = {
             this._bindDetailPinTag('pix', fullId, allTags.tags || [], () => this.renderPIXDetail(workId));
             this._startAutoRefresh(() => this.renderPIXDetail(workId));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading PIX work</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -9099,6 +9342,7 @@ const App = {
     // ── PIX Compare ─────────────────────────────────────────────
 
     async renderPIXCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getPIXSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('pix') });
@@ -9114,7 +9358,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare Pixiv Works</h2>
+                    <h1>Compare Pixiv Works</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._pixCompareMetric === 'views' ? 'selected' : ''}>Views</option>
@@ -9135,6 +9379,7 @@ const App = {
                 ${this._pixCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 works above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -9166,6 +9411,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderPIXCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -9190,6 +9436,7 @@ const App = {
     // ── FurryNetwork Dashboard / Submissions / Detail / Compare ──
 
     async renderFNDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -9203,9 +9450,10 @@ const App = {
             const fnHealth = window.PlatformHealth && window.PlatformHealth.get('fn');
             const isUnconfigured = fnHealth && fnHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>FurryNetwork Dashboard</h2></div>
+                    <div class="page-header"><h1>FurryNetwork Dashboard</h1></div>
                     ${Components.platformEmptyState('fn', isUnconfigured ? {} : { reason: 'FurryNetwork is configured but no submissions have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -9213,7 +9461,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>FurryNetwork Dashboard</h2>
+                    <h1>FurryNetwork Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="fn">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="fn">Full Resync</button>
@@ -9242,6 +9490,7 @@ const App = {
                     <div class="chart-container"><h3>Fastest Growing (24h)</h3>${Components.fnTopList(summary.fastest_growing, 'views_gained', 'title', 'submission_id')}</div>
                 </div>
             `;
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
             if (agg.snapshots && agg.snapshots.length > 0) {
                 Charts.aggregateLine('chart-agg-views', agg.snapshots, ['views']);
@@ -9250,11 +9499,13 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderFNDashboard());
             this._startAutoRefresh(() => this.renderFNDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading FurryNetwork dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 
     async renderFNSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getFNSubmissions({
@@ -9272,7 +9523,7 @@ const App = {
             });
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>FurryNetwork Submissions</h2></div>
+                <div class="page-header"><h1>FurryNetwork Submissions</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search submissions...">
                     <select class="filter-select" id="fn-sort">
@@ -9284,6 +9535,7 @@ const App = {
                 </div>
                 <div id="grid-container">${gridRenderer(data.submissions)}</div>
             `;
+            if (this._stale(_rt)) return;
             this._setContent(html);
             const sortSel = document.getElementById('fn-sort');
             if (sortSel) sortSel.addEventListener('change', () => { this._fnSortState.field = sortSel.value; this.renderFNSubmissions(); });
@@ -9295,11 +9547,13 @@ const App = {
             });
             this._startAutoRefresh(() => this.renderFNSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading FurryNetwork submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 
     async renderFNDetail(postId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -9337,6 +9591,7 @@ const App = {
                 ${Components.dateRangeBar(this._dateRange)}
                 <div class="chart-container"><h3>Stats Over Time</h3><div class="chart-wrap"><canvas id="chart-detail"></canvas></div></div>
             `;
+            if (this._stale(_rt)) return;
             this._setContent(html);
             if (data.snapshots && data.snapshots.length > 0) {
                 Charts.submissionLine('chart-detail', data.snapshots, ['views', 'favorites_count', 'comments_count']);
@@ -9349,11 +9604,13 @@ const App = {
             this._bindDetailPinTag('fn', fullId, allTags.tags || [], () => this.renderFNDetail(postId));
             this._startAutoRefresh(() => this.renderFNDetail(postId));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading FurryNetwork submission</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 
     async renderFNCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getFNSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('fn') });
@@ -9366,7 +9623,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare FurryNetwork Submissions</h2>
+                    <h1>Compare FurryNetwork Submissions</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._fnCompareMetric === 'views' ? 'selected' : ''}>Views</option>
@@ -9383,6 +9640,7 @@ const App = {
                 </div>
                 ${this._fnCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 submissions above to see their trends compared.</p></div>' : ''}
             `;
+            if (this._stale(_rt)) return;
             this._setContent(html);
             document.querySelectorAll('.compare-chip').forEach(chip => {
                 chip.addEventListener('click', (e) => {
@@ -9399,6 +9657,7 @@ const App = {
             if (this._fnCompareIds.size >= 2) await this._loadFNComparisonChart();
             this._startAutoRefresh(() => this.renderFNCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -9437,6 +9696,7 @@ const App = {
     // ── SoundCloud Dashboard / Tracks / Detail / Compare (4.22.0, cloned from FurryNetwork's) ──
 
     async renderSCDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -9450,9 +9710,10 @@ const App = {
             const scHealth = window.PlatformHealth && window.PlatformHealth.get('sc');
             const isUnconfigured = scHealth && scHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>SoundCloud Dashboard</h2></div>
+                    <div class="page-header"><h1>SoundCloud Dashboard</h1></div>
                     ${Components.platformEmptyState('sc', isUnconfigured ? {} : { reason: 'SoundCloud is configured but no tracks have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -9460,7 +9721,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>SoundCloud Dashboard</h2>
+                    <h1>SoundCloud Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="sc">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="sc">Full Resync</button>
@@ -9489,6 +9750,7 @@ const App = {
                     <div class="chart-container"><h3>Fastest Growing (24h)</h3>${Components.scTopList(summary.fastest_growing, 'views_gained', 'title', 'submission_id')}</div>
                 </div>
             `;
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
             if (agg.snapshots && agg.snapshots.length > 0) {
                 Charts.aggregateLine('chart-agg-views', agg.snapshots, ['views']);
@@ -9497,11 +9759,13 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderSCDashboard());
             this._startAutoRefresh(() => this.renderSCDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading SoundCloud dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 
     async renderSCSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getSCSubmissions({
@@ -9518,7 +9782,7 @@ const App = {
             });
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>SoundCloud Tracks</h2></div>
+                <div class="page-header"><h1>SoundCloud Tracks</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search tracks...">
                     <select class="filter-select" id="sc-sort">
@@ -9530,6 +9794,7 @@ const App = {
                 </div>
                 <div id="grid-container">${gridRenderer(data.submissions)}</div>
             `;
+            if (this._stale(_rt)) return;
             this._setContent(html);
             const sortSel = document.getElementById('sc-sort');
             if (sortSel) sortSel.addEventListener('change', () => { this._scSortState.field = sortSel.value; this.renderSCSubmissions(); });
@@ -9541,11 +9806,13 @@ const App = {
             });
             this._startAutoRefresh(() => this.renderSCSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading SoundCloud tracks</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 
     async renderSCDetail(postId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -9583,6 +9850,7 @@ const App = {
                 ${Components.dateRangeBar(this._dateRange)}
                 <div class="chart-container"><h3>Stats Over Time</h3><div class="chart-wrap"><canvas id="chart-detail"></canvas></div></div>
             `;
+            if (this._stale(_rt)) return;
             this._setContent(html);
             if (data.snapshots && data.snapshots.length > 0) {
                 Charts.submissionLine('chart-detail', data.snapshots, ['views', 'favorites_count', 'comments_count']);
@@ -9595,11 +9863,13 @@ const App = {
             this._bindDetailPinTag('sc', fullId, allTags.tags || [], () => this.renderSCDetail(postId));
             this._startAutoRefresh(() => this.renderSCDetail(postId));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading SoundCloud track</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 
     async renderSCCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getSCSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('sc') });
@@ -9612,7 +9882,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare SoundCloud Tracks</h2>
+                    <h1>Compare SoundCloud Tracks</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._scCompareMetric === 'views' ? 'selected' : ''}>Plays</option>
@@ -9629,6 +9899,7 @@ const App = {
                 </div>
                 ${this._scCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 tracks above to see their trends compared.</p></div>' : ''}
             `;
+            if (this._stale(_rt)) return;
             this._setContent(html);
             document.querySelectorAll('.compare-chip').forEach(chip => {
                 chip.addEventListener('click', (e) => {
@@ -9645,6 +9916,7 @@ const App = {
             if (this._scCompareIds.size >= 2) await this._loadSCComparisonChart();
             this._startAutoRefresh(() => this.renderSCCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -9665,6 +9937,7 @@ const App = {
     // ── Newgrounds Dashboard / Submissions / Detail / Compare (4.23.0, cloned from SoundCloud's) ──
 
     async renderNGDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -9678,9 +9951,10 @@ const App = {
             const ngHealth = window.PlatformHealth && window.PlatformHealth.get('ng');
             const isUnconfigured = ngHealth && ngHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Newgrounds Dashboard</h2></div>
+                    <div class="page-header"><h1>Newgrounds Dashboard</h1></div>
                     ${Components.platformEmptyState('ng', isUnconfigured ? {} : { reason: 'Newgrounds is configured but no submissions have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -9688,7 +9962,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Newgrounds Dashboard</h2>
+                    <h1>Newgrounds Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="ng">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="ng">Full Resync</button>
@@ -9717,6 +9991,7 @@ const App = {
                     <div class="chart-container"><h3>Fastest Growing (24h)</h3>${Components.ngTopList(summary.fastest_growing, 'views_gained', 'title', 'submission_id')}</div>
                 </div>
             `;
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
             if (agg.snapshots && agg.snapshots.length > 0) {
                 Charts.aggregateLine('chart-agg-views', agg.snapshots, ['views']);
@@ -9725,11 +10000,13 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderNGDashboard());
             this._startAutoRefresh(() => this.renderNGDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading Newgrounds dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 
     async renderNGSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getNGSubmissions({
@@ -9746,7 +10023,7 @@ const App = {
             });
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Newgrounds Submissions</h2></div>
+                <div class="page-header"><h1>Newgrounds Submissions</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search submissions...">
                     <select class="filter-select" id="ng-sort">
@@ -9758,6 +10035,7 @@ const App = {
                 </div>
                 <div id="grid-container">${gridRenderer(data.submissions)}</div>
             `;
+            if (this._stale(_rt)) return;
             this._setContent(html);
             const sortSel = document.getElementById('ng-sort');
             if (sortSel) sortSel.addEventListener('change', () => { this._ngSortState.field = sortSel.value; this.renderNGSubmissions(); });
@@ -9769,11 +10047,13 @@ const App = {
             });
             this._startAutoRefresh(() => this.renderNGSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading Newgrounds submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 
     async renderNGDetail(postId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -9811,6 +10091,7 @@ const App = {
                 ${Components.dateRangeBar(this._dateRange)}
                 <div class="chart-container"><h3>Stats Over Time</h3><div class="chart-wrap"><canvas id="chart-detail"></canvas></div></div>
             `;
+            if (this._stale(_rt)) return;
             this._setContent(html);
             if (data.snapshots && data.snapshots.length > 0) {
                 Charts.submissionLine('chart-detail', data.snapshots, ['views', 'favorites_count', 'comments_count']);
@@ -9823,11 +10104,13 @@ const App = {
             this._bindDetailPinTag('ng', fullId, allTags.tags || [], () => this.renderNGDetail(postId));
             this._startAutoRefresh(() => this.renderNGDetail(postId));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading Newgrounds submission</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 
     async renderNGCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getNGSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('ng') });
@@ -9840,7 +10123,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare Newgrounds Submissions</h2>
+                    <h1>Compare Newgrounds Submissions</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._ngCompareMetric === 'views' ? 'selected' : ''}>Views</option>
@@ -9857,6 +10140,7 @@ const App = {
                 </div>
                 ${this._ngCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 submissions above to see their trends compared.</p></div>' : ''}
             `;
+            if (this._stale(_rt)) return;
             this._setContent(html);
             document.querySelectorAll('.compare-chip').forEach(chip => {
                 chip.addEventListener('click', (e) => {
@@ -9873,6 +10157,7 @@ const App = {
             if (this._ngCompareIds.size >= 2) await this._loadNGComparisonChart();
             this._startAutoRefresh(() => this.renderNGCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -9893,6 +10178,7 @@ const App = {
     // ── YouTube Dashboard / Videos / Detail / Compare (4.24.0, cloned from Newgrounds') ──
 
     async renderYTDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -9906,9 +10192,10 @@ const App = {
             const ytHealth = window.PlatformHealth && window.PlatformHealth.get('yt');
             const isUnconfigured = ytHealth && ytHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>YouTube Dashboard</h2></div>
+                    <div class="page-header"><h1>YouTube Dashboard</h1></div>
                     ${Components.platformEmptyState('yt', isUnconfigured ? {} : { reason: 'YouTube is configured but no videos have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -9916,7 +10203,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>YouTube Dashboard</h2>
+                    <h1>YouTube Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="yt">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="yt">Full Resync</button>
@@ -9945,6 +10232,7 @@ const App = {
                     <div class="chart-container"><h3>Fastest Growing (24h)</h3>${Components.ytTopList(summary.fastest_growing, 'views_gained', 'title', 'submission_id')}</div>
                 </div>
             `;
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
             if (agg.snapshots && agg.snapshots.length > 0) {
                 Charts.aggregateLine('chart-agg-views', agg.snapshots, ['views']);
@@ -9953,11 +10241,13 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderYTDashboard());
             this._startAutoRefresh(() => this.renderYTDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading YouTube dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 
     async renderYTSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getYTSubmissions({
@@ -9974,7 +10264,7 @@ const App = {
             });
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>YouTube Videos</h2></div>
+                <div class="page-header"><h1>YouTube Videos</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search videos...">
                     <select class="filter-select" id="yt-sort">
@@ -9986,6 +10276,7 @@ const App = {
                 </div>
                 <div id="grid-container">${gridRenderer(data.submissions)}</div>
             `;
+            if (this._stale(_rt)) return;
             this._setContent(html);
             const sortSel = document.getElementById('yt-sort');
             if (sortSel) sortSel.addEventListener('change', () => { this._ytSortState.field = sortSel.value; this.renderYTSubmissions(); });
@@ -9997,11 +10288,13 @@ const App = {
             });
             this._startAutoRefresh(() => this.renderYTSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading YouTube videos</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 
     async renderYTDetail(postId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -10039,6 +10332,7 @@ const App = {
                 ${Components.dateRangeBar(this._dateRange)}
                 <div class="chart-container"><h3>Stats Over Time</h3><div class="chart-wrap"><canvas id="chart-detail"></canvas></div></div>
             `;
+            if (this._stale(_rt)) return;
             this._setContent(html);
             if (data.snapshots && data.snapshots.length > 0) {
                 Charts.submissionLine('chart-detail', data.snapshots, ['views', 'favorites_count', 'comments_count']);
@@ -10051,11 +10345,13 @@ const App = {
             this._bindDetailPinTag('yt', fullId, allTags.tags || [], () => this.renderYTDetail(postId));
             this._startAutoRefresh(() => this.renderYTDetail(postId));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading YouTube video</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 
     async renderYTCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getYTSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('yt') });
@@ -10068,7 +10364,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare YouTube Videos</h2>
+                    <h1>Compare YouTube Videos</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._ytCompareMetric === 'views' ? 'selected' : ''}>Views</option>
@@ -10085,6 +10381,7 @@ const App = {
                 </div>
                 ${this._ytCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 videos above to see their trends compared.</p></div>' : ''}
             `;
+            if (this._stale(_rt)) return;
             this._setContent(html);
             document.querySelectorAll('.compare-chip').forEach(chip => {
                 chip.addEventListener('click', (e) => {
@@ -10101,6 +10398,7 @@ const App = {
             if (this._ytCompareIds.size >= 2) await this._loadYTComparisonChart();
             this._startAutoRefresh(() => this.renderYTCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -10119,6 +10417,7 @@ const App = {
     },
 
     async renderE621Dashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -10133,9 +10432,10 @@ const App = {
             const e621Health = window.PlatformHealth && window.PlatformHealth.get('e621');
             const isUnconfigured = e621Health && e621Health.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>e621 Dashboard</h2></div>
+                    <div class="page-header"><h1>e621 Dashboard</h1></div>
                     ${Components.platformEmptyState('e621', isUnconfigured ? {} : { reason: 'e621 is configured but no posts have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -10144,7 +10444,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>e621 Dashboard</h2>
+                    <h1>e621 Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="e621">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="e621">Full Resync</button>
@@ -10190,6 +10490,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -10200,6 +10501,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderE621Dashboard());
             this._startAutoRefresh(() => this.renderE621Dashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading e621 dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -10207,6 +10509,7 @@ const App = {
     // ── E621 Submissions ────────────────────────────────────────
 
     async renderE621Submissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getE621Submissions({
@@ -10233,7 +10536,7 @@ const App = {
             const gridHtml = e621GridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>e621 Posts</h2></div>
+                <div class="page-header"><h1>e621 Posts</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search posts...">
                     <div class="view-toggle">
@@ -10247,12 +10550,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindE621TableSort();
             this._bindE621Search(data.submissions, e621GridRenderer);
             this._startAutoRefresh(() => this.renderE621Submissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading e621 posts</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -10260,6 +10565,7 @@ const App = {
     // ── E621 Submission Detail ──────────────────────────────────
 
     async renderE621Detail(postId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -10305,6 +10611,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -10320,6 +10627,7 @@ const App = {
             this._bindDetailPinTag('e621', fullId, allTags.tags || [], () => this.renderE621Detail(postId));
             this._startAutoRefresh(() => this.renderE621Detail(postId));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading e621 post</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -10327,6 +10635,7 @@ const App = {
     // ── E621 Compare ────────────────────────────────────────────
 
     async renderE621Compare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getE621Submissions({ sort_by: 'score', order: 'desc', account_id: this._acctId('e621') });
@@ -10342,7 +10651,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare e621 Posts</h2>
+                    <h1>Compare e621 Posts</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="score" ${this._e621CompareMetric === 'score' ? 'selected' : ''}>Score</option>
@@ -10363,6 +10672,7 @@ const App = {
                 ${this._e621CompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 posts above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -10394,6 +10704,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderE621Compare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -10444,6 +10755,7 @@ const App = {
     },
 
     async renderFBRDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -10458,9 +10770,10 @@ const App = {
             const fbrHealth = window.PlatformHealth && window.PlatformHealth.get('fbr');
             const isUnconfigured = fbrHealth && fbrHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Furbooru Dashboard</h2></div>
+                    <div class="page-header"><h1>Furbooru Dashboard</h1></div>
                     ${Components.platformEmptyState('fbr', isUnconfigured ? {} : { reason: 'Furbooru is configured but no posts have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -10469,7 +10782,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Furbooru Dashboard</h2>
+                    <h1>Furbooru Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="fbr">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="fbr">Full Resync</button>
@@ -10515,6 +10828,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -10525,6 +10839,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderFBRDashboard());
             this._startAutoRefresh(() => this.renderFBRDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading Furbooru dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -10532,6 +10847,7 @@ const App = {
     // ── Furbooru Submissions ────────────────────────────────────────
 
     async renderFBRSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getFBRSubmissions({
@@ -10558,7 +10874,7 @@ const App = {
             const gridHtml = fbrGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Furbooru Posts</h2></div>
+                <div class="page-header"><h1>Furbooru Posts</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search posts...">
                     <div class="view-toggle">
@@ -10572,12 +10888,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindFBRTableSort();
             this._bindFBRSearch(data.submissions, fbrGridRenderer);
             this._startAutoRefresh(() => this.renderFBRSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading Furbooru posts</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -10585,6 +10903,7 @@ const App = {
     // ── Furbooru Submission Detail ──────────────────────────────────
 
     async renderFBRDetail(postId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -10630,6 +10949,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -10645,6 +10965,7 @@ const App = {
             this._bindDetailPinTag('fbr', fullId, allTags.tags || [], () => this.renderFBRDetail(postId));
             this._startAutoRefresh(() => this.renderFBRDetail(postId));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading Furbooru post</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -10652,6 +10973,7 @@ const App = {
     // ── Furbooru Compare ────────────────────────────────────────────
 
     async renderFBRCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getFBRSubmissions({ sort_by: 'score', order: 'desc', account_id: this._acctId('fbr') });
@@ -10667,7 +10989,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare Furbooru Posts</h2>
+                    <h1>Compare Furbooru Posts</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="score" ${this._fbrCompareMetric === 'score' ? 'selected' : ''}>Score</option>
@@ -10688,6 +11010,7 @@ const App = {
                 ${this._fbrCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 posts above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -10719,6 +11042,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderFBRCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -10772,6 +11096,7 @@ const App = {
     // Threads dashboard with Views, Likes, Reposts, Replies (+ Quotes).
 
     async renderTHRDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -10786,9 +11111,10 @@ const App = {
             const thrHealth = window.PlatformHealth && window.PlatformHealth.get('thr');
             const isUnconfigured = thrHealth && thrHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Threads Dashboard</h2></div>
+                    <div class="page-header"><h1>Threads Dashboard</h1></div>
                     ${Components.platformEmptyState('thr', isUnconfigured ? {} : { reason: 'Threads is configured but no posts have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -10797,7 +11123,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Threads Dashboard</h2>
+                    <h1>Threads Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="thr">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="thr">Full Resync</button>
@@ -10844,6 +11170,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -10854,6 +11181,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderTHRDashboard());
             this._startAutoRefresh(() => this.renderTHRDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading THR dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -10861,6 +11189,7 @@ const App = {
     // ── THR Submissions ─────────────────────────────────────────
 
     async renderTHRSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getTHRSubmissions({
@@ -10886,7 +11215,7 @@ const App = {
             const gridHtml = thrGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Threads Posts</h2></div>
+                <div class="page-header"><h1>Threads Posts</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search posts...">
                     <div class="view-toggle">
@@ -10900,12 +11229,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindTHRTableSort();
             this._bindTHRSearch(data.submissions, thrGridRenderer);
             this._startAutoRefresh(() => this.renderTHRSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading THR submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -10913,6 +11244,7 @@ const App = {
     // ── THR Submission Detail ───────────────────────────────────
 
     async renderTHRDetail(postId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -10960,6 +11292,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -10975,6 +11308,7 @@ const App = {
             this._bindDetailPinTag('thr', fullId, allTags.tags || [], () => this.renderTHRDetail(postId));
             this._startAutoRefresh(() => this.renderTHRDetail(postId));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading THR post</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -10982,6 +11316,7 @@ const App = {
     // ── THR Compare ─────────────────────────────────────────────
 
     async renderTHRCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getTHRSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('thr') });
@@ -10997,7 +11332,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare Threads Posts</h2>
+                    <h1>Compare Threads Posts</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._thrCompareMetric === 'views' ? 'selected' : ''}>Views</option>
@@ -11019,6 +11354,7 @@ const App = {
                 ${this._thrCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 posts above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -11050,6 +11386,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderTHRCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11071,6 +11408,7 @@ const App = {
     // Instagram dashboard with Views, Likes, Reach, Comments (+ Shares).
 
     async renderIGDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -11085,9 +11423,10 @@ const App = {
             const igHealth = window.PlatformHealth && window.PlatformHealth.get('ig');
             const isUnconfigured = igHealth && igHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Instagram Dashboard</h2></div>
+                    <div class="page-header"><h1>Instagram Dashboard</h1></div>
                     ${Components.platformEmptyState('ig', isUnconfigured ? {} : { reason: 'Instagram is configured but no posts have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -11096,7 +11435,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Instagram Dashboard</h2>
+                    <h1>Instagram Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="ig">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="ig">Full Resync</button>
@@ -11143,6 +11482,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -11153,6 +11493,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderIGDashboard());
             this._startAutoRefresh(() => this.renderIGDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading IG dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11160,6 +11501,7 @@ const App = {
     // ── IG Submissions ─────────────────────────────────────────
 
     async renderIGSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getIGSubmissions({
@@ -11185,7 +11527,7 @@ const App = {
             const gridHtml = igGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Instagram Posts</h2></div>
+                <div class="page-header"><h1>Instagram Posts</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search posts...">
                     <div class="view-toggle">
@@ -11199,12 +11541,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindIGTableSort();
             this._bindIGSearch(data.submissions, igGridRenderer);
             this._startAutoRefresh(() => this.renderIGSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading IG submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11212,6 +11556,7 @@ const App = {
     // ── IG Submission Detail ───────────────────────────────────
 
     async renderIGDetail(postId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -11259,6 +11604,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -11274,6 +11620,7 @@ const App = {
             this._bindDetailPinTag('ig', fullId, allTags.tags || [], () => this.renderIGDetail(postId));
             this._startAutoRefresh(() => this.renderIGDetail(postId));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading IG post</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11281,6 +11628,7 @@ const App = {
     // ── IG Compare ─────────────────────────────────────────────
 
     async renderIGCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getIGSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('ig') });
@@ -11296,7 +11644,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare Instagram Posts</h2>
+                    <h1>Compare Instagram Posts</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._igCompareMetric === 'views' ? 'selected' : ''}>Views</option>
@@ -11318,6 +11666,7 @@ const App = {
                 ${this._igCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 posts above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -11349,6 +11698,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderIGCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11383,6 +11733,7 @@ const App = {
     // API at all (it is client-API only). That is permanent, not a gap.
 
     async renderTGDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -11397,9 +11748,10 @@ const App = {
             const tgHealth = window.PlatformHealth && window.PlatformHealth.get('tg');
             const isUnconfigured = tgHealth && tgHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>Telegram Dashboard</h2></div>
+                    <div class="page-header"><h1>Telegram Dashboard</h1></div>
                     ${Components.platformEmptyState('tg', isUnconfigured ? {} : { reason: 'Telegram is connected but PawPoller has not sent anything to the channel yet. Posts appear here once you publish to it.' })}
                 `);
                 return;
@@ -11409,7 +11761,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Telegram Dashboard</h2>
+                    <h1>Telegram Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="tg">Poll Now</button>
                         <button class="btn btn-secondary" data-export="tg">Export CSV</button>
@@ -11451,6 +11803,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -11461,6 +11814,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderTGDashboard());
             this._startAutoRefresh(() => this.renderTGDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading Telegram dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11468,6 +11822,7 @@ const App = {
     // ── Telegram Posts ──────────────────────────────────────────────
 
     async renderTGSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getTGSubmissions({
@@ -11481,7 +11836,7 @@ const App = {
             // build a grid from.
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Telegram Posts</h2></div>
+                <div class="page-header"><h1>Telegram Posts</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search posts...">
                 </div>
@@ -11490,11 +11845,13 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindTGTableSort();
             this._bindTGSearch(data.submissions);
             this._startAutoRefresh(() => this.renderTGSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading Telegram posts</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11502,6 +11859,7 @@ const App = {
     // ── Telegram Post Detail ────────────────────────────────────────
 
     async renderTGDetail(postId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -11548,6 +11906,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -11563,6 +11922,7 @@ const App = {
             this._bindDetailPinTag('tg', fullId, allTags.tags || [], () => this.renderTGDetail(postId));
             this._startAutoRefresh(() => this.renderTGDetail(postId));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading Telegram post</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11570,6 +11930,7 @@ const App = {
     // ── Telegram Compare ────────────────────────────────────────────
 
     async renderTGCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getTGSubmissions({ sort_by: 'reactions_count', order: 'desc', account_id: this._acctId('tg') });
@@ -11585,7 +11946,7 @@ const App = {
             // No metric picker: reactions are the only series there is.
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>Compare Telegram Posts</h2></div>
+                <div class="page-header"><h1>Compare Telegram Posts</h1></div>
                 <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Select 2-5 Telegram posts to compare their reaction trends over time.</p>
                 <div class="compare-select">${chips}</div>
 
@@ -11598,6 +11959,7 @@ const App = {
                 ${this._tgCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 posts above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -11621,6 +11983,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderTGCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11668,6 +12031,7 @@ const App = {
     },
 
     async renderTWDashboard() {
+        const token = this._routeToken();
         this._loading();
         try {
             const [summary, agg, pins, goals] = await Promise.all([
@@ -11683,9 +12047,10 @@ const App = {
             const twHealth = window.PlatformHealth && window.PlatformHealth.get('tw');
             const isUnconfigured = twHealth && twHealth.configured === false;
             if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
                 this._setContent(`
                     ${this._refreshIndicatorHtml()}
-                    <div class="page-header"><h2>X/Twitter Dashboard</h2></div>
+                    <div class="page-header"><h1>X/Twitter Dashboard</h1></div>
                     ${Components.platformEmptyState('tw', isUnconfigured ? {} : { reason: 'X/Twitter is configured but no tweets have been polled yet. The first poll may still be running.' })}
                 `);
                 return;
@@ -11694,7 +12059,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>X/Twitter Dashboard</h2>
+                    <h1>X/Twitter Dashboard</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" data-poll="tw">Poll Now</button>
                         <button class="btn btn-secondary" data-resync="tw">Full Resync</button>
@@ -11760,6 +12125,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(html);
 
             if (agg.snapshots && agg.snapshots.length > 0) {
@@ -11771,6 +12137,7 @@ const App = {
             this._bindPinAndGoalActions(() => this.renderTWDashboard());
             this._startAutoRefresh(() => this.renderTWDashboard());
         } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
             this._setContent(`<div class="empty-state"><h3>Error loading TW dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11778,6 +12145,7 @@ const App = {
     // ── TW Submissions ─────────────────────────────────────────
 
     async renderTWSubmissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getTWSubmissions({
@@ -11801,7 +12169,7 @@ const App = {
             const gridHtml = twGridRenderer(data.submissions);
             const html = `
                 ${this._refreshIndicatorHtml()}
-                <div class="page-header"><h2>X/Twitter Tweets</h2></div>
+                <div class="page-header"><h1>X/Twitter Tweets</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search tweets...">
                     <div class="view-toggle">
@@ -11815,12 +12183,14 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
             this._bindViewToggle();
             this._bindTWTableSort();
             this._bindTWSearch(data.submissions, twGridRenderer);
             this._startAutoRefresh(() => this.renderTWSubmissions());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading TW submissions</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11828,6 +12198,7 @@ const App = {
     // ── TW Submission Detail ───────────────────────────────────
 
     async renderTWDetail(id) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, pins, allTags] = await Promise.all([
@@ -11875,6 +12246,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             if (data.snapshots && data.snapshots.length > 0) {
@@ -11890,6 +12262,7 @@ const App = {
             this._bindDetailPinTag('tw', id, allTags.tags || [], () => this.renderTWDetail(id));
             this._startAutoRefresh(() => this.renderTWDetail(id));
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading tweet</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11897,6 +12270,7 @@ const App = {
     // ── TW Compare ─────────────────────────────────────────────
 
     async renderTWCompare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getTWSubmissions({ sort_by: 'views', order: 'desc', account_id: this._acctId('tw') });
@@ -11912,7 +12286,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Compare X/Twitter Tweets</h2>
+                    <h1>Compare X/Twitter Tweets</h1>
                     <div>
                         <select class="filter-select" id="compare-metric">
                             <option value="views" ${this._twCompareMetric === 'views' ? 'selected' : ''}>Views</option>
@@ -11936,6 +12310,7 @@ const App = {
                 ${this._twCompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 tweets above to see their trends compared.</p></div>' : ''}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.querySelectorAll('.compare-chip').forEach(chip => {
@@ -11967,6 +12342,7 @@ const App = {
 
             this._startAutoRefresh(() => this.renderTWCompare());
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -11991,6 +12367,7 @@ const App = {
     // browser prompt() dialog asking for name and optional description.
 
     async renderGroups() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const data = await API.getGroups();
@@ -11998,7 +12375,7 @@ const App = {
 
             const html = `
                 <div class="page-header">
-                    <h2>Submission Groups</h2>
+                    <h1>Submission Groups</h1>
                     <button class="btn btn-primary" id="create-group-btn">Create Group</button>
                 </div>
                 <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Organise submissions from any platform into groups for combined tracking.</p>
@@ -12007,6 +12384,7 @@ const App = {
                 </div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             document.getElementById('create-group-btn').addEventListener('click', async () => {
@@ -12021,6 +12399,7 @@ const App = {
                 }
             });
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -12032,6 +12411,7 @@ const App = {
     // prompt() dialogs for platform and submission ID. "Delete Group" confirms
     // then navigates back to the groups list.
     async renderGroupDetail(groupId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             // Fetch group list (to find this group's metadata) and stats in parallel
@@ -12041,7 +12421,7 @@ const App = {
             ]);
             // Locate the specific group by ID from the full groups list
             const group = (groupData.groups || []).find(g => g.group_id === groupId);
-            if (!group) { this._setContent('<div class="empty-state"><h3>Group not found</h3></div>'); return; }
+            if (!group) { if (this._stale(_rt)) return; this._setContent('<div class="empty-state"><h3>Group not found</h3></div>'); return; }
 
             const stats = statsData;
             const members = stats.members || [];
@@ -12069,7 +12449,7 @@ const App = {
             const html = `
                 <a href="#/groups" class="back-link">&larr; Back to Groups</a>
                 <div class="page-header">
-                    <h2>${Utils.escapeHtml(group.name)}</h2>
+                    <h1>${Utils.escapeHtml(group.name)}</h1>
                     <div style="display:flex;gap:8px">
                         <button class="btn btn-primary" id="add-member-btn">Add Submission</button>
                         <button class="btn btn-danger" id="delete-group-btn">Delete Group</button>
@@ -12090,6 +12470,7 @@ const App = {
                 </table>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             // "Add Submission" — pick a discovered submission via the visual
@@ -12129,6 +12510,7 @@ const App = {
                 }
             });
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -12154,6 +12536,7 @@ const App = {
     // the format "platform:id, platform:id" (e.g. "ib:12345, fa:67890").
 
     async renderCrossPlatform() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             // Fetch existing links and auto-suggestions in parallel;
@@ -12165,7 +12548,7 @@ const App = {
 
             const html = `
                 <div class="page-header">
-                    <h2>Cross-Platform Links</h2>
+                    <h1>Cross-Platform Links</h1>
                     <button class="btn btn-primary" id="create-link-btn">Create Link</button>
                 </div>
                 <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Link the same submission across platforms to view combined analytics.</p>
@@ -12183,6 +12566,7 @@ const App = {
                 <div id="link-stats-container"></div>
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             // "Create Link" button: prompt for comma-separated platform:id pairs,
@@ -12205,6 +12589,7 @@ const App = {
                 }
             });
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -12592,6 +12977,7 @@ const App = {
     },
 
     async renderSettings() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             // Core settings: only fetch what General/Platforms/Telegram/Data/About tabs need.
@@ -12658,7 +13044,7 @@ const App = {
 
             const html = `
                 <div class="page-header">
-                    <h2>Settings</h2>
+                    <h1>Settings</h1>
                 </div>
 
                 <div class="settings-layout">
@@ -15032,6 +15418,7 @@ const App = {
                 </div><!-- /tab:polling -->
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             // ── Settings pages behind the rail (4.25.0, SETTINGSNAV) ──────────
@@ -18043,6 +18430,7 @@ const App = {
             });
 
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
         // Attach a "Setup guide" button to each platform's connect card
@@ -19534,12 +19922,14 @@ const App = {
     },
 
     async renderRepostRadar() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         const age = this._repostRadarAge;
         let res;
         try {
             res = await API.getRepostRadar({ min_age_days: age, limit: 40 });
         } catch (e) {
+            if (this._stale(_rt)) return;
             this._setContent('<div class="empty-state"><h3>Repost Radar</h3>'
                 + '<p>Could not load candidates. Try again shortly.</p></div>');
             return;
@@ -19606,9 +19996,10 @@ const App = {
                    or check back once your older pieces have had time to gather views.</p>
             </div>`;
 
+        if (this._stale(_rt)) return;
         this._setContent(`
             <div class="page-header">
-                <h2>&#128260; Repost Radar</h2>
+                <h1>&#128260; Repost Radar</h1>
                 <div class="field" style="margin-left:auto;margin-bottom:0">
                     <select id="repost-age-select" style="width:auto">${ageOpts}</select>
                 </div>
@@ -19630,6 +20021,7 @@ const App = {
     },
 
     async renderAnalytics() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading();
         try {
             const [data, insights, tagPerf] = await Promise.all([
@@ -19646,7 +20038,7 @@ const App = {
             const html = `
                 ${this._refreshIndicatorHtml()}
                 <div class="page-header">
-                    <h2>Analytics</h2>
+                    <h1>Analytics</h1>
                     <div style="margin-left:auto;display:flex;gap:0.5em">
                         <button class="btn btn-sm btn-primary" id="analytics-export-all" title="Download the complete dataset: every work × platform with all its stats">&darr; Full data CSV</button>
                         <button class="btn btn-sm btn-outline" id="analytics-export-fastest" ${fastest.length ? '' : 'disabled'} title="Download fastest-growing table as CSV">&darr; Fastest CSV</button>
@@ -19693,6 +20085,7 @@ const App = {
                 ${this._tagPerfHtml(tagPerf)}
             `;
 
+            if (this._stale(_rt)) return;
             this._setContent(html);
 
             let weeklyChart = null;
@@ -19749,6 +20142,7 @@ const App = {
                 a.remove();
             });
         } catch (err) {
+            if (this._stale(_rt)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading analytics</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },

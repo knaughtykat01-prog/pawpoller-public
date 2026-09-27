@@ -31,6 +31,8 @@ const Editor = {
     // ---------------------------------------------------------------------------
 
     async renderStoryList() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
+        if (App._stale(_rt)) return;
         App._setContent('<div class="loading-spinner">Loading stories...</div>');
         try {
             const resp = await fetch('/api/editor/stories');
@@ -54,9 +56,10 @@ const Editor = {
                     </div>`;
             }).join('');
 
+            if (App._stale(_rt)) return;
             App._setContent(`
                 <div class="page-header">
-                    <h2>Story Editor</h2>
+                    <h1>Story Editor</h1>
                     <p class="subtitle">Select a story to edit MASTER.md and preview in all formats</p>
                 </div>
                 <div style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap">
@@ -442,6 +445,7 @@ const Editor = {
             });
 
         } catch (err) {
+            if (App._stale(_rt)) return;
             App._setContent(`<div class="empty-state"><h3>Error loading stories</h3><p>${err.message}</p></div>`);
         }
     },
@@ -780,6 +784,33 @@ const Editor = {
     // ---------------------------------------------------------------------------
 
     async renderEditor(storyName) {
+        const _rt = App._routeToken();   // route race guard (App._stale)
+        // The editor's libraries load on first open, not with every page (spec 007).
+        // A failure shows a plain message + Retry instead of a half-built editor.
+        if (window.LazyVendor) {
+            // The first open waits on the network. If the user moves on meanwhile,
+            // nothing below may paint — not the spinner, not the failure, not the
+            // editor — or it would cover the page they went to.
+            const stillHere = () => location.hash.startsWith('#/editor/');
+            const slow = setTimeout(() => {
+                if (stillHere()) App._setContent('<div class="loading-spinner">Loading the editor&hellip;</div>');
+            }, 150);
+            try {
+                await LazyVendor.load('editor');
+            } catch (err) {
+                if (!stillHere()) return;
+                if (App._stale(_rt)) return;
+                App._setContent(`<div class="empty-state"><h1>The editor couldn't load</h1>
+                    <p>Check your connection and try again.</p>
+                    <button type="button" class="btn btn-primary" id="editor-load-retry">Retry</button></div>`);
+                const retry = document.getElementById('editor-load-retry');
+                if (retry) retry.addEventListener('click', () => this.renderEditor(storyName));
+                return;
+            } finally {
+                clearTimeout(slow);
+            }
+            if (!stillHere()) return;
+        }
         // Clean up previous editor state
         clearInterval(this.autoSaveTimer);
         if (this._beforeUnloadHandler) {
@@ -794,11 +825,12 @@ const Editor = {
         this.storyName = storyName;
         this.isDirty = false;
 
+        if (App._stale(_rt)) return;
         App._setContent(`
             <div class="editor-container">
                 <div class="editor-toolbar" id="editor-toolbar">
                     <a href="#/editor" class="editor-back">← Stories</a>
-                    <span class="editor-title" id="editor-title">${Utils.escapeHtml(storyName.replace(/_/g, ' '))}</span>
+                    <h1 class="editor-title" id="editor-title">${Utils.escapeHtml(storyName.replace(/_/g, ' '))}</h1>
                     <div class="editor-actions">
                         <!-- Secondary cluster — collapsed behind the
                              ⋯ More button on mobile so the toolbar

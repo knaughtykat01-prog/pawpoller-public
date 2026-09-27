@@ -93,6 +93,25 @@ class TestPostedDates:
                  "external_id": "1", "status": "draft"}]
         assert _posted_dates(conn, pubs, []) == {}
 
+    def test_an_unpolled_post_uses_the_publications_own_date(self, conn):
+        """Posted through PawPoller today, site not polled yet (or Telegram,
+        which never gets a row): no row to read, so it had NO date and sank
+        with the never-posted pieces. The publication knows when it went out."""
+        from routes.submissions_api import _posted_dates
+        pubs = [{"content_type": "artwork", "story_name": "Fresh", "platform": "tg",
+                 "external_id": "19", "status": "posted", "first_posted_at": "2026-09-03 05:23:04"}]
+        assert _posted_dates(conn, pubs, []) == {("artwork", "Fresh"): "2026-09-03 05:23:04"}
+
+    def test_a_site_row_beats_the_publications_own_date(self, conn):
+        """For a LINKED upload first_posted_at is the link day, not the post."""
+        from routes.submissions_api import _posted_dates
+        conn.execute("INSERT INTO fa_submissions (submission_id, title, posted_at)"
+                     " VALUES (1, 'x', '2019-05-05 00:00:00')")
+        conn.commit()
+        pubs = [{"content_type": "artwork", "story_name": "P", "platform": "fa", "external_id": "1",
+                 "status": "posted", "first_posted_at": "2026-07-19 05:16:54"}]
+        assert _posted_dates(conn, pubs, []) == {("artwork", "P"): "2019-05-05 00:00:00"}
+
 
 class TestAssembleWorks:
     def _works(self, **kw):
@@ -115,18 +134,46 @@ class TestAssembleWorks:
                         posted_dates={("artwork", "A"): "2019-01-01 00:00:00"})
         assert w[0]["original_posted_at"] == "2018-06-06 00:00:00"
 
-    def test_default_order_is_by_post_date_with_created_at_as_the_floor(self):
-        """A hand-made, never-posted piece has no post date. It must sort by
-        when it was made rather than fall off the end."""
+    def test_posted_work_ranks_above_never_posted_work(self):
+        """4.39.1 reverses 4.0.12's floor rule. An undated piece used its added
+        date AMONG posted work, so one bulk import of 110 never-posted pieces sat
+        above everything posted before that import. "Recently posted" lists
+        posted work; the never-posted tail orders by when it was added."""
         w = self._works(
             artworks=[
-                {"name": "Imported", "title": "I", "created_at": "2026-09-03 00:00:00",
+                {"name": "Unposted_Old", "title": "U1", "created_at": "2026-07-19 05:16:54"},
+                {"name": "Posted_2016", "title": "P1", "created_at": "2026-09-03 00:00:00",
                  "original_posted_at": "2016-01-01 00:00:00"},
-                {"name": "Handmade", "title": "H", "created_at": "2026-08-01 00:00:00"},
+                {"name": "Unposted_New", "title": "U2", "created_at": "2026-09-20 00:00:00"},
+                {"name": "Posted_2024", "title": "P2", "created_at": "2026-07-19 05:16:54",
+                 "original_posted_at": "2024-01-01 00:00:00"},
             ])
-        assert [x["name"] for x in w] == ["Handmade", "Imported"], (
-            "the 2016 import must not outrank a piece made last month just "
-            "because it was IMPORTED yesterday")
+        assert [x["name"] for x in w] == ["Posted_2024", "Posted_2016", "Unposted_New", "Unposted_Old"]
+
+    def test_the_shelf_sorts_the_same_as_the_server(self):
+        """bookshelf.js re-sorts the cached list client-side; the two orders
+        must agree or the page reshuffles on the first filter click."""
+        import json
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            pytest.skip("node not installed")
+        rows = [
+            {"name": "a", "created_at": "2026-07-19 05:16:54"},
+            {"name": "b", "created_at": "2026-09-03", "original_posted_at": "2016-01-01 00:00:00"},
+            {"name": "c", "created_at": "2026-09-20"},
+            {"name": "d", "created_at": "2026-07-19", "original_posted_at": "2024-01-01 00:00:00"},
+            {"name": "e", "created_at": "", "original_posted_at": ""},
+        ]
+        js = open("frontend/js/bookshelf.js", encoding="utf-8").read()
+        i = js.index("_recentCmp(a, b) {")
+        fn = js[i:js.index("\n    },", i) + 6].rstrip(",")
+        script = (f"const S = {{ {fn} }};\nconst l = {json.dumps(rows)};\n"
+                  "l.sort((a, b) => S._recentCmp(a, b));\nconsole.log(l.map(x => x.name).join(''));")
+        out = subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout.strip()
+        w = self._works(artworks=[{**r, "title": r["name"]} for r in rows])
+        assert out == "".join(x["name"] for x in w) == "dbcae"
 
 
 class TestPersistence:
@@ -169,5 +216,5 @@ class TestShelf:
 
     def test_recent_reads_the_post_date_and_falls_back(self):
         js = open("frontend/js/bookshelf.js", encoding="utf-8").read()
-        assert "b.original_posted_at || b.created_at" in js
+        assert "this._recentCmp(a, b)" in js
         assert "this._sort === 'added'" in js

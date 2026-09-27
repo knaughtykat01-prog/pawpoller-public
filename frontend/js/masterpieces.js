@@ -627,9 +627,11 @@ window.Masterpieces = {
     /* ── Detail (#/masterpieces/{name}) ── */
 
     async renderDetail(name) {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         this._current = name;
         this._init();
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             ${ItemFrame.backBar({ href: '#/library', label: 'Library' })}
             <div id="mp-detail"><div class="loading-spinner">Opening the masterpiece…</div></div>`;
@@ -638,11 +640,13 @@ window.Masterpieces = {
         try {
             m = await API.getMasterpiece(name);
         } catch (err) {
+            if (App._stale(_rt)) return;
             const status = (err && /404/.test(err.message)) ? 'This masterpiece no longer exists.' : this.esc(err.message);
             document.getElementById('mp-detail').innerHTML =
                 `<div class="card error">Couldn't open this masterpiece: ${status}</div>`;
             return;
         }
+        if (App._stale(_rt)) return;   // the user moved on: don't paint this piece
         this._paintDetail(name, m);
         this._renderDetailNav(name);
     },
@@ -736,6 +740,7 @@ window.Masterpieces = {
         this._charChips();
         this._loadTagBudget();
         this._loadChart(name);
+        if (window.BoardPolish) BoardPolish.collapse(root, 'mp');   // folded cards remembered (C2 phase 3)
         this._foldTarget = null;      // reset the "fold into" choice per detail open
     },
 
@@ -973,7 +978,7 @@ window.Masterpieces = {
             <section class="card" aria-labelledby="mp-sec-tags">
                 <div class="sec-title"><h2 id="mp-sec-tags">Tags</h2>
                     <button class="btn btn-sm btn-browse" data-mp-tagbrowse type="button" title="Pick from the tag library">🏷️ Browse library</button></div>
-                <p class="sec-note">Tag it fully — each site takes what it can.</p>
+                <p class="sec-note">Tag it fully — each site takes what it can. Drag to reorder: a site that caps tags keeps the first ones.</p>
                 <div class="tagblock">
                     <div class="tagbar"><span class="tagcount"><b id="mp-tagcount">${tagList.length}</b> tags · <b id="mp-corecount">–</b> core</span></div>
                     <textarea id="mp-e-tags" class="mp-input" hidden aria-hidden="true">${this.esc(tagList.join(', '))}</textarea>
@@ -1292,6 +1297,8 @@ window.Masterpieces = {
                <input type="text" class="tagchip-input" id="mp-tag-add" placeholder="tag, another tag" hidden aria-label="Add tags"></li>`;
         const n = document.getElementById('mp-tagcount'); if (n) n.textContent = String(tags.length);
         const c = document.getElementById('mp-corecount'); if (c) c.textContent = d ? String(d.core_count || 0) : '–';
+        // Drag (or Alt+←/→) to reorder: sites that cap tags keep the first ones (C2 phase 3).
+        if (window.BoardPolish) BoardPolish.chipSort(host, 'data-mp-chip-x', () => this._tagsFromTextarea(), list => this._setTags(list));
     },
 
     _tagsFromTextarea() {

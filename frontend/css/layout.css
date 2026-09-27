@@ -42,7 +42,7 @@
     flex-shrink: 0;
     object-fit: contain;
 }
-.sidebar-header h1 {
+.sidebar-header .brand-name {
     font-family: var(--font-display);
     font-size: 19px;
     font-weight: 800;
@@ -53,7 +53,7 @@
     align-items: center;
     gap: 6px;
 }
-.sidebar-header h1 .brand-mark { color: var(--accent); }
+.sidebar-header .brand-name .brand-mark { color: var(--accent); }
 .sidebar-collapse {
     margin-left: auto;
     flex-shrink: 0;
@@ -73,7 +73,7 @@
 .sidebar-collapse:hover { color: var(--text-primary); background: var(--bg-hover); }
 /* Collapsed: hide logo + title, centre the toggle (now an "expand"). */
 .sidebar.collapsed .sidebar-header { justify-content: center; padding: 18px 0 12px; }
-.sidebar.collapsed .sidebar-header h1,
+.sidebar.collapsed .sidebar-header .brand-name,
 .sidebar.collapsed .sidebar-logo { display: none; }
 .sidebar.collapsed .sidebar-collapse { margin: 0; }
 
@@ -391,7 +391,7 @@ body.sidebar-collapsed .poll-progress-bar { left: var(--sidebar-w-collapsed); }
     gap: 12px;
     flex-wrap: wrap;
 }
-.page-header h2 {
+.page-header h2, .page-header h1 {
     font-family: var(--font-display);
     font-size: 22px;
     font-weight: 800;
@@ -483,7 +483,7 @@ body.sidebar-collapsed .poll-progress-bar { left: var(--sidebar-w-collapsed); }
     .sidebar.open { transform: translateX(0); }
     .sidebar-collapse { display: none; }
     .sidebar.collapsed .sidebar-header { justify-content: flex-start; padding: 18px 16px 12px; }
-    .sidebar.collapsed .sidebar-header h1,
+    .sidebar.collapsed .sidebar-header .brand-name,
     .sidebar.collapsed .sidebar-logo { display: flex; }
     .sidebar.collapsed .nav-link { justify-content: flex-start; padding: 12px 14px; }
     .sidebar.collapsed .nav-label { display: inline; }
@@ -642,7 +642,7 @@ body.sidebar-collapsed .poll-progress-bar { left: var(--sidebar-w-collapsed); }
     .compare-select { flex-direction: column; }
 
     .main-content { padding: 12px; padding-bottom: calc(12px + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px)); }
-    .page-header h2 { font-size: 1.2rem; }
+    .page-header h2, .page-header h1 { font-size: 1.2rem; }
     .page-header { margin-bottom: 16px; }
 
     .growth-grid { grid-template-columns: 1fr; }

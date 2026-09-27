@@ -345,17 +345,21 @@ class TestPanelUI:
         assert rows.count("this._PANEL_TITLES[code]") == 1, "one template, mapped"
 
     def test_saving_touches_only_panels_on_the_page(self):
-        i = self.js.index("async _saveMeta(name, data) {")
-        block = self.js[i:i + 2500]
+        # The artwork detail save (_saveMeta) was dead since 2.193 and removed in
+        # 4.38.1 (ARTPHANTOMDOM); the masterpiece page's _applyOverrides is the
+        # save that runs, and it carries both guarantees.
+        mp = open("frontend/js/masterpieces.js", encoding="utf-8").read()
+        i = mp.index("async _applyOverrides(name, overrides) {")
+        block = mp[i:i + 2500]
         assert '.art-tg-opt[data-platform="${code}"]' in block
-        assert "...(data.categories || {})" in block and "...(data.descriptions || {})" in block
+        assert "{ ...oldCats }" in block and "{ ...oldDescs }" in block
 
     def test_the_confirm_dialog_shows_a_box_per_announcer(self):
         comp = open("frontend/js/components.js", encoding="utf-8").read()
         assert "o.textBoxes" in comp and 'data-pub-desc="${esc(b.code)}"' in comp
         assert "descriptions," in comp and "tgDescription: descriptions.tg || ''" in comp
-        assert self.js.count("_pubTextBoxes(") == 4, "definition + three callers"
-        assert self.js.count("_pubDescOverrides(") == 4
+        assert self.js.count("_pubTextBoxes(") == 3, "definition + two callers (4.38.1)"
+        assert self.js.count("_pubDescOverrides(") == 3
 
     def test_the_masterpiece_page_passes_maps_not_telegram_alone(self):
         mp = open("frontend/js/masterpieces.js", encoding="utf-8").read()

@@ -174,7 +174,7 @@ class TestFrontendWiring:
 
     def test_every_publish_surface_sends_persona_id(self):
         art = self._src("frontend/js/artwork.js")
-        assert art.count("persona_id: this._personaId(") >= 3, "new form, detail publish, detail schedule"
+        assert art.count("persona_id: this._personaId(") >= 1, "the new-artwork form (detail publish/schedule moved to masterpieces, 4.38.1)"
         assert "persona_id: this._qpPersonaId(" in art
         posts = self._src("frontend/js/posts.js")
         assert posts.count("persona_id: this._personaId()") >= 2, "publish and schedule"

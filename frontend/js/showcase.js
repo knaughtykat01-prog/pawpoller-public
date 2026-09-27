@@ -34,6 +34,7 @@ window.Showcase = {
     _num(n) { return (window.Utils && Utils.formatNumber) ? Utils.formatNumber(n || 0) : String(n || 0); },
 
     async renderLibrary() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         // Desktop-only (2.159.1): the showcase is keyboard/wheel-driven and its
         // shelf layout has no phone answer, so mobile mode always gets the
         // classic grid instead. Deliberately does NOT touch the stored
@@ -45,6 +46,7 @@ window.Showcase = {
         }
         const app = document.getElementById('app');
         const epoch = ++this._epoch;
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="sc-root" id="sc-root">
                 <img class="sc-bg" id="sc-bg" alt="" aria-hidden="true">

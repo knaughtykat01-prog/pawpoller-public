@@ -193,8 +193,7 @@ class TestPlumbing:
         art = self._src("frontend/js/artwork.js")
         assert "art-tg-linkmode" in art and "art-tg-desc" in art
         assert "out.link_mode = modeEl.value" in art and "out.link_platforms = picks" in art
-        assert "updates.descriptions = descriptions" in art, "the stored text is merged, not replaced"
-        assert art.count("description_overrides: ") == 3, "new form, publish-more, quick publish"
+        assert art.count("description_overrides: ") == 2, "new form, quick publish (publish-more removed 4.38.1)"
         mp = self._src("frontend/js/masterpieces.js")
         assert "payload.descriptions = descriptions" in mp
         # 4.3.7: the dialog's text boxes are one per announcer (X and Bluesky

@@ -33,6 +33,7 @@
         _wired: false,
 
         async render(id) {
+            const _rt = App._routeToken();   // route race guard (App._stale)
             this._id = id;
             this._wire();
             const app = document.getElementById('app');
@@ -43,11 +44,13 @@
             try {
                 d = await API.getPost(id);
             } catch (err) {
+                if (App._stale(_rt)) return;
                 const status = (err && /404/.test(err.message)) ? 'This post no longer exists.' : esc(err.message);
                 document.getElementById('pb-detail').innerHTML =
                     `<div class="card error">Couldn't open this post: ${status}</div>`;
                 return;
             }
+            if (App._stale(_rt)) return;   // the user moved on: don't paint or adopt this data
             this._data = d;
             this._paint(d);
             this._renderDetailNav(id);

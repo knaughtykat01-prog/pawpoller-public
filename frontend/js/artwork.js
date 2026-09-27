@@ -63,7 +63,9 @@ window.Artwork = {
      *                  the backend `kind` tag + the art-capable platform set.
      */
     async render() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
                 <div>
@@ -511,6 +513,7 @@ window.Artwork = {
     /* ── Create / upload flow ───────────────────────────────── */
 
     async renderUpload() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         this._pendingFile = null;
         this._pendingPath = null;
         if (this._previewUrl) { URL.revokeObjectURL(this._previewUrl); this._previewUrl = null; }
@@ -519,6 +522,7 @@ window.Artwork = {
         const desktopBtn = this._isDesktop()
             ? `<button type="button" class="btn" id="art-pick-local">Choose local file…</button>` : '';
 
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header">
                 <h1>New artwork</h1>
@@ -1069,89 +1073,6 @@ window.Artwork = {
             `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     },
 
-    /* Schedule the ticked (not-yet-posted) platforms for a future time. One
-     * request per platform — the immediate publish fans out the same way. The
-     * datetime-local value is LOCAL; toISOString() hands the backend a UTC
-     * instant, so a schedule set at 8pm AEST fires at 8pm AEST. */
-    async _confirmSchedule(name) {
-        const msg = document.getElementById('art-detail-msg');
-        const val = document.getElementById('art-schedule-datetime').value;
-        if (!val) { msg.textContent = 'Pick a date and time.'; return; }
-        const when = new Date(val);
-        if (isNaN(when.getTime())) { msg.textContent = 'Invalid date/time.'; return; }
-        if (when.getTime() < Date.now()) { msg.textContent = 'Pick a time in the future.'; return; }
-
-        const checked = Array.from(document.querySelectorAll('#art-detail-platforms .art-plat-check:checked'))
-            .map(c => c.value);
-        if (!checked.length) { msg.textContent = 'Tick at least one platform.'; return; }
-        const accountIds = {};
-        document.querySelectorAll('#art-detail-platforms .art-acct-select').forEach(sel => {
-            if (checked.includes(sel.dataset.platform)) accountIds[sel.dataset.platform] = parseInt(sel.value, 10);
-        });
-
-        const isoStr = when.toISOString();
-        msg.textContent = 'Scheduling…';
-        let ok = 0, fail = 0;
-        for (const platform of checked) {
-            try {
-                await API.scheduleArtwork({
-                    artwork_name: name, platform, scheduled_at: isoStr,
-                    account_id: accountIds[platform],
-                    persona_id: this._personaId('#art-detail-platforms'),
-                });
-                ok++;
-            } catch (err) {
-                fail++;
-                console.warn('Schedule failed for', platform, err);
-            }
-        }
-        this._toast(fail ? 'error' : 'success',
-            `Scheduled ${ok} platform${ok === 1 ? '' : 's'} for ${when.toLocaleString()}` +
-            (fail ? `, ${fail} failed` : ''));
-        document.getElementById('art-schedule-form').style.display = 'none';
-        msg.textContent = '';
-        this._loadArtScheduled(name);
-    },
-
-    async _loadArtScheduled(name) {
-        const box = document.getElementById('art-scheduled-list');
-        if (!box) return;
-        let items = [];
-        try {
-            const resp = await API.getArtworkScheduled(name);
-            items = (resp.items || []).filter(i => i.status === 'pending' && i.scheduled_at);
-        } catch { return; }
-        if (!items.length) { box.innerHTML = ''; return; }
-        items.sort((a, b) => (a.scheduled_at || '').localeCompare(b.scheduled_at || ''));
-        let html = '<div class="schedule-pending-header">Scheduled</div>';
-        for (const it of items) {
-            // Stored 'YYYY-MM-DD HH:MM:SS' is UTC; make it a real instant then localise.
-            const when = new Date(it.scheduled_at.replace(' ', 'T') + 'Z').toLocaleString();
-            const plat = (window.PLATFORMS || []).find(p => p.code === it.platform);
-            html += '<div class="schedule-pending-item">' +
-                '<span class="schedule-pending-icon">&#128340;</span> ' +
-                this.esc(plat ? plat.name : it.platform) + ' &mdash; ' + this.esc(when) +
-                ' <button class="btn btn-xs btn-outline" data-art-sched-cancel="' + it.queue_id + '">Cancel</button>' +
-                '</div>';
-        }
-        box.innerHTML = html;
-        box.querySelectorAll('[data-art-sched-cancel]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                try {
-                    await API.cancelArtworkScheduled(name, parseInt(btn.dataset.artSchedCancel, 10));
-                    this._loadArtScheduled(name);
-                } catch (err) {
-                    this._toast('error', 'Cancel failed: ' + err.message);
-                }
-            });
-        });
-    },
-
-    /* Save canonical metadata edits (rating / title / description / tags) on a
-     * standalone artwork. Merges the new default tags into the existing per-
-     * platform tag dict so overrides survive, then PATCHes /images/{name}. This
-     * updates the local record only — use "Sync" on a Masterpiece to push edits
-     * out to already-published sites. */
     /* Telegram per-piece options.
      *
      * Tri-state on purpose: Default / On / Off. A checkbox cannot express
@@ -1350,105 +1271,6 @@ window.Artwork = {
         return out;
     },
 
-    async _saveMeta(name, data) {
-        const msg = document.getElementById('art-edit-msg');
-        const btn = document.getElementById('art-edit-save');
-        const title = document.getElementById('art-edit-title').value.trim();
-        if (!title) { msg.textContent = 'Enter a title.'; return; }
-        const tags = { ...(data.tags || {}) };
-        const def = this._parseTags(document.getElementById('art-edit-tags').value);
-        if (def.length) tags.default = def; else delete tags.default;
-        // Merge, don't replace: categories holds every platform's submission
-        // params, so writing only `tg` would wipe FA's category, IB's type, etc.
-        const categories = { ...(data.categories || {}) };
-        // One announcer panel each (4.3.7). Only panels ON THE PAGE are read,
-        // so a platform with no panel keeps whatever it had.
-        this._ANNOUNCERS.forEach(code => {
-            if (!document.querySelector(`.art-tg-opt[data-platform="${code}"]`)) return;
-            const o = this._collectPlatOpts(code);
-            if (Object.keys(o).length) categories[code] = o;
-            else delete categories[code];
-        });
-
-        const updates = {
-            title,
-            description: document.getElementById('art-edit-desc').value,
-            rating: document.getElementById('art-edit-rating').value,
-            alt_text: document.getElementById('art-edit-alt')?.value.trim() || '',
-            tags,
-            categories,
-        };
-        // Merge, don't replace — descriptions holds every platform's override,
-        // so writing only `tg` would wipe short/announcement. Same rule as
-        // categories above; save_artwork_metadata does a shallow data.update().
-        const descriptions = { ...(data.descriptions || {}) };
-        let descChanged = false;
-        this._ANNOUNCERS.forEach(code => {
-            const text = this._collectPlatDesc(code);
-            if (text === null) return;                       // no box on the page
-            descChanged = true;
-            if (text) descriptions[code] = text; else delete descriptions[code];
-        });
-        if (descChanged) updates.descriptions = descriptions;
-        btn.disabled = true;
-        msg.textContent = 'Saving…';
-        try {
-            await API.updateArtwork(name, updates);
-            this._toast('success', 'Saved');
-            this.renderDetail(name);
-        } catch (err) {
-            msg.textContent = 'Save failed: ' + err.message;
-            btn.disabled = false;
-        }
-    },
-
-    async _publishMore(name) {
-        const msg = document.getElementById('art-detail-msg');
-        const checked = Array.from(document.querySelectorAll('#art-detail-platforms .art-plat-check:checked'))
-            .map(c => c.value);
-        if (!checked.length) { msg.textContent = 'Tick at least one platform.'; return; }
-        const accountIds = {};
-        document.querySelectorAll('#art-detail-platforms .art-acct-select').forEach(sel => {
-            if (checked.includes(sel.dataset.platform)) accountIds[sel.dataset.platform] = parseInt(sel.value, 10);
-        });
-        const img = document.getElementById('art-detail-img') || {};
-        const title = img.alt || name.replace(/_/g, ' ');
-        // The detail page renders from the DOM, so the declared renders have to be
-        // fetched. A failure here must not block publishing — no renders, no picker.
-        let _meta = null;
-        try { _meta = await API.getArtwork(name); } catch (e) { _meta = null; }
-        const conf = await Components.confirmPublish({
-            title, thumb: img.src || '', subtitle: 'Publish to more',
-            persona: this._personaLabel('#art-detail-platforms'),
-            targets: this._confirmTargets('#art-detail-platforms', checked, accountIds),
-            textBoxes: this._pubTextBoxes(checked),
-            renders: this._pubRenders(_meta),
-            renderWait: this._pubRenderWait(checked),
-        });
-        if (!conf) { msg.textContent = ''; return; }
-        msg.textContent = 'Publishing…';
-        try {
-            const res = await API.publishArtwork({ artwork_name: name, platforms: checked, account_ids: accountIds,
-                persona_id: this._personaId('#art-detail-platforms'),
-                description_overrides: this._pubDescOverrides(conf),
-                // Each ticked version posts as its own submission (4.34.0). Absent
-                // when the piece has no renders, so the ordinary path is unchanged.
-                renders: conf.renders,
-                confirm_live: true });
-            const ok = res.successes || 0;
-            const fail = Components.showPublishResults(msg, res.results);
-            this._toast(fail ? 'error' : 'success',
-                fail ? `${fail} of ${ok + fail} sites failed — see below` : `Published to ${ok} site${ok === 1 ? '' : 's'}`);
-            // renderDetail rebuilds the page and with it the results panel, so
-            // only do it when there is nothing left to read (4.1.0; was
-            // unconditional, which wiped every error before it could be seen).
-            if (!fail) this.renderDetail(name);
-            else msg.textContent = 'Some sites failed:';
-        } catch (err) {
-            msg.textContent = 'Publish failed: ' + err.message;
-        }
-    },
-
     async _delete(name) {
         if (!confirm('Delete this artwork from your library? Any already-published posts stay live on each platform.')) return;
         try {
@@ -1463,7 +1285,9 @@ window.Artwork = {
     /* ── Log ────────────────────────────────────────────────── */
 
     async renderLog() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header">
                 <h1>Artwork history</h1>
@@ -1496,7 +1320,9 @@ window.Artwork = {
      * Each row can be restored (un-ignored), which brings it back to the hub on
      * the next load. Keeps Ignore from being a one-way trap. */
     async renderIgnored() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header">
                 <h1>Ignored artwork</h1>
@@ -1619,7 +1445,9 @@ window.Artwork = {
     },
 
     async renderQuick() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header">
                 <h1>⚡ Quick publish</h1>
@@ -1629,7 +1457,7 @@ window.Artwork = {
             <div class="qp-wrap" style="max-width:640px;display:flex;flex-direction:column;gap:1rem;">
                 <div class="card">
                     <div id="qp-drop" class="artwork-drop" tabindex="0">
-                        <img id="qp-preview" hidden style="max-width:100%;max-height:340px;border-radius:8px;">
+                        <img id="qp-preview" alt="" hidden style="max-width:100%;max-height:340px;border-radius:8px;">
                         <div id="qp-drop-inner" class="artwork-drop-inner">
                             <div class="artwork-drop-ico">🖼️</div>
                             <div>Drop an image here or <label for="qp-file" style="text-decoration:underline;cursor:pointer;color:var(--accent);">choose a file</label>

@@ -17,9 +17,11 @@ window.Accounts = {
     },
 
     async render() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
-            <div class="page-header"><h2>Accounts</h2></div>
+            <div class="page-header"><h1>Accounts</h1></div>
             <p class="acct-intro muted">Run more than one account per platform. Each platform's
             default account keeps your existing credentials; add extra accounts below. Group accounts
             across platforms into a <strong>persona</strong> for scoped views and per-persona digests.</p>
@@ -645,7 +647,9 @@ window.Accounts = {
      * combined scalar totals + a per-platform breakdown + the member accounts,
      * each linking through to that platform's dashboard scoped to the account. */
     async renderPersonaDetail(id) {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header"><h1>Persona</h1></div>
             <div id="persona-detail">Loading…</div>`;

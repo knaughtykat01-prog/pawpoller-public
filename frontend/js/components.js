@@ -167,7 +167,7 @@ const Components = {
         }
         const rows = submissions.map(s => `
             <tr>
-                <td class="mobile-hide" data-label="">${s.thumb_url ? `<img src="${Utils.thumbUrl(s.thumb_url)}" class="thumb-cell" loading="eager">` : ''}</td>
+                <td class="mobile-hide" data-label="">${s.thumb_url ? `<img src="${Utils.thumbUrl(s.thumb_url)}" class="thumb-cell" alt="" loading="eager">` : ''}</td>
                 <td data-label="Title"><a href="#/ib/submission/${s.submission_id}">${Utils.escapeHtml(Utils.truncate(s.title, 45))}</a></td>
                 <td data-label="Type">${Utils.escapeHtml(s.type_name || '--')}</td>
                 <td data-label="Rating">${Utils.escapeHtml(s.rating_name || '--')}</td>
@@ -508,7 +508,7 @@ const Components = {
         }
         const rows = submissions.map(s => `
             <tr>
-                <td class="mobile-hide" data-label="">${s.thumbnail_url ? `<img src="${Utils.faThumbUrl(s.thumbnail_url)}" class="thumb-cell" loading="eager">` : ''}</td>
+                <td class="mobile-hide" data-label="">${s.thumbnail_url ? `<img src="${Utils.faThumbUrl(s.thumbnail_url)}" class="thumb-cell" alt="" loading="eager">` : ''}</td>
                 <td data-label="Title"><a href="#/fa/submission/${s.submission_id}">${Utils.escapeHtml(Utils.truncate(s.title, 45))}</a></td>
                 <td data-label="Category">${Utils.escapeHtml(s.category || '--')}</td>
                 <td data-label="Rating">${Utils.escapeHtml(s.rating || '--')}</td>
@@ -611,7 +611,7 @@ const Components = {
         }
         const rows = submissions.map(s => `
             <tr>
-                <td class="mobile-hide" data-label="">${s.thumbnail_url ? `<img src="${Utils.escapeHtml(s.thumbnail_url)}" class="thumb-cell" loading="eager">` : ''}</td>
+                <td class="mobile-hide" data-label="">${s.thumbnail_url ? `<img src="${Utils.escapeHtml(s.thumbnail_url)}" class="thumb-cell" alt="" loading="eager">` : ''}</td>
                 <td data-label="Title"><a href="#/ws/submission/${s.submission_id}">${Utils.escapeHtml(Utils.truncate(s.title, 45))}</a></td>
                 <td data-label="Type">${Utils.escapeHtml(s.subtype || '--')}</td>
                 <td data-label="Rating">${Utils.escapeHtml(s.rating || '--')}</td>
@@ -697,7 +697,7 @@ const Components = {
         }
         const rows = submissions.map(s => `
             <tr>
-                <td class="mobile-hide" data-label="">${s.thumbnail_url ? `<img src="${Utils.escapeHtml(s.thumbnail_url)}" class="thumb-cell" loading="eager">` : ''}</td>
+                <td class="mobile-hide" data-label="">${s.thumbnail_url ? `<img src="${Utils.escapeHtml(s.thumbnail_url)}" class="thumb-cell" alt="" loading="eager">` : ''}</td>
                 <td data-label="Title"><a href="#/sf/submission/${s.submission_id}">${Utils.escapeHtml(Utils.truncate(s.title, 45))}</a></td>
                 <td data-label="Type">${Utils.escapeHtml(s.content_type || '--')}</td>
                 <td data-label="Rating">${Utils.escapeHtml(s.rating || '--')}</td>
@@ -947,7 +947,7 @@ const Components = {
         }
         const rows = submissions.map(s => `
             <tr>
-                <td class="mobile-hide" data-label="">${s.thumbnail_url ? `<img src="${Utils.escapeHtml(s.thumbnail_url)}" class="thumb-cell" loading="eager">` : ''}</td>
+                <td class="mobile-hide" data-label="">${s.thumbnail_url ? `<img src="${Utils.escapeHtml(s.thumbnail_url)}" class="thumb-cell" alt="" loading="eager">` : ''}</td>
                 <td data-label="Title"><a href="#/da/submission/${s.submission_id}">${Utils.escapeHtml(Utils.truncate(s.title, 45))}</a></td>
                 <td data-label="Category">${Utils.escapeHtml(s.category || '--')}</td>
                 <td data-label="Rating">${Utils.escapeHtml(s.rating || '--')}</td>
@@ -1047,7 +1047,7 @@ const Components = {
         }
         const rows = submissions.map(s => `
             <tr>
-                <td class="mobile-hide" data-label="">${s.cover_url ? `<img src="${Utils.escapeHtml(s.cover_url)}" class="thumb-cell" loading="eager">` : ''}</td>
+                <td class="mobile-hide" data-label="">${s.cover_url ? `<img src="${Utils.escapeHtml(s.cover_url)}" class="thumb-cell" alt="" loading="eager">` : ''}</td>
                 <td data-label="Title"><a href="#/wp/submission/${s.submission_id}">${Utils.escapeHtml(Utils.truncate(s.title, 45))}</a></td>
                 <td data-label="Reads">${Utils.formatNumber(s.reads || s.views || 0)} ${Utils.formatDelta(s.reads_delta || s.views_delta)}</td>
                 <td data-label="Votes">${Utils.formatNumber(s.votes || s.favorites_count || 0)} ${Utils.formatDelta(s.votes_delta || s.faves_delta)}</td>
@@ -1145,7 +1145,7 @@ const Components = {
         }
         const rows = submissions.map(s => `
             <tr>
-                <td class="mobile-hide" data-label="">${s.thumbnail_url ? `<img src="${Utils.escapeHtml(s.thumbnail_url)}" class="thumb-cell" loading="eager">` : ''}</td>
+                <td class="mobile-hide" data-label="">${s.thumbnail_url ? `<img src="${Utils.escapeHtml(s.thumbnail_url)}" class="thumb-cell" alt="" loading="eager">` : ''}</td>
                 <td data-label="Title"><a href="#/ik/submission/${s.submission_id}">${Utils.escapeHtml(Utils.truncate(s.title, 45))}</a></td>
                 <td data-label="Type">${Utils.escapeHtml(s.content_type || 'image')}</td>
                 <td data-label="Likes">${Utils.formatNumber(s.likes || 0)} ${Utils.formatDelta(s.likes_delta)}</td>

@@ -179,6 +179,11 @@ html:not([data-mobile="1"]) .wysiwyg-toolbar {
     font-weight: 600;
     font-size: 1.1rem;
     flex: 1;
+    /* An <h1> since 4.40.0 (one heading per page); keep the old toolbar look. */
+    margin: 0;
+    font-family: inherit;
+    letter-spacing: normal;
+    line-height: inherit;
 }
 
 .editor-actions {
@@ -4161,7 +4166,7 @@ html[data-mobile="1"] .page-header > div > .btn {
     white-space: nowrap;
 }
 
-html[data-mobile="1"] .page-header h2 {
+html[data-mobile="1"] .page-header h2, html[data-mobile="1"] .page-header h1 {
     font-size: 17px;
     line-height: 1.2;
 }
@@ -4644,7 +4649,7 @@ html[data-mobile="1"] body {
 
 /* Headings — bumped one step up. h2 was 17px in P2; 19px reads as
  * a heading without dominating. */
-html[data-mobile="1"] .page-header h2 {
+html[data-mobile="1"] .page-header h2, html[data-mobile="1"] .page-header h1 {
     font-size: 20px;
     line-height: 1.25;
 }

@@ -76,10 +76,12 @@ class TestArtworkOptionsUI:
     def test_saving_merges_rather_than_replaces_categories(self):
         """categories carries every platform's params. Replacing it with just
         tg would wipe FA's category and Inkbunny's type."""
-        js = open("frontend/js/artwork.js", encoding="utf-8").read()
-        i = js.index("async _saveMeta(name, data) {")   # ditto
+        # The artwork detail save (_saveMeta) was dead since 2.193 and removed in
+        # 4.38.1; the masterpiece page's _applyOverrides is the save that runs.
+        js = open("frontend/js/masterpieces.js", encoding="utf-8").read()
+        i = js.index("async _applyOverrides(name, overrides) {")
         block = js[i:i + 1500]
-        assert "...(data.categories || {})" in block, (
+        assert "{ ...oldCats }" in block, (
             "the save must spread the existing categories, not overwrite them")
 
 

@@ -167,7 +167,7 @@
         // Each platform dashboard's header is the first .page-header
         // inside #app. Skip on pages that don't render one (e.g.
         // _loading() placeholder during async data fetches).
-        const headerH2 = document.querySelector('#app .page-header h2');
+        const headerH2 = document.querySelector('#app .page-header h1');
         if (!headerH2) return;
         let subtitle = headerH2.parentElement.querySelector('.platform-page-subtitle');
         if (!subtitle) {

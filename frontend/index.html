@@ -111,7 +111,7 @@
     <nav class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <img class="sidebar-logo" src="/img/logo-quill.png?v=__APP_VERSION__" alt="" width="26" height="26">
-            <h1>PawPoller</h1>
+            <div class="brand-name">PawPoller</div>
             <button class="sidebar-collapse" id="sidebar-collapse" type="button" aria-label="Collapse or expand sidebar" title="Collapse / expand">&#9776;</button>
         </div>
 
@@ -335,11 +335,8 @@
     <script src="/js/notifications_center.js?v=__APP_VERSION__"></script>
     <script src="/js/components.js?v=__APP_VERSION__"></script>
     <script src="/js/charts.js?v=__APP_VERSION__"></script>
-    <script src="/js/vendor/codemirror-bundle.min.js"></script>
-    <script src="/js/vendor/turndown.min.js"></script>
-    <script src="/js/vendor/beautify.min.js"></script>
-    <script src="/js/vendor/beautify-html.min.js"></script>
-    <script src="/js/vendor/beautify-css.min.js"></script>
+    <!-- CodeMirror, Turndown and the beautifiers load when the editor opens (lazy_vendor.js, spec 007). -->
+    <script src="/js/lazy_vendor.js?v=__APP_VERSION__"></script>
     <script src="/js/posting.js?v=__APP_VERSION__"></script>
     <script src="/js/submissions.js?v=__APP_VERSION__"></script>
     <script src="/js/editor.js?v=__APP_VERSION__"></script>
@@ -373,6 +370,7 @@
     <script src="/js/search_query.js?v=__APP_VERSION__"></script>
     <script src="/js/bookshelf.js?v=__APP_VERSION__"></script>
     <script src="/js/story_board.js?v=__APP_VERSION__"></script>
+    <script src="/js/board_polish.js?v=__APP_VERSION__"></script>
     <script src="/js/laurels.js?v=__APP_VERSION__"></script>
     <script src="/js/ledger.js?v=__APP_VERSION__"></script>
     <script src="/js/app.js?v=__APP_VERSION__"></script>

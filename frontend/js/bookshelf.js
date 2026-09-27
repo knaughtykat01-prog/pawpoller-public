@@ -71,7 +71,9 @@ window.Bookshelf = {
     /* ── Library home ──────────────────────────────────────────── */
 
     async render() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="shelf-topbar">
                 <div class="shelf-head">
@@ -352,11 +354,20 @@ window.Bookshelf = {
         // "Recently added" is when PawPoller met the piece (created_at). "Recently
         // posted" is when it was actually published, which is what "most recent"
         // always meant to the user — but until 4.0.12 both were created_at, so a
-        // bulk import of old work sorted to the top in walk order. A piece with
-        // no known post date falls back to created_at rather than off the end.
+        // bulk import of old work sorted to the top in walk order. Posted work
+        // first; never-posted pieces after it, newest-added first (4.39.1).
         else if (this._sort === 'added') list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-        else list.sort((a, b) => (b.original_posted_at || b.created_at || '').localeCompare(a.original_posted_at || a.created_at || ''));
+        else list.sort((a, b) => this._recentCmp(a, b));
         return list;
+    },
+
+    /* Mirrors submissions_api.recent_key. An undated piece used to borrow its
+     * added date and sit AMONG posted work, so one bulk import of never-posted
+     * pieces outranked everything posted before it. */
+    _recentCmp(a, b) {
+        const da = a.original_posted_at || '', db = b.original_posted_at || '';
+        if (!da !== !db) return da ? -1 : 1;
+        return da ? db.localeCompare(da) : (b.created_at || '').localeCompare(a.created_at || '');
     },
 
     _paint() {

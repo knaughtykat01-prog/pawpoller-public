@@ -2306,18 +2306,26 @@ def apply_update(body: dict):
       2. Extract and overwrite the current installation files
       3. Return success -- the server will restart to load the new version
     """
-    download_url = body.get("download_url", "")
-    if not download_url:
-        raise HTTPException(400, "download_url is required")
-    # Security: only allow downloads from the official GitHub repository
-    parsed = urlparse(download_url)
-    if not parsed.hostname or not (
-        parsed.hostname == "github.com"
-        or parsed.hostname.endswith(".github.com")
-        or parsed.hostname == "api.github.com"
-        or parsed.hostname.endswith(".githubusercontent.com")
-    ):
-        raise HTTPException(400, "Only GitHub URLs are allowed for updates")
+    # UPDALLOW (4.40.1). This installs and RUNS what it downloads, so the caller
+    # does not get to choose it: the URL comes from our own check against the
+    # pinned public repo, never from the request. The old allowlist accepted any
+    # github.com / *.githubusercontent.com URL — anyone can host a file there —
+    # and the Windows server package serves this route on 0.0.0.0, so an open
+    # instance could be made to install someone else's program.
+    import server_updater
+    if server_updater.managed():
+        # The installed server package has its own checksummed updater; this
+        # one would replace the server with the DESKTOP build.
+        raise HTTPException(400, "This is a server install: use Settings -> Updates (server update) instead")
+    info = updater.check_for_update()
+    download_url = info.get("download_url") or ""
+    if not info.get("available") or not download_url:
+        raise HTTPException(400, "No update is available")
+    requested = (body or {}).get("download_url")
+    if requested and requested != download_url:
+        raise HTTPException(400, "Updates install only the latest official release")
+    if not updater.is_official_asset(download_url):
+        raise HTTPException(400, "The update is not an official PawPoller release")
     try:
         zip_path = updater.download_update(download_url)
         updater.apply_update(zip_path)

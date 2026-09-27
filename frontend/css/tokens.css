@@ -462,10 +462,10 @@
    Body + labels + buttons stay sans — keeps dashboard density readable
    while giving the marketing-style "literary" tell where it shows most. */
 h1, h2, h3,
-.page-header h2,
+.page-header h2, .page-header h1,
 .modal-panel h3,
 .settings-section h3,
-.sidebar-header h1,
+.sidebar-header .brand-name,
 .login-card h1,
 .login-card h2,
 .loading-card h2,

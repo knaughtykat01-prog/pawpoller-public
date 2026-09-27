@@ -16,14 +16,17 @@ const Podcasts = {
     esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); },
 
     async render(feedId) {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const root = this._root();
         root.innerHTML = '<div class="muted" style="padding:2rem;">Loading podcasts…</div>';
         try {
             this._data = await API.getPodcasts();
         } catch (e) {
+            if (App._stale(_rt)) return;
             root.innerHTML = `<div class="error" style="padding:2rem;">Could not load podcasts: ${this.esc(e.message || e)}</div>`;
             return;
         }
+        if (App._stale(_rt)) return;   // the user moved on while we fetched
         if (feedId) return this._renderFeed(root, feedId);
         this._renderList(root);
     },

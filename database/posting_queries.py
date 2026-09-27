@@ -780,6 +780,43 @@ def get_posting_log(
     return [dict(r) for r in conn.execute(query, params).fetchall()]
 
 
+def open_failures(conn: sqlite3.Connection, story_name: str, scan: int = 300) -> list[dict]:
+    """Failures on a story that are still unresolved — the "Needs attention"
+    rule (C2 redesign phase 3, 4.39.0).
+
+    Per target — (platform, account, chapter) — only the NEWEST attempt counts.
+    If it succeeded, every earlier failure on that target is resolved and not
+    reported; if it failed, one row is reported with how many failures in a row
+    led up to it. Until 4.39.0 the card listed every non-success row from the
+    last five log entries, so a failure that a retry had fixed stayed listed
+    for ever and repeats showed as separate rows.
+    """
+    rows = get_posting_log(conn, story_name=story_name, limit=scan)
+    seen: dict = {}
+    out: list[dict] = []
+    for r in rows:                                   # newest first
+        key = (r.get("platform"), r.get("account_id"), r.get("chapter_index") or 0)
+        if key in seen:
+            entry = seen[key]
+            if entry is not None and entry["_streak"] and r.get("status") != "success":
+                entry["failures"] += 1
+            elif entry is not None:
+                entry["_streak"] = False             # a success ends the run
+            continue
+        if r.get("status") == "success":
+            seen[key] = None                         # resolved: newest attempt worked
+            continue
+        entry = {"platform": r.get("platform"), "account_id": r.get("account_id"),
+                 "chapter_index": r.get("chapter_index") or 0, "action": r.get("action", ""),
+                 "error_message": r.get("error_message", ""), "created_at": r.get("created_at"),
+                 "failures": 1, "_streak": True}
+        seen[key] = entry
+        out.append(entry)
+    for e in out:
+        e.pop("_streak", None)
+    return out
+
+
 # ── Publish-matrix helpers (3.28.0) ──────────────────────────────────────
 #
 # The publish matrix is a grid of chapter × platform. A publication is not:

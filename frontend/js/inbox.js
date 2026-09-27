@@ -25,7 +25,9 @@ window.Inbox = {
     },
 
     async render() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = '<div class="loading">Loading inbox…</div>';
         let data;
         try {
@@ -36,6 +38,7 @@ window.Inbox = {
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             data = await resp.json();
         } catch (err) {
+            if (App._stale(_rt)) return;
             app.innerHTML = `<div class="card error">Inbox failed to load: ${this.esc(err.message || err)}</div>`;
             return;
         }
@@ -46,9 +49,10 @@ window.Inbox = {
                 `<option value="${this.esc(p)}" ${p === this._platform ? 'selected' : ''}>${this.esc(this._plat(p).label)}</option>`))
             .join('');
 
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header">
-                <h2>💬 Inbox <span class="muted" style="font-size:.6em">${data.unhandled_count || 0} to answer</span></h2>
+                <h1>💬 Inbox <span class="muted" style="font-size:.6em">${data.unhandled_count || 0} to answer</span></h1>
                 <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
                     <select id="inbox-plat" class="search-input" style="max-width:180px">${platOpts}</select>
                     <label style="font-size:12px;color:var(--text-muted);cursor:pointer">

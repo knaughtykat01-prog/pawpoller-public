@@ -74,7 +74,7 @@ def _calls(src: str, method: str) -> list[str]:
 
 
 @pytest.mark.parametrize("path,method,expected", [
-    ("frontend/js/artwork.js", "publishArtwork", 3),
+    ("frontend/js/artwork.js", "publishArtwork", 2),  # 3 until 4.38.1 removed dead _publishMore
     ("frontend/js/masterpieces.js", "publishArtwork", 1),
     ("frontend/js/masterpieces.js", "syncMasterpiece", 1),
     ("frontend/js/posts.js", "publishPost", 1),

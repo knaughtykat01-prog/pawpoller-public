@@ -93,6 +93,9 @@ def get_story_detail(story_name: str):
             recent_log = posting_queries.get_posting_log(
                 conn, story_name=story_name, limit=5,
             )
+            # Unresolved failures for the board's "Needs attention" card (4.39.0):
+            # the newest attempt per site/account/chapter, only when it failed.
+            open_failures = posting_queries.open_failures(conn, story_name)
 
             # Pending / processing queue items for this story (callout card).
             pending_queue = posting_queries.get_queue(
@@ -257,6 +260,7 @@ def get_story_detail(story_name: str):
             "unpublished_platforms": unpublished,
             "publications": pubs,
             "recent_log": recent_log,
+            "open_failures": open_failures,
             "pending_queue": pending_queue,
             "first_posted": first_posted,               # what the Library sorts by (4.3.1)
             "first_posted_source": first_posted_source,

@@ -70,7 +70,9 @@ window.Posts = {
      * is the IA split (2.142.0): Submissions vs Posts, create-actions in Create. */
 
     async render() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
                 <div>
@@ -92,7 +94,9 @@ window.Posts = {
      * The composer on its own page. After a successful publish it redirects to
      * the feed (#/posts) so the new post is visible. */
     async renderCompose() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header">
                 <h1>New post</h1>
@@ -644,7 +648,9 @@ window.Posts = {
     /* ── Tag contacts (handle-book manager) — #/posts/contacts ─── */
 
     async renderContacts() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
                 <div>

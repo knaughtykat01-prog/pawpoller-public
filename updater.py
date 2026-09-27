@@ -23,6 +23,22 @@ logger = logging.getLogger(__name__)
 # private development repo until the public distribution existed.
 GITHUB_REPO = "knaughtykat01-prog/pawpoller-public"
 
+# UPDALLOW (4.40.1): the ONLY place an update may come from. The old check was
+# "any github.com / *.githubusercontent.com URL", and anyone can host a file
+# there (github.com/<anyone>/<repo>/releases/download/..., codeload, raw) — so it
+# checked the host, not the publisher. Pinned to this repo's release assets.
+OFFICIAL_ASSET_PREFIX = f"https://github.com/{GITHUB_REPO}/releases/download/"
+
+
+def is_official_asset(url: str) -> bool:
+    """True only for a release asset of GITHUB_REPO. No '..' (a path that
+    normalises out of the prefix), no query or fragment."""
+    if not isinstance(url, str) or not url.startswith(OFFICIAL_ASSET_PREFIX):
+        return False
+    from urllib.parse import urlparse
+    p = urlparse(url)
+    return p.scheme == "https" and p.hostname == "github.com" and ".." not in p.path         and not p.query and not p.fragment
+
 
 def check_for_update() -> dict:
     """Check GitHub releases for a newer version.
@@ -110,6 +126,9 @@ def download_update(download_url: str) -> Path:
     extension is preserved (apply_update branches on sys.platform, not
     on filename, but a sensible name helps log triage).
     """
+    # Defence in depth: the route already derives the URL itself (UPDALLOW).
+    if not is_official_asset(download_url):
+        raise ValueError("Refusing to download an update from outside the official releases")
     temp_dir = Path(tempfile.mkdtemp(prefix="iba_update_"))
     # Best-effort filename from URL; fall back to "update.bin" for opaque URLs.
     from urllib.parse import urlparse

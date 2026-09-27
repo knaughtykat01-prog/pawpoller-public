@@ -49,6 +49,9 @@
         _wired: false,
 
         async render(name) {
+            // Route race guard: stepping story A -> B quickly let A's slower fetch
+            // land last and paint A (and set this._data = A) under B's address.
+            const _rt = App._routeToken();
             this._name = name;
             this._wire();
             const app = document.getElementById('app');
@@ -64,11 +67,13 @@
                     API.getStoryMetadata(name).catch(() => null),
                 ]);
             } catch (err) {
+                if (App._stale(_rt)) return;
                 const status = (err && /404/.test(err.message)) ? 'This story no longer exists.' : esc(err.message);
                 document.getElementById('sb-detail').innerHTML =
                     `<div class="card error">Couldn't open this story: ${status}</div>`;
                 return;
             }
+            if (App._stale(_rt)) return;   // the user moved on: don't paint or adopt this data
             this._data = d;
             this._meta = meta;
             this._budget = null;
@@ -116,10 +121,11 @@
                     <div class="board">
                         <div class="board-col">${this._canonicalHtml(name, d, meta)}${this._tagsHtml(d, meta)}${this._budgetHtml()}</div>
                         <div class="board-col">${this._chaptersHtml(name, d, v)}${this._publishHtml(name, d)}${this._promosHtml(name)}${this._linkHtml()}</div>
-                        <div class="board-col board-col--3">${this._locationsHtml(name, d, v)}${this._growthHtml()}${this._attentionHtml(d)}${this._laurelsHtml(d, v)}${this._moreHtml(name, d)}</div>
+                        <div class="board-col board-col--3">${this._locationsHtml(name, d, v)}${this._growthHtml()}${this._attentionHtml(name, d)}${this._laurelsHtml(d, v)}${this._moreHtml(name, d)}</div>
                     </div>
                 </div>`;
             this._tagChips();
+            if (window.BoardPolish) BoardPolish.collapse(root, 'sb');   // folded cards remembered (C2 phase 3)
         },
 
         /* Per-platform aggregates the hero, chapters and Published-to share. */
@@ -242,7 +248,7 @@
                 <section class="card" aria-labelledby="sb-sec-tags">
                     <div class="sec-title"><h2 id="sb-sec-tags">Tags</h2>
                         <button class="btn btn-sm btn-browse" type="button" data-sb-tagbrowse title="Pick from the tag library">🏷️ Browse library</button></div>
-                    <p class="sec-note">The default list every site starts from — per-site lists are in the editor.</p>
+                    <p class="sec-note">The default list every site starts from — per-site lists are in the editor. Drag to reorder: a site that caps tags keeps the first ones.</p>
                     <div class="tagblock">
                         <div class="tagbar"><span class="tagcount"><b id="sb-tagcount">${list.length}</b> tags</span></div>
                         <textarea id="sb-e-tags" class="mp-input" hidden aria-hidden="true">${esc(list.join(', '))}</textarea>
@@ -479,26 +485,58 @@
                 </section>`;
         },
 
-        /* From data the page already has: drifted publications, the queue,
-         * failed log rows (spec §5.5). Empty state: "Nothing needs you." */
-        _attentionHtml(d) {
-            const items = [];
+        /* From data the page already has (spec §5.5), with the phase 3 rules
+         * (4.39.0), worst first:
+         *  1. failed — `open_failures`: per site/account/chapter, only when the
+         *     NEWEST attempt failed. A failure a later retry fixed is resolved and
+         *     gone; repeats are one row with ×N. (Until 4.39.0 every non-success
+         *     row of the last five log entries was listed, fixed or not.)
+         *  2. drifted — the local file changed since posting; the row carries the
+         *     same Update button as Published to (app.js dispatches it).
+         *  3. queued — pending posts; a queue item that errored counts as bad.
+         * Empty state: "Nothing needs you." */
+        _attentionHtml(name, d) {
+            const ch = (i) => (i > 0 ? 'Ch ' + i : 'whole story');
+            const bad = [], drift = [], queued = [];
+            const failures = Array.isArray(d.open_failures) ? d.open_failures
+                : (d.recent_log || []).filter(e => e.status !== 'success');   // older server
+            failures.forEach(e => {
+                const pl = plat(e.platform);
+                const msg = e.error_message ? String(e.error_message) : '';
+                const times = e.failures > 1 ? ` <span class="needs-n" title="${e.failures} failed attempts in a row">×${e.failures}</span>` : '';
+                bad.push(`<div class="needs-row"><span class="needs-k needs-k--bad">failed</span>${times} ${esc(e.action || '')} ${esc(ch(e.chapter_index || 0))} → ${pl.emoji || ''} ${esc(pl.label)}${msg ? ` <span class="muted" title="${esc(msg)}">— ${esc(msg.slice(0, 90))}${msg.length > 90 ? '…' : ''}</span>` : ''}</div>`);
+            });
+            // Drift is grouped per SITE: a 20-chapter story drifted on three sites
+            // is three rows, not sixty. One posting keeps its own Update; several
+            // list their chapters and lean on the card's Update all.
+            const driftBy = {};
             (d.publications || []).filter(p => p.change_detected).forEach(p => {
-                const pl = plat(p.platform);
-                items.push(`<div class="needs-row"><span class="needs-k">drifted</span> ${pl.emoji || ''} ${esc(pl.label)} · ${p.chapter_index > 0 ? 'Ch ' + p.chapter_index : 'whole story'} <span class="muted">— the local file changed since it was posted; Update pushes it</span></div>`);
+                (driftBy[p.platform] = driftBy[p.platform] || []).push(p.chapter_index == null ? 0 : p.chapter_index);
+            });
+            Object.keys(driftBy).forEach(code => {
+                const pl = plat(code);
+                const idxs = [...new Set(driftBy[code])].sort((a, b) => a - b);
+                const where = idxs.length === 1 ? ch(idxs[0])
+                    : (idxs.includes(0) ? 'whole story, ' : '') + 'Ch ' + idxs.filter(i => i > 0).join(', ');
+                const btn = idxs.length === 1
+                    ? `<button class="btn btn-sm" type="button" data-post-action="update-single" data-post-story="${esc(name)}" data-post-platform="${esc(code)}" data-post-chapter="${idxs[0]}" title="Push the local file to this site">Update</button>`
+                    : '';
+                drift.push(`<div class="needs-row"><span class="needs-k">drifted</span> ${pl.emoji || ''} ${esc(pl.label)} · ${esc(where)}${btn}</div>`);
             });
             (d.pending_queue || []).forEach(q => {
                 const pl = plat(q.platform);
                 const when = q.scheduled_at && window.Posting && Posting._schedInstant ? Posting._schedInstant(q.scheduled_at).toLocaleString() : 'next scheduler tick';
-                items.push(`<div class="needs-row"><span class="needs-k">queued</span> ${esc(q.action || '')} ${q.chapter_index > 0 ? 'Ch ' + q.chapter_index : 'whole story'} → ${pl.emoji || ''} ${esc(pl.label)} <span class="muted">(${esc(q.status || 'pending')}, ${esc(when)})</span></div>`);
+                const errored = q.status === 'failed' || q.status === 'error';
+                (errored ? bad : queued).push(`<div class="needs-row"><span class="needs-k${errored ? ' needs-k--bad' : ''}">queued</span> ${esc(q.action || '')} ${esc(ch(q.chapter_index || 0))} → ${pl.emoji || ''} ${esc(pl.label)} <span class="muted">(${esc(q.status || 'pending')}, ${esc(when)})</span></div>`);
             });
-            (d.recent_log || []).filter(e => e.status !== 'success').forEach(e => {
-                const pl = plat(e.platform);
-                items.push(`<div class="needs-row"><span class="needs-k needs-k--bad">failed</span> ${esc(e.action || '')} ${e.chapter_index > 0 ? 'Ch ' + e.chapter_index : ''} → ${pl.emoji || ''} ${esc(pl.label)}${e.error_message ? ` <span class="muted" title="${esc(e.error_message)}">— ${esc(String(e.error_message).slice(0, 90))}${String(e.error_message).length > 90 ? '…' : ''}</span>` : ''}</div>`);
-            });
+            const items = bad.concat(drift, queued);
+            const count = items.length ? `<span class="muted" style="font-size:12px">${items.length}</span>` : '';
+            const all = drift.length
+                ? `<button class="btn btn-sm" type="button" data-post-action="update-all" data-post-story="${esc(name)}" title="Push the local files to every site (asks first)">Update all</button>` : '';
             return `
                 <section class="card" aria-labelledby="sb-sec-needs">
-                    <div class="sec-title"><h2 id="sb-sec-needs">Needs attention</h2></div>
+                    <div class="sec-title"><h2 id="sb-sec-needs">Needs attention</h2><span class="acts">${count}${all}</span></div>
+                    ${drift.length ? '<p class="sec-note">Drifted: the local file changed since it was posted. Update pushes it.</p>' : ''}
                     ${items.length ? items.join('') : '<p class="muted" style="margin:0;font-size:12.5px">Nothing needs you.</p>'}
                 </section>`;
         },
@@ -645,6 +683,8 @@
                 + `<li class="tagchip-slot"><button type="button" class="tagchip-add" data-sb-chip-add>+ add tag</button>
                    <input type="text" class="tagchip-input" id="sb-tag-add" placeholder="tag, another tag" hidden aria-label="Add tags"></li>`;
             const n = document.getElementById('sb-tagcount'); if (n) n.textContent = String(tags.length);
+            // Drag (or Alt+←/→) to reorder: sites that cap tags keep the first ones (C2 phase 3).
+            if (window.BoardPolish) BoardPolish.chipSort(host, 'data-sb-chip-x', () => this._tagsList(), list => this._setTags(list));
         },
         _addTagsFromInput(input) {
             const add = input.value.split(',').map(x => x.trim()).filter(Boolean);

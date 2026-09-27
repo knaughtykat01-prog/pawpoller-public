@@ -524,6 +524,10 @@ _SENSITIVE_WHEN_OPEN_PREFIXES = (
     # body -- on an open instance that is a credential-probing oracle as well as
     # a write primitive. Same reasoning as the channel routes above.
     "/api/trello",
+    # UPDALLOW (4.40.1): downloads and RUNS a new build. Pinned to official
+    # releases now, but installing an update is still the operator's call, not
+    # an anonymous remote caller's.
+    "/api/update/apply",
 )
 
 

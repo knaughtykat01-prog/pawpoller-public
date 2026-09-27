@@ -136,7 +136,9 @@ window.Laurels = {
     },
 
     async render() {
+        const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="lr-head">
                 <div class="lr-eyebrow">Your den</div>

@@ -89,9 +89,10 @@ def test_the_two_new_blocks_are_styled():
 
 # ── The six triggers ──────────────────────────────────────────
 
+# `_publishMore` (artwork detail "publish to more") was removed in 4.38.1: its page
+# section stopped existing in 2.193 (ARTPHANTOMDOM); the masterpiece page is that surface now.
 SIX = [
     ("frontend/js/artwork.js", "async _save(publish) {", "API.publishArtwork("),
-    ("frontend/js/artwork.js", "async _publishMore(name) {", "API.publishArtwork("),
     ("frontend/js/artwork.js", "async _qpPublish(scheduledLocal) {", "API.publishArtwork("),
     ("frontend/js/masterpieces.js", "async _publishNow(name) {", "API.publishArtwork("),
     ("frontend/js/posts.js", "async _submit(scheduledLocal) {", "API.createPost("),
@@ -135,8 +136,7 @@ def test_masterpiece_confirms_before_it_writes_overrides_to_disk():
 # ── Results, and no re-render on partial failure ──────────────
 
 def test_artwork_surfaces_show_which_platforms_failed():
-    for path, opener in (("frontend/js/artwork.js", "async _publishMore(name) {"),
-                         ("frontend/js/artwork.js", "async _save(publish) {"),
+    for path, opener in (("frontend/js/artwork.js", "async _save(publish) {"),
                          ("frontend/js/artwork.js", "async _qpPublish(scheduledLocal) {"),
                          ("frontend/js/masterpieces.js", "async _publishNow(name) {")):
         body = _fn(_src(path), opener)
@@ -146,8 +146,7 @@ def test_artwork_surfaces_show_which_platforms_failed():
 def test_no_unconditional_rerender_after_publish():
     """artwork.js:1245 called renderDetail(name) one line after the toast, so
     any error text was wiped before it could be read."""
-    for path, opener in (("frontend/js/artwork.js", "async _publishMore(name) {"),
-                         ("frontend/js/masterpieces.js", "async _publishNow(name) {")):
+    for path, opener in (("frontend/js/masterpieces.js", "async _publishNow(name) {"),):
         body = _fn(_src(path), opener)
         i = body.index("showPublishResults(")
         after = body[i:]

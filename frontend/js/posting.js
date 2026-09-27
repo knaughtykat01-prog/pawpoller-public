@@ -81,14 +81,17 @@ const Posting = {
 
     /* ── 1. Stories Hub (Card Grid) ──────────────────────────── */
     async renderUpload() {
-        App._setContent('<div class="page-header"><h2>Stories</h2></div><div class="loading">Loading stories...</div>');
+        const _rt = App._routeToken();   // route race guard (App._stale)
+        if (App._stale(_rt)) return;
+        App._setContent('<div class="page-header"><h1>Stories</h1></div><div class="loading">Loading stories...</div>');
 
         try {
             const { stories } = await API.getPostingStories();
 
             if (!stories.length) {
+                if (App._stale(_rt)) return;
                 App._setContent(`
-                    <div class="page-header"><h2>Stories</h2></div>
+                    <div class="page-header"><h1>Stories</h1></div>
                     <div class="empty-state"><h3>No stories found</h3><p>Sync your archive with <code>pawsync.bat</code></p></div>`);
                 return;
             }
@@ -143,12 +146,14 @@ const Posting = {
                     </a>`;
             }).join('');
 
+            if (App._stale(_rt)) return;
             App._setContent(`
-                <div class="page-header"><h2>Stories</h2>
+                <div class="page-header"><h1>Stories</h1>
                     <p class="page-subtitle">${stories.length} stories in archive</p>
                 </div>
                 <div class="story-card-grid">${cards}</div>`);
         } catch (err) {
+            if (App._stale(_rt)) return;
             App._setContent(`<div class="error-state"><h3>Error loading stories</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -276,7 +281,9 @@ const Posting = {
     },
 
     async renderQueue() {
-        App._setContent('<div class="page-header"><h2>Queue &amp; Schedule</h2></div><div class="loading">Loading queue...</div>');
+        const _rt = App._routeToken();   // route race guard (App._stale)
+        if (App._stale(_rt)) return;
+        App._setContent('<div class="page-header"><h1>Queue &amp; Schedule</h1></div><div class="loading">Loading queue...</div>');
         try {
             // content_type omitted → the endpoint returns stories, artwork AND posts.
             const { queue } = await API.getPostingQueue({ include_completed: true });
@@ -287,6 +294,7 @@ const Posting = {
             if (!this._queueView) this._queueView = 'list';
             this._paintQueue();
         } catch (err) {
+            if (App._stale(_rt)) return;
             App._setContent(`<div class="error-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
@@ -310,7 +318,7 @@ const Posting = {
         const queue = this._queueData || [];
         if (!queue.length) {
             App._setContent(`
-                <div class="page-header"><h2>Queue &amp; Schedule</h2></div>
+                <div class="page-header"><h1>Queue &amp; Schedule</h1></div>
                 <div class="empty-state"><h3>Nothing queued</h3><p>Schedule a story, artwork or post, or upload one, and it shows up here.</p></div>`);
             return;
         }
@@ -335,7 +343,7 @@ const Posting = {
 
         App._setContent(`
             <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
-                <div><h2>Queue &amp; Schedule</h2>${schedNote}</div>
+                <div><h1>Queue &amp; Schedule</h1>${schedNote}</div>
                 <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;">${clearBtn}${toggle}</div>
             </div>
             ${body}`);
@@ -637,13 +645,16 @@ const Posting = {
 
     /* ── 5. History / Log Page ───────────────────────────────── */
     async renderLog() {
-        App._setContent('<div class="page-header"><h2>Posting History</h2></div><div class="loading">Loading log...</div>');
+        const _rt = App._routeToken();   // route race guard (App._stale)
+        if (App._stale(_rt)) return;
+        App._setContent('<div class="page-header"><h1>Posting History</h1></div><div class="loading">Loading log...</div>');
 
         try {
             const { log } = await API.getPostingLog({ limit: 100 });
             if (!log.length) {
+                if (App._stale(_rt)) return;
                 App._setContent(`
-                    <div class="page-header"><h2>Posting History</h2></div>
+                    <div class="page-header"><h1>Posting History</h1></div>
                     <div class="empty-state"><h3>No posting activity yet</h3></div>`);
                 return;
             }
@@ -674,8 +685,9 @@ const Posting = {
                 </tr>`;
             }).join('');
 
+            if (App._stale(_rt)) return;
             App._setContent(`
-                <div class="page-header"><h2>Posting History</h2>
+                <div class="page-header"><h1>Posting History</h1>
                     <p class="page-subtitle">${log.length} entries</p>
                 </div>
                 <div class="card">
@@ -688,6 +700,7 @@ const Posting = {
                     </table>
                 </div>`);
         } catch (err) {
+            if (App._stale(_rt)) return;
             App._setContent(`<div class="error-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
