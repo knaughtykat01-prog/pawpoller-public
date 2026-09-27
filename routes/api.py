@@ -2895,7 +2895,7 @@ def get_repost_radar(min_age_days: int = 60, limit: int = 25):
             c["title"] = a.get("title") or c["name"].replace("_", " ")
             img = a.get("image", "")
             c["thumb_url"] = (f"/api/artwork/image?name={quote(c['name'])}"
-                              f"&file={quote(img)}") if img else ""
+                              f"&file={quote(img)}&w=400") if img else ""
             c["detail_route"] = f"#/artwork/image/{quote(c['name'])}"
 
         # Honest follower-context block: current following + growth over whatever

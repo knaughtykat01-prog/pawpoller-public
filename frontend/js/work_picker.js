@@ -71,7 +71,7 @@
                 const title = m.title || m.name;
                 if (q && !(title.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q))) return;
                 const thumb = m.image
-                    ? `/api/artwork/image?name=${encodeURIComponent(m.name)}&file=${encodeURIComponent(m.image)}`
+                    ? `/api/artwork/image?name=${encodeURIComponent(m.name)}&file=${encodeURIComponent(m.image)}&w=400`
                     : ((m.summary && m.summary.cover_thumb) || '');
                 items.push({
                     member_type: 'masterpiece',

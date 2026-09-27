@@ -327,7 +327,7 @@ def assemble_works(
                     "key": v.get("key", ""),
                     "label": v.get("label") or v.get("key") or "",
                     "rating": v.get("rating", "") or a.get("rating", ""),
-                    "thumb_url": f"/api/artwork/image?name={quote(a['name'])}&file={quote(v.get('image', '') if _kind == 'image' else (a.get('thumbnail') or ''))}",
+                    "thumb_url": f"/api/artwork/image?name={quote(a['name'])}&file={quote(v.get('image', '') if _kind == 'image' else (a.get('thumbnail') or ''))}&w=400",
                     "detail_route": (f"#/artwork/image/{quote(a['name'])}"
                                      f"?v={quote(v.get('key', ''))}"),
                 }
@@ -347,7 +347,7 @@ def assemble_works(
                 "persona_ids": pids,
                 "persona_names": [personas[i]["name"] for i in pids if i in personas],
                 "thumb_url": (
-                    f"/api/artwork/image?name={quote(a['name'])}&file={quote(img)}"
+                    f"/api/artwork/image?name={quote(a['name'])}&file={quote(img)}&w=400"
                     if img else ""
                 ),
                 "variants": variant_tiles,

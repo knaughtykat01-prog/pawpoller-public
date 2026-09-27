@@ -30,13 +30,14 @@ def boards(conn, include_hidden: bool = False, include_removed: bool = False) ->
     return out
 
 
-def _cover_url(conn, cover: dict) -> str | None:
+def _cover_url(conn, cover: dict, width: int = 400) -> str | None:
     att = (cover or {}).get("attachment_id")
     if not att:
         return None
     r = conn.execute("SELECT local_path FROM trello_covers WHERE attachment_id = ?",
                      (att,)).fetchone()
-    return f"/api/trello/covers/{att}" if r and r["local_path"] not in (None, "", "-") else None
+    return (f"/api/trello/covers/{att}?w={width}"
+            if r and r["local_path"] not in (None, "", "-") else None)
 
 
 def board(conn, board_id: str, include_archived: bool = False,
@@ -145,7 +146,7 @@ def card(conn, card_id: str) -> dict | None:
                  "name": c["name"], "desc": c["desc"], "pos": c["pos"],
                  "closed": bool(c["closed"]), "due": c["due"], "start": c["start"],
                  "due_complete": bool(c["due_complete"]), "labels": c["labels"],
-                 "cover": c["cover"] or None, "cover_url": _cover_url(conn, c["cover"]),
+                 "cover": c["cover"] or None, "cover_url": _cover_url(conn, c["cover"], 800),
                  "url": c["url"] or "", "removed": bool(c["removed_at"]),
                  "pending": ("card", card_id) in busy or mirror.is_tmp(card_id)},
         "lists": lists, "labels": labels, "checklists": checklists, "comments": comments,

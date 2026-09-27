@@ -710,11 +710,14 @@ def get_artwork_log(limit: int = Query(50)):
 # ── Image serving ─────────────────────────────────────────────
 
 @artwork_router.get("/image")
-def get_artwork_image(name: str = Query(...), file: str = Query(...)):
+def get_artwork_image(name: str = Query(...), file: str = Query(...),
+                      w: int | None = Query(None)):
     """Serve an image from an artwork folder.
 
     Query params (not path segments) so names + nested files round-trip through
     ``encodeURIComponent``. Path-traversal guarded; only image extensions served.
+    ``w`` asks for a card-sized WebP copy (``thumbs.py``) instead of the original —
+    grids pass it, the viewer and posting never do.
     """
     if not name or not file:
         raise HTTPException(400, detail="name and file query params are required")
@@ -733,6 +736,13 @@ def get_artwork_image(name: str = Query(...), file: str = Query(...)):
         raise HTTPException(404, detail="Image not found")
     if requested.suffix.lower() not in artwork_reader.IMAGE_EXTENSIONS:
         raise HTTPException(415, detail="Unsupported image type")
+
+    if w:
+        import thumbs
+        small = thumbs.thumbnail(requested, w)
+        if small is not None:
+            return FileResponse(path=str(small), media_type="image/webp",
+                                headers={"Cache-Control": "private, max-age=86400"})
 
     return FileResponse(
         path=str(requested),

@@ -473,7 +473,7 @@ window.Artwork = {
         // data-rating drives the SFW/safe-mode blur (safe_mode.css); unknown → blurred.
         const rAttr = ` data-rating="${this.esc((a.rating || '').toLowerCase())}"`;
         const cover = a.image
-            ? `<div class="artwork-card-cover"${rAttr} style="background-image:url('${this._imgUrl(a.name, a.image)}')"></div>`
+            ? `<div class="artwork-card-cover"${rAttr} style="background-image:url('${this._imgUrl(a.name, a.image)}&w=400')"></div>`
             : `<div class="artwork-card-cover artwork-card-cover--empty"${rAttr}>no image</div>`;
         const rating = a.rating
             ? `<span class="artwork-badge artwork-badge--${this.esc(a.rating)}">${this.esc(a.rating)}</span>` : '';

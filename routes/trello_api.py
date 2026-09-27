@@ -478,10 +478,16 @@ async def upload_cover(card_id: str, file: UploadFile = File(...)):
 
 
 @trello_router.get("/covers/{attachment_id}")
-def get_cover(attachment_id: str):
+def get_cover(attachment_id: str, w: int | None = None):
     path = covers.path_for(attachment_id)
     if path is None or not path.is_file():
         raise HTTPException(status_code=404, detail="No such cover.")
+    if w:
+        import thumbs
+        small = thumbs.thumbnail(path, w)
+        if small is not None:
+            return FileResponse(small, media_type="image/webp",
+                                headers={"Cache-Control": "private, max-age=86400"})
     return FileResponse(path, media_type=covers.MEDIA_TYPES.get(path.suffix.lower(),
                                                                 "application/octet-stream"),
                         headers={"Cache-Control": "private, max-age=3600"})

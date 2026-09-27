@@ -213,7 +213,7 @@ window.ImageTool = {
                 <div class="itool-lib">${list.filter(a => a.image).map(a =>
                     `<button type="button" class="itool-libcard" data-name="${Utils.escapeHtml(a.name)}"
                         data-file="${Utils.escapeHtml(a.image)}">
-                        <img src="/api/artwork/image?name=${encodeURIComponent(a.name)}&file=${encodeURIComponent(a.image)}"
+                        <img src="/api/artwork/image?name=${encodeURIComponent(a.name)}&file=${encodeURIComponent(a.image)}&w=200"
                             alt="" loading="lazy">
                         <span>${Utils.escapeHtml(a.title || a.name)}</span>
                     </button>`).join('')}</div>

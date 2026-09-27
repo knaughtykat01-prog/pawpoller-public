@@ -88,7 +88,7 @@ window.Showcase = {
         }));
         const art = mps.map(x => ({
             title: x.title || x.name,
-            img: x.image ? `/api/artwork/image?name=${encodeURIComponent(x.name)}&file=${encodeURIComponent(x.image)}`
+            img: x.image ? `/api/artwork/image?name=${encodeURIComponent(x.name)}&file=${encodeURIComponent(x.image)}&w=800`
                 : ((x.summary || {}).cover_thumb || ''),
             href: `#/masterpieces/${x.name}`,
             sub: `👁 ${this._num(((x.summary || {}).totals || {}).views)} · ${((x.summary || {}).member_count || 0)} sites`,

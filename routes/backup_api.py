@@ -70,34 +70,116 @@ def backup_info():
     return {"items": items, "total_bytes": total, "app_version": config.APP_VERSION}
 
 
-def write_backup_zip(dest: Path) -> dict:
-    """Build a full backup .zip at `dest` and return its manifest. Shared by the
-    HTTP export and the scheduled auto-backup (gap G7) so both produce identical
-    archives."""
+def _db_snapshot(into: Path) -> Path:
+    """A consistent copy of the live database via SQLite's backup API.
+
+    ⚠ Zipping ``pawpoller.db`` directly (as backups did until 4.38.0) copies a file
+    another thread may be writing, and the WAL holds commits the main file does not
+    have yet — a backup that restores to an older or torn database.
+    """
+    import sqlite3
+    live = _data_dir() / "pawpoller.db"
+    out = into / "pawpoller.db"
+    try:
+        src = sqlite3.connect(str(live))
+        try:
+            dst = sqlite3.connect(str(out))
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
+    except sqlite3.DatabaseError:
+        # Not something SQLite can open: copy the bytes as backups always did,
+        # rather than fail the backup outright.
+        logger.warning("Backup: database copied as a plain file (SQLite could not open it).")
+        out.unlink(missing_ok=True)
+        shutil.copy2(live, out)
+    return out
+
+
+def _write_core(z: zipfile.ZipFile, manifest: dict, tmp: Path) -> None:
+    """The small, critical part of every backup: database, settings, vault."""
     dd = _data_dir()
-    with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
-        manifest = {
-            "kind": BACKUP_KIND,
-            "app_version": config.APP_VERSION,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "files": [], "dirs": [],
-        }
-        for f in _BACKUP_FILES:
-            p = dd / f
-            if p.is_file():
-                z.write(p, f"data/{f}")
-                manifest["files"].append(f)
-        for d in _BACKUP_DIRS:
-            p = dd / d
-            if not p.is_dir():
-                continue
-            manifest["dirs"].append(d)
-            for x in p.rglob("*"):
-                if x.is_file():
-                    z.write(x, f"data/{x.relative_to(dd).as_posix()}")
+    for f in _BACKUP_FILES:
+        p = dd / f
+        if not p.is_file():
+            continue
+        if f == "pawpoller.db":
+            p = _db_snapshot(tmp)
+        z.write(p, f"data/{f}")
+        manifest["files"].append(f)
+
+
+def write_backup_zip(dest: Path, include_media: bool = True) -> dict:
+    """Build a backup .zip at `dest` and return its manifest. The HTTP export is a
+    full backup ("download my everything"); the scheduled one leaves media out and
+    mirrors it incrementally instead (see ``sync_media_mirror``)."""
+    dd = _data_dir()
+    manifest = {
+        "kind": BACKUP_KIND,
+        "app_version": config.APP_VERSION,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "files": [], "dirs": [],
+    }
+    with tempfile.TemporaryDirectory(prefix="pawpoller-db-") as tmp, \
+            zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
+        _write_core(z, manifest, Path(tmp))
+        if include_media:
+            for d in _BACKUP_DIRS:
+                p = dd / d
+                if not p.is_dir():
+                    continue
+                manifest["dirs"].append(d)
+                for x in p.rglob("*"):
+                    if x.is_file():
+                        # Images are already compressed; deflating them again
+                        # costs CPU for ~0% saving.
+                        z.write(x, f"data/{x.relative_to(dd).as_posix()}",
+                                compress_type=zipfile.ZIP_STORED)
+        else:
+            manifest["media_mirror"] = MEDIA_MIRROR
         z.writestr("manifest.json", json.dumps(manifest, indent=2))
     return manifest
 
+
+MEDIA_MIRROR = "media"
+
+
+def sync_media_mirror(out_dir: Path) -> dict:
+    """Copy media into ``out_dir/media`` — only files that are new or changed.
+
+    This is what makes nightly backups cheap: until 4.38.0 every night re-zipped
+    every image (~200 MB a night, ~3.4x the artwork itself across the kept zips).
+    Images barely compress, so the zips were near-identical copies.
+
+    ⚠ A file deleted from the library is NOT deleted from the mirror. A backup
+    that follows deletions stops protecting against exactly the mistake it is for.
+    """
+    dd = _data_dir()
+    root = out_dir / MEDIA_MIRROR
+    copied = total = 0
+    for d in _BACKUP_DIRS:
+        src_root = dd / d
+        if not src_root.is_dir():
+            continue
+        for src in src_root.rglob("*"):
+            if not src.is_file():
+                continue
+            total += 1
+            dst = root / src.relative_to(dd)
+            st = src.stat()
+            try:
+                dt = dst.stat()
+                if dt.st_size == st.st_size and int(dt.st_mtime) == int(st.st_mtime):
+                    continue
+            except FileNotFoundError:
+                pass
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            copied += 1
+    return {"files": total, "copied": copied}
 
 # ── Scheduled automatic backups (gap G7) ─────────────────────────────────────
 # A daemon thread (started by main.py + server.py) periodically writes a
@@ -119,7 +201,9 @@ def run_auto_backup() -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     dest = out_dir / f"pawpoller-backup-{stamp}.zip"
-    write_backup_zip(dest)
+    # Media first: a zip that exists means its mirror was complete when written.
+    media = sync_media_mirror(out_dir)
+    write_backup_zip(dest, include_media=False)
     # Timestamped names sort chronologically, so keep the newest N by sort order.
     keep = max(1, int(config.get_settings().get("auto_backup_keep", _AUTO_DEFAULTS["keep"]) or 7))
     existing = sorted(out_dir.glob("pawpoller-backup-*.zip"))
@@ -130,7 +214,7 @@ def run_auto_backup() -> dict:
             pruned.append(old.name)
         except OSError:
             pass
-    return {"path": str(dest), "bytes": dest.stat().st_size, "pruned": pruned}
+    return {"path": str(dest), "bytes": dest.stat().st_size, "pruned": pruned, "media": media}
 
 
 def auto_backup_due() -> bool:
@@ -177,7 +261,37 @@ def run_auto_backup_scheduler():
             maybe_run_auto_backup()
         except Exception as e:
             logger.warning("Auto-backup scheduler tick failed: %s", e)
+        try:
+            maybe_prune_snapshots()
+        except Exception as e:
+            logger.warning("Snapshot thinning failed: %s", type(e).__name__)
         _time.sleep(30 * 60)
+
+
+def maybe_prune_snapshots() -> dict | None:
+    """Thin old stats snapshots once a day (``database/snapshot_prune.py``).
+
+    Rides the backup thread because it is daily housekeeping that must run in both
+    entry points, and this thread already does (main.py + server.py). Runs whether
+    or not auto-backup is enabled."""
+    s = config.get_settings()
+    last = s.get("last_snapshot_prune_at")
+    if last:
+        try:
+            last_dt = datetime.fromisoformat(last)
+            if (datetime.now(timezone.utc) - last_dt).total_seconds() < 24 * 3600:
+                return None
+        except (ValueError, TypeError):
+            pass
+    from database.db import get_connection
+    from database import snapshot_prune
+    conn = get_connection()
+    try:
+        removed = snapshot_prune.prune(conn)
+    finally:
+        conn.close()
+    config.save_settings({"last_snapshot_prune_at": datetime.now(timezone.utc).isoformat()})
+    return removed
 
 
 @backup_router.get("/auto")
@@ -310,8 +424,13 @@ async def import_backup(file: UploadFile = File(...)):
             if sp.is_file():
                 shutil.copy2(sp, dd / f)
                 restored.append(f)
+        # A scheduled backup carries no media; it lives in the mirror beside the
+        # zips on this machine. Restore from it when the zip names one.
+        mirror = _auto_backup_dir() / manifest["media_mirror"] if manifest.get("media_mirror") else None
         for d in _BACKUP_DIRS:
             sd = src_data / d
+            if not sd.is_dir() and mirror is not None and (mirror / d).is_dir():
+                sd = mirror / d
             if sd.is_dir():
                 _merge_tree(sd, dd / d)
                 restored.append(d + "/")
