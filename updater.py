@@ -32,12 +32,15 @@ OFFICIAL_ASSET_PREFIX = f"https://github.com/{GITHUB_REPO}/releases/download/"
 
 def is_official_asset(url: str) -> bool:
     """True only for a release asset of GITHUB_REPO. No '..' (a path that
-    normalises out of the prefix), no query or fragment."""
+    normalises out of the prefix), no percent-escapes (an encoded '..'), no
+    query or fragment. Release asset names never need any of those."""
     if not isinstance(url, str) or not url.startswith(OFFICIAL_ASSET_PREFIX):
         return False
     from urllib.parse import urlparse
     p = urlparse(url)
-    return p.scheme == "https" and p.hostname == "github.com" and ".." not in p.path         and not p.query and not p.fragment
+    return (p.scheme == "https" and p.hostname == "github.com"
+            and ".." not in p.path and "%" not in p.path
+            and not p.query and not p.fragment)
 
 
 def check_for_update() -> dict:
@@ -52,13 +55,10 @@ def check_for_update() -> dict:
 
     try:
         # GitHub Releases API — the /releases/latest endpoint returns the most
-        # recent non-prerelease, non-draft release. Auth token required for
-        # private repos; read from settings.json "github_pat" key.
+        # recent non-prerelease, non-draft release. No token: the repo is public,
+        # and a stored `github_pat` has no business travelling with an update
+        # check (4.40.2 — it used to be sent here and on the download).
         headers = {"Accept": "application/vnd.github+json"}
-        settings = config.get_settings()
-        pat = settings.get("github_pat", "")
-        if pat:
-            headers["Authorization"] = f"token {pat}"
 
         with httpx.Client(timeout=15.0) as client:
             resp = client.get(
@@ -118,8 +118,30 @@ def check_for_update() -> dict:
         return {"available": False, "current": APP_VERSION, "latest": APP_VERSION, "download_url": None, "error": str(e)}
 
 
+def _expected_sha256(download_url: str, client) -> str:
+    """The published checksum for an asset: ``<asset>.sha256`` beside it in the
+    same release (CI writes one per desktop asset since 4.40.2, as it already did
+    for the server packages). No checksum -> no update: fail closed."""
+    import re as _re
+    sha_url = download_url + ".sha256"
+    if not is_official_asset(sha_url):
+        raise ValueError("Refusing a checksum from outside the official releases")
+    resp = client.get(sha_url)
+    if resp.status_code == 404:
+        raise RuntimeError("This release has no checksum, so it can't be verified. "
+                           "Download it from the Releases page instead.")
+    resp.raise_for_status()
+    m = _re.search(r"\b([0-9a-fA-F]{64})\b", resp.text)
+    if not m:
+        raise RuntimeError("The release's checksum file is unreadable")
+    return m.group(1).lower()
+
+
 def download_update(download_url: str) -> Path:
     """Download the update asset to a temp dir. Returns path to downloaded file.
+
+    Verified against the release's published SHA-256 before it is returned —
+    a download that does not match is deleted and raises (4.40.2).
 
     The asset shape differs by OS — a .zip on Windows, an .AppImage on
     Linux. The downloaded filename uses the URL's basename so the
@@ -135,12 +157,10 @@ def download_update(download_url: str) -> Path:
     url_name = Path(urlparse(download_url).path).name or "update.bin"
     zip_path = temp_dir / url_name
 
-    # Auth header for private repo asset downloads.
+    # No Authorization header: public repo (see check_for_update).
     headers = {"Accept": "application/octet-stream"}
-    settings = config.get_settings()
-    pat = settings.get("github_pat", "")
-    if pat:
-        headers["Authorization"] = f"token {pat}"
+    import hashlib
+    digest = hashlib.sha256()
 
     # Streaming download pattern — instead of loading the entire ZIP into memory
     # (which could be tens of MB), we stream it in 8KB chunks and write directly
@@ -148,11 +168,16 @@ def download_update(download_url: str) -> Path:
     # through their CDN. The generous 120s timeout accommodates slow connections.
     try:
         with httpx.Client(timeout=120.0, follow_redirects=True) as client:
+            expected = _expected_sha256(download_url, client)
             with client.stream("GET", download_url, headers=headers) as resp:
                 resp.raise_for_status()
                 with open(zip_path, "wb") as f:
                     for chunk in resp.iter_bytes(chunk_size=8192):
+                        digest.update(chunk)
                         f.write(chunk)
+        if digest.hexdigest() != expected:
+            raise RuntimeError(f"Checksum mismatch for {url_name}: the download is not the published "
+                               "release. Nothing was installed.")
     except Exception:
         # Clean up temp directory on download failure
         import shutil

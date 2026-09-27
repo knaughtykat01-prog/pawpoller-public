@@ -82,6 +82,19 @@ jobs:
           & "$iscc" /DMyAppVersion="${{ steps.version.outputs.version }}" installer\PawPoller.iss
           if ($LASTEXITCODE -ne 0) { throw "iscc exited $LASTEXITCODE" }
 
+      # A `<asset>.sha256` beside each desktop asset (4.40.2). The in-app updater
+      # (updater.download_update) refuses an update whose checksum is missing or
+      # doesn't match; same `<hex>  <name>` format as the server packages.
+      - name: Checksums
+        shell: powershell
+        run: |
+          $files = @(Get-Item dist\PawPoller-windows-x64.zip) + @(Get-Item installer\Output\PawPoller-Setup-*.exe)
+          foreach ($f in $files) {
+            $hash = (Get-FileHash -Algorithm SHA256 $f.FullName).Hash.ToLower()
+            "$hash  $($f.Name)" | Set-Content -Path "$($f.FullName).sha256" -Encoding ASCII -NoNewline
+            Get-Content "$($f.FullName).sha256"
+          }
+
       # NOTE: no upload-artifact here — the binaries are published to the
       # GitHub Release below (free storage). Uploading them as Actions
       # artifacts too was duplicate storage that overflowed the 500MB
@@ -98,7 +111,9 @@ jobs:
         with:
           files: |
             dist/PawPoller-windows-x64.zip
+            dist/PawPoller-windows-x64.zip.sha256
             installer/Output/PawPoller-Setup-*.exe
+            installer/Output/PawPoller-Setup-*.exe.sha256
           body_path: RELEASE_NOTES.md
 
   build-linux:
@@ -159,6 +174,12 @@ jobs:
           chmod +x installer/build-appimage.sh
           installer/build-appimage.sh "${{ steps.version.outputs.version }}"
 
+      # See build-windows "Checksums" (4.40.2).
+      - name: Checksum
+        run: |
+          cd installer/Output
+          for f in PawPoller-*-x86_64.AppImage; do sha256sum "$f" > "$f.sha256"; cat "$f.sha256"; done
+
       # Same CHANGELOG-derived body as build-windows (idempotent — both jobs may
       # create/update the release depending on which finishes first).
       - name: Extract release notes
@@ -170,7 +191,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
-          files: installer/Output/PawPoller-*-x86_64.AppImage
+          files: |
+            installer/Output/PawPoller-*-x86_64.AppImage
+            installer/Output/PawPoller-*-x86_64.AppImage.sha256
           body_path: RELEASE_NOTES.md
 
   # ── PawPoller Server (headless, dockerless) — HOSTFREE §3, 4.12.0 ──────────

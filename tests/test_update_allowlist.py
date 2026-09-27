@@ -97,3 +97,85 @@ class TestTheRoute:
 def test_an_open_instance_refuses_remote_callers():
     import dashboard
     assert "/api/update/apply" in dashboard._SENSITIVE_WHEN_OPEN_PREFIXES
+
+
+# ── 4.40.2: checksums on desktop downloads, no token on update traffic ─────
+
+import hashlib
+import httpx
+
+PAYLOAD = b"PK\x03\x04 a pretend update zip"
+GOOD = hashlib.sha256(PAYLOAD).hexdigest()
+
+
+def _fake_github(monkeypatch, sha_text=None, sha_status=200, seen=None):
+    """Serve OFFICIAL and OFFICIAL.sha256 from a MockTransport; record requests."""
+    def handler(request):
+        if seen is not None:
+            seen.append(request)
+        if str(request.url).endswith(".sha256"):
+            return httpx.Response(sha_status, text=sha_text if sha_text is not None
+                                  else f"{GOOD}  PawPoller-windows-x64.zip")
+        return httpx.Response(200, content=PAYLOAD)
+    real = httpx.Client
+    monkeypatch.setattr(updater.httpx, "Client",
+                        lambda *a, **k: real(*a, transport=httpx.MockTransport(handler), **k))
+
+
+class TestChecksums:
+
+    def test_a_matching_download_is_returned(self, monkeypatch):
+        _fake_github(monkeypatch)
+        path = updater.download_update(OFFICIAL)
+        assert path.read_bytes() == PAYLOAD
+
+    def test_a_mismatch_is_refused_and_nothing_is_kept(self, monkeypatch):
+        _fake_github(monkeypatch, sha_text="0" * 64 + "  PawPoller-windows-x64.zip")
+        with pytest.raises(RuntimeError, match="Checksum mismatch"):
+            updater.download_update(OFFICIAL)
+
+    def test_a_release_without_a_checksum_is_refused(self, monkeypatch):
+        """Fail closed: no published checksum, no in-app install."""
+        _fake_github(monkeypatch, sha_status=404)
+        with pytest.raises(RuntimeError, match="no checksum"):
+            updater.download_update(OFFICIAL)
+
+    def test_an_unreadable_checksum_is_refused(self, monkeypatch):
+        _fake_github(monkeypatch, sha_text="not a hash")
+        with pytest.raises(RuntimeError, match="unreadable"):
+            updater.download_update(OFFICIAL)
+
+    def test_ci_publishes_a_checksum_beside_every_desktop_asset(self):
+        wf = open(".github/workflows/build.yml", encoding="utf-8").read()
+        for asset in ("dist/PawPoller-windows-x64.zip.sha256",
+                      "installer/Output/PawPoller-Setup-*.exe.sha256",
+                      "installer/Output/PawPoller-*-x86_64.AppImage.sha256"):
+            assert asset in wf, asset
+
+
+class TestNoTokenOnUpdateTraffic:
+
+    def test_the_download_sends_no_authorization(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(config, "get_settings", lambda: {"github_pat": "ghp_secret"})
+        _fake_github(monkeypatch, seen=seen)
+        updater.download_update(OFFICIAL)
+        assert seen and all("authorization" not in r.headers for r in seen)
+
+    def test_the_check_sends_no_authorization(self, monkeypatch):
+        seen = []
+        monkeypatch.setattr(config, "get_settings", lambda: {"github_pat": "ghp_secret"})
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(200, json={"tag_name": "v0.0.1", "assets": [], "body": ""})
+        real = httpx.Client
+        monkeypatch.setattr(updater.httpx, "Client",
+                            lambda *a, **k: real(*a, transport=httpx.MockTransport(handler), **k))
+        updater.check_for_update()
+        assert seen and "authorization" not in seen[0].headers
+        assert "github_pat" not in open("updater.py", encoding="utf-8").read().replace(
+            "a stored `github_pat` has no business", "")
+
+
+def test_an_encoded_dotdot_is_refused():
+    assert not updater.is_official_asset(OFFICIAL.replace("v9.9.9", "%2e%2e"))
