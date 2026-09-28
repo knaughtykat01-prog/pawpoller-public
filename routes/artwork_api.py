@@ -20,7 +20,7 @@ import tarfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 import config
 from database.db import get_connection
@@ -562,6 +562,55 @@ async def publish_artwork(body: dict):
     except Exception as e:
         logger.error("Artwork publish failed: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))
+
+
+# ── Batch: post several pieces, each on its own (4.43.0, spec 010) ─────────────
+
+def _batch_args(body: dict) -> dict:
+    return dict(
+        platforms=body.get("platforms") or [], persona_id=body.get("persona_id"),
+        account_ids=body.get("account_ids") or {}, start=body.get("start"),
+        gap_minutes=body.get("gap_minutes", 360), order=body.get("order") or "oldest",
+        announce=bool(body.get("announce")), renders=body.get("renders"))
+
+
+@artwork_router.post("/batch/plan")
+def batch_plan(body: dict):
+    """What a batch would do — no side effects. Body: {names, platforms, persona_id,
+    account_ids {site: id}, start (ISO), gap_minutes (0 = all now), order
+    (oldest|newest|selected), announce (bool), renders {piece: ["__auto__" | "__primary__" |
+    version key, …]} — per piece, which versions to post, each as its own submission}."""
+    from posting import batch
+    try:
+        return batch.plan(body.get("names") or [], **_batch_args(body))
+    except batch.BatchError as e:
+        raise HTTPException(400, detail=str(e))
+
+
+@artwork_router.post("/batch")
+def batch_queue(body: dict):
+    """Queue a batch. Same body as /batch/plan plus ``confirm_live: true`` and ``expect``
+    — the [piece, site] pairs the person saw. The plan is recomputed here; if it no longer
+    matches (a piece got posted meanwhile, an account changed) nothing is queued and the
+    fresh plan comes back with 409, to be shown again rather than queued blindly."""
+    from posting import batch
+    if not body.get("confirm_live"):
+        raise HTTPException(400, detail="a batch requires confirm_live=true (live-publish safety guard)")
+    try:
+        p = batch.plan(body.get("names") or [], **_batch_args(body))
+    except batch.BatchError as e:
+        raise HTTPException(400, detail=str(e))
+    try:
+        expect = sorted([str(x[0]), str(x[1]), str(x[2]) if len(x) > 2 else ""]
+                        for x in (body.get("expect") or []))
+    except (TypeError, IndexError, KeyError):
+        raise HTTPException(400, detail="expect must be a list of [piece, site, version] entries")
+    if expect != batch.post_set(p):
+        return JSONResponse(status_code=409, content={
+            "detail": "The plan changed since the preview — check it again before queuing.", "plan": p})
+    if not p["totals"]["posts"]:
+        raise HTTPException(400, detail="Nothing to post — every piece was skipped")
+    return {**batch.queue(p), "plan": p}
 
 
 # ── Scheduling (deferred publish via posting_queue) ───────────

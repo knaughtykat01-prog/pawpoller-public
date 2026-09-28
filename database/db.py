@@ -1313,6 +1313,12 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError as e:
             if "duplicate column" not in str(e).lower():
                 raise
+        # 4.43.0 (spec 010): the row's Discord choice. NULL = legacy (follow the switch).
+        try:
+            conn.execute("ALTER TABLE posting_queue ADD COLUMN announce INTEGER")
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
 
     # Migration: DeviantArt rows still keyed on the API GUID (4.34.1, DAID).
     #

@@ -151,7 +151,11 @@ window.Masterpieces = {
             ? `<div class="card muted" style="margin:.4rem 0 .8rem;padding:.5rem .8rem">Showing the junk bin —
                 these stay on disk and keep their site-links, they're just hidden from the grid.
                 <strong>♻ Restore</strong> puts one back.</div>` : '';
-        const bar = `<div class="mp-gridbar">${newBtn}${dupBtn}${junkBtn}</div>${junkBanner}`;
+        // Select several → post them as a batch (4.43.0, spec 010). Not in the junk bin.
+        const selBtn = this._junkView ? '' : `<button class="btn btn-sm${this._selMode ? ' btn-primary' : ''}" data-mp-select type="button"
+            title="Tick several pieces and post them in one go — each as its own submission, spread out over time">☑ ${this._selMode ? 'Selecting…' : 'Select'}</button>`;
+        const bar = `<div class="mp-gridbar">${selBtn}${newBtn}${dupBtn}${junkBtn}</div>${junkBanner}`;
+        this._lastList = list;
         gridEl.className = '';
         if (!list.length) {
             gridEl.innerHTML = `${bar}
@@ -171,6 +175,7 @@ window.Masterpieces = {
                              gridEl.querySelector('.mp-grid-sentinel'), list);
         }
         this._wireGridBar(gridEl);
+        this._paintSelBar();
     },
 
     /* Stream `list` into `grid` a page at a time, appending the next page when
@@ -203,6 +208,31 @@ window.Masterpieces = {
     },
 
     _wireGridBar(gridEl) {
+        gridEl.querySelector('[data-mp-select]')?.addEventListener('click', () => {
+            this._selMode = !this._selMode;
+            if (!this._selMode) this._sel.clear();
+            const g = this._lastGrid || {};
+            this.renderGrid(g.el || gridEl, g.filters);
+        });
+        // In select mode a card click ticks it instead of opening it. Delegated once per
+        // grid element (cards stream in later), like Restore below.
+        if (!gridEl.dataset.mpSelectWired) {
+            gridEl.dataset.mpSelectWired = '1';
+            gridEl.addEventListener('click', (e) => {
+                if (!this._selMode) return;
+                const card = e.target.closest('.mp-card[data-mp-name]');
+                if (!card || !gridEl.contains(card)) return;
+                e.preventDefault();
+                this._toggleSel(card);
+            });
+            gridEl.addEventListener('keydown', (e) => {
+                if (!this._selMode || (e.key !== ' ' && e.key !== 'Enter')) return;
+                const card = e.target.closest('.mp-card[data-mp-name]');
+                if (!card) return;
+                e.preventDefault();
+                this._toggleSel(card);
+            });
+        }
         const toggle = gridEl.querySelector('[data-mp-junkview]');
         if (toggle) toggle.addEventListener('click', () => {
             this._junkView = !this._junkView;
@@ -231,6 +261,239 @@ window.Masterpieces = {
                 }
             });
         }
+    },
+
+    /* ── Batch: select several, post each on its own (4.43.0, spec 010) ─────────
+     * The Library half. The server plans (posting/batch.py — no side effects), the
+     * person checks the plan, and only then is it queued as ordinary posting-queue rows
+     * the scheduler fires on their slots. Spread out by default; announcements off. */
+    _selMode: false,
+    _sel: new Set(),
+    _BATCH_ANNOUNCERS: ['tg', 'tw', 'bsky'],
+
+    _toggleSel(card) {
+        const name = card.dataset.mpName;
+        if (this._sel.has(name)) this._sel.delete(name); else this._sel.add(name);
+        const on = this._sel.has(name);
+        card.classList.toggle('is-picked', on);
+        card.setAttribute('aria-checked', String(on));
+        const t = card.querySelector('.mp-tick');
+        if (t) t.textContent = on ? '✓' : '';
+        this._paintSelBar();
+    },
+
+    _paintSelBar() {
+        let bar = document.getElementById('mp-selbar');
+        if (!this._selLeaveWired) {
+            // The bar lives on <body>; leaving the Library ends select mode with it.
+            this._selLeaveWired = true;
+            window.addEventListener('hashchange', () => {
+                if (this._selMode && !location.hash.startsWith('#/library')) {
+                    this._selMode = false; this._sel.clear(); this._paintSelBar();
+                }
+            });
+        }
+        if (!this._selMode) { if (bar) bar.remove(); return; }
+        if (!bar) {
+            bar = document.createElement('div');
+            bar.id = 'mp-selbar';
+            bar.className = 'mp-selbar';
+            document.body.appendChild(bar);
+            bar.addEventListener('click', (e) => {
+                const b = e.target.closest('[data-sel]');
+                if (!b) return;
+                const act = b.dataset.sel;
+                if (act === 'all') (this._lastList || []).forEach(m => this._sel.add(m.name));
+                if (act === 'none') this._sel.clear();
+                if (act === 'done') { this._selMode = false; this._sel.clear(); }
+                if (act === 'post') { this._openBatch(); return; }
+                const g = this._lastGrid || {};
+                if (g.el) this.renderGrid(g.el, g.filters);
+            });
+        }
+        const n = this._sel.size;
+        bar.innerHTML = `
+            <strong>${n} selected</strong>
+            <button type="button" class="btn btn-sm" data-sel="all">Select all shown (${(this._lastList || []).length})</button>
+            <button type="button" class="btn btn-sm" data-sel="none"${n ? '' : ' disabled'}>Clear</button>
+            <button type="button" class="btn btn-sm btn-primary" data-sel="post"${n ? '' : ' disabled'}>🎨 Post these…</button>
+            <button type="button" class="btn btn-sm" data-sel="done">Done</button>`;
+    },
+
+    async _openBatch() {
+        const names = [...this._sel];
+        if (!names.length) return;
+        const all = ((window.Artwork && Artwork._PLATFORMS) || []).slice();
+        const ann = all.filter(c => this._BATCH_ANNOUNCERS.includes(c));
+        const art = all.filter(c => !this._BATCH_ANNOUNCERS.includes(c));
+        let settings = {};
+        try { settings = await API.getPostingSettings(); } catch (e) { /* defaults below */ }
+        const defaults = new Set(settings.posting_default_platforms || []);
+        const esc = (s) => this.esc(s);
+        const row = (c, checked) => {
+            const p = this._plat(c);
+            return `<label class="bp-row" data-platform="${esc(c)}">
+                <input type="checkbox" class="bp-check" value="${esc(c)}"${checked ? ' checked' : ''}>
+                <span>${p.emoji || ''} ${esc(p.label)}</span><span class="bp-acct-slot" data-platform="${esc(c)}"></span></label>`;
+        };
+        // The next whole hour, local time, as the default start.
+        const d = new Date(Date.now() + 3600e3); d.setMinutes(0, 0, 0);
+        const pad = (n) => String(n).padStart(2, '0');
+        const startVal = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`;
+
+        let ov = document.getElementById('batch-ov');
+        if (!ov) { ov = document.createElement('div'); ov.id = 'batch-ov'; ov.className = 'wn-ov'; document.body.appendChild(ov); }
+        ov.innerHTML = `
+            <div class="wn-modal bp-modal" role="dialog" aria-modal="true" aria-label="Post several pieces">
+                <div class="wn-top"><h2>🎨 Post ${names.length} piece${names.length === 1 ? '' : 's'}</h2>
+                    <button class="wn-x" type="button" aria-label="Close">×</button></div>
+                <div class="wn-scroll">
+                    <p class="muted bp-lead">Each piece goes out as its own submission, with its own title, description, tags and rating. Sites a piece is already on, or that won't take it, are skipped — you'll see which before anything is queued.</p>
+                    ${settings.posting_enabled === false ? `<p class="bp-warn">Posting is switched off in <a href="#/settings/publishing">Settings → Publishing</a> — nothing will go out until it's on. You can still queue now.</p>` : ''}
+                    <div class="persona-picker" data-persona-picker hidden></div>
+                    <h3 class="bp-h">Sites</h3>
+                    <div class="bp-grid">${art.map(c => row(c, defaults.has(c))).join('')}</div>
+                    <h3 class="bp-h">Announcements</h3>
+                    <label class="bp-row bp-announce"><input type="checkbox" id="bp-announce">
+                        <span><strong>Announce each piece</strong> <span class="muted">— off for a batch, so a catch-up doesn't flood your channels. Turns on Discord (once per piece) and ticks the sites below.</span></span></label>
+                    <div class="bp-grid">${ann.map(c => row(c, false)).join('')}</div>
+                    <h3 class="bp-h">When</h3>
+                    <div class="bp-when">
+                        <label><input type="radio" name="bp-when" value="spread" checked> Spread out: first at
+                            <input type="datetime-local" id="bp-start" value="${startVal}">, then one piece every
+                            <input type="number" id="bp-every" min="1" max="720" value="6" style="width:4.5em">
+                            <select id="bp-unit"><option value="1">minutes</option><option value="60" selected>hours</option><option value="1440">days</option></select></label>
+                        <label><input type="radio" name="bp-when" value="now"> All now <span class="muted">— one after another, as fast as each site allows</span></label>
+                        <label>Order <select id="bp-order"><option value="oldest">Oldest first</option><option value="newest">Newest first</option><option value="selected">As I picked them</option></select></label>
+                    </div>
+                    <div id="bp-plan"></div>
+                </div>
+                <div class="wn-foot bp-foot">
+                    <span id="bp-msg" class="muted"></span>
+                    <button class="btn" type="button" id="bp-preview">Preview</button>
+                    <button class="btn btn-primary" type="button" id="bp-queue" disabled>Queue</button>
+                </div>
+            </div>`;
+        ov.classList.add('open');
+        const $ = (s) => ov.querySelector(s);
+        const close = () => ov.classList.remove('open');
+        $('.wn-x').addEventListener('click', close);
+
+        let plan = null;
+        // Per piece, which versions to post (spec 010 per-piece control). Absent = Automatic.
+        const renders = {};
+        const stale = () => { plan = null; $('#bp-queue').disabled = true; $('#bp-queue').textContent = 'Queue'; $('#bp-plan').innerHTML = ''; };
+        // Any setting change invalidates the preview — except a version tick, which re-plans.
+        const settingChanged = (e) => { if (!(e.target && e.target.classList && e.target.classList.contains('bp-ver'))) stale(); };
+        ov.querySelector('.wn-scroll').addEventListener('change', settingChanged);
+        ov.querySelector('.wn-scroll').addEventListener('input', settingChanged);
+        $('#bp-announce').addEventListener('change', (e) => {
+            ov.querySelectorAll('.bp-row').forEach(r => {
+                if (!this._BATCH_ANNOUNCERS.includes(r.dataset.platform)) return;
+                const cb = r.querySelector('.bp-check');
+                if (cb && !cb.disabled) cb.checked = e.target.checked;
+            });
+        });
+        const host = $('[data-persona-picker]');
+        if (typeof Components !== 'undefined' && Components.personaPicker) {   // a top-level const, not on window
+            await Components.personaPicker({
+                host, platforms: all, selectClass: 'bp-acct', storageKey: 'pp_batch_persona',
+                slot: c => ov.querySelector(`.bp-acct-slot[data-platform="${c}"]`),
+                row: c => ov.querySelector(`.bp-row[data-platform="${c}"]`),
+                onChange: stale,
+            });
+        }
+
+        const body = () => {
+            const platforms = [...ov.querySelectorAll('.bp-check:checked')].map(c => c.value);
+            const account_ids = {};
+            ov.querySelectorAll('.bp-acct').forEach(el => {
+                if (platforms.includes(el.dataset.platform) && el.value) account_ids[el.dataset.platform] = parseInt(el.value, 10);
+            });
+            const spread = ov.querySelector('input[name="bp-when"]:checked').value === 'spread';
+            const startLocal = $('#bp-start').value;
+            return {
+                names, platforms, account_ids,
+                persona_id: host.dataset.personaId ? parseInt(host.dataset.personaId, 10) : null,
+                start: spread && startLocal ? new Date(startLocal).toISOString() : null,
+                gap_minutes: spread ? (parseInt($('#bp-every').value, 10) || 0) * parseInt($('#bp-unit').value, 10) : 0,
+                order: $('#bp-order').value,
+                announce: $('#bp-announce').checked,
+                renders,
+            };
+        };
+        const when = (slot) => {
+            const t = Utils._parseDate ? Utils._parseDate(slot) : new Date(String(slot).replace(' ', 'T') + 'Z');
+            return t && !isNaN(t) ? t.toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : esc(slot);
+        };
+        const paint = (p, note) => {
+            plan = p;
+            const t = p.totals;
+            const rows = p.pieces.map(x => {
+                const posts = x.posts.map(s => `<span class="mp-plat" title="${esc(this._plat(s.platform).label)}${s.version ? ' — ' + esc(s.version) : ''}">${this._plat(s.platform).emoji || esc(s.platform)}${s.version ? `<span class="bp-vlabel">${esc(s.version)}</span>` : ''}</span>`).join('');
+                const skips = x.skips.map(s => `<li><strong>${esc(this._plat(s.platform).label)}</strong>${s.version ? ' · ' + esc(s.version) : ''}: ${esc(s.reason)}</li>`).join('');
+                // Which versions of THIS piece to post, each its own submission — the choices a
+                // single publish offers (4.34.0), Automatic ticked by default.
+                const vers = (x.versions || []).length ? `<div class="bp-vers" data-name="${esc(x.name)}">${x.versions.map(v => `<label><input type="checkbox" class="bp-ver" value="${esc(v.key)}"${(x.chosen || []).includes(v.key) ? ' checked' : ''}> ${esc(v.key === '__auto__' ? 'Automatic — best for each site' : v.label)}${v.rating ? ` <span class="muted">(${esc(v.rating)})</span>` : ''}</label>`).join('')}</div>` : '';
+                return `<tr class="${x.slot ? '' : 'bp-skipped'}">
+                    <td class="bp-when-cell">${x.slot ? when(x.slot) : '—'}</td>
+                    <td>${esc(x.title)}${x.skip ? `<div class="muted">${esc(x.skip)}</div>` : ''}${vers}</td>
+                    <td>${posts || '<span class="muted">nothing</span>'}${skips ? `<ul class="bp-skips">${skips}</ul>` : ''}</td></tr>`;
+            }).join('');
+            $('#bp-plan').innerHTML = `
+                ${note ? `<p class="bp-warn">${esc(note)}</p>` : ''}
+                <p class="bp-sum"><strong>${t.pieces} piece${t.pieces === 1 ? '' : 's'}, ${t.posts} post${t.posts === 1 ? '' : 's'}</strong>${p.first_slot ? ` — ${when(p.first_slot)}${p.last_slot && p.last_slot !== p.first_slot ? ` to ${when(p.last_slot)}` : ''}` : ''}${t.skipped_pieces ? ` · ${t.skipped_pieces} skipped` : ''}${p.announce ? ' · announced' : ' · not announced'}</p>
+                <table class="bp-table"><thead><tr><th>When</th><th>Piece</th><th>Sites (and skipped)</th></tr></thead><tbody>${rows}</tbody></table>`;
+            $('#bp-queue').disabled = !t.posts;
+            $('#bp-queue').textContent = t.posts ? `Queue ${t.posts} post${t.posts === 1 ? '' : 's'}` : 'Nothing to queue';
+        };
+        const msg = (s, bad) => { const m = $('#bp-msg'); m.textContent = s || ''; m.style.color = bad ? 'var(--danger)' : ''; };
+        // API errors arrive as `API 400: {"detail": …}` — show the server's own sentence.
+        const why = (err) => {
+            const s = String((err && err.message) || err);
+            const m = s.match(/^API \d+: ([\s\S]*)$/);
+            if (!m) return s;
+            try { return JSON.parse(m[1]).detail || m[1]; } catch (e) { return m[1]; }
+        };
+
+        const preview = async () => {
+            msg('Checking every piece…');
+            const sc = ov.querySelector('.wn-scroll'), top = sc.scrollTop;
+            try { paint(await API.batchPlan(body())); msg(''); sc.scrollTop = top; }
+            catch (err) { stale(); msg(why(err), true); }
+        };
+        $('#bp-preview').addEventListener('click', preview);
+        let verTimer = null;
+        $('#bp-plan').addEventListener('change', (e) => {
+            if (!e.target.classList.contains('bp-ver')) return;
+            const box = e.target.closest('.bp-vers');
+            renders[box.dataset.name] = [...box.querySelectorAll('.bp-ver:checked')].map(c => c.value);
+            clearTimeout(verTimer);
+            verTimer = setTimeout(preview, 250);          // a few quick ticks = one re-plan
+        });
+        $('#bp-queue').addEventListener('click', async () => {
+            if (!plan) return;
+            const expect = plan.pieces.flatMap(x => x.posts.map(s => [x.name, s.platform, s.variant_key || '']));
+            $('#bp-queue').disabled = true;
+            msg('Queuing…');
+            try {
+                const resp = await fetch('/api/artwork/batch', {
+                    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...body(), expect, confirm_live: true }),
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (resp.status === 409 && data.plan) { paint(data.plan, data.detail); msg(''); return; }
+                if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
+                close();
+                this._selMode = false; this._sel.clear();
+                const g = this._lastGrid || {};
+                if (g.el) this.renderGrid(g.el, g.filters);
+                this._toast('success', `Queued ${data.pieces} piece${data.pieces === 1 ? '' : 's'} (${data.rows} posts) — see Queue & Schedule`);
+            } catch (err) {
+                $('#bp-queue').disabled = false;
+                msg('Could not queue: ' + (err.message || err), true);
+            }
+        });
     },
 
     /* ── Duplicate finder / merge (2.144.0) ─────────────────────
@@ -611,9 +874,12 @@ window.Masterpieces = {
                 style="margin-top:.35rem" type="button">♻ Restore</button>` : '';
         // Raw slug in the href (folder names are [\w-] slugs); the API layer
         // encodes once when fetching — mirrors Bookshelf's #/library/work/{name}.
+        const picked = this._selMode && this._sel.has(m.name);
+        const tick = this._selMode ? `<span class="mp-tick" aria-hidden="true">${picked ? '✓' : ''}</span>` : '';
         return `
-            <a class="mp-card" href="#/masterpieces/${this.esc(m.name)}">
-                <div class="mp-cover" data-rating="${this.esc((m.rating || '').toLowerCase())}">${this._cover(m, 'mp-cover-img')}</div>
+            <a class="mp-card${this._selMode ? ' is-selectable' : ''}${picked ? ' is-picked' : ''}" href="#/masterpieces/${this.esc(m.name)}"
+               data-mp-name="${this.esc(m.name)}"${this._selMode ? ` role="checkbox" aria-checked="${picked}"` : ''}>
+                <div class="mp-cover" data-rating="${this.esc((m.rating || '').toLowerCase())}">${tick}${this._cover(m, 'mp-cover-img')}</div>
                 <div class="mp-body">
                     <div class="mp-name" title="${this.esc(m.title || m.name)}">${this.esc(m.title || m.name)}</div>
                     <div class="mp-meta">${badges}<span class="muted">· ${nSites} site${nSites === 1 ? '' : 's'}</span></div>

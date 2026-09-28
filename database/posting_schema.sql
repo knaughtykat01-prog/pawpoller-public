@@ -102,6 +102,10 @@ CREATE TABLE IF NOT EXISTS posting_queue (
     -- share a group id so the campaign can be cancelled as a unit. NULL for
     -- ordinary one-off schedules. (Older DBs gain this via _run_migrations.)
     drip_group          TEXT,
+    -- Discord choice for this row (4.43.0, spec 010): NULL = follow the switch (every
+    -- row before 4.43.0); 0 = never; 1 = announce the piece ONCE, when the last row of
+    -- its batch settles (scheduler._maybe_batch_announce). Rows never announce singly.
+    announce            INTEGER,
 
     -- State
     status              TEXT NOT NULL DEFAULT 'pending',

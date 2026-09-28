@@ -176,17 +176,36 @@
     /* Pop a toast for each NEW failure/warning. Successes stay silent (they
      * live in the list only). The first poll seeds the seen-set without
      * toasting, so opening/refreshing the dashboard doesn't replay history. */
+    /* 4.42.1: only events NEWER than anything already seen may toast. The feed is a
+     * sliding window (40 items, 10 polls per platform), so older rows scroll INTO it
+     * whenever newer ones drop out — each looked "unseen" and a whole backlog popped
+     * as a stack of sticky toasts. Timestamps come in two shapes; compare them the
+     * way the server does (routes/api.py _norm_ts). */
+    const normTs = (s) => String(s || '').replace('T', ' ').slice(0, 19);
+    const LIVE_KINDS = new Set(['session', 'sync', 'throttle']);
+    let _hwm = '';
+
     function maybeToast(items) {
+        const newest = items.reduce((m, it) => (normTs(it.timestamp) > m ? normTs(it.timestamp) : m), '');
         if (!_seeded) {
             items.forEach((it) => _seen.add(key(it)));
+            _hwm = newest;
             _seeded = true;
             return;
         }
+        const since = _hwm;
+        if (newest > _hwm) _hwm = newest;
         const fresh = items.filter((it) => !_seen.has(key(it)));
         // Oldest → newest so the newest toast ends up on top of the stack.
         fresh.slice().reverse().forEach((it) => {
             _seen.add(key(it));
+            // Log rows (polls, posts) slide; the synthetic alerts (session / sync /
+            // throttle) are live state, not a window, so they keep toasting as before.
+            if (!LIVE_KINDS.has(it.kind) && normTs(it.timestamp) <= since) return;     // old row scrolled into the window
             if (it.muted) return;                                                      // muted → quiet, no toast
+            // A throttled poll already has its own warning (kind 'throttle'); its poll
+            // row would be a second, red one.
+            if (it.kind === 'poll' && it.status === 'partial') return;
             if (!window.toast) return;
             if (isFailure(it)) window.toast.error(it.summary || 'Something failed');   // sticky
             else if (it.status === 'warn') window.toast.warn(it.summary || 'Warning');

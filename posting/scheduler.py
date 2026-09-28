@@ -144,6 +144,11 @@ async def _process_queue_item(item: dict) -> None:
     # as the piece, it derives to "no variant" and the retry would post the primary.
     _vk = item["variant_key"] if "variant_key" in item.keys() else ""
     variant_overrides = {platform: _vk} if _vk else None
+    # The row's Discord choice (4.43.0, spec 010). NULL (every row before it) follows the
+    # switch as before; 0/1 rows never announce on their own — a batch piece is announced
+    # once, after its last row, by _maybe_batch_announce.
+    _announce = item["announce"] if "announce" in item.keys() else None
+    row_discord = None if _announce is None else False
 
     # For posts the story_name is a bare post_id — use the snippet stashed in
     # title_override as the human label in Telegram notifications.
@@ -190,6 +195,7 @@ async def _process_queue_item(item: dict) -> None:
                 account_ids={platform: account_id} if account_id else None,
                 description_overrides=description_overrides,
                 variant_overrides=variant_overrides,
+                announce_discord=row_discord,
             )
         elif action == "post":
             results = await manager.post_story(
@@ -283,6 +289,43 @@ async def _process_queue_item(item: dict) -> None:
         logger.error("Queue item #%d exception: %s", queue_id, e, exc_info=True)
         await _notify_completion(notify_name, chapter_index, platform, action, False, str(e),
                                  content_type=content_type)
+
+    await _maybe_batch_announce(item)
+
+
+async def _maybe_batch_announce(item) -> None:
+    """Announce a batch piece ONCE, when the last of its rows settles (spec 010).
+
+    A batch queues one row per site; announcing per row would post the same piece to
+    Discord once per site. Only rows marked `announce = 1` count, and only when no row
+    of the same batch and piece is still pending or processing — so it fires on the last
+    one, whatever order they ran in. The links are every site the piece is live on.
+    """
+    try:
+        keys = item.keys()
+        if (item["content_type"] if "content_type" in keys else "story") != "artwork":
+            return
+        if (item["announce"] if "announce" in keys else None) != 1:
+            return
+        group = item["drip_group"] if "drip_group" in keys else None
+        if not group:
+            return
+        conn = get_connection()
+        try:
+            left = conn.execute(
+                "SELECT COUNT(*) FROM posting_queue WHERE drip_group = ? AND story_name = ? "
+                "AND status IN ('pending', 'processing')", (group, item["story_name"])).fetchone()[0]
+            # Nothing went out (every row failed) → nothing to announce (4.43.0 review).
+            posted = conn.execute(
+                "SELECT COUNT(*) FROM posting_queue WHERE drip_group = ? AND story_name = ? "
+                "AND status = 'completed'", (group, item["story_name"])).fetchone()[0]
+        finally:
+            conn.close()
+        if left or not posted:
+            return
+        await manager.announce_artwork(item["story_name"], force=True)
+    except Exception as e:  # noqa: BLE001 — an announcement never breaks the queue
+        logger.debug("batch announce skipped (%s)", type(e).__name__)
 
 
 async def _notify_completion(

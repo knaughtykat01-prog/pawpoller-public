@@ -544,6 +544,9 @@ def _format_poll_summary(log: dict) -> str:
         n = log.get(counter) or 0
         if n:
             parts.append(f"+{n} {label}{'s' if n != 1 else ''}")
+    # A throttled poll (4.42.1) is not "no changes" — it may simply not have seen them.
+    if log.get("status") == "partial":
+        return "throttled, " + ", ".join(parts) if parts else "throttled — some data may be missing"
     if not parts:
         subs = log.get("submissions_found") or 0
         return f"no changes ({subs} subs scanned)" if subs else "no changes"

@@ -1291,6 +1291,7 @@ const API = {
     /* Schedule an artwork to publish later. One call per platform.
        data = { artwork_name, platform, scheduled_at, account_id? }. */
     scheduleArtwork(data) { return this.post('/api/artwork/schedule', data); },
+    batchPlan(body) { return this.post('/api/artwork/batch/plan', body, { quiet: [400] }); },   // the dialog shows why          // 4.43.0 spec 010 (no side effects)
     getArtworkScheduled(name) { return this.get('/api/artwork/scheduled', { name }); },
     cancelArtworkScheduled(name, queueId) {
         return fetch(`/api/artwork/scheduled/${queueId}?name=${encodeURIComponent(name)}`,

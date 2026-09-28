@@ -923,20 +923,44 @@ async def post_artwork(
     # if any platform succeeded. Best-effort; announce_publish self-gates and never raises.
     succeeded = [r["platform"] for r in results if r.get("success")]
     if succeeded:
-        from posting import discord
-        from posting.artwork_reader import _canonical_tag_list
-        await discord.announce_publish(
-            kind="artwork", title=getattr(artwork, "title", "") or artwork_name,
-            rating=getattr(artwork, "rating", ""), force=announce_discord,
-            body=getattr(artwork, "description", "") or "",
-            tags=_canonical_tag_list(getattr(artwork, "tags_by_platform", {}) or {}),
+        await announce_artwork(
+            artwork_name, force=announce_discord, artwork=artwork, platforms=succeeded,
             site_links=[(r["platform"], r["external_url"]) for r in results
-                        if r.get("success") and r.get("external_url")],
-            platforms=succeeded,
-            image_path=_discord_preview_source(artwork),
-            piece=(getattr(artwork, "categories_by_platform", {}) or {}).get("discord"),
-        )
+                        if r.get("success") and r.get("external_url")])
     return results
+
+
+async def announce_artwork(artwork_name: str, *, force: bool | None = None, artwork=None,
+                           site_links: list | None = None, platforms: list | None = None) -> None:
+    """The Discord announcement for one artwork. Never raises (announce_publish doesn't).
+
+    With ``site_links`` it lists the sites of THIS publish; without, every site the piece
+    is live on, read from its posted publications — how a batch announces a piece once,
+    after its last site (spec 010, ``scheduler._maybe_batch_announce``)."""
+    from posting import artwork_reader, discord
+    try:
+        artwork = artwork or artwork_reader.load_artwork(artwork_name)
+    except Exception as e:  # noqa: BLE001 — a moved piece is not worth a scheduler error
+        logger.debug("announce_artwork: %s not loadable (%s)", artwork_name, type(e).__name__)
+        return
+    if site_links is None:
+        conn = get_connection()
+        try:
+            pubs = posting_queries.get_publications(conn, story_name=artwork_name, status="posted",
+                                                    content_type="artwork")
+        finally:
+            conn.close()
+        site_links = [(p["platform"], p["external_url"]) for p in pubs if p.get("external_url")]
+        platforms = platforms or sorted({p["platform"] for p in pubs})
+    await discord.announce_publish(
+        kind="artwork", title=getattr(artwork, "title", "") or artwork_name,
+        rating=getattr(artwork, "rating", ""), force=force,
+        body=getattr(artwork, "description", "") or "",
+        tags=artwork_reader._canonical_tag_list(getattr(artwork, "tags_by_platform", {}) or {}),
+        site_links=site_links, platforms=platforms,
+        image_path=_discord_preview_source(artwork),
+        piece=(getattr(artwork, "categories_by_platform", {}) or {}).get("discord"),
+    )
 
 
 def _discord_preview_source(artwork) -> Path | None:

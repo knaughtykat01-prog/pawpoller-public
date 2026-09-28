@@ -367,6 +367,7 @@ def add_to_queue(
     requires: str = "any",
     drip_group: str | None = None,
     variant_key: str = "",
+    announce: int | None = None,
 ) -> int:
     """Add an item to the posting queue. Returns queue_id.
 
@@ -384,6 +385,8 @@ def add_to_queue(
             queue time so the row re-posts THAT render — without it a retry silently
             becomes whatever the rating would pick, which for an alternate render
             (rated the same as the piece) means the primary. '' is the piece's own image.
+        announce: Discord choice (4.43.0, spec 010) — None follows the switch, 0 never,
+            1 announces the piece once when its batch rows settle.
     """
     if account_id is None:
         from database import accounts as _accts
@@ -393,12 +396,12 @@ def add_to_queue(
             (content_type, story_name, chapter_index, platform, account_id, action,
              scheduled_at, title_override, description_override, tags_override,
              rating_override, file_path_override, priority, requires, drip_group,
-             variant_key)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             variant_key, announce)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (content_type, story_name, chapter_index, platform, account_id, action,
          scheduled_at, title_override, description_override, tags_override,
          rating_override, file_path_override, priority, requires, drip_group,
-         variant_key or ""),
+         variant_key or "", announce),
     )
     conn.commit()
     return cursor.lastrowid
