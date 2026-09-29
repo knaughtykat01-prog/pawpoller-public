@@ -143,6 +143,7 @@ class TestWiring:
         app = open("frontend/js/app.js", encoding="utf-8").read()
         assert 'id="pref-auto-update"' in app and 'id="skip-update-btn"' in app
 
+    @pytest.mark.repo_only
     def test_the_splash_toolkit_is_pinned_for_the_build(self):
         spec = open("pawpoller.spec", encoding="utf-8").read()
         assert "'tkinter'" in spec and "'tkinter.ttk'" in spec

@@ -1940,6 +1940,39 @@ class ScheduleRequest(BaseModel):
     action: str = "post"          # 'post' | 'update'
     scheduled_at: str             # ISO 8601 datetime string
     draft: bool = True
+    account_id: int | None = None  # which account to post AS (None = platform default)
+    persona_id: int | None = None  # persona-first (4.43.1): checked now AND when the row fires
+
+
+def _story_persona_check(platforms, account_ids: dict, persona_id) -> None:
+    """A persona-first story schedule is refused NOW if any site has no account of that
+    persona (4.43.1) — the same rule the artwork and Posts schedules apply. The scheduler
+    checks again when each row comes due."""
+    from database import accounts as accounts_db
+    from database import personas as personas_db
+    from database.db import get_connection
+    conn = get_connection()
+    try:
+        if persona_id is None:
+            # No persona: an explicitly chosen account must still be real, on that site and on.
+            errs = []
+            for p in platforms:
+                aid = account_ids.get(p)
+                if aid is None:
+                    continue
+                a = accounts_db.get_account(conn, aid)
+                if not a or a.get("platform") != p:
+                    errs.append(f"account {aid} is not a {p} account")
+                elif not a.get("enabled", 1):
+                    errs.append(f"account {aid} on {p} is disabled")
+        else:
+            errs = [personas_db.persona_account_error(conn, p, account_ids.get(p), persona_id)
+                    for p in platforms]
+    finally:
+        conn.close()
+    errs = [e for e in errs if e]
+    if errs:
+        raise HTTPException(status_code=400, detail="; ".join(errs))
 
 
 @editor_router.post("/stories/{story_name:path}/schedule")
@@ -1994,6 +2027,7 @@ async def schedule_publish(story_name: str, req: ScheduleRequest):
     errors = poster.validate(package)
     if errors:
         raise HTTPException(status_code=400, detail=f"Validation errors: {'; '.join(errors)}")
+    _story_persona_check([req.platform], {req.platform: req.account_id}, req.persona_id)
 
     # Format scheduled_at as UTC string for SQLite
     scheduled_str = scheduled_dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -2011,6 +2045,8 @@ async def schedule_publish(story_name: str, req: ScheduleRequest):
             action=req.action,
             scheduled_at=scheduled_str,
             requires=requires,
+            account_id=req.account_id,
+            persona_id=req.persona_id,
         )
     finally:
         conn.close()
@@ -2035,6 +2071,8 @@ class DripRequest(BaseModel):
     start: str                    # ISO 8601 — chapter 1's slot
     interval_days: int            # 1..60 — days between chapters
     chapters: list[int] | None = None   # default: every chapter (1..N)
+    account_ids: dict[str, int] | None = None   # {platform: account} (None = platform default)
+    persona_id: int | None = None  # persona-first (4.43.1): checked now AND when each row fires
 
 
 @editor_router.post("/stories/{story_name:path}/drip")
@@ -2107,6 +2145,8 @@ async def drip_schedule(story_name: str, req: DripRequest):
     if failures:
         raise HTTPException(status_code=400,
                             detail="Drip aborted — fix these first: " + " | ".join(failures))
+    account_ids = req.account_ids or {}
+    _story_persona_check(req.platforms, account_ids, req.persona_id)
 
     drip_group = uuid.uuid4().hex[:12]
     total = len(chapters)
@@ -2126,6 +2166,8 @@ async def drip_schedule(story_name: str, req: DripRequest):
                     requires=getattr(posters[platform], "requires_mode", "any"),
                     drip_group=drip_group,
                     title_override=f"💧 drip {i + 1}/{total}",
+                    account_id=account_ids.get(platform),
+                    persona_id=req.persona_id,
                 )
                 queue_ids.append(qid)
     finally:

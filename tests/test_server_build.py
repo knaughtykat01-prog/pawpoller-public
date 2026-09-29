@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 import yaml
 
 REPO = Path(__file__).resolve().parents[1]
@@ -20,6 +22,7 @@ def _read(rel: str) -> str:
     return (REPO / rel).read_text(encoding="utf-8")
 
 
+@pytest.mark.repo_only
 def test_server_spec_excludes_the_desktop_stack():
     spec = _read("pawpoller-server.spec")
     assert "['server.py']" in spec

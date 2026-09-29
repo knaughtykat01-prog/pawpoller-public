@@ -143,7 +143,9 @@ class TestScheduleRoutesCheckNow:
     def client(self):
         from fastapi.testclient import TestClient
         import dashboard
-        return TestClient(dashboard.app)
+        # A LOCAL client: on an open instance scheduling is refused to anyone else (4.43.1),
+        # and this tests the persona check behind that lock.
+        return TestClient(dashboard.app, client=("127.0.0.1", 50000))
 
     def test_artwork_schedule_refuses_before_touching_the_archive(self, client, conn):
         """400 with the reason, not a 404 for the artwork and not a queued row."""

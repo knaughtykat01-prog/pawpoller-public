@@ -2214,11 +2214,15 @@ const App = {
              'Best-effort: X may refuse it without refusing the post.'],
             ['sensitive', 'Mark as sensitive', false,
              'A FLOOR, not a switch: adult work is always flagged whatever this says. Turn it on to flag everything.'],
+            ['phototags', 'Tag people in the photo', false,
+             'Tags the people whose X mention switch is on. A photo tag notifies them.'],
+            ['selfcredit', 'Name you as the artist', false, 'On a piece you drew, add an \u201cArt by\u201d line naming you.'],
         ] },
         bsky: { label: 'Bluesky', opts: [
             ['tags',    'Include hashtags', false,
              '300 graphemes is not much. On, they become clickable and are dropped first when it will not fit.'],
             ['caption', 'Include text', true, 'Off sends the image alone, with its alt text.'],
+            ['selfcredit', 'Name you as the artist', false, 'On a piece you drew, add an \u201cArt by\u201d line naming you.'],
         ] },
         tg: { label: 'Telegram', opts: [
             ['tags',     'Include hashtags', true, ''],
@@ -2230,6 +2234,7 @@ const App = {
             ['pin',      'Pin to the channel', false, ''],
             ['spoiler',  'Blur behind a spoiler', false,
              'A FLOOR, like X\u2019s sensitive flag: adult work is always blurred whatever this says.'],
+            ['selfcredit', 'Name you as the artist', false, 'On a piece you drew, add an \u201cArt by\u201d line naming you.'],
         ] },
         // 4.41.0 (spec 008). Mirrors posting/discord.BUILT_INS.
         discord: { label: 'Discord', opts: [
@@ -13748,7 +13753,11 @@ const App = {
                         <label style="font-size:13px;color:var(--text-muted)">Comment milestones</label>
                         <input type="text" id="pref-milestone-comments" class="search-input" value="${(prefs.milestone_comments || [10,25,50,100,250,500,1000]).join(', ')}" style="max-width:500px">
                     </div>
-                    <p style="margin-top:12px;font-size:12px;color:var(--text-muted)">Saved with <strong>Save Settings</strong> at the top of the page.</p>
+                    <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:8px">
+                        <label style="font-size:13px;color:var(--text-muted)">Score milestones <span style="font-weight:400">(e621 and Furbooru, which count a score instead of views)</span></label>
+                        <input type="text" id="pref-milestone-score" class="search-input" value="${(prefs.milestone_score || [10,25,50,100,250,500,1000]).join(', ')}" style="max-width:500px">
+                    </div>
+                    <p style="margin-top:12px;font-size:12px;color:var(--text-muted)">Each list saves when you click away from it.</p>
                     </div>
                 </details>
 
@@ -16373,6 +16382,18 @@ const App = {
             document.getElementById('pref-ws-notif-comments-only')?.addEventListener('change', async (e) => {
                 try { await API.savePreferences({ ws_notification_comments_only: e.target.checked }); }
                 catch (err) { e.target.checked = !e.target.checked; alert('Failed: ' + err.message); }
+            });
+            // Milestone ladders (4.43.1): nothing saved these after 4.27.0 retired the header Save.
+            ['views', 'faves', 'comments', 'score'].forEach(k => {
+                document.getElementById(`pref-milestone-${k}`)?.addEventListener('change', async (e) => {
+                    const vals = e.target.value.split(',').map(v => parseInt(v, 10)).filter(n => n > 0);
+                    if (!vals.length) return;
+                    try {
+                        await API.savePreferences({ [`milestone_${k}`]: vals });
+                        e.target.value = [...vals].sort((a, b) => a - b).join(', ');
+                        Utils.showToast('Milestones saved');
+                    } catch (err) { alert('Failed: ' + err.message); }
+                });
             });
             document.getElementById('pref-min-views-delta')?.addEventListener('change', async (e) => {
                 try { await API.savePreferences({ notification_min_views_delta: parseInt(e.target.value) || 0 }); }
@@ -20339,3 +20360,5 @@ const App = {
 
 // Boot
 document.addEventListener('DOMContentLoaded', () => App.init());
+// A top-level const is not a window property; other modules guard on window.App (4.43.1).
+if (typeof window !== 'undefined') window.App = App;   // node-run tests have no window

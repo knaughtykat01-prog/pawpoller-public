@@ -106,6 +106,12 @@ CREATE TABLE IF NOT EXISTS posting_queue (
     -- row before 4.43.0); 0 = never; 1 = announce the piece ONCE, when the last row of
     -- its batch settles (scheduler._maybe_batch_announce). Rows never announce singly.
     announce            INTEGER,
+    -- 4.43.1: the persona a persona-first schedule was made for — re-checked when the row
+    -- fires (an account that has since moved persona is refused, not posted). NULL = none.
+    persona_id          INTEGER,
+    -- 4.43.1: a retry / desktop hand-off row points at the ROOT row it re-runs, so it stays
+    -- part of that row's scheduled slot (one Discord message per slot, retries included).
+    retry_of            INTEGER,
 
     -- State
     status              TEXT NOT NULL DEFAULT 'pending',

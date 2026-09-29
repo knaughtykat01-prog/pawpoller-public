@@ -415,6 +415,7 @@ async def post_story(
     account_ids: dict[str, int] | None = None,
     persona_id: int | None = None,
     description_overrides: dict[str, str] | None = None,
+    announce_discord: bool | None = None,
 ) -> list[dict[str, Any]]:
     """Post a story to multiple platforms.
 
@@ -434,6 +435,8 @@ async def post_story(
         description_overrides: ``{platform: text}`` for THIS post only —
             ``build_package``'s first cascade branch (4.3.0). The stored
             per-platform description is untouched.
+        announce_discord: None follows the announce-on-publish switch; False skips it
+            (the scheduler announces a slot once, after its last row — 4.43.1).
 
     Returns:
         List of result dicts with platform, chapter, success, url, error.
@@ -569,37 +572,48 @@ async def post_story(
                 await poster._rate_limit()
 
     # Discord announce for stories (4.41.0, spec 008 — stories never announced before).
-    # Once per publish, only if a site succeeded; the picture is the announcement image
-    # the other announcers use, else the thumbnail. Never raises.
+    # Once per publish, only if a site succeeded.
     ok = [r for r in results if r.get("success")]
-    if ok:
-        try:
-            from posting import discord
-            first_ch = min((r.get("chapter_index") or 0) for r in ok)
-            title = getattr(story, "title", "") or story_name.replace("_", " ")
-            if first_ch > 0:
-                title = f"{title} — new chapter"
-            img = getattr(story, "announcement_image", None) or getattr(story, "thumbnail_path", None)
-            if img and not Path(img).is_absolute():
-                img = Path(story.path) / img
-            seen: set[str] = set()
-            links = []
-            for r in ok:
-                if r.get("external_url") and r["platform"] not in seen:
-                    seen.add(r["platform"])
-                    links.append((r["platform"], r["external_url"]))
-            await discord.announce_publish(
-                kind="story", title=title, rating=getattr(story, "rating", "") or "",
-                body=getattr(story, "description", "") or "",
-                tags=list((getattr(story, "tags_by_platform", {}) or {}).get("default")
-                          or (getattr(story, "tags_by_platform", {}) or {}).get("core") or []),
-                site_links=links, platforms=sorted(seen),
-                image_path=img, piece=(getattr(story, "platform_options", None) or {}).get("discord"),
-            )
-        except Exception as e:  # noqa: BLE001 — never break a publish
-            logger.debug("story Discord announce skipped (%s)", type(e).__name__)
+    if ok and announce_discord is not False:
+        await announce_story(
+            story_name, story=story, first_chapter=min((r.get("chapter_index") or 0) for r in ok),
+            site_links=[(r["platform"], r["external_url"]) for r in ok if r.get("external_url")],
+            force=announce_discord)
 
     return results
+
+
+async def announce_story(story_name: str, *, first_chapter: int, site_links: list,
+                         story=None, force: bool | None = None) -> None:
+    """The Discord announcement for one story publish. Never raises.
+
+    The picture is the announcement image the other announcers use, else the thumbnail.
+    Called by ``post_story`` and, once per scheduled slot, by ``scheduler._maybe_slot_announce``."""
+    try:
+        from posting import discord
+        story = story or story_reader.load_story(story_name)
+        title = getattr(story, "title", "") or story_name.replace("_", " ")
+        if first_chapter > 0:
+            title = f"{title} — new chapter"
+        img = getattr(story, "announcement_image", None) or getattr(story, "thumbnail_path", None)
+        if img and not Path(img).is_absolute():
+            img = Path(story.path) / img
+        seen: set[str] = set()
+        links = []
+        for plat, url in site_links:
+            if url and plat not in seen:
+                seen.add(plat)
+                links.append((plat, url))
+        tbp = getattr(story, "tags_by_platform", {}) or {}
+        await discord.announce_publish(
+            kind="story", title=title, rating=getattr(story, "rating", "") or "", force=force,
+            body=getattr(story, "description", "") or "",
+            tags=list(tbp.get("default") or tbp.get("core") or []),
+            site_links=links, platforms=sorted(seen),
+            image_path=img, piece=(getattr(story, "platform_options", None) or {}).get("discord"),
+        )
+    except Exception as e:  # noqa: BLE001 — never break a publish
+        logger.debug("story Discord announce skipped (%s)", type(e).__name__)
 
 
 # The sentinel a caller sends to mean "the piece's own image", as distinct from "you
@@ -966,12 +980,12 @@ async def announce_artwork(artwork_name: str, *, force: bool | None = None, artw
 def _discord_preview_source(artwork) -> Path | None:
     """The file a Discord preview is made from: the image, or — for a video / audio
     piece — its poster thumbnail. None when there is nothing to show."""
-    folder = getattr(artwork, "path", None)
-    if not folder:
+    if not getattr(artwork, "path", None):
         return None
     kind = getattr(artwork, "media_kind", "image") or "image"
-    name = getattr(artwork, "image", "") if kind == "image" else (getattr(artwork, "thumbnail", "") or "")
-    return Path(folder) / name if name else None
+    # image_path / thumbnail_path keep it inside the piece's folder (4.43.1).
+    p = artwork.image_path if kind == "image" else artwork.thumbnail_path
+    return Path(p) if p else None
 
 
 async def update_story(

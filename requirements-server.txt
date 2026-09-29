@@ -9,14 +9,14 @@ python-dotenv~=1.2.2
 bcrypt~=4.2.0
 pyotp~=2.9.0
 itsdangerous~=2.2.0
-# weasyprint 68.x has CVE-2026-49452 (CSS injection via presentational
-# hints) — NOT applicable here: pdf_generator.py renders the user's own
-# story HTML and never enables presentational_hints. No fixed release yet;
-# re-check on the next weasyprint bump.
-weasyprint~=68.1
-# >=48.0.1: wheels before that statically link an OpenSSL with a June-2026
-# security advisory (GHSA-537c-gmf6-5ccf).
-cryptography~=48.0.1
+# weasyprint 70.0 (4.43.2): fixes PYSEC-2026-3940. PYSEC-2026-3412 / CVE-2026-49452
+# (CSS injection via presentational hints) still has no fixed release — NOT
+# applicable here: pdf_generator.py renders the user's own story HTML and never
+# enables presentational_hints. The release checks report it until a fix ships.
+weasyprint~=70.0
+# 50.0 (4.43.2): fixes CVE-2026-69247 (PKCS#7 Bleichenbacher oracle) and
+# CVE-2026-69249 (path-building blow-up); 48.0.1 was the GHSA-537c-gmf6-5ccf floor.
+cryptography~=50.0.1
 
 # gallery-dl powers the X/Twitter poll path. It is GPL-2.0 and is invoked ONLY
 # as a separate subprocess (never imported — see clients/tw/gallerydl.py), so it

@@ -621,7 +621,7 @@ window.Masterpieces = {
         const cards = fam.members.map((m, i) => {
             const src = m.cover_thumb
                 ? this._thumbSrc(m.cover_platform, m.cover_thumb)
-                : this._canonUrl(m.name, m.image);
+                : this._canonUrl(m.name, this._coverFile(m));
             const thumb = src
                 ? `<img class="mp-dup-thumb" src="${this.esc(src)}" alt="" loading="lazy">`
                 : `<span class="mp-dup-thumb mp-dup-thumb--none">🖼️</span>`;
@@ -793,8 +793,8 @@ window.Masterpieces = {
         const cards = items.map((m, i) => {
             const cover = m.cover_thumb
                 ? `<img class="mp-dup-thumb" src="${this.esc(this._thumbSrc(m.cover_platform, m.cover_thumb))}" alt="" loading="lazy">`
-                : (this._canonUrl(m.name, m.image)
-                    ? `<img class="mp-dup-thumb" src="${this.esc(this._canonUrl(m.name, m.image))}" alt="" loading="lazy">`
+                : (this._canonUrl(m.name, this._coverFile(m))
+                    ? `<img class="mp-dup-thumb" src="${this.esc(this._canonUrl(m.name, this._coverFile(m)))}" alt="" loading="lazy">`
                     : `<span class="mp-dup-thumb mp-dup-thumb--none">🖼️</span>`);
             const keepTag = i === 0
                 ? `<span class="mp-dup-keep">✓ keeps</span>`
@@ -851,12 +851,18 @@ window.Masterpieces = {
             fail ? `Merged ${ok}, ${fail} failed` : `Merged into ${keep.title || keep.name}`);
     },
 
+    /* The local file a card shows: the image, or a video / audio piece's poster. */
+    _coverFile(m) { return (m.media_kind || 'image') === 'image' ? m.image : m.thumbnail; },
+
     _cover(m, cls) {
-        const canon = this._canonUrl(m.name, m.image);
+        // A video / audio piece's file is not a picture (the image route answers 415):
+        // its cover is the poster thumbnail, else a placeholder for its kind (4.43.1).
+        const kind = m.media_kind || 'image';
+        const canon = this._canonUrl(m.name, this._coverFile(m));
         if (canon) return `<img class="${cls}" src="${this.esc(canon)}" alt="" loading="lazy">`;
         const s = m.summary || {};
         if (s.cover_thumb) return `<img class="${cls}" src="${this.esc(this._thumbSrc(s.cover_platform, s.cover_thumb))}" alt="" loading="lazy">`;
-        return `<div class="mp-cover-ph">🖼️</div>`;
+        return `<div class="mp-cover-ph">${kind === 'video' ? '🎬' : kind === 'audio' ? '🎵' : '🖼️'}</div>`;
     },
 
     _card(m) {

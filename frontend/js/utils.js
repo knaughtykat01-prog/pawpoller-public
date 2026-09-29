@@ -316,3 +316,5 @@ const Utils = {
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     },
 };
+// A top-level const is not a window property; 28 call sites guard on window.Utils (4.43.1).
+if (typeof window !== 'undefined') window.Utils = Utils;   // node-run tests have no window

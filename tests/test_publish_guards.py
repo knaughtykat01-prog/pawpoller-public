@@ -21,7 +21,9 @@ import pytest
 def client():
     from fastapi.testclient import TestClient
     import dashboard
-    return TestClient(dashboard.app)
+    # A LOCAL client: on an open instance publishing is refused to anyone else (4.43.1),
+    # and this file tests the confirm_live guard behind that, not the lock in front of it.
+    return TestClient(dashboard.app, client=("127.0.0.1", 50000))
 
 
 @pytest.mark.parametrize("path,body", [

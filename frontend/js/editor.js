@@ -3079,3 +3079,5 @@ const Editor = {
     },
 
 };
+// A top-level const is not a window property; other modules guard on window.Editor (4.43.1).
+if (typeof window !== 'undefined') window.Editor = Editor;   // node-run tests have no window

@@ -63,8 +63,10 @@ async def health_check():
 
     2.16.8: added `version` so monitoring/CI can confirm a deploy
     actually rolled out without parsing the dashboard HTML.
+    4.43.2: added `commit` — one version can span several commits, so the
+    version alone can't say which code is running. update.sh checks it.
     """
-    return {"status": "ok", "version": config.APP_VERSION}
+    return {"status": "ok", "version": config.APP_VERSION, "commit": config.APP_COMMIT}
 
 
 # In-memory credentials for "don't remember me" logins.
@@ -1323,6 +1325,7 @@ def get_preferences():
         "milestone_views": settings.get("milestone_views", [100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]),
         "milestone_faves": settings.get("milestone_faves", [10, 25, 50, 100, 250, 500, 1000, 2500, 5000]),
         "milestone_comments": settings.get("milestone_comments", [10, 25, 50, 100, 250, 500, 1000]),
+        "milestone_score": settings.get("milestone_score", [10, 25, 50, 100, 250, 500, 1000]),
         # ── Per-platform CF Proxy backup toggles (2.18.6) ──────────
         # Only the eight platforms that don't *require* the proxy.
         # AO3 / DA / SF use it implicitly when cf_worker_url is set.
@@ -1494,10 +1497,10 @@ def save_preferences(body: dict):
     # only real booleans are stored — "unset" has to stay distinguishable from "off".
     if "announce_defaults" in body:
         allowed = {
-            "tw": {"tags", "caption", "alt", "sensitive"},
-            "bsky": {"tags", "caption", "label"},
+            "tw": {"tags", "caption", "alt", "sensitive", "phototags", "selfcredit"},
+            "bsky": {"tags", "caption", "label", "selfcredit"},
             "tg": {"tags", "caption", "preview", "silent", "protect", "document",
-                   "pin", "spoiler"},
+                   "pin", "spoiler", "selfcredit"},
             # 4.41.0 (spec 008): Discord's announcement options — posting/discord.BUILT_INS.
             "discord": {"image", "spoiler", "silent", "caption", "tags"},
         }
@@ -1549,7 +1552,7 @@ def save_preferences(body: dict):
 
     # ── Milestone threshold arrays ─────────────────────────────
     # Validate as sorted positive integer lists
-    for ms_key in ("milestone_views", "milestone_faves", "milestone_comments"):
+    for ms_key in ("milestone_views", "milestone_faves", "milestone_comments", "milestone_score"):
         if ms_key in body:
             try:
                 vals = sorted(int(v) for v in body[ms_key] if int(v) > 0)

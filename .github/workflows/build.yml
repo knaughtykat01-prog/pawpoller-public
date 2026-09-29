@@ -379,6 +379,9 @@ jobs:
           # cheapest ways to run this, so it is not optional.
           platforms: linux/amd64,linux/arm64
           push: true
+          # The commit, for /api/health (4.43.2) — the image has no .git.
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           tags: |
             ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
             ${{ steps.image.outputs.name }}:latest

@@ -446,6 +446,7 @@ async def schedule_post(post_id: int, payload: dict):
                 scheduled_at=scheduled_str,
                 title_override=snippet,
                 requires=get_platform_requires(platform),
+                persona_id=persona_id,
             )
             queue_ids.append(qid)
     finally:

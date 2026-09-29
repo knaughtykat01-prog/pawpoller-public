@@ -359,6 +359,7 @@ def queue(p: dict) -> dict:
                         drip_group=group, title_override=f"🎨 batch {i + 1}/{total}",
                         variant_key=x.get("variant_key") or "",
                         announce=1 if p.get("announce") else 0,
+                        persona_id=p.get("persona_id"),
                     )
                     rows += 1
     finally:

@@ -255,3 +255,17 @@ def upload_file(tmp_path):
     f = tmp_path / "test_upload.txt"
     f.write_text("This is a test story for uploading.", encoding="utf-8")
     return str(f)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Inside the release image (4.43.2) skip tests that read repo-only files.
+
+    The candidate run (`deploy/security_scan.py candidate`) tests the image itself, which
+    leaves build specs, CLAUDE.md and the private docs out on purpose. Anywhere else the
+    marker does nothing, so a file that really went missing still fails."""
+    if not os.environ.get("PAWPOLLER_TEST_IN_IMAGE"):
+        return
+    skip = pytest.mark.skip(reason="reads a repo file the server image leaves out (.dockerignore)")
+    for item in items:
+        if item.get_closest_marker("repo_only"):
+            item.add_marker(skip)

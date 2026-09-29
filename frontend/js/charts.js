@@ -730,3 +730,5 @@ const Charts = {
         });
     },
 };
+// A top-level const is not a window property; other modules guard on window.Charts (4.43.1).
+if (typeof window !== 'undefined') window.Charts = Charts;   // node-run tests have no window

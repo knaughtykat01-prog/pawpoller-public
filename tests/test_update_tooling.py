@@ -7,6 +7,8 @@ import os
 import shutil
 import subprocess
 
+import pytest
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -38,7 +40,7 @@ def test_shipped_shell_and_units_are_lf():
 def test_update_sh_syntax_ok():
     bash = shutil.which("bash")
     if not bash:
-        return  # no bash here (bare Windows) — CI on Linux still checks it
+        pytest.skip("no bash here (bare Windows) — CI on Linux still checks it")
     for rel in ["update.sh", "server-update/install.sh"]:
         r = subprocess.run([bash, "-n", os.path.join(ROOT, rel)], capture_output=True, text=True)
         assert r.returncode == 0, (rel, r.stderr)
@@ -69,3 +71,57 @@ def test_scheduled_auto_update_is_opt_in():
     # ...but the daily auto-update timer is enabled ONLY inside the --auto branch (SC-006).
     assert 'if [ "$AUTO" = 1 ]' in inst
     assert inst.index('if [ "$AUTO" = 1 ]') < inst.index("enable --now pawpoller-auto-update.timer")
+
+
+def test_update_sh_backs_up_checks_and_rolls_back():
+    """4.43.2: update.sh backs up the database, checks the new commit started, checks the
+    database and the startup log, and rolls back with --to. Run for real against fake
+    docker/curl in a throwaway repo pair (tests/update_sh_harness.sh)."""
+    bash = shutil.which("bash")
+    if not bash or not shutil.which("git"):
+        pytest.skip("needs bash + git")
+    r = subprocess.run([bash, os.path.join(ROOT, "tests", "update_sh_harness.sh"),
+                        os.path.join(ROOT, "update.sh")], capture_output=True, text=True, timeout=300)
+    out = r.stdout + r.stderr
+    parts = {p.split("\n", 1)[0].strip(): p for p in out.split("=== ")[1:]}
+
+    def part(n):
+        return next(v for k, v in parts.items() if k.startswith(f"{n}."))
+    assert "exit=0" in part(1) and "[healthy, database ok]" in part(1) and "backup script received" in part(1)
+    assert "database saved as data/backups/pre-update-" in part(1)
+    assert "exit=1" in part(2) and "crashed or failed while starting" in part(2) and "./update.sh --to" in part(2)
+    assert "exit=1" in part(3) and "database check failed" in part(3)
+    assert "exit=0" in part(4) and "not blocking" in part(4)
+    five = part(5)
+    assert five.count("exit=0") == 2 and "branch=master" in five, five
+    assert "exit=1" in part(6) and "the new build did not start" in part(6)
+    assert "exit=1" in part(7) and "No such commit" in part(7)
+    assert "exit=1" in part(9) and "No such commit: --orphan" in part(9)
+    eight = part(8)          # the checkout was pulled to B, but A is what runs: going back means A
+    import re
+    want, head = re.search(r"expect-rollback-to=(\w+) head=(\w+)", eight).groups()
+    assert want != head and "exit=1" in eight and f"./update.sh --to {want}" in eight, eight
+
+
+def test_the_commit_reaches_the_image_and_health():
+    assert "ARG GIT_SHA" in _read("Dockerfile") and "PAWPOLLER_COMMIT" in _read("Dockerfile")
+    assert "GIT_SHA: ${GIT_SHA:-}" in _read("docker-compose.yml")
+    assert "GIT_SHA=${{ github.sha }}" in _read(".github/workflows/build.yml")
+    assert 'GIT_SHA="$want_commit" docker compose up -d --build' in _read("update.sh")
+
+
+def test_health_says_which_commit_is_running(monkeypatch):
+    import config
+    from fastapi.testclient import TestClient
+    import dashboard
+    monkeypatch.setattr(config, "APP_COMMIT", "abc1234")
+    body = TestClient(dashboard.app).get("/api/health").json()
+    assert body == {"status": "ok", "version": config.APP_VERSION, "commit": "abc1234"}
+
+
+def test_the_baked_commit_wins_over_the_checkout(monkeypatch):
+    import config
+    monkeypatch.setenv("PAWPOLLER_COMMIT", "feedface1234567")
+    assert config._app_commit() == "feedface1234"
+    monkeypatch.delenv("PAWPOLLER_COMMIT")
+    assert len(config._app_commit()) in (0, 7)          # a checkout's short hash, or nothing

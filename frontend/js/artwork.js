@@ -1146,6 +1146,8 @@ window.Artwork = {
          'Needs the bot to hold the Pin Messages admin right, which is separate from posting.'],
         ['preview',  'Show link previews',
          'Off suppresses the preview card Telegram generates for the first link in the post.'],
+        ['selfcredit', 'Name you as the artist',
+         'Off unless set \u2014 a piece you drew carries no \u201cArt by\u201d line. On adds one naming you, linked where your People row has a handle here.'],
     ],
 
     /* The rows for one announcer's panel. Keys mirror the poster's
@@ -1178,6 +1180,10 @@ window.Artwork = {
          'Off sends the image alone.'],
         ['alt',       'Send alt text',
          'Attaches the piece\u2019s alt text to the image. Best-effort: X may refuse it without refusing the post.'],
+        ['phototags', 'Tag people in the photo',
+         'Off unless set \u2014 tags the people on this piece whose X mention switch is on (People page). A photo tag notifies them. New: not yet proven on live X.'],
+        ['selfcredit', 'Name you as the artist',
+         'Off unless set \u2014 a piece you drew carries no \u201cArt by\u201d line. On adds one naming you, linked where your People row has a handle here.'],
     ],
 
     /* Bluesky (4.3.7) \u2014 posting/platforms/bluesky.py _resolve_options. */
@@ -1189,6 +1195,8 @@ window.Artwork = {
          'Off unless set \u2014 300 graphemes is not much. On, they become clickable tags, and are dropped first when the post would not fit.'],
         ['caption', 'Include text',
          'Off sends the image alone, with its alt text.'],
+        ['selfcredit', 'Name you as the artist',
+         'Off unless set \u2014 a piece you drew carries no \u201cArt by\u201d line. On adds one naming you, linked where your People row has a handle here.'],
     ],
 
     /* opts = categories.<code> (the tri-states or choices, plus link_mode /

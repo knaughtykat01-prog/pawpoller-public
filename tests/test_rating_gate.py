@@ -11,6 +11,7 @@ import inspect
 import io
 import json
 import os
+import shutil
 import subprocess
 
 import pytest
@@ -139,6 +140,8 @@ def test_the_browser_half_agrees(tmp_path):
     script = tmp_path / "check.js"
     script.write_text(js, encoding="utf-8")
     src = os.path.abspath("frontend/js/media_kinds.js")
+    if not shutil.which("node"):
+        pytest.skip("node is not installed")
     res = subprocess.run(["node", str(script), src], capture_output=True, text=True, encoding="utf-8")
     assert res.returncode == 0, res.stderr
     out = json.loads(res.stdout)

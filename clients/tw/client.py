@@ -537,6 +537,20 @@ class TWClient:
             logger.info("TW: Resolved %s → rest_id=%s", self.target_user, rest_id)
         return rest_id
 
+    async def user_id_for(self, screen_name: str) -> str:
+        """Another account's rest_id (4.43.1, X photo tags). '' when X doesn't answer."""
+        screen_name = (screen_name or "").lstrip("@").strip()
+        if not screen_name:
+            return ""
+        data = await self._get_json(
+            f"{_BASE}/i/api/graphql/{_GRAPHQL_USER_BY_SCREEN_NAME}/UserByScreenName",
+            params={"variables": json.dumps({"screen_name": screen_name, "withSafetyModeUserFields": True}),
+                    "features": json.dumps(_GRAPHQL_FEATURES)},
+        )
+        if not isinstance(data, dict):
+            return ""
+        return str(data.get("data", {}).get("user", {}).get("result", {}).get("rest_id", "") or "")
+
     async def get_follower_count(self) -> int | None:
         """Follower count for the tracked account.
 
@@ -788,7 +802,8 @@ class TWClient:
         return False
 
     async def create_tweet(self, text: str, media_ids: list[str] | None = None,
-                           *, sensitive: bool = False) -> dict | None:
+                           *, sensitive: bool = False,
+                           tagged_user_ids: list[str] | None = None) -> dict | None:
         """Post a tweet via the internal CreateTweet GraphQL mutation.
 
         Same cookie auth as polling; attaches up to 4 uploaded ``media_ids``
@@ -799,7 +814,9 @@ class TWClient:
         """
         if not (self.auth_token and self.ct0):
             return None
-        media_entities = [{"media_id": str(m), "tagged_users": []}
+        # X photo tags (4.43.1): rest_ids tagged on the image, max 10 — X's own cap.
+        tagged = [str(u) for u in (tagged_user_ids or []) if u][:10]
+        media_entities = [{"media_id": str(m), "tagged_users": tagged}
                           for m in (media_ids or [])]
         variables = {
             "tweet_text": text,

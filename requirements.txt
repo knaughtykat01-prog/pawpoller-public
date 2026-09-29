@@ -15,11 +15,11 @@ winotify>=1.1.0 ; sys_platform == "win32"
 # bundles cleanly. main.py:webview.start() passes gui='qt' on Linux.
 PyQt6>=6.6 ; sys_platform == "linux"
 PyQt6-WebEngine>=6.6 ; sys_platform == "linux"
-weasyprint>=68.0
-# >=48.0.1: earlier wheels bundle an OpenSSL with a June-2026 advisory
-# (GHSA-537c-gmf6-5ccf); keep the floor above it so a stale dev env can't
-# bundle a vulnerable copy into the installer.
-cryptography>=48.0.1
+weasyprint>=70.0
+# >=50.0.0 (4.43.2): CVE-2026-69247 / CVE-2026-69249; earlier, 48.0.1 was the
+# GHSA-537c-gmf6-5ccf floor. A floor, so a stale dev env can't bundle a
+# vulnerable copy into the installer.
+cryptography>=50.0.0
 # Vault key storage: with keyring available the credential vault stores its
 # key in the OS keystore (Windows Credential Manager / macOS Keychain)
 # instead of a .vault_key dotfile sitting next to the ciphertext.

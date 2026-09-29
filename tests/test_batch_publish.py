@@ -281,11 +281,11 @@ def test_real_owner_lookup_on_an_unposted_piece(arch):
 
 # ── scheduler: announce column ───────────────────────────────────────────────
 
-def _queue_row(name, plat, group, announce):
+def _queue_row(name, plat, group, announce, slot=None):
     conn = get_connection()
     try:
         qid = posting_queries.add_to_queue(conn, name, 0, plat, content_type="artwork",
-                                           drip_group=group, announce=announce)
+                                           drip_group=group, announce=announce, scheduled_at=slot)
         return dict(conn.execute("SELECT * FROM posting_queue WHERE queue_id = ?", (qid,)).fetchone())
     finally:
         conn.close()
@@ -300,7 +300,7 @@ class _Row(dict):
 def sched(monkeypatch):
     import asyncio
     from posting import manager, scheduler
-    calls = {"post": [], "announce": []}
+    calls = {"post": [], "announce": [], "force": []}
 
     async def fake_post(name, platforms, **kw):
         calls["post"].append(kw.get("announce_discord", "missing"))
@@ -308,6 +308,7 @@ def sched(monkeypatch):
 
     async def fake_announce(name, **kw):
         calls["announce"].append(name)
+        calls["force"].append(kw.get("force"))
 
     async def quiet(*a, **k):
         return None
@@ -334,10 +335,70 @@ def test_quiet_batch_rows_do_not_announce(sched):
     assert calls["post"] == [False] and calls["announce"] == []
 
 
-def test_legacy_rows_still_follow_the_switch(sched):
+def test_a_plain_schedule_announces_once_after_its_slot(sched):
+    """4.43.1 (SCHEDDISCORD): a piece scheduled to two sites at one time used to announce
+    once per site; now once, after the last row of the slot, following the switch."""
     calls, run = sched
-    run(_queue_row("A", "ib", None, None))
-    assert calls["post"] == [None] and calls["announce"] == []
+    r1, r2 = _queue_row("A", "ib", None, None, slot="2026-10-01 09:00:00"), \
+        _queue_row("A", "fa", None, None, slot="2026-10-01 09:00:00")
+    run(r1)
+    assert calls["post"] == [False] and calls["announce"] == []
+    run(r2)
+    assert calls["post"] == [False, False] and calls["announce"] == ["A"]
+    assert calls["force"] == [None]                                        # the switch decides
+
+
+@pytest.fixture
+def story_sched(monkeypatch):
+    import asyncio
+    from posting import manager, scheduler
+    calls = {"post": [], "announce": []}
+
+    async def fake_post(name, platforms, chapters, **kw):
+        calls["post"].append(kw.get("announce_discord", "missing"))
+        return [{"platform": platforms[0], "success": True}]
+
+    async def fake_announce(name, **kw):
+        calls["announce"].append((name, kw["first_chapter"], kw["force"]))
+
+    async def quiet(*a, **k):
+        return None
+
+    monkeypatch.setattr(manager, "post_story", fake_post)
+    monkeypatch.setattr(manager, "announce_story", fake_announce)
+    monkeypatch.setattr(scheduler, "_notify_completion", quiet)
+    run = lambda row: asyncio.run(scheduler._process_queue_item(_Row(row)))   # noqa: E731
+    return calls, run
+
+
+def _story_row(plat, ch, slot, group=None):
+    conn = get_connection()
+    try:
+        qid = posting_queries.add_to_queue(conn, "Sample_Story", ch, plat, scheduled_at=slot,
+                                           drip_group=group)
+        return dict(conn.execute("SELECT * FROM posting_queue WHERE queue_id = ?", (qid,)).fetchone())
+    finally:
+        conn.close()
+
+
+def test_a_story_scheduled_to_two_sites_announces_once(story_sched):
+    """4.43.1 (SCHEDDISCORD): a story's rows used to announce once per site."""
+    calls, run = story_sched
+    slot = "2026-10-01 09:00:00"
+    r1, r2 = _story_row("ib", 3, slot), _story_row("sf", 3, slot)
+    run(r1)
+    assert calls["post"] == [False] and calls["announce"] == []
+    run(r2)
+    assert calls["post"] == [False, False]
+    assert calls["announce"] == [("Sample_Story", 3, None)]                # once; the switch decides
+
+
+def test_a_story_drip_announces_each_release(story_sched):
+    """Drip chapters sit at different times — each release is news, announced once."""
+    calls, run = story_sched
+    run(_story_row("ib", 1, "2026-10-01 09:00:00", group="d1"))
+    run(_story_row("ib", 2, "2026-10-08 09:00:00", group="d1"))
+    assert [a[1] for a in calls["announce"]] == [1, 2]
 
 
 def test_upgrade_adds_the_announce_column(tmp_path, monkeypatch):
@@ -346,7 +407,8 @@ def test_upgrade_adds_the_announce_column(tmp_path, monkeypatch):
     import config
     from database import db
     schema = (config.resource_path("database/posting_schema.sql")).read_text(encoding="utf-8")
-    old = "\n".join(line for line in schema.splitlines() if not line.strip().startswith("announce "))
+    old = "\n".join(line for line in schema.splitlines()
+                    if not line.strip().startswith(("announce ", "persona_id ", "retry_of ")))
     path = tmp_path / "old.db"
     c = sqlite3.connect(path)
     c.executescript(old)
@@ -354,7 +416,117 @@ def test_upgrade_adds_the_announce_column(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", path)
     db.init_db()
     cols = {r[1] for r in sqlite3.connect(path).execute("PRAGMA table_info(posting_queue)")}
-    assert "announce" in cols
+    assert {"announce", "persona_id", "retry_of"} <= cols
+
+
+# ── 4.43.1: retries stay in their slot; persona re-checked when a row fires ──────
+
+@pytest.fixture
+def flaky(monkeypatch):
+    """post_artwork fails for the (piece, site) pairs in ``fail`` the way the manager does:
+    it queues its own retry row (no batch / slot / persona on it) and says so."""
+    import asyncio
+    from posting import manager, scheduler
+    calls = {"post": [], "announce": [], "fail": set()}
+
+    async def fake_post(name, platforms, **kw):
+        calls["post"].append((name, platforms[0]))
+        if (name, platforms[0]) in calls["fail"]:
+            calls["fail"].discard((name, platforms[0]))
+            conn = get_connection()
+            try:
+                posting_queries.add_to_queue(conn, name, 0, platforms[0], content_type="artwork",
+                                             scheduled_at="2026-10-01 09:05:00", priority=-1)
+            finally:
+                conn.close()
+            return [{"platform": platforms[0], "success": False, "error": "timeout", "retry_queued": True}]
+        return [{"platform": platforms[0], "success": True}]
+
+    async def fake_announce(name, **kw):
+        calls["announce"].append(name)
+
+    async def quiet(*a, **k):
+        return None
+
+    monkeypatch.setattr(manager, "post_artwork", fake_post)
+    monkeypatch.setattr(manager, "announce_artwork", fake_announce)
+    monkeypatch.setattr(scheduler, "_notify_completion", quiet)
+    run = lambda row: asyncio.run(scheduler._process_queue_item(_Row(row)))   # noqa: E731
+    return calls, run
+
+
+def _retry_row():
+    conn = get_connection()
+    try:
+        return dict(conn.execute("SELECT * FROM posting_queue WHERE priority = -1 "
+                                 "ORDER BY queue_id DESC LIMIT 1").fetchone())
+    finally:
+        conn.close()
+
+
+def test_a_retry_stays_in_its_slot_and_the_piece_announces_once(flaky):
+    """A retried site used to announce a second time from its own later slot."""
+    calls, run = flaky
+    slot = "2026-10-01 09:00:00"
+    r1, r2 = _queue_row("A", "ib", None, None, slot=slot), _queue_row("A", "fa", None, None, slot=slot)
+    calls["fail"].add(("A", "ib"))
+    run(r1)
+    run(r2)
+    assert calls["announce"] == []                                   # ib's retry is still pending
+    retry = _retry_row()
+    assert retry["retry_of"] == r1["queue_id"]
+    run(retry)
+    assert calls["announce"] == ["A"]                                # once, after the retry
+
+
+def test_a_batch_retry_keeps_its_batch(flaky):
+    """A retried batch row came back with no batch and no Discord choice — it would have
+    announced on its own. It now carries both, and the batch waits for it."""
+    calls, run = flaky
+    r1, r2 = _queue_row("A", "ib", "g9", 1), _queue_row("A", "fa", "g9", 1)
+    calls["fail"].add(("A", "ib"))
+    run(r1)
+    retry = _retry_row()
+    assert (retry["drip_group"], retry["announce"], retry["retry_of"]) == ("g9", 1, r1["queue_id"])
+    run(r2)
+    assert calls["announce"] == []
+    run(retry)
+    assert calls["announce"] == ["A"]
+
+
+def test_a_row_whose_account_left_the_persona_is_refused_when_it_fires(flaky):
+    from database import accounts as accounts_db
+    calls, run = flaky
+    conn = get_connection()
+    try:
+        mine, other = _persona(conn, "Main"), _persona(conn, "Other")
+        acct = accounts_db.create_account(conn, "ib", "ib one")
+        conn.execute("UPDATE accounts SET persona_id = ? WHERE account_id = ?", (mine, acct))
+        conn.commit()
+        rows = []
+        for name in ("A", "B"):
+            qid = posting_queries.add_to_queue(conn, name, 0, "ib", account_id=acct, content_type="artwork",
+                                               drip_group="g8", announce=0, persona_id=mine)
+            rows.append(dict(conn.execute("SELECT * FROM posting_queue WHERE queue_id = ?", (qid,)).fetchone()))
+    finally:
+        conn.close()
+    run(rows[0])
+    assert calls["post"] == [("A", "ib")]
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE accounts SET persona_id = ? WHERE account_id = ?", (other, acct))
+        conn.commit()
+    finally:
+        conn.close()
+    run(rows[1])
+    assert calls["post"] == [("A", "ib")]                            # B never went out
+    conn = get_connection()
+    try:
+        r = conn.execute("SELECT status, last_error FROM posting_queue WHERE queue_id = ?",
+                         (rows[1]["queue_id"],)).fetchone()
+    finally:
+        conn.close()
+    assert r[0] == "failed" and "Refused when it came due" in r[1] and "does not belong" in r[1]
 
 
 # ── UI wiring (source contracts) ─────────────────────────────────────────────
@@ -505,3 +677,35 @@ def test_no_announcement_when_every_post_failed(sched, monkeypatch):
     for row in (_queue_row("A", "ib", "g3", 1), _queue_row("A", "fa", "g3", 1)):
         asyncio.run(scheduler._process_queue_item(_Row(row)))
     assert calls["announce"] == []
+
+
+def test_masterpiece_covers_use_the_poster_for_video_and_audio():
+    js = _src("frontend/js/masterpieces.js")
+    assert "_coverFile(m) { return (m.media_kind || 'image') === 'image' ? m.image : m.thumbnail; }" in js
+    assert js.count("this._coverFile(m)") >= 3                  # grid card, version families, duplicates
+    api = _src("routes/masterpieces_api.py")
+    assert '"media_kind": art.get("media_kind", "image")' in api
+
+
+def test_announce_story_builds_one_message(monkeypatch, tmp_path):
+    """The factored-out story announcement: 'new chapter' past chapter 0, one link per
+    site, the switch passed through, and a bad story never raises."""
+    import asyncio
+    from types import SimpleNamespace
+    from posting import discord, manager
+    seen = []
+
+    async def fake(**kw):
+        seen.append(kw)
+
+    monkeypatch.setattr(discord, "announce_publish", fake)
+    story = SimpleNamespace(title="Sample Story", rating="general", path=str(tmp_path),
+                            thumbnail_path="thumb.jpg", tags_by_platform={"core": ["fox"]})
+    asyncio.run(manager.announce_story(
+        "Sample_Story", story=story, first_chapter=2, force=None,
+        site_links=[("ib", "https://x/1"), ("ib", "https://x/2"), ("sf", "https://y/1"), ("fa", "")]))
+    (kw,) = seen
+    assert kw["title"] == "Sample Story — new chapter" and kw["force"] is None
+    assert kw["site_links"] == [("ib", "https://x/1"), ("sf", "https://y/1")] and kw["platforms"] == ["ib", "sf"]
+    assert kw["tags"] == ["fox"] and str(kw["image_path"]).endswith("thumb.jpg")
+    asyncio.run(manager.announce_story("No_Such_Story", first_chapter=0, site_links=[]))   # no raise

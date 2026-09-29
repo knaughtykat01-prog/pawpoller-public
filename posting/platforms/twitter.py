@@ -164,8 +164,19 @@ class TwitterPoster(PlatformPoster):
                     # Best-effort: alt text is worth having and never worth
                     # failing the post over. set_media_alt logs its own refusal.
                     await client.set_media_alt(mid, alt)
-            r = await client.create_tweet(text, media_ids=media_ids or None,
-                                          sensitive=opts["sensitive"])
+            # Photo tags (4.43.1): images only — X has no people tags on video. Only the
+            # handles whose X mention switch is on reach the package (artwork_reader).
+            tagged: list[str] = []
+            if image and not is_video and opts["phototags"]:
+                for h in list((package.extra or {}).get("tw_photo_tags") or [])[:10]:
+                    uid = await client.user_id_for(h)
+                    if uid:
+                        tagged.append(uid)
+                    else:
+                        logger.warning("TW: @%s not found — not tagged in the photo", h)
+            # Passed only when there are tags: with the option off the call is exactly as before.
+            r = await client.create_tweet(text, media_ids=media_ids or None, sensitive=opts["sensitive"],
+                                          **({"tagged_user_ids": tagged} if tagged else {}))
         except Exception as e:
             logger.error("TW post failed: %s", e, exc_info=True)
             return PostResult(success=False, error=str(e), duration_seconds=self._elapsed(_t))
@@ -258,4 +269,7 @@ def _resolve_options(package: StoryUploadPackage, settings: dict | None = None) 
         "tags": announce.flag(x.get("tags"), announce.option_default(settings, "tw", "tags", True)),
         "caption": announce.flag(x.get("caption"), announce.option_default(settings, "tw", "caption", True)),
         "alt": announce.flag(x.get("alt"), announce.option_default(settings, "tw", "alt", True)),
+        # 4.43.1 (PEOPLEC): tag the piece's people on the image. Off unless set — a photo
+        # tag notifies harder than a mention, and it is not proven against live X yet.
+        "phototags": announce.flag(x.get("phototags"), announce.option_default(settings, "tw", "phototags", False)),
     }

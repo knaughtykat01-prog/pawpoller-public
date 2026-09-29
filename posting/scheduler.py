@@ -144,11 +144,11 @@ async def _process_queue_item(item: dict) -> None:
     # as the piece, it derives to "no variant" and the retry would post the primary.
     _vk = item["variant_key"] if "variant_key" in item.keys() else ""
     variant_overrides = {platform: _vk} if _vk else None
-    # The row's Discord choice (4.43.0, spec 010). NULL (every row before it) follows the
-    # switch as before; 0/1 rows never announce on their own — a batch piece is announced
-    # once, after its last row, by _maybe_batch_announce.
-    _announce = item["announce"] if "announce" in item.keys() else None
-    row_discord = None if _announce is None else False
+    # Rows never announce to Discord on their own (4.43.0 batches; 4.43.1 every artwork and
+    # story row): a piece scheduled to five sites is five rows, and each announcing was five messages.
+    # The piece is announced ONCE when its rows settle — _maybe_batch_announce (a batch,
+    # announce 0/1) or _maybe_slot_announce (a plain schedule, announce NULL, follows the switch).
+    row_discord = False
 
     # For posts the story_name is a bare post_id — use the snippet stashed in
     # title_override as the human label in Telegram notifications.
@@ -177,6 +177,20 @@ async def _process_queue_item(item: dict) -> None:
         return
 
     try:
+        # A persona-first schedule is checked again when it comes due (4.43.1, BATCHOPEN):
+        # a batch spread over weeks must not post as an account that has since moved to
+        # another persona, been disabled or removed. Refused = failed + notified, no retry.
+        _persona = item["persona_id"] if "persona_id" in item.keys() else None
+        if _persona is not None:
+            from database import personas as personas_db
+            conn = get_connection()
+            try:
+                _perr = personas_db.persona_account_error(conn, platform, account_id, int(_persona))
+            finally:
+                conn.close()
+            if _perr:
+                raise ValueError(f"Refused when it came due: {_perr}")
+
         if content_type == "post":
             # Microblog post: story_name is the post_id; publish this one
             # platform via the Posts engine (records in post_publications).
@@ -202,6 +216,7 @@ async def _process_queue_item(item: dict) -> None:
                 story_name, [platform], [chapter_index],
                 account_ids={platform: account_id} if account_id else None,
                 description_overrides=description_overrides,
+                announce_discord=row_discord,
             )
         elif action == "update":
             results = await manager.update_story(
@@ -255,6 +270,7 @@ async def _process_queue_item(item: dict) -> None:
 
             if handed_off:
                 new_status = "failed"
+                _adopt_handoff(item)
             else:
                 new_status = "pending" if item["attempts"] < item["max_attempts"] else "failed"
 
@@ -291,6 +307,87 @@ async def _process_queue_item(item: dict) -> None:
                                  content_type=content_type)
 
     await _maybe_batch_announce(item)
+    await _maybe_slot_announce(item)
+
+
+def _adopt_handoff(item) -> None:
+    """The retry / desktop row the manager just queued re-runs THIS row (4.43.1).
+
+    The manager only knows the piece, site and account, so its row came back without the
+    batch, the Discord choice, the persona and the this-post-only text — a retried batch
+    row then announced on its own, and a retry of a plain schedule announced a second time
+    from its own later slot. Copy them over, and point it at the root row it re-runs."""
+    try:
+        keys = item.keys()
+        g = lambda k: item[k] if k in keys else None   # noqa: E731
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE posting_queue SET drip_group = ?, announce = ?, persona_id = ?, retry_of = ?, "
+                "title_override = COALESCE(title_override, ?), "
+                "description_override = COALESCE(description_override, ?) "
+                "WHERE queue_id = (SELECT MAX(queue_id) FROM posting_queue WHERE queue_id > ? "
+                "AND story_name = ? AND chapter_index = ? AND platform = ? AND content_type = ? "
+                "AND status = 'pending' AND retry_of IS NULL)",
+                (g("drip_group"), g("announce"), g("persona_id"), g("retry_of") or item["queue_id"],
+                 g("title_override"), g("description_override"), item["queue_id"], item["story_name"],
+                 item["chapter_index"], item["platform"], g("content_type") or "story"))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:  # noqa: BLE001 — bookkeeping never breaks the queue
+        logger.debug("hand-off adopt skipped (%s)", type(e).__name__)
+
+
+async def _maybe_slot_announce(item) -> None:
+    """Announce a plainly scheduled piece ONCE, after the last row of its time slot (4.43.1).
+
+    The schedule dialog queues one row per site at the same time; each row used to
+    announce on its own. Now the piece is announced when no row of it at that time — nor
+    any retry of one (``retry_of``) — is still pending / processing and at least one
+    posted, following the announce-on-publish switch (`force=None`), exactly as a single
+    publish would. Artwork batches have their own rule. A story drip's chapters sit at
+    different times, so each release is its own slot.
+    """
+    try:
+        keys = item.keys()
+        ctype = item["content_type"] if "content_type" in keys else "story"
+        if ctype == "artwork":
+            if (item["drip_group"] if "drip_group" in keys else None) or                     (item["announce"] if "announce" in keys else None) is not None:
+                return
+            where = "q.drip_group IS NULL AND q.announce IS NULL AND "
+        elif ctype == "story" and item["action"] == "post":
+            where = "q.action = 'post' AND "
+        else:
+            return
+        where = f"q.content_type = '{ctype}' AND q.story_name = ? AND " + where
+        root = (item["retry_of"] if "retry_of" in keys else None) or item["queue_id"]
+        conn = get_connection()
+        try:
+            r = conn.execute("SELECT scheduled_at FROM posting_queue WHERE queue_id = ?", (root,)).fetchone()
+            slot = r[0] if r else None
+            args = [item["story_name"], slot or root]
+            origin = (f"SELECT q.queue_id FROM posting_queue q WHERE q.retry_of IS NULL AND {where}"
+                      + ("q.scheduled_at = ?" if slot else "q.queue_id = ?"))
+            member = f"COALESCE(m.retry_of, m.queue_id) IN ({origin})"
+            left = conn.execute(f"SELECT COUNT(*) FROM posting_queue m WHERE {member} "
+                                "AND m.status IN ('pending', 'processing')", args).fetchone()[0]
+            done = conn.execute(
+                f"SELECT m.chapter_index, p.platform, p.external_url FROM posting_queue m "
+                f"LEFT JOIN publications p ON p.pub_id = m.pub_id WHERE {member} "
+                "AND m.status = 'completed'", args).fetchall()
+        finally:
+            conn.close()
+        if left or not done:
+            return
+        if ctype == "artwork":
+            await manager.announce_artwork(item["story_name"], force=None)
+        else:
+            await manager.announce_story(
+                item["story_name"], first_chapter=min((r[0] or 0) for r in done),
+                site_links=[(r[1], r[2]) for r in done if r[1]], force=None)
+    except Exception as e:  # noqa: BLE001 — an announcement never breaks the queue
+        logger.debug("slot announce skipped (%s)", type(e).__name__)
 
 
 async def _maybe_batch_announce(item) -> None:

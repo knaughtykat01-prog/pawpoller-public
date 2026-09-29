@@ -7,6 +7,7 @@ Usage:
 
 import logging
 import os
+import re
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -532,7 +533,36 @@ _SENSITIVE_WHEN_OPEN_PREFIXES = (
     # releases now, but installing an update is still the operator's call, not
     # an anonymous remote caller's.
     "/api/update/apply",
+    # 4.43.2 (release review, HIGH): minting an API key. Since 4.43.1 a valid key
+    # passes this very gate (so a paired desktop keeps working on an open server) —
+    # which made an open key-mint route a way past EVERY entry above: mint a key,
+    # then read the vault via /api/settings/sync. On an open instance keys are
+    # created from the server's own machine only (or with a key you already hold).
+    "/api/auth/api-keys",
 )
+
+# 4.43.1: everything that PUBLISHES — puts the operator's work or words on a live site,
+# now or on a schedule. On an open instance any of these let a stranger on the network
+# post under the operator's name, irreversibly; the 4.43.0 batch made that 200 pieces ×
+# every site in one call. Same reasoning as /api/tg/channel above. Only requests that
+# change something (not GET), so viewing the queue or a plan stays open; clearing or cancelling
+# queue rows isn't publishing, so only ADDING to the queue and rescheduling are listed. Paths with an
+# id in the middle can't be prefixes, hence a pattern.
+_PUBLISH_WHEN_OPEN = re.compile(
+    r"^/api/(artwork/(publish|batch|schedule)|posting/(post|update)|posting/queue$|posting/queue/\d+/reschedule"
+    r"|discord/(announce|test)"
+    r"|editor/stories/.+/(publish|schedule|drip)|posts/[^/]+/(publish|schedule)|promos/[^/]+/announce"
+    # 4.43.2 (release review): these put words live too — a masterpiece sync rewrites
+    # title/description/tags on every live upload; a podcast episode goes out on the
+    # public /feed/ RSS.
+    r"|masterpieces/.+/sync|podcasts/[^/]+/episodes)(/|$)")
+
+
+def _sensitive_when_open(request: Request) -> bool:
+    path = request.url.path
+    if path.startswith(_SENSITIVE_WHEN_OPEN_PREFIXES):
+        return True
+    return request.method not in ("GET", "HEAD", "OPTIONS") and bool(_PUBLISH_WHEN_OPEN.match(path))
 
 
 def _client_is_loopback(request: Request) -> bool:
@@ -548,7 +578,11 @@ async def session_auth_middleware(request: Request, call_next):
     # above, which must not be reachable from a remote caller on an open
     # instance (they'd dump every stored secret / allow remote takeover).
     if not config.is_dashboard_auth_required():
-        if path.startswith(_SENSITIVE_WHEN_OPEN_PREFIXES) and not _client_is_loopback(request):
+        # A valid API key (a paired desktop) is authorised even here — without this, making
+        # an endpoint sensitive would cut a paired desktop off an open server (4.43.1).
+        _auth = request.headers.get("Authorization", "")
+        _keyed = _auth.startswith("Bearer ") and config.validate_api_key(_auth[7:])
+        if _sensitive_when_open(request) and not _client_is_loopback(request) and not _keyed:
             return Response(
                 status_code=403,
                 content="Set a dashboard password (Settings -> Security) before using this endpoint from a non-local client.",

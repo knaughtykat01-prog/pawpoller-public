@@ -1,6 +1,10 @@
 services:
   pawpoller:
-    build: .
+    build:
+      context: .
+      # The commit, baked in for /api/health; update.sh sets it (empty is fine).
+      args:
+        GIT_SHA: ${GIT_SHA:-}
     ports:
       # Loopback by default, so a fresh `docker compose up` is NOT exposed to
       # the network. To reach it from other devices, put it behind a reverse

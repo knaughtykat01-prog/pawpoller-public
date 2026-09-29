@@ -1243,7 +1243,35 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.43.0"
+APP_VERSION = "4.43.2"
+
+
+def _app_commit() -> str:
+    """The exact commit this build is (4.43.2) — one version can span several commits.
+
+    A Docker build gets it baked in (``GIT_SHA`` build arg → ``PAWPOLLER_COMMIT``; the image
+    has no .git). A source checkout reads .git directly. '' when neither is available."""
+    env = os.environ.get("PAWPOLLER_COMMIT", "").strip()
+    if env:
+        return env[:12]
+    try:
+        git = Path(__file__).resolve().parent / ".git"
+        head = (git / "HEAD").read_text(encoding="utf-8").strip()
+        if head.startswith("ref: "):
+            ref = head[5:]
+            p = git / ref
+            if p.is_file():
+                return p.read_text(encoding="utf-8").strip()[:7]
+            for line in (git / "packed-refs").read_text(encoding="utf-8").splitlines():
+                if line.endswith(" " + ref):
+                    return line.split()[0][:7]
+            return ""
+        return head[:7]
+    except OSError:
+        return ""
+
+
+APP_COMMIT = _app_commit()
 
 # ── Inkbunny API settings ──
 INKBUNNY_API_BASE = "https://inkbunny.net"     # Inkbunny API root URL

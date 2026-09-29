@@ -14,6 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 
+@pytest.mark.repo_only
 @pytest.mark.parametrize("spec", ["pawpoller.spec", "pawpoller-server.spec"])
 def test_the_build_ships_the_tag_database(spec):
     assert "('tag_database', 'tag_database')" in (ROOT / spec).read_text(encoding="utf-8")

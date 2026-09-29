@@ -84,6 +84,34 @@ def _post_mentions_did(post: dict, did: str) -> bool:
     return False
 
 
+def _registry_dids(handles) -> dict[str, str]:
+    """Stored DIDs for People-registry handles. Never raises — no DB is no DIDs."""
+    try:
+        from database import artist_queries
+        from database.db import get_connection
+        conn = get_connection()
+        try:
+            return artist_queries.bsky_dids(conn, handles)
+        finally:
+            conn.close()
+    except Exception as e:  # noqa: BLE001 — a lookup never costs a post its mention
+        logger.debug("BSKY: stored DID lookup skipped (%s)", type(e).__name__)
+        return {}
+
+
+def _remember_did(handle: str, did: str) -> None:
+    try:
+        from database import artist_queries
+        from database.db import get_connection
+        conn = get_connection()
+        try:
+            artist_queries.remember_bsky_did(conn, handle, did)
+        finally:
+            conn.close()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("BSKY: DID not stored (%s)", type(e).__name__)
+
+
 class BskyClient:
     """Async HTTP client for Bluesky's AT Protocol API."""
 
@@ -1019,12 +1047,19 @@ class BskyClient:
         """Facets for each ``@handle`` in text whose handle resolves to a DID."""
         facets: list[dict] = []
         seen: set[str] = set()
+        known = _registry_dids(handles)
         for h in handles:
             h = (h or "").lstrip("@").strip()
             if not h or h in seen:
                 continue
             seen.add(h)
-            did = await self.resolve_handle(h)
+            # A registry person's stored DID wins (4.43.1, PEOPLEC): their handle may have
+            # moved since it was entered, and a DID does not. Else resolve, and remember.
+            did = known.get(h.lower())
+            if not did:
+                did = await self.resolve_handle(h)
+                if did:
+                    _remember_did(h, did)
             if not did:
                 continue
             needle = "@" + h

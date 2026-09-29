@@ -2,16 +2,26 @@
 # One-command PawPoller server updater.  Run it from the repo:  ./update.sh
 #
 # Updates a running Docker Compose server to the latest release. It figures out
-# on its own whether you built from source or run the prebuilt image, refreshes
-# the checkout, updates the container the matching way, and reports the version
-# before and after with a health check. Your data (settings, database, logs)
-# lives in named volumes and is untouched.
+# on its own whether you built from source or run the prebuilt image, backs up
+# the database, refreshes the checkout, updates the container the matching way,
+# then checks the new version really started cleanly. Your data (settings,
+# database, logs) lives in named volumes and is untouched.
 #
 #   ./update.sh                update now
+#   ./update.sh --to <commit>  go to one exact commit instead (use it to roll back)
 #   ./update.sh --check        say whether a newer version exists; change nothing
 #   ./update.sh --quiet        only print on a change or an error (for cron/systemd)
 #   ./update.sh --if-requested update only if the dashboard asked (used by the host agent)
 #   ./update.sh --help         this help
+#
+# Every update first copies the database to data/backups/pre-update-*.db inside
+# the data volume (the newest 5 are kept). After it, the script waits for the
+# app, checks it is running the commit it just built, checks the database, and
+# reads the startup log: a crash or a damaged database fails the update and
+# prints the exact command to roll back.
+#
+# Run it as the user who owns the checkout, or with sudo: as root it still does
+# the git work as the checkout's owner, so the repo never ends up root-owned.
 #
 # Env: PAWPOLLER_PORT (default 8420) — the host port the server answers on.
 set -euo pipefail
@@ -21,23 +31,38 @@ cd "$(cd "$(dirname "$0")" && pwd)"   # repo root (this script lives here)
 PORT="${PAWPOLLER_PORT:-8420}"
 HEALTH="http://127.0.0.1:${PORT}/api/health"
 LOCK="${TMPDIR:-/tmp}/pawpoller-update.lock"
-QUIET=0; MODE_CHECK=0; IF_REQUESTED=0
+QUIET=0; MODE_CHECK=0; IF_REQUESTED=0; TARGET=""
 
-for a in "$@"; do
-  case "$a" in
+while [ $# -gt 0 ]; do
+  case "$1" in
     --quiet|-q)     QUIET=1 ;;
     --check)        MODE_CHECK=1 ;;
     --if-requested) IF_REQUESTED=1 ;;
+    --to)           shift; TARGET="${1:-}"; [ -n "$TARGET" ] || { echo "update.sh: --to needs a commit" >&2; exit 2; } ;;
     -h|--help)      awk 'NR==1{next} /^#/{sub(/^# ?/,"");print;next}{exit}' "$0"; exit 0 ;;
-    *) echo "update.sh: unknown option '$a' (try --help)" >&2; exit 2 ;;
+    *) echo "update.sh: unknown option '$1' (try --help)" >&2; exit 2 ;;
   esac
+  shift
 done
 
 say(){ [ "$QUIET" = 1 ] || printf '%s\n' "$*"; }
 err(){ printf '%s\n' "$*" >&2; }
 
-# Running version, read from the app's own health endpoint (empty if it's down).
-version_now(){ curl -fsS --max-time 5 "$HEALTH" 2>/dev/null | sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p'; }
+# Git as the checkout's owner. Under sudo, a root `git pull` would leave root-owned
+# files in .git and break the next pull by the real owner.
+OWNER="$(stat -c %U . 2>/dev/null || echo "")"
+g(){
+  if [ "$(id -u)" = 0 ] && [ -n "$OWNER" ] && [ "$OWNER" != root ]; then
+    sudo -u "$OWNER" git "$@"
+  else
+    git "$@"
+  fi
+}
+
+# Running version / commit, read from the app's own health endpoint (empty if it's down).
+health_now(){ curl -fsS --max-time 5 "$HEALTH" 2>/dev/null || true; }
+field(){ sed -n "s/.*\"$1\" *: *\"\\([^\"]*\\)\".*/\\1/p"; }
+version_now(){ health_now | field version; }
 
 # How is PawPoller running? The prebuilt-image install uses a ghcr.io image; the
 # build-from-source install uses a locally-built one. Read it off the container.
@@ -54,9 +79,9 @@ detect_mode(){
 # --check: is a newer version published? Compare the running version to the
 # APP_VERSION on the remote's main branch. Read-only (fetch, not pull).
 if [ "$MODE_CHECK" = 1 ]; then
-  git fetch --quiet || { err "Could not reach the git remote to check for updates."; exit 1; }
-  latest="$(git show origin/HEAD:config.py 2>/dev/null | sed -n 's/^APP_VERSION *= *"\([^"]*\)".*/\1/p' | head -n1)"
-  [ -z "$latest" ] && latest="$(git show origin/main:config.py 2>/dev/null | sed -n 's/^APP_VERSION *= *"\([^"]*\)".*/\1/p' | head -n1)"
+  g fetch --quiet || { err "Could not reach the git remote to check for updates."; exit 1; }
+  latest="$(g show origin/HEAD:config.py 2>/dev/null | sed -n 's/^APP_VERSION *= *"\([^"]*\)".*/\1/p' | head -n1)"
+  [ -z "$latest" ] && latest="$(g show origin/main:config.py 2>/dev/null | sed -n 's/^APP_VERSION *= *"\([^"]*\)".*/\1/p' | head -n1)"
   current="$(version_now || true)"
   if [ -n "$current" ] && [ "$current" = "$latest" ]; then
     say "Up to date (${current})."
@@ -84,42 +109,138 @@ if ! flock -n 9; then
 fi
 
 MODE="$(detect_mode)"
+COMPOSE=(docker compose)
+[ "$MODE" = image ] && COMPOSE=(docker compose -f docker-compose.image.yml)
 before="$(version_now || true)"
+# The commit that is RUNNING — what a rollback must return to. The checkout's HEAD can
+# already be ahead of it (someone pulled without rebuilding), so ask the app first;
+# older versions don't report one, then HEAD is the best guess.
+before_commit="$(health_now | field commit)"
+[ -n "$before_commit" ] || before_commit="$(g rev-parse --short HEAD)"
 say "PawPoller updater — install type: ${MODE}"
-[ -n "$before" ] && say "  current version: ${before}"
+[ -n "$before" ] && say "  current version: ${before} (${before_commit})"
 
-# Refresh the checkout. Fast-forward only: if you have local commits/edits (e.g. a
-# customized compose file) this stops rather than discarding them.
-say "  pulling latest..."
-if ! git pull --ff-only; then
-  err "git pull --ff-only failed — you have local changes to the checkout."
-  err "Commit or stash them (or 'git stash') and re-run ./update.sh."
-  exit 1
+# Back up the database first (4.43.2). SQLite's own backup API, run inside the
+# container, gives a consistent copy even mid-write (a plain file copy of a live
+# WAL database can be torn). No running container = nothing to back up yet.
+if [ -n "$("${COMPOSE[@]}" ps -q pawpoller 2>/dev/null || true)" ]; then
+  say "  backing up the database..."
+  if ! backup="$("${COMPOSE[@]}" exec -T pawpoller python - "$before_commit" <<'PY'
+import sqlite3, sys, time
+import config
+d = config.DATA_DIR / "backups"
+d.mkdir(parents=True, exist_ok=True)
+dst = d / f"pre-update-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}-{sys.argv[1]}.db"
+src = sqlite3.connect(config.DB_PATH)
+out = sqlite3.connect(dst)
+src.backup(out)
+out.close(); src.close()
+# Keep the newest 5 of OUR pre-update copies; nothing else in the folder is touched.
+for old in sorted(d.glob("pre-update-*.db"))[:-5]:
+    old.unlink()
+print("BACKUP:" + dst.name)
+PY
+  )"; then
+    err "The database backup failed, so nothing was changed. Fix that before updating."
+    exit 1
+  fi
+  backup="${backup##*BACKUP:}"     # importing config may print first; the name is last
+  say "  database saved as data/backups/${backup}"
 fi
 
+# Refresh the checkout. Fast-forward only: if you have local commits/edits (e.g. a
+# customized compose file) this stops rather than discarding them. After a
+# rollback (--to) the checkout is on a bare commit; go back to the branch first.
+if [ -n "$TARGET" ]; then
+  say "  going to ${TARGET}..."
+  g fetch --quiet || true
+  # Resolve to a commit first: a value starting with "-" must never reach git as an option.
+  target_sha="$(g rev-parse --verify --quiet "${TARGET}^{commit}" 2>/dev/null || true)"
+  [ -n "$target_sha" ] || { err "No such commit: ${TARGET}"; exit 1; }
+  g checkout --quiet --detach "$target_sha" || { err "No such commit: ${TARGET}"; exit 1; }
+else
+  if ! g symbolic-ref -q HEAD >/dev/null; then
+    # origin/HEAD is missing on some clones; then try master, then main. (Not
+    # `rev-parse --abbrev-ref`: on a missing ref it still PRINTS "origin/HEAD",
+    # and `git checkout HEAD` would leave the checkout detached.)
+    branch="$(g symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || true)"
+    g checkout --quiet "${branch:-master}" 2>/dev/null || g checkout --quiet main
+  fi
+  say "  pulling latest..."
+  if ! g pull --ff-only; then
+    err "git pull --ff-only failed — you have local changes to the checkout."
+    err "Commit or stash them (or 'git stash') and re-run ./update.sh."
+    exit 1
+  fi
+fi
+want_commit="$(g rev-parse --short HEAD)"
+
 say "  updating container (${MODE})..."
+started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if [ "$MODE" = image ]; then
   docker compose -f docker-compose.image.yml pull
   docker compose -f docker-compose.image.yml up -d
 else
-  docker compose up -d --build
+  # The commit is baked into the image so /api/health can say exactly what runs.
+  GIT_SHA="$want_commit" docker compose up -d --build
 fi
 
-# Wait for it to answer again and report the new version.
-after=""
-for _ in $(seq 1 30); do
-  after="$(version_now || true)"
-  [ -n "$after" ] && break
+# Wait for it to answer again — on the NEW commit, not the old container
+# still draining — and report the new version.
+after=""; after_commit=""
+for _ in $(seq 1 90); do
+  h="$(health_now)"
+  after="$(printf '%s' "$h" | field version)"
+  after_commit="$(printf '%s' "$h" | field commit)"
+  if [ -n "$after" ] && { [ "$MODE" = image ] || [ "$after_commit" = "$want_commit" ]; }; then
+    break
+  fi
   sleep 1
 done
+
+rollback_hint(){
+  err "To roll back:  ./update.sh --to ${before_commit}"
+  err "(the database copy from just before this update is in data/backups/)"
+}
 
 if [ -z "$after" ]; then
   err "PawPoller did not answer on :${PORT} after the update."
   err "Check:  docker compose logs --tail=50"
+  rollback_hint
+  exit 1
+fi
+if [ "$MODE" != image ] && [ "$after_commit" != "$want_commit" ]; then
+  err "PawPoller answers, but as ${after_commit:-an unknown commit}, not ${want_commit} — the new build did not start."
+  rollback_hint
   exit 1
 fi
 
-if [ "$QUIET" = 1 ] && [ "$before" = "$after" ]; then
+# Did it start cleanly? Healthy is not the same as working: a migration can
+# fail after the web server is up. Block on what is severe (a crash, a damaged
+# database); only report plain errors, which can be a site being down.
+sleep 10
+logs="$("${COMPOSE[@]}" logs --since "$started" pawpoller 2>&1 || true)"
+db_ok="$("${COMPOSE[@]}" exec -T pawpoller python -c \
+  "import sqlite3, config; print(sqlite3.connect(config.DB_PATH).execute('PRAGMA quick_check').fetchone()[0])" \
+  2>/dev/null || echo "could not run the check")"
+if [ "$db_ok" != "ok" ]; then
+  err "The database check failed after the update: ${db_ok}"
+  rollback_hint
+  exit 1
+fi
+if printf '%s\n' "$logs" | grep -qE 'Traceback|\[CRITICAL\]'; then
+  err "PawPoller started, but crashed or failed while starting. From the log:"
+  printf '%s\n' "$logs" | grep -E -A8 'Traceback|\[CRITICAL\]' | tail -n 30 >&2
+  rollback_hint
+  exit 1
+fi
+errors="$(printf '%s\n' "$logs" | grep -F '[ERROR]' || true)"
+
+if [ "$QUIET" = 1 ] && [ "$before" = "$after" ] && [ "$before_commit" = "$want_commit" ] && [ -z "$errors" ]; then
   exit 0   # cron/systemd: silent when nothing changed
 fi
-say "PawPoller is now running ${after} (was ${before:-unknown})  [healthy]"
+if [ -n "$errors" ]; then
+  say "  note — errors in the startup log (not blocking; often a site being down):"
+  printf '%s\n' "$errors" | tail -n 5 | sed 's/^/    /'
+fi
+say "PawPoller is now running ${after} (${want_commit}), was ${before:-unknown} (${before_commit})  [healthy, database ok]"

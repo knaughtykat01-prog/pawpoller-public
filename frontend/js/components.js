@@ -2916,3 +2916,5 @@ const Components = {
         `;
     },
 };
+// A top-level const is not a window property; publish_check.js guards on window.Components (4.43.1).
+if (typeof window !== 'undefined') window.Components = Components;   // node-run tests have no window

@@ -1642,8 +1642,9 @@ window.PublishCheck = (function () {
             return;
         }
         const plats = _lastMatrixData.platforms.map(p =>
-            '<label style="font-size:12px;white-space:nowrap"><input type="checkbox" class="drip-plat-check" value="' +
-            _escape(p.id) + '"> ' + _escape(p.name) + '</label>').join(' ');
+            '<label class="drip-plat" data-platform="' + _escape(p.id) + '" style="font-size:12px;white-space:nowrap">' +
+            '<input type="checkbox" class="drip-plat-check" value="' + _escape(p.id) + '"> ' + _escape(p.name) +
+            ' <span class="drip-acct-slot" data-platform="' + _escape(p.id) + '"></span></label>').join(' ');
         // Default start: tomorrow 20:00 local.
         const start = new Date();
         start.setDate(start.getDate() + 1);
@@ -1660,6 +1661,7 @@ window.PublishCheck = (function () {
             '<p class="muted" style="font-size:12px;margin:0 0 8px">Chapter 1 posts at the start time, then one ' +
             'chapter every N days at the same time. Every chapter is validated first; the rows land in ' +
             'Queue &amp; Schedule and the whole drip can be cancelled as one.</p>' +
+            '<div id="drip-persona-row" class="persona-picker persona-picker--inline" data-persona-picker hidden></div>' +
             '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px">' + plats + '</div>' +
             '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">' +
             '<label style="font-size:12px">Start <input type="datetime-local" id="drip-start" value="' + startVal + '"></label>' +
@@ -1676,6 +1678,16 @@ window.PublishCheck = (function () {
         panel.querySelector('#drip-cancel').addEventListener('click', () => panel.remove());
         panel.querySelector('#drip-go').addEventListener('click', () => _submitDrip());
         upd();
+        // Post as a persona (4.43.1): the shared picker, as on Publish and the batch dialog.
+        if (window.Components && Components.personaPicker) {
+            Components.personaPicker({
+                host: panel.querySelector('#drip-persona-row'),
+                platforms: _lastMatrixData.platforms.map(p => p.id),
+                selectClass: 'drip-acct', storageKey: 'pp-persona-stories',
+                slot: c => panel.querySelector(`.drip-acct-slot[data-platform="${c}"]`),
+                row: c => panel.querySelector(`.drip-plat[data-platform="${c}"]`),
+            }).catch(() => { /* platform default accounts */ });
+        }
     }
 
     function _updateDripPreview(chapters) {
@@ -1717,7 +1729,16 @@ window.PublishCheck = (function () {
             const resp = await fetch('/api/editor/stories/' + encodeURIComponent(_currentStory) + '/drip', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ platforms, start: start.toISOString(), interval_days: days || 7 }),
+                body: JSON.stringify({
+                    platforms, start: start.toISOString(), interval_days: days || 7,
+                    account_ids: Object.fromEntries(Array.from(document.querySelectorAll('.drip-acct'))
+                        .filter(el => platforms.includes(el.dataset.platform) && el.value)
+                        .map(el => [el.dataset.platform, parseInt(el.value, 10)])),
+                    persona_id: (function () {
+                        const h = document.getElementById('drip-persona-row');
+                        return h && h.dataset.personaId ? parseInt(h.dataset.personaId, 10) : null;
+                    })(),
+                }),
             });
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.detail || 'HTTP ' + resp.status);
@@ -1764,6 +1785,15 @@ window.PublishCheck = (function () {
                         action: action,
                         scheduled_at: isoStr,
                         draft: draft,
+                        // The same "Post as" / persona choice Publish sends (4.43.1).
+                        account_id: (function () {
+                            const s = document.querySelector('.publish-account-select');
+                            return s && s.value ? parseInt(s.value, 10) : null;
+                        })(),
+                        persona_id: (function () {
+                            const h = document.getElementById('publish-persona-row');
+                            return h && h.dataset.personaId ? parseInt(h.dataset.personaId, 10) : null;
+                        })(),
                     }),
                 }
             );

@@ -8,8 +8,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-server.txt .
-RUN pip install --no-cache-dir -r requirements-server.txt
+# setuptools first (4.43.2): the base image's copy vendors old wheel / jaraco.context
+# with HIGH advisories (found by a Trivy image scan).
+RUN pip install --no-cache-dir --upgrade setuptools \
+    && pip install --no-cache-dir -r requirements-server.txt
 COPY . .
+# The exact commit, for /api/health (4.43.2). .git is not copied into the image, so
+# the build passes it in: update.sh and the release build set GIT_SHA.
+ARG GIT_SHA=""
+ENV PAWPOLLER_COMMIT=${GIT_SHA}
 
 # Run as non-root for security — UID 1001 is fixed so Docker volume
 # permissions can be set predictably during migration.  Port 8420 is

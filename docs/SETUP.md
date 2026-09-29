@@ -564,6 +564,24 @@ cd pawpoller-public
 Prefer a button? [Update from the dashboard](#update-from-the-dashboard-docker) sets up an
 **Update now** button, or daily automatic updates.
 
+**If an update goes wrong.** Every update first saves a copy of your database, then checks
+the new version started properly. If it didn't, the update says so and prints one line to
+go back, like this:
+
+```bash
+./update.sh --to 1a2b3c4
+```
+
+**Step 1.** Copy that line exactly as the update printed it and run it. You are back on the
+version you had, with your data as it is now.
+
+**Step 2.** The next plain `./update.sh` goes forward to the newest version again. Wait for
+the next release if the problem was in the update itself.
+
+The database copies are in the `backups` folder inside PawPoller's data (the newest five are
+kept). You only need one of them if your data itself went wrong. Ask for help before
+restoring one, because it replaces everything since that update.
+
 ---
 
 ## Connecting your sites
@@ -963,9 +981,13 @@ Automatic updates are off unless you turn them on. Turn them off with
 
 `./update.sh` itself: `./update.sh --check` only says whether a newer version exists; `--quiet`
 prints only on a change or an error (for cron). It stops rather than overwrite local edits to a
-tracked file. Under the hood it runs `git pull --ff-only`, then either
-`docker compose up -d --build` (built from source) or `docker compose -f docker-compose.image.yml pull`
-and `up -d` (prebuilt image).
+tracked file. Under the hood it backs up the database (SQLite's backup API, inside the
+container, to `data/backups/pre-update-*.db`), runs `git pull --ff-only`, then either
+`docker compose up -d --build` (built from source, with the commit baked in) or
+`docker compose -f docker-compose.image.yml pull` and `up -d` (prebuilt image). It then waits
+for `/api/health` to answer on the new commit, runs `PRAGMA quick_check`, and reads the startup
+log. A crash or a damaged database exits non-zero with the rollback command. `--to <commit>`
+goes to one exact commit, and a plain run afterwards returns to the branch.
 
 ## Docker in more detail
 

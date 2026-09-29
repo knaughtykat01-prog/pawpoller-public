@@ -368,6 +368,7 @@ def add_to_queue(
     drip_group: str | None = None,
     variant_key: str = "",
     announce: int | None = None,
+    persona_id: int | None = None,
 ) -> int:
     """Add an item to the posting queue. Returns queue_id.
 
@@ -387,6 +388,8 @@ def add_to_queue(
             (rated the same as the piece) means the primary. '' is the piece's own image.
         announce: Discord choice (4.43.0, spec 010) — None follows the switch, 0 never,
             1 announces the piece once when its batch rows settle.
+        persona_id: The persona a persona-first schedule was made for (4.43.1); the
+            scheduler re-checks the account against it when the row fires.
     """
     if account_id is None:
         from database import accounts as _accts
@@ -396,12 +399,12 @@ def add_to_queue(
             (content_type, story_name, chapter_index, platform, account_id, action,
              scheduled_at, title_override, description_override, tags_override,
              rating_override, file_path_override, priority, requires, drip_group,
-             variant_key, announce)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             variant_key, announce, persona_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (content_type, story_name, chapter_index, platform, account_id, action,
          scheduled_at, title_override, description_override, tags_override,
          rating_override, file_path_override, priority, requires, drip_group,
-         variant_key or "", announce),
+         variant_key or "", announce, persona_id),
     )
     conn.commit()
     return cursor.lastrowid

@@ -228,3 +228,29 @@ def test_milestones_batch_scoped_by_account(conn, monkeypatch):
     monkeypatch.setattr(tg, "check_milestones", _cap_ms)
     asyncio.run(tg.check_milestones_batch("ib", "snapshots", "submissions", account_id=a1))
     assert seen == [11]   # a2's submission (22) is not scanned
+
+
+def test_booru_score_has_its_own_milestones(conn, monkeypatch):
+    """e621 / Furbooru have no views; their score was measured against the VIEW ladder
+    and reported as "views" (AD). It now has its own ladder and says "score"."""
+    conn.execute("INSERT INTO e621_submissions (submission_id, title) VALUES ('77', 'Sample Piece')")
+    conn.execute("INSERT INTO e621_snapshots (submission_id, polled_at, score, favorites_count) "
+                 "VALUES ('77', '2026-06-01 00:00:00', 20, 3)")
+    conn.execute("INSERT INTO e621_snapshots (submission_id, polled_at, score, favorites_count) "
+                 "VALUES ('77', '2026-06-02 00:00:00', 30, 4)")
+    conn.commit()
+    config.save_settings({"telegram_milestones": True})
+    sent = []
+
+    async def _cap(text, *a, **k):
+        sent.append(text)
+
+    monkeypatch.setattr(tg, "send_telegram", _cap)
+    asyncio.run(tg.check_milestones_batch("e621", "e621_snapshots", "e621_submissions"))
+    (msg,) = sent
+    assert "score 30 (passed 25)" in msg and "views" not in msg   # 30 would pass no view milestone at all
+
+    config.save_settings({"telegram_milestones": True, "milestone_score": [5, 28]})
+    sent.clear()
+    asyncio.run(tg.check_milestones_batch("e621", "e621_snapshots", "e621_submissions"))
+    assert "passed 28" in sent[0]

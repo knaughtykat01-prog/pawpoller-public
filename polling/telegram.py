@@ -53,6 +53,9 @@ PLATFORM_TABLES = {
 _DEFAULT_VIEW_MILESTONES = [100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000]
 _DEFAULT_FAVE_MILESTONES = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
 _DEFAULT_COMMENT_MILESTONES = [10, 25, 50, 100, 250, 500, 1000]
+# e621 / Furbooru have no view counter; their headline number is the net score, which
+# runs far below views — it gets its own ladder (4.43.1, AD).
+_DEFAULT_SCORE_MILESTONES = [10, 25, 50, 100, 250, 500, 1000]
 
 
 def _get_milestones() -> dict:
@@ -62,6 +65,7 @@ def _get_milestones() -> dict:
         "views": s.get("milestone_views", _DEFAULT_VIEW_MILESTONES),
         "faves": s.get("milestone_faves", _DEFAULT_FAVE_MILESTONES),
         "comments": s.get("milestone_comments", _DEFAULT_COMMENT_MILESTONES),
+        "score": s.get("milestone_score", _DEFAULT_SCORE_MILESTONES),
     }
 
 
@@ -468,7 +472,7 @@ def _crossed_milestone(current: int, previous: int, milestones: list[int]) -> in
 async def check_milestones(platform: str, submission_id: int, title: str,
                            current_views: int, current_faves: int, current_comments: int,
                            prev_views: int, prev_faves: int, prev_comments: int,
-                           who: str = "") -> None:
+                           who: str = "", current_score: int = 0, prev_score: int = 0) -> None:
     """Check if a submission crossed any milestone thresholds and notify.
 
     *who* is an already-escaped "Persona · Account" label appended to the header
@@ -486,6 +490,10 @@ async def check_milestones(platform: str, submission_id: int, title: str,
     view_m = _crossed_milestone(current_views, prev_views, ms["views"])
     if view_m:
         lines.append(f"  👁 {current_views:,} views (passed {view_m:,})")
+
+    score_m = _crossed_milestone(current_score, prev_score, ms["score"])
+    if score_m:
+        lines.append(f"  ⭐ score {current_score:,} (passed {score_m:,})")
 
     fave_m = _crossed_milestone(current_faves, prev_faves, ms["faves"])
     if fave_m:
@@ -518,10 +526,10 @@ async def check_milestones_batch(platform: str, snap_table: str, sub_table: str,
 
     metrics = PLATFORM_METRICS.get(platform, PLATFORM_METRICS["ib"])
     # Booru platforms have no view counter; their headline number is the net
-    # score. Measuring it against the view thresholds is what has always
-    # happened here — kept deliberately so e621/Furbooru alerts don't silently
-    # stop. (Follow-up: give score its own thresholds + wording.)
-    views_col = metrics["views"] or metrics.get("score")
+    # score, measured against its own ladder and called a score (4.43.1, AD —
+    # it used to be measured against the view ladder and reported as "views").
+    views_col = metrics["views"]
+    score_col = None if views_col else metrics.get("score")
     faves_col = metrics["faves"]
     comments_col = metrics["comments"]
 
@@ -529,6 +537,8 @@ async def check_milestones_batch(platform: str, snap_table: str, sub_table: str,
     select_cols = []
     if views_col:
         select_cols.append(views_col)
+    if score_col:
+        select_cols.append(score_col)
     if faves_col:
         select_cols.append(faves_col)
     if comments_col:
@@ -564,6 +574,8 @@ async def check_milestones_batch(platform: str, snap_table: str, sub_table: str,
                 prev.get(faves_col, 0) if faves_col else 0,
                 prev.get(comments_col, 0) if comments_col else 0,
                 who=who,
+                current_score=(curr.get(score_col) or 0) if score_col else 0,
+                prev_score=(prev.get(score_col) or 0) if score_col else 0,
             )
     finally:
         conn.close()

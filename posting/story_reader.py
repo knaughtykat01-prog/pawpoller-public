@@ -20,6 +20,7 @@ from pathlib import Path
 import config
 from posting.platforms.base import StoryUploadPackage
 from posting.announce import ANNOUNCERS as _ANNOUNCERS
+from posting.artwork_reader import inside
 
 logger = logging.getLogger(__name__)
 
@@ -497,7 +498,9 @@ def _load_from_story_json(story_name: str, story_path: Path, json_path: Path) ->
     thumbnail_path = None
     chapter_thumbnails = {}
     if images.get("cover"):
-        thumbnail_path = str(story_path / images["cover"])
+        # story.json names these, so each stays inside the story's folder (4.43.1).
+        _cover = inside(story_path, images["cover"])
+        thumbnail_path = str(_cover) if _cover is not None else None
     else:
         # Auto-detect thumbnail file in story root using common naming patterns.
         # Shared with the listing endpoint via detect_cover_relative().
@@ -505,7 +508,9 @@ def _load_from_story_json(story_name: str, story_path: Path, json_path: Path) ->
         if detected:
             thumbnail_path = str(story_path / detected)
     for ch_idx, ch_path in images.get("chapter_thumbnails", {}).items():
-        chapter_thumbnails[int(ch_idx)] = str(story_path / ch_path)
+        _thumb = inside(story_path, ch_path)
+        if _thumb is not None:
+            chapter_thumbnails[int(ch_idx)] = str(_thumb)
     announcement_image = _promo_image(images.get("promo"))
 
     # OTW Archive metadata fields

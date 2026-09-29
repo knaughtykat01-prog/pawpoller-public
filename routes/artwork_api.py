@@ -697,6 +697,7 @@ async def schedule_artwork(body: dict):
             scheduled_at=scheduled_str,
             description_override=description_override,
             requires=get_platform_requires(platform),
+            persona_id=persona_id,
         )
     finally:
         conn.close()

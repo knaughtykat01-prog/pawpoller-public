@@ -7,6 +7,7 @@ is pinned by source string, the same contract style as test_board_pages.py.
 """
 from __future__ import annotations
 
+import pytest
 import re
 
 from database import posting_queries
@@ -126,7 +127,7 @@ def test_move_tag_is_pure_and_bounded():
     import subprocess
     node = shutil.which("node")
     if not node:
-        return
+        pytest.skip("node is not installed")
     script = (_src("frontend/js/board_polish.js").replace("window.BoardPolish", "globalThis.BP")
               + "\nconst l=['a','b','c'];"
               "console.log(JSON.stringify([BP.moveTag(l,'b',-1),BP.moveTag(l,'a',-1),BP.moveTag(l,'C',1),l]));")

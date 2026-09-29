@@ -78,7 +78,8 @@ class TestXHonoursTheThreeRungs:
     def test_nothing_configured_is_exactly_the_old_behaviour(self):
         from posting.platforms import twitter
         opts = twitter._resolve_options(_pkg(), {})
-        assert opts == {"sensitive": False, "tags": True, "caption": True, "alt": True}
+        # phototags (4.43.1) is new and off: nothing configured still posts exactly as before.
+        assert opts == {"sensitive": False, "tags": True, "caption": True, "alt": True, "phototags": False}
 
 
 class TestSensitiveIsAFloorNotASwitch:
@@ -159,6 +160,9 @@ def test_the_ui_table_matches_each_resolver():
     no resolver reads as a setting that does nothing."""
     import inspect
     from posting.platforms import twitter, bluesky, telegram
+    from posting import artwork_reader
+    # "selfcredit" (4.43.1) shapes the description, so it is resolved where the package is built.
+    built = inspect.getsource(artwork_reader.build_artwork_package)
 
     ui = open("frontend/js/app.js", encoding="utf-8").read()
     i = ui.index("ANNOUNCE_DEFAULTS: {")
@@ -172,4 +176,4 @@ def test_the_ui_table_matches_each_resolver():
             if not line.startswith("['"):
                 continue
             key = line.split("'")[1]
-            assert f'"{key}"' in src, f"{code}.{key} has no resolver in {mod.__name__}"
+            assert f'"{key}"' in src or f'"{key}"' in built, f"{code}.{key} has no resolver in {mod.__name__}"

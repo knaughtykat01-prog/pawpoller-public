@@ -1319,6 +1319,13 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError as e:
             if "duplicate column" not in str(e).lower():
                 raise
+        # 4.43.1: persona re-checked at fire time; retries tied to their root row.
+        for _col in ("persona_id INTEGER", "retry_of INTEGER"):
+            try:
+                conn.execute(f"ALTER TABLE posting_queue ADD COLUMN {_col}")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
 
     # Migration: DeviantArt rows still keyed on the API GUID (4.34.1, DAID).
     #
@@ -1669,7 +1676,11 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     # adult sites under handles a friend may keep apart on purpose — names are
     # free, links are consent. Guarded like every ADD COLUMN above.
     for _sql in ("ALTER TABLE artists ADD COLUMN persona_id INTEGER DEFAULT NULL",
-                 "ALTER TABLE artist_handles ADD COLUMN mention INTEGER NOT NULL DEFAULT 0"):
+                 "ALTER TABLE artist_handles ADD COLUMN mention INTEGER NOT NULL DEFAULT 0",
+                 # 4.43.1 (PEOPLEC): a Bluesky handle's DID, stored on first resolve. A
+                 # handle drifts (new PDS, a bought domain); the DID does not, so a mention
+                 # still reaches the right person after the handle moves.
+                 "ALTER TABLE artist_handles ADD COLUMN did TEXT DEFAULT NULL"):
         try:
             conn.execute(_sql)
         except sqlite3.OperationalError as e:

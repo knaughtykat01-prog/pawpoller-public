@@ -227,7 +227,9 @@ def upsert_artist(conn: sqlite3.Connection, name: str, *, handles: dict | None =
             continue
         conn.execute(
             "INSERT INTO artist_handles (artist_key, platform, handle) VALUES (?, ?, ?) "
-            "ON CONFLICT(artist_key, platform) DO UPDATE SET handle = excluded.handle",
+            "ON CONFLICT(artist_key, platform) DO UPDATE SET handle = excluded.handle, "
+            # A handle edited by hand is a different identity claim: forget its DID.
+            "did = CASE WHEN artist_handles.handle = excluded.handle THEN artist_handles.did END",
             (key, str(platform).strip().lower(), h))
     if persona_id is not KEEP:
         pid = int(persona_id) if persona_id not in (None, "", 0) else None
@@ -263,6 +265,31 @@ def people_for(conn: sqlite3.Connection, keys: list[str]) -> dict[str, dict]:
     return {r["artist_key"]: _row_to_artist(r, handles.get(r["artist_key"], {}),
                                             mentions.get(r["artist_key"], {}))
             for r in rows}
+
+
+def bsky_dids(conn: sqlite3.Connection, handles) -> dict[str, str]:
+    """``{handle: did}`` for the registry's Bluesky handles that have one stored (4.43.1)."""
+    hs = [str(h or "").lstrip("@").strip().lower() for h in handles or []]
+    hs = [h for h in hs if h]
+    if not hs:
+        return {}
+    rows = conn.execute(
+        f"SELECT lower(ltrim(handle, '@')) AS h, did FROM artist_handles WHERE platform = 'bsky' "
+        f"AND did IS NOT NULL AND lower(ltrim(handle, '@')) IN ({','.join('?' * len(hs))})", hs).fetchall()
+    return {r["h"]: r["did"] for r in rows}
+
+
+def remember_bsky_did(conn: sqlite3.Connection, handle: str, did: str) -> int:
+    """Store a resolved DID on every registry row holding this Bluesky handle that has
+    none yet. Returns the rows updated — 0 for a handle nobody in the registry holds."""
+    h = str(handle or "").lstrip("@").strip()
+    if not (h and did):
+        return 0
+    cur = conn.execute(
+        "UPDATE artist_handles SET did = ? WHERE platform = 'bsky' AND did IS NULL "
+        "AND lower(ltrim(handle, '@')) = lower(?)", (did, h))
+    conn.commit()
+    return cur.rowcount
 
 
 def find_by_handle(conn: sqlite3.Connection, platform: str, handle: str) -> list[str]:

@@ -272,6 +272,9 @@ def masterpiece_variant_suggestions():
                 members.append({
                     **m,
                     "image": art.get("image", ""),
+                    # 4.43.1: a video / audio piece's card shows its poster, not its media file
+                    "thumbnail": art.get("thumbnail", ""),
+                    "media_kind": art.get("media_kind", "image"),
                     "cover_thumb": s.get("cover_thumb", ""),
                     "cover_platform": s.get("cover_platform", ""),
                     "sites": s.get("member_count", 0),

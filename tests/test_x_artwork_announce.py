@@ -122,8 +122,13 @@ class _FakeTW:
         self.calls.append(("alt", mid, text))
         return True
 
-    async def create_tweet(self, text, media_ids=None, *, sensitive=False):
+    async def user_id_for(self, handle):
+        self.calls.append(("lookup", handle))
+        return {"secondfur": "111", "thirdfur": "333"}.get(handle.lower(), "")
+
+    async def create_tweet(self, text, media_ids=None, *, sensitive=False, tagged_user_ids=None):
         self.calls.append(("tweet", text, media_ids, sensitive))
+        self.tagged = tagged_user_ids
         if self.fail_tweet:
             self.last_error = "X blocked this post as automated activity (error 226)."
             return None

@@ -94,3 +94,49 @@ def test_api_key_validation_still_works_constant_time():
     assert config.validate_api_key(key) is True
     assert config.validate_api_key("pp_deadbeef00") is False
     assert config.validate_api_key("not-a-key") is False
+
+
+# ── 4.43.2 test audit: the three auth flows that had no test at all ──────────
+
+def test_changing_the_password_checks_everything_and_signs_everyone_out():
+    """ASVS V7.4.3: a password change rotates the session secret, so every other session
+    (and a stolen cookie) stops working. Untested until the 2026-09-29 test audit."""
+    _configure()
+    c = _client()
+    url = "/api/auth/dashboard-change-password"
+    assert c.post(url, json={"current_password": "pw12345678", "new_password": "short", "confirm": "short"}).status_code == 400
+    assert c.post(url, json={"current_password": "pw12345678", "new_password": "newpass123",
+                             "confirm": "different1"}).status_code == 400
+    assert c.post(url, json={"current_password": "wrong-one", "new_password": "newpass123",
+                             "confirm": "newpass123"}).status_code == 401
+    before = config.get_or_create_session_secret()
+    r = c.post(url, json={"current_password": "pw12345678", "new_password": "newpass123", "confirm": "newpass123"})
+    assert r.status_code == 200
+    stored = config.get_settings()["auth_password_hash"]
+    assert config.verify_password("newpass123", stored) and not config.verify_password("pw12345678", stored)
+    assert config.get_or_create_session_secret() != before          # every session signed with the old one is dead
+
+
+def test_regenerating_backup_codes_needs_the_password_and_kills_the_old_codes():
+    _configure()
+    c = _client()
+    url = "/api/auth/totp-backup-codes/regenerate"
+    assert c.post(url, json={"password": "pw12345678"}).status_code == 400    # 2FA not on yet
+    old = _enable_2fa(c)["backup_codes"]
+    assert c.post(url, json={"password": "wrong"}).status_code == 401
+    r = c.post(url, json={"password": "pw12345678"})
+    assert r.status_code == 200
+    new = r.json()["backup_codes"]
+    assert len(new) == 10 and not set(new) & set(old)
+    assert da._consume_backup_code(old[0], config.get_settings()) is False   # the old set is dead
+    assert da._consume_backup_code(new[0], config.get_settings()) is True
+
+
+def test_a_revoked_api_key_stops_working_at_once():
+    _configure()
+    c = _client()
+    made = c.post("/api/auth/api-keys", json={"name": "paired desktop"}).json()
+    assert config.validate_api_key(made["key"])
+    assert c.delete(f"/api/auth/api-keys/{made['prefix']}").status_code == 200
+    assert not config.validate_api_key(made["key"])
+    assert c.delete(f"/api/auth/api-keys/{made['prefix']}").status_code == 404

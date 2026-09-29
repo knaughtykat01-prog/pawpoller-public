@@ -104,6 +104,25 @@ def _canonical_tag_list(tags: dict) -> list[str]:
     return ordered
 
 
+def inside(root, name) -> Path | None:
+    """``root / name`` if it stays inside ``root``, else None (logged).
+
+    Every stored file name — a piece's image or thumbnail, a render, a story's cover —
+    is a string from a json file, so ``../OtherPiece/adult.png`` would otherwise resolve
+    and be posted (4.43.1, IMGCONFINE; the render check below always had it). Existence is
+    the caller's business."""
+    if not name:
+        return None
+    base = Path(str(root or "")).resolve()
+    try:
+        candidate = (base / str(name)).resolve()
+        candidate.relative_to(base)
+    except (ValueError, OSError):
+        logger.warning("%r points outside its folder (%s) — ignored", str(name), base.name)
+        return None
+    return candidate
+
+
 def variant_image_path(artwork, variant: dict):
     """The render file for *variant*, or ``None`` if it isn't there (4.33.0).
 
@@ -122,18 +141,8 @@ def variant_image_path(artwork, variant: dict):
     out labelled ``general``, straight through the rating gate onto a general-audience
     site. Selection and substitution have to agree about what exists, so both ask here.
     """
-    name = (variant or {}).get("image")
-    if not name:
-        return None
-    root = Path(getattr(artwork, "path", "") or "").resolve()
-    try:
-        candidate = (root / str(name)).resolve()
-        candidate.relative_to(root)
-    except (ValueError, OSError):
-        logger.warning("%s: variant render %r is outside the piece's folder — ignored",
-                       getattr(artwork, "name", "?"), name)
-        return None
-    return candidate if candidate.is_file() else None
+    candidate = inside(getattr(artwork, "path", "") or "", (variant or {}).get("image"))
+    return candidate if candidate is not None and candidate.is_file() else None
 
 
 def variant_for_rating(artwork, max_rating: str) -> dict | None:
@@ -323,13 +332,17 @@ class ArtworkInfo:
     # registry rows; the package resolves them and renders the featuring line.
     people: list = field(default_factory=list)
 
+    # Both anchored inside the piece's folder (4.43.1): every posting path reads these,
+    # and the names are stored strings.
     @property
     def image_path(self) -> str | None:
-        return str(self.path / self.image) if self.image else None
+        p = inside(self.path, self.image)
+        return str(p) if p is not None else None
 
     @property
     def thumbnail_path(self) -> str | None:
-        return str(self.path / self.thumbnail) if self.thumbnail else None
+        p = inside(self.path, self.thumbnail)
+        return str(p) if p is not None else None
 
     @property
     def media_kind(self) -> str:
@@ -627,6 +640,26 @@ def build_artwork_package(
     description = artist_credit.append_to(description, artist, platform, is_self=self_row is not None)
     description = artist_credit.append_people(description, people, platform,
                                               after_credit=description != before)
+    # The self-link (4.43.1, PEOPLEC; people_registry.md §2.3): on an announcer, naming
+    # yourself can be wanted — a channel that is not obviously yours. Off unless the
+    # piece's "Name you as the artist" option (or its Settings default) says so.
+    if self_row is not None and platform in _ANNOUNCERS:
+        from posting import announce as _announce
+        if _announce.flag((artwork.categories_by_platform.get(platform) or {}).get("selfcredit"),
+                          _announce.option_default(config.get_settings(), platform, "selfcredit", False)):
+            description = artist_credit.append_to(description, self_row, platform)
+    # X photo tags (4.43.1, PEOPLEC): whose X handle may be mentioned — the featuring
+    # line's consent (the handle's mention switch). The poster tags them only when the
+    # piece's "Tag people in the photo" option is on.
+    photo_tags: list[str] = []
+    if platform == "tw":
+        tagged = ([artist] if artist and self_row is None else [])
+        tagged += [(p or {}).get("person") or {} for p in people or []]
+        for person in tagged:
+            if artist_credit._mention_ok(person, "tw"):
+                h = str(person["handles"]["tw"]).lstrip("@").strip()
+                if h and h.lower() not in {t.lower() for t in photo_tags}:
+                    photo_tags.append(h)
 
     # "Posted via PawPoller" credit line (gap-wave-2 §1) — appended here, the
     # choke point every artwork posting path flows through. Self-gates on the
@@ -747,6 +780,7 @@ def build_artwork_package(
         # for posters that support per-image alt (bluesky.py reads it, G6).
         extra={**dict(artwork.categories_by_platform.get(platform, {})),
                **({"alt_text": artwork.alt_text} if artwork.alt_text else {}),
+               **({"tw_photo_tags": photo_tags} if photo_tags else {}),
                # 4.19.0: the credited artist's name, for players that show a performer
                # line (Telegram's sendAudio). The credit TEXT still comes from artist_credit.
                **({"artist_name": artwork.artist["name"]}
