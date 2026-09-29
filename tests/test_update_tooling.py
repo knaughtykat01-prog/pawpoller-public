@@ -80,7 +80,9 @@ def test_update_sh_backs_up_checks_and_rolls_back():
     bash = shutil.which("bash")
     if not bash or not shutil.which("git"):
         pytest.skip("needs bash + git")
-    r = subprocess.run([bash, os.path.join(ROOT, "tests", "update_sh_harness.sh"),
+    harness = os.path.join(ROOT, "tests", "update_sh_harness.sh")
+    assert os.path.isfile(harness), "tests/update_sh_harness.sh is missing (make_public must ship it)"
+    r = subprocess.run([bash, harness,
                         os.path.join(ROOT, "update.sh")], capture_output=True, text=True, timeout=300)
     out = r.stdout + r.stderr
     parts = {p.split("\n", 1)[0].strip(): p for p in out.split("=== ")[1:]}
