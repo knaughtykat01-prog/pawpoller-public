@@ -183,6 +183,7 @@ def _other_people() -> tuple[frozenset, tuple]:
         return _names_cache[1], _names_cache[2]
     words: set[str] = set()
     phrases: set[str] = set()
+    ok = False
     try:
         from database.db import get_connection
         conn = get_connection()
@@ -207,12 +208,16 @@ def _other_people() -> tuple[frozenset, tuple]:
                             words.add(x.lower())
                         elif len(x) >= 4:
                             phrases.add(x)
+            ok = True
         finally:
             conn.close()
     except Exception:  # noqa: BLE001 — never let scrubbing fail a report
         pass
     out = (frozenset(words), tuple(sorted(phrases, key=len, reverse=True)))
-    _names_cache = (now, *out)
+    if ok:
+        # Only a successful read is remembered: caching an empty set after a failed one
+        # sent 5 minutes of reports out unmasked (4.44.2, release review).
+        _names_cache = (now, *out)
     return out
 
 

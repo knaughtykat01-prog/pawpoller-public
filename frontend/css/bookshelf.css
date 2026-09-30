@@ -29,6 +29,40 @@
 .shelf-sub { color: var(--text-secondary); font-size: 1rem; line-height: 1.5; margin: 0; }
 
 /* ── Filter controls ── */
+/* The filter bar floats: it stays at the top while the shelf scrolls under it. The WRAPPER
+   is sticky (a sticky element only sticks inside its parent, and .shelf-controls' parent is
+   exactly its own height). Full-bleed to the main area's padding so covers don't show at the
+   sides; the page background behind it in every theme. */
+#shelf-controls {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: var(--bg-primary);
+    margin: 0 -32px;
+    padding: .7rem 32px 0;
+}
+#shelf-controls .shelf-controls { margin-bottom: .9rem; padding-right: 64px; }   /* clears the fixed bell */
+/* WCAG 2.4.11: a focused cover never hides behind the floating bar. */
+html:has(#shelf-controls) { scroll-padding-top: 7rem; }
+@media (max-width: 768px) {
+    /* Phones: the bar floats just under the fixed hamburger and bell, and its controls become
+       ONE row you swipe sideways — four wrapped rows would take a quarter of the screen. */
+    #shelf-controls {
+        top: calc(env(safe-area-inset-top, 0px) + 50px);
+        margin: 0 -16px;
+        padding: .5rem 16px 0;
+    }
+    #shelf-controls .shelf-controls {
+        flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+        padding-right: 0; margin-bottom: .6rem;
+    }
+    #shelf-controls .shelf-controls::-webkit-scrollbar { display: none; }
+    #shelf-controls .shelf-controls > * { flex-shrink: 0; }
+    html:has(#shelf-controls) { scroll-padding-top: 9rem; }
+}
+@media (max-width: 480px) {
+    #shelf-controls { margin: 0 -12px; padding-left: 12px; padding-right: 12px; }
+}
 .shelf-controls {
     display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin: 0 0 1.6rem;
 }

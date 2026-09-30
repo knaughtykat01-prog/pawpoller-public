@@ -87,3 +87,18 @@ FAKE_LOGS='Traceback (most recent call last):' run ./update.sh
 
 echo "=== 9. a --to that looks like an option never reaches git as one"
 run ./update.sh --to --orphan
+
+echo "=== 10. a HANDLED poll error's traceback doesn't fail a healthy deploy"
+FAKE_LOGS='pawpoller-1  | 2026-09-30 02:45:00,100 [INFO] app: up\npawpoller-1  | 2026-09-30 02:45:00,275 [ERROR] polling.fn_poller: fn poll failed: behind a bot check\npawpoller-1  | Traceback (most recent call last):\npawpoller-1  |   File "fn_poller.py", line 137\npawpoller-1  | ValueError: blocked\npawpoller-1  | \npawpoller-1  | During handling of the above exception, another exception occurred:\npawpoller-1  | \npawpoller-1  | Traceback (most recent call last):\npawpoller-1  |   boom\npawpoller-1  | 2026-09-30 02:45:01,000 [INFO] app: next' run ./update.sh
+
+echo "=== 11. a crash traceback AFTER a handled one still fails"
+FAKE_LOGS='2026-09-30 02:45:00,275 [ERROR] polling.fn_poller: fn poll failed: blocked\nTraceback (most recent call last):\n  File "fn_poller.py"\nException in thread worker:\nTraceback (most recent call last):\n  crash' run ./update.sh
+
+echo "=== 12. a handled poll error WITHOUT a trace does not excuse the next crash"
+FAKE_LOGS='2026-09-30 02:45:00,275 [ERROR] polling.multi_account: ib account 3 (x) poll failed: timeout\nException in thread worker:\nTraceback (most recent call last):\nRuntimeError: real crash' run ./update.sh
+
+echo "=== 13. uvicorn's own error format after a handled poll error still fails"
+FAKE_LOGS='2026-09-30 02:45:00,275 [ERROR] polling.multi_account: ib account 3 (x) poll failed: timeout\nERROR:    Exception in ASGI application\nTraceback (most recent call last):\n  boom' run ./update.sh
+
+echo "=== 14. remote text posing as a chain marker does not excuse a later crash"
+FAKE_LOGS='2026-09-30 02:45:00,275 [ERROR] polling.fn_poller: fn poll failed: x\nTraceback (most recent call last):\n  File "c.py"\nValueError: site said:\nDuring handling of the above exception, another exception occurred:\nException in thread worker:\nTraceback (most recent call last):\n  crash' run ./update.sh

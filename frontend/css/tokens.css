@@ -36,7 +36,7 @@
     /* ── Text ────────────────────────────────────────────── */
     --text-primary:  #f0edf5;
     --text-secondary:#a99fc0;
-    --text-muted:    #6e6488;
+    --text-muted:    #9e97b2;  /* AA (spec 012) */
 
     /* ── Accents ─────────────────────────────────────────── */
     --accent:        #9b7dff;
@@ -162,13 +162,13 @@
     --card-border-inner:  rgba(36, 29, 23, 0.07);
     --overlay-backdrop:   rgba(40, 24, 20, 0.30);
     --text-primary:  #241d17;
-    --text-secondary:#8a7f70;
-    --text-muted:    #b3a996;
+    --text-secondary:#6c6358;  /* AA (spec 012) */
+    --text-muted:    #6e634f;  /* AA (spec 012) */
     --accent:        #9a5b34;   /* quill sienna — the one brand accent */
     --accent-dim:    #7d4827;
     --accent-warm:   #c07d3a;
     --success:       #2f8f5b;
-    --warning:       #b7791f;
+    --warning:       #ae731e;  /* AA (spec 012) */
     --danger:        #c0453b;
     --info:          #4d6b8a;
     --shadow:         0 10px 26px -14px rgba(40, 24, 20, 0.20);
@@ -191,7 +191,7 @@
     --overlay-backdrop:   rgba(0, 0, 0, 0.55);
     --text-primary:  #efe6d9;
     --text-secondary:#a89a88;
-    --text-muted:    #7c7061;
+    --text-muted:    #9d9182;  /* AA (spec 012) */
     --accent:        #d99a63;
     --accent-dim:    #b9762c;
     --accent-warm:   #d0a35a;
@@ -219,12 +219,12 @@
     --overlay-backdrop:   rgba(40, 30, 60, 0.35);
     --text-primary:  #1c1926;
     --text-secondary:#5a4f70;
-    --text-muted:    #8a80a0;
+    --text-muted:    #6a6080;  /* AA (spec 012) */
     --accent:        #7c5cd6;
     --accent-dim:    #6a48c0;
     --accent-warm:   #d08030;
-    --success:       #16a34a;
-    --warning:       #d97706;
+    --success:       #149544;  /* AA (spec 012) */
+    --warning:       #c26b06;  /* AA (spec 012) */
     --danger:        #dc2626;
     --info:          #2563eb;
     --shadow:         0 4px 20px rgba(100, 80, 150, 0.08);
@@ -247,13 +247,13 @@
     --overlay-backdrop:   rgba(10, 9, 7, 0.60);
     --text-primary:  #f5efe4;
     --text-secondary:#c4b9a3;
-    --text-muted:    #8a7e69;
+    --text-muted:    #aaa08f;  /* AA (spec 012) */
     --accent:        #d08136;
     --accent-dim:    #a8652a;
     --accent-warm:   #e5a05a;
     --success:       #7d9a7a;
     --warning:       #e5a05a;
-    --danger:        #c44b4b;
+    --danger:        #cc6262;  /* AA (spec 012) */
     --info:          #6b8fa8;
     --shadow:         0 4px 20px rgba(0, 0, 0, 0.40);
     --shadow-strong:  0 8px 40px rgba(208, 129, 54, 0.18);
@@ -275,12 +275,12 @@
     --overlay-backdrop:   rgba(58, 47, 31, 0.30);
     --text-primary:  #3a2f1f;
     --text-secondary:#6b5a3e;
-    --text-muted:    #8f7e60;
+    --text-muted:    #6a5d47;  /* AA (spec 012) */
     --accent:        #8a4a1c;
     --accent-dim:    #6e3a14;
     --accent-warm:   #b8742e;
     --success:       #4d7c4d;
-    --warning:       #c47a1d;
+    --warning:       #ac6b1a;  /* AA (spec 012) */
     --danger:        #a83838;
     --info:          #4d6b8a;
     --shadow:         0 4px 20px rgba(120, 90, 50, 0.10);
@@ -303,7 +303,7 @@
     --overlay-backdrop:   rgba(0, 0, 0, 0.75);
     --text-primary:  #f0f0f0;
     --text-secondary:#a0a0a0;
-    --text-muted:    #666666;
+    --text-muted:    #8a8a8a;  /* AA (spec 012) */
     --accent:        #8aabc2;
     --accent-dim:    #6a8aa0;
     --accent-warm:   #d4a574;
@@ -331,14 +331,14 @@
     --card-border-inner:  rgba(236, 240, 232, 0.07);
     --overlay-backdrop:   rgba(13, 22, 18, 0.60);
     --text-primary:  #ecf0e8;
-    --text-secondary:#b5c5b9;
-    --text-muted:    #7a8a7e;
+    --text-secondary:#c0cdc3;  /* AA (spec 012) */
+    --text-muted:    #c5ccc6;  /* AA (spec 012) */
     --accent:        #8db588;
     --accent-dim:    #6b9067;
     --accent-warm:   #d8b67a;
     --success:       #7fb377;
     --warning:       #d4a060;
-    --danger:        #c47878;
+    --danger:        #d19797;  /* AA (spec 012) */
     --info:          #80b5b0;
     --shadow:         0 4px 20px rgba(0, 0, 0, 0.30);
     --shadow-strong:  0 8px 40px rgba(0, 0, 0, 0.35);
@@ -360,14 +360,14 @@
     --overlay-backdrop:   rgba(15, 8, 14, 0.65);
     --text-primary:  #f5e8ee;
     --text-secondary:#c5a0b3;
-    --text-muted:    #886478;
+    --text-muted:    #b9a0ae;  /* AA (spec 012) */
     --accent:        #c47a9a;
     --accent-dim:    #a05a78;
     --accent-warm:   #e5a060;
     --success:       #8aa078;
     --warning:       #d4a060;
-    --danger:        #d05870;
-    --info:          #9070b0;
+    --danger:        #d36279;  /* AA (spec 012) */
+    --info:          #987bb6;  /* AA (spec 012) */
     --shadow:         0 4px 20px rgba(0, 0, 0, 0.35);
     --shadow-strong:  0 8px 40px rgba(196, 122, 154, 0.16);
     --shadow-glass:   0 8px 32px rgba(0, 0, 0, 0.30);
@@ -421,12 +421,12 @@
     --overlay-backdrop:   rgba(0, 0, 0, 0.45);
     --text-primary:  #000000;
     --text-secondary:#333333;
-    --text-muted:    #666666;
+    --text-muted:    #595959;  /* AA (spec 012) */
     --accent:        #0a52c9;   /* classic web/XP blue */
     --accent-dim:    #003d99;
     --accent-warm:   #ff6600;   /* 2000s orange */
     --success:       #008000;
-    --warning:       #d07000;
+    --warning:       #af5e00;  /* AA (spec 012) */
     --danger:        #cc0000;
     --info:          #0000cc;
     /* Hard, offset shadows — no soft glow, no blur in 2005. */

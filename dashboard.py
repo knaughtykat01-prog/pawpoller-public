@@ -540,6 +540,10 @@ _SENSITIVE_WHEN_OPEN_PREFIXES = (
     # then read the vault via /api/settings/sync. On an open instance keys are
     # created from the server's own machine only (or with a key you already hold).
     "/api/auth/api-keys",
+    # 4.44.2 (release review, Low): Settings → Privacy. No values, but it names which
+    # secrets are set and counts everything — and the page itself promises Restricted
+    # data is "locked when the dashboard has no password".
+    "/api/privacy",
 )
 
 # 4.43.1: everything that PUBLISHES — puts the operator's work or words on a live site,

@@ -228,9 +228,36 @@ if [ "$db_ok" != "ok" ]; then
   rollback_hint
   exit 1
 fi
-if printf '%s\n' "$logs" | grep -qE 'Traceback|\[CRITICAL\]'; then
+# A traceback is severe unless it belongs to a poller reporting a failed poll: that's a
+# HANDLED platform error (a site down, a bot check) logged with its trace. A scheduled poll
+# landing seconds after the restart once failed a healthy deploy this way (4.45.2).
+# Tight on purpose, so a real crash can't hide behind one:
+#  - a "record" is a line with the app's own timestamp + [LEVEL] (text inside a message
+#    can't pose as one);
+#  - a handled poll error excuses a traceback only if it is the very NEXT non-blank line —
+#    anything else in between (a thread's "Exception in thread…", uvicorn's own "ERROR:")
+#    ends the excuse;
+#  - a chained trace is excused only right under Python's "During handling of the above
+#    exception" / "The above exception was the direct cause" line, inside a trace;
+#  - [CRITICAL] anywhere always counts.
+# Prints each severe line plus the 8 after it, for the message below. POSIX awk only (no
+# {n} intervals), so gawk, mawk and busybox all run it.
+severe="$(printf '%s\n' "$logs" | awk '
+  { rec = ($0 ~ /^([^|]*[|] +)?[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9:,.]+ \[(DEBUG|INFO|WARNING|ERROR|CRITICAL)\]/)
+    tb = ($0 ~ /Traceback \(most recent call last\)/)
+    blank = ($0 ~ /^([^|]*[|])? *$/) }
+  /\[CRITICAL\]/ { n = 9 }
+  rec { expect = ($0 ~ /\[ERROR\] polling\.[A-Za-z0-9_]+: .*poll failed/); chain = 0; intrace = 0 }
+  !rec && tb { if (!(expect || chain)) n = 9; expect = 0; chain = 0; intrace = 1 }
+  !rec && !tb && !blank {
+    if (intrace && $0 ~ /During handling of the above exception|The above exception was the direct cause/) chain = 1
+    else { expect = 0; chain = 0 }
+  }
+  n > 0 { print; n-- }
+')"
+if [ -n "$severe" ]; then
   err "PawPoller started, but crashed or failed while starting. From the log:"
-  printf '%s\n' "$logs" | grep -E -A8 'Traceback|\[CRITICAL\]' | tail -n 30 >&2
+  printf '%s\n' "$severe" | tail -n 30 >&2
   rollback_hint
   exit 1
 fi

@@ -167,10 +167,11 @@ def _scrub_record(record: logging.LogRecord) -> None:
     try:
         args = record.args
         values = args.values() if isinstance(args, dict) else (args if isinstance(args, tuple) else ())
-        if any(not isinstance(a, _PLAIN) for a in values):
+        if not isinstance(record.msg, str) or any(not isinstance(a, _PLAIN) for a in values):
             # An object argument — most often an exception, as in ``logger.error("failed: %s", e)``
             # (~190 call sites) — only becomes text when a handler formats it, which is AFTER this
             # scrub. Its message can carry a token. Render the line now, then scrub that (4.44.0).
+            # ``logger.error(exc)`` — the exception IS the message — is the same case (4.44.2).
             record.msg = scrub(record.getMessage())
             record.args = ()
         else:
@@ -186,6 +187,8 @@ def _scrub_record(record: logging.LogRecord) -> None:
         # the exception's message. Formatters reuse a pre-set exc_text, so set a scrubbed one.
         if record.exc_info and not record.exc_text:
             record.exc_text = scrub(_TB_FORMATTER.formatException(record.exc_info))
+        if record.stack_info:
+            record.stack_info = scrub(record.stack_info)
     except Exception:  # noqa: BLE001 — a scrub failure must never drop a log line
         pass
 

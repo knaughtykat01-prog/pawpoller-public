@@ -95,6 +95,9 @@
         if (toastStackEl) return toastStackEl;
         toastStackEl = document.createElement('div');
         toastStackEl.className = 'pp-toast-stack';
+        // Screen readers hear every toast without moving focus (4.45.0, spec 012).
+        toastStackEl.setAttribute('role', 'status');
+        toastStackEl.setAttribute('aria-live', 'polite');
         document.body.appendChild(toastStackEl);
         return toastStackEl;
     }
@@ -103,12 +106,13 @@
         ensureToastStack();
         const t = document.createElement('div');
         t.className = 'pp-toast pp-toast-' + kind;
+        if (kind === 'error') t.setAttribute('role', 'alert');   // errors interrupt; the rest wait their turn
         const icon =
             kind === 'success' ? '✓' :
             kind === 'error'   ? '✕' :
             kind === 'warn'    ? '⚠' : '·';
         t.innerHTML =
-            '<span class="pp-toast-icon">' + icon + '</span>' +
+            '<span class="pp-toast-icon" aria-hidden="true">' + icon + '</span>' +
             '<span class="pp-toast-msg"></span>' +
             '<button class="pp-toast-close" aria-label="Dismiss">&times;</button>';
         t.querySelector('.pp-toast-msg').textContent = String(message);

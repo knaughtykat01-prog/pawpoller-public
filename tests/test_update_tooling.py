@@ -99,6 +99,13 @@ def test_update_sh_backs_up_checks_and_rolls_back():
     assert "exit=1" in part(6) and "the new build did not start" in part(6)
     assert "exit=1" in part(7) and "No such commit" in part(7)
     assert "exit=1" in part(9) and "No such commit: --orphan" in part(9)
+    # 4.45.2 (UPDGATE): a poller's handled error (logged with its trace, chained ones included)
+    # no longer fails a healthy deploy; a crash trace after it still does.
+    assert "exit=0" in part(10) and "[healthy, database ok]" in part(10), part(10)
+    assert "exit=1" in part(11) and "crashed or failed while starting" in part(11) and "crash" in part(11), part(11)
+    # Release review of 4.45.2: nothing may make a real crash look handled.
+    for n in (12, 13, 14):
+        assert "exit=1" in part(n) and "crashed or failed while starting" in part(n), part(n)
     eight = part(8)          # the checkout was pulled to B, but A is what runs: going back means A
     import re
     want, head = re.search(r"expect-rollback-to=(\w+) head=(\w+)", eight).groups()

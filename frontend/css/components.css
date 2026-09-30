@@ -845,10 +845,13 @@ a.stat-card:hover {
     margin-right: 8px;
     flex-shrink: 0;
 }
+/* Not by colour alone (WCAG 1.4.1, spec 012): each state has its own SHAPE too —
+   solid circle = working, diamond = needs attention, hollow ring = not connected.
+   a11y.js also gives each dot a spoken name. */
 .status-dot.connected { background: var(--success); }
-.status-dot.disconnected { background: var(--text-muted); opacity: 0.5; }
-.status-dot.warn { background: var(--warning); }
-.status-dot.muted { background: var(--text-muted); opacity: 0.35; }
+.status-dot.disconnected { background: transparent; box-shadow: inset 0 0 0 2px var(--text-muted); }
+.status-dot.warn { background: var(--warning); border-radius: 1px !important; transform: rotate(45deg) scale(0.85); }
+.status-dot.muted { background: transparent; box-shadow: inset 0 0 0 1px var(--text-muted); opacity: 0.6; }
 
 /* Settings → Platforms: alphabetised accordions with a brand logo + centred
    title. The status dot is pinned left and the caret right (absolute), so the
@@ -1861,25 +1864,29 @@ a.stat-card:hover {
     letter-spacing: 0.5px;
     margin-right: 4px;
     vertical-align: middle;
+    /* The brand colour mixed toward the theme's main text colour: keeps the tint, and passes
+       AA contrast on the tinted pill in dark AND light themes (4.45.0, spec 012). */
+    color: var(--badge);
+    color: color-mix(in srgb, var(--badge) 45%, var(--text-primary));
 }
 
-.platform-badge.ib  { background: #6c8cff25; color: var(--platform-ib); }
-.platform-badge.fa  { background: #faaf3a25; color: var(--platform-fa); }
-.platform-badge.ws  { background: #89c33f25; color: var(--platform-ws); }
-.platform-badge.sf  { background: #5c4a9e30; color: #8b7bc0; }
-.platform-badge.sqw { background: #a78bfa25; color: var(--platform-sqw); }
-.platform-badge.ao3 { background: #99000025; color: #cc4444; }
-.platform-badge.da  { background: #00c85325; color: var(--platform-da); }
-.platform-badge.wp  { background: #f4731525; color: var(--platform-wp); }
-.platform-badge.ik  { background: #00968825; color: var(--platform-ik); }
-.platform-badge.bsky { background: #0085ff25; color: var(--platform-bsky); }
-.platform-badge.tw  { background: #1d9bf025; color: var(--platform-tw); }
-.platform-badge.mast { background: #6364ff25; color: var(--platform-mast); }
-.platform-badge.tum { background: #36465d25; color: var(--platform-tum); }
-.platform-badge.pix { background: #0096fa25; color: var(--platform-pix); }
-.platform-badge.thr { background: #55555525; color: var(--platform-thr); }
-.platform-badge.ig { background: #E1306C25; color: var(--platform-ig); }
-.platform-badge.e621 { background: #012e5725; color: var(--platform-e621); }
+.platform-badge.ib  { background: #6c8cff25; --badge: var(--platform-ib); }
+.platform-badge.fa  { background: #faaf3a25; --badge: var(--platform-fa); }
+.platform-badge.ws  { background: #89c33f25; --badge: var(--platform-ws); }
+.platform-badge.sf  { background: #5c4a9e30; --badge: #8b7bc0; }
+.platform-badge.sqw { background: #a78bfa25; --badge: var(--platform-sqw); }
+.platform-badge.ao3 { background: #99000025; --badge: #cc4444; }
+.platform-badge.da  { background: #00c85325; --badge: var(--platform-da); }
+.platform-badge.wp  { background: #f4731525; --badge: var(--platform-wp); }
+.platform-badge.ik  { background: #00968825; --badge: var(--platform-ik); }
+.platform-badge.bsky { background: #0085ff25; --badge: var(--platform-bsky); }
+.platform-badge.tw  { background: #1d9bf025; --badge: var(--platform-tw); }
+.platform-badge.mast { background: #6364ff25; --badge: var(--platform-mast); }
+.platform-badge.tum { background: #36465d25; --badge: var(--platform-tum); }
+.platform-badge.pix { background: #0096fa25; --badge: var(--platform-pix); }
+.platform-badge.thr { background: #55555525; --badge: var(--platform-thr); }
+.platform-badge.ig { background: #E1306C25; --badge: var(--platform-ig); }
+.platform-badge.e621 { background: #012e5725; --badge: var(--platform-e621); }
 
 /* ── Submissions: discovered-art import suggestion banner ──── */
 .subs-suggest-banner {
@@ -2876,3 +2883,33 @@ html[data-mobile="1"] .tgopt input[type="checkbox"] { width: 20px; height: 20px;
 
 /* Queue: a pending item whose time has passed (4.11.0) — sends at the next scheduler check. */
 .status-badge.status-overdue { background: rgba(242,184,75,.18); color: var(--warning, #b8860b); }
+
+/* ── Accessibility baseline (4.45.0, spec 012 — WCAG core principles) ──────────
+   One visible focus ring for anything that doesn't draw its own. --accent passes 3:1
+   against every background in every theme (tests/test_accessibility_contrast.py).
+   More specific rules that swap the ring for an accent border still win. */
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+/* Programmatic focus targets (a dialog panel, the page's main region) need no ring. */
+[tabindex="-1"]:focus:not(:focus-visible) { outline: none; }
+
+/* Reduced motion: no animation or transition anywhere. Progress still shows — just without easing. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Screen-reader-only text (the announcer's live regions, hidden labels). */
+.sr-only {
+    position: absolute !important;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0);
+    white-space: nowrap; border: 0;
+}

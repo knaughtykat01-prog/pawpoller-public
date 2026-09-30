@@ -243,6 +243,30 @@ def vault_key_source() -> str:
         return "dotfile"
 
 
+# True while the vault file exists but the last read of it failed (wrong key, a
+# keyring that went away, a damaged file). Set only by _decrypt_vault.
+_vault_unreadable = False
+
+
+def _set_aside_unreadable_vault() -> None:
+    """Move a vault we could not read out of the way instead of overwriting it (4.44.2).
+
+    _decrypt_vault() returns {} on any failure, so the next settings save used to
+    re-encrypt only what it could see and REPLACE the vault — every stored login
+    gone for good. Now the old file is kept beside it, recoverable with the right key.
+    """
+    global _vault_unreadable
+    if not (_vault_unreadable and VAULT_PATH.exists()):
+        return
+    import time as _t
+    kept = VAULT_PATH.with_name(f"{VAULT_PATH.name}.unreadable-{_t.strftime('%Y%m%d-%H%M%S', _t.gmtime())}")
+    os.replace(VAULT_PATH, kept)
+    _secure_file_permissions(kept)       # it may have been restored by hand with loose permissions
+    _vault_unreadable = False
+    logger.error("The credential vault could not be read, so it was NOT overwritten: kept as %s. "
+                 "Stored logins need re-entering, or restore that file with the right vault key.", kept.name)
+
+
 def _encrypt_vault(creds: dict) -> None:
     """Encrypt credential fields to settings.vault.json.
 
@@ -251,6 +275,7 @@ def _encrypt_vault(creds: dict) -> None:
     from cryptography.fernet import Fernet
     import tempfile
     key = _get_vault_key()
+    _set_aside_unreadable_vault()
     f = Fernet(key)
     payload = json.dumps(creds).encode("utf-8")
     encrypted = f.encrypt(payload)
@@ -275,7 +300,9 @@ def _decrypt_vault() -> dict:
 
     NOTE: Callers must hold _settings_lock before calling this function.
     """
+    global _vault_unreadable
     if not VAULT_PATH.exists():
+        _vault_unreadable = False
         return {}
     try:
         from cryptography.fernet import Fernet
@@ -283,10 +310,13 @@ def _decrypt_vault() -> dict:
         key = _get_vault_key()
         f = Fernet(key)
         decrypted = f.decrypt(vault["encrypted"].encode("ascii"))
-        return json.loads(decrypted)
+        out = json.loads(decrypted)
     except Exception as e:
+        _vault_unreadable = True
         logger.error("Failed to decrypt vault: %s", e)
         return {}
+    _vault_unreadable = False
+    return out
 
 
 # ── Settings.json helpers ─────────────────────────────────────
@@ -1130,9 +1160,11 @@ def migrate_to_cloud() -> int:
             except OSError:
                 pass
             raise
-    # Remove vault file
-    if VAULT_PATH.exists():
-        VAULT_PATH.unlink()
+        # Remove vault file — but never one we couldn't read: that would destroy the
+        # only copy of the logins this break-glass exists to rescue (4.44.2). Inside the
+        # lock (4.45.2), so no other save can change the answer in between.
+        if VAULT_PATH.exists() and not _vault_unreadable:
+            VAULT_PATH.unlink()
     return len(creds) if creds else 0
 
 
@@ -1194,7 +1226,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.44.1"
+APP_VERSION = "4.45.2"
 
 
 def _app_commit() -> str:

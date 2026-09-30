@@ -218,7 +218,7 @@ window.Bookshelf = {
         const shelfControls = isDisc ? '' : `
                 ${personaSel}
                 <input id="shelf-search" class="shelf-input" type="search" placeholder="Search — try tag:white_tiger -tag:cum artist:…" title="Bare words match title/name. Fields: tag: platform: artist: persona: rating: type: series: status:  —  prefix with - (or use tag_exclude:) to exclude, comma for or, * for wildcard, quotes for spaces. e.g. tag:white_tiger -tag:cum status:draft" value="${this.esc(this._search)}">
-                <select id="shelf-sort" class="shelf-input shelf-sort">
+                <select id="shelf-sort" class="shelf-input shelf-sort" aria-label="Sort by">
                     <option value="recent">Recently posted</option>
                     <option value="added">Recently added</option>
                     <option value="title">Title A–Z</option>

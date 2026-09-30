@@ -4673,6 +4673,10 @@ html[data-mobile="1"] .main-content {
     padding-bottom: calc(16px + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
     max-width: 100vw;
     overflow-x: hidden;
+    /* clip, not hidden, where supported: same clamp, but it doesn't turn the main area into a
+       scroll container — which silently stopped every sticky bar inside it (the Library's
+       floating filter bar, 4.45.1) from sticking on phones. */
+    overflow-x: clip;
     box-sizing: border-box;
 }
 

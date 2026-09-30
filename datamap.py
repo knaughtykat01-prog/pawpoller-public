@@ -428,6 +428,10 @@ _PATHS = (
     P("data/settings.json", _HANDLE, "Your settings, including your handles. Never passwords.", backup="files"),
     P("data/settings.vault.json", _SECRET, "The encrypted vault: every password, token and key.", backup="files"),
     # Kept out of backups ON PURPOSE: a backup holding the key beside the vault would undo the encryption.
+    # 4.45.2: a vault the app couldn't read is set aside under this name, never overwritten.
+    P("data/settings.vault.json.unreadable-<stamp>", _SECRET,
+      "A vault that couldn't be unlocked, kept so no login is lost. Recoverable with the right key.",
+      backup=_BACKUPGAPS),
     P("data/.vault_key", _SECRET, "The key that opens the vault, when the system keyring isn't used. "
       "Kept out of backups on purpose — keep your own copy.", backup=_BACKUPGAPS),
     P("data/auto-backups/", "The database and its copies",
@@ -482,11 +486,15 @@ ROW_RULES = (
 _ACCT = re.compile(r"^acct_\d+_(.+)$")
 
 
+_STAMP = r"\d{8}-\d{6}"   # <stamp>: a UTC time stamp in a file name, 20260930-024500
+
+
 def _compile(entry: Entry) -> re.Pattern | None:
-    if "<P>" not in entry.name:
+    if "<P>" not in entry.name and "<stamp>" not in entry.name:
         return None
     alts = "|".join(re.escape(p) for p in PLATFORM_PREFIXES)
-    return re.compile("^" + re.escape(entry.name).replace(re.escape("<P>"), f"(?:{alts})") + "$")
+    pat = re.escape(entry.name).replace(re.escape("<P>"), f"(?:{alts})").replace(re.escape("<stamp>"), _STAMP)
+    return re.compile("^" + pat + "$")
 
 
 _EXACT: dict[tuple[str, str], Entry] = {}
@@ -586,6 +594,9 @@ def public_copy_refused(relpath: str) -> bool:
                 return True
         elif base == e.name.rsplit("/", 1)[-1]:
             return True
+    # Name patterns too (a set-aside vault's time-stamped name), by the file's base name.
+    if entry_for("path", "data/" + base):
+        return True
     return base.endswith((".db", ".db-wal", ".db-shm", ".sqlite", ".sqlite3"))
 
 

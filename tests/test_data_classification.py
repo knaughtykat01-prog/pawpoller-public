@@ -374,7 +374,9 @@ def _holdings_client(monkeypatch, auth=False):
     from routes import privacy_api
     monkeypatch.setattr(config, "is_dashboard_auth_required", lambda: auth)
     privacy_api._cache = (0.0, {})
-    return TestClient(dashboard.app)
+    # From the server's own machine: with no password set, /api/privacy is locked to
+    # anyone else (4.44.2, PRIVLOCK — tested in test_release_review_4442.py).
+    return TestClient(dashboard.app, client=("127.0.0.1", 50000))
 
 
 def test_holdings_counts_without_values(monkeypatch):
