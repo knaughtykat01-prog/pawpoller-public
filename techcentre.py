@@ -138,12 +138,17 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"(?<![\w/])@[A-Za-z0-9_.]{2,}"), "@…"),
     (re.compile(r"(https?://[^/\s]+)/[^\s\"']*"), r"\1/…"),
 ]
-_HANDLE_KEY = re.compile(r"(?i)(username|identifier|handle|author|screen_name|login|account_name|display_name)")
 _handles_cache: tuple[float, list[str]] = (0.0, [])
 
 
 def _handles(settings: dict | None = None) -> list[str]:
-    """Every account handle the settings know about — never let one into a report."""
+    """Every handle of yours the settings hold — never let one into a report.
+
+    Which keys are handles comes from the data classification registry (4.44.0;
+    ``datamap`` ``identity=True``), not from guessing at key names. Addresses (http…)
+    are left to the URL pattern above, which already cuts them down to the host.
+    """
+    import datamap
     global _handles_cache
     now = time.time()
     if settings is None and now - _handles_cache[0] < 60:
@@ -151,12 +156,79 @@ def _handles(settings: dict | None = None) -> list[str]:
     s = settings if settings is not None else config.get_settings()
     out: list[str] = []
     for k, v in s.items():
-        if isinstance(v, str) and len(v.strip()) >= 3 and _HANDLE_KEY.search(k) and "url" not in k.lower():
+        if (isinstance(v, str) and len(v.strip()) >= 3 and datamap.is_identity_key(k)
+                and not v.strip().lower().startswith(("http://", "https://"))):
             out.append(v.strip())
     out.sort(key=len, reverse=True)
     if settings is None:
         _handles_cache = (now, out)
     return out
+
+
+# Other people's names and handles (4.44.0, spec 011): the People registry, watchers,
+# favers, commenters, clients. An error message that quotes one must not carry it out.
+# Built lazily — only when a report is actually being made — and cached for 5 minutes.
+_NAME_TOKEN = re.compile(r"[\w.\-]{3,}")
+_names_cache: tuple[float, frozenset, tuple] = (0.0, frozenset(), ())
+
+
+def _other_people() -> tuple[frozenset, tuple]:
+    """(single-word names, lower-cased; multi-word names, longest first) from the registry's name columns."""
+    import json
+
+    import datamap
+    global _names_cache
+    now = time.time()
+    if now - _names_cache[0] < 300:
+        return _names_cache[1], _names_cache[2]
+    words: set[str] = set()
+    phrases: set[str] = set()
+    try:
+        from database.db import get_connection
+        conn = get_connection()
+        try:
+            for table, col in datamap.name_columns():
+                try:
+                    rows = conn.execute(f'SELECT DISTINCT "{col}" FROM "{table}" WHERE "{col}" IS NOT NULL')
+                except Exception:  # noqa: BLE001 — a table made lazily may not exist yet
+                    continue
+                for (v,) in rows:
+                    vals = [v]
+                    if isinstance(v, str) and v.startswith("["):
+                        try:
+                            vals = json.loads(v)          # artists.aliases is a JSON list
+                        except ValueError:
+                            pass
+                    for x in vals:
+                        x = str(x or "").strip().lstrip("@")
+                        if len(x) < 3:
+                            continue
+                        if _NAME_TOKEN.fullmatch(x):
+                            words.add(x.lower())
+                        elif len(x) >= 4:
+                            phrases.add(x)
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 — never let scrubbing fail a report
+        pass
+    out = (frozenset(words), tuple(sorted(phrases, key=len, reverse=True)))
+    _names_cache = (now, *out)
+    return out
+
+
+def _scrub_people(text: str) -> str:
+    # ponytail: exact-token match, so a username that is an ordinary word ("error") masks that
+    # word in the report too. Over-masking is the safe direction; a stop-list if reports suffer.
+    words, phrases = _other_people()
+    for p in phrases:
+        if p in text:
+            text = text.replace(p, "<name>")
+    if words:
+        def one(m):
+            t = m.group(0)
+            return "<name>" if (t.lower() in words or t.rstrip(".").lower() in words) else t
+        text = _NAME_TOKEN.sub(one, text)
+    return text
 
 
 def scrub(text, limit: int | None = None, settings: dict | None = None) -> str:
@@ -173,6 +245,10 @@ def scrub(text, limit: int | None = None, settings: dict | None = None) -> str:
     for h in _handles(settings):
         if h in out:
             out = out.replace(h, "<handle>")
+    try:
+        out = _scrub_people(out)
+    except Exception:  # noqa: BLE001
+        pass
     if limit is not None and len(out) > limit:
         out = out[: limit - 1] + "…"
     return out

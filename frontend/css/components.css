@@ -752,6 +752,22 @@ a.stat-card:hover {
     color: var(--text-secondary);
 }
 
+/* Settings → Privacy (4.44.0, spec 011): one card per sensitivity class. */
+.privacy-intro, .privacy-meaning { color: var(--text-muted); margin-bottom: 12px; }
+.privacy-class { border-left: 3px solid var(--border); }
+.privacy-restricted { border-left-color: var(--danger); }
+.privacy-confidential { border-left-color: var(--warning); }
+.privacy-internal { border-left-color: var(--accent); }
+.privacy-group { padding: 10px 0; border-top: 1px solid var(--card-border-inner); }
+.privacy-group p { margin: 4px 0; }
+.privacy-group-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.privacy-amount, .privacy-meta span { color: var(--text-muted); }
+.privacy-details summary, .privacy-handling summary { cursor: pointer; color: var(--text-muted); margin-top: 4px; }
+.privacy-details ul { margin: 6px 0 0 18px; font-size: 12px; }
+.privacy-handling dl { display: grid; grid-template-columns: minmax(120px, max-content) 1fr; gap: 4px 12px; margin-top: 8px; }
+.privacy-handling dt { color: var(--text-muted); }
+.privacy-unknown { border-left: 3px solid var(--warning); }
+
 .settings-row {
     display: flex;
     justify-content: space-between;

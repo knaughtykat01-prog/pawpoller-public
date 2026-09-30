@@ -21,6 +21,8 @@ import stat
 import sys
 import threading
 
+import datamap as _datamap  # the data classification registry; stdlib-only, imports nothing from the app
+
 logger = logging.getLogger(__name__)
 
 
@@ -406,7 +408,7 @@ def _push_log_secrets(settings: dict) -> None:
     try:
         import log_redaction
         log_redaction.set_secrets(
-            log_redaction.secrets_from_settings(settings, is_credential_key))
+            log_redaction.secrets_from_settings(settings, is_credential_key, _datamap.is_identity_key))
     except Exception:  # noqa: BLE001 — redaction bookkeeping is never fatal
         pass
 
@@ -627,84 +629,11 @@ E621_REQUEST_DELAY_SECONDS = 1.0  # e621 REST API — hard limit 2 req/s, docs a
 
 # ── Settings sync (Phase 7a) ────────────────────────────────
 
-CREDENTIAL_FIELDS = frozenset({
-    # Inkbunny
-    "username", "password",
-    # FurAffinity
-    "fa_cookie_a", "fa_cookie_b",
-    # Weasyl
-    "ws_api_key",
-    # SoFurry — 3.4.0 moved to an official-API Personal Access Token. The old
-    # login fields stay listed so any value left in an existing vault is still
-    # treated as sensitive until the migration clears it.
-    "sf_api_token", "sf_username", "sf_password", "sf_session_cookies",
-    # SquidgeWorld
-    "sqw_username", "sqw_password",
-    "sqw_author_username", "sqw_author_password",
-    # AO3
-    "ao3_username", "ao3_password", "ao3_session_cookie",
-    # DeviantArt
-    "da_cookie", "da_client_secret", "da_refresh_token",
-    # Itaku
-    "ik_auth_token",
-    # Bluesky
-    "bsky_identifier", "bsky_app_password",
-    # X/Twitter
-    "tw_auth_token", "tw_ct0",
-    # X/Twitter official API v2 Bearer token (opt-in official-API poll backend)
-    "tw_api_bearer_token",
-    # Mastodon
-    "mast_access_token",
-    # Tumblr (api_key = OAuth consumer key for read; the rest enable posting)
-    "tum_api_key", "tum_consumer_secret", "tum_oauth_token", "tum_oauth_token_secret",
-    # Pixiv
-    "pix_refresh_token",
-    # Threads
-    "thr_access_token",
-    # Instagram
-    "ig_access_token",
-    # e621 (username is a non-secret identity field → stays plaintext)
-    "e621_api_key",
-    # FurryNetwork (OAuth password grant; login email stays plaintext identity)
-    "fn_password", "fn_refresh_token", "fn_access_token",
-    # SoundCloud (4.22.0): the app secret and the OAuth pair; client id, expiry and handle stay plaintext
-    "sc_client_secret", "sc_refresh_token", "sc_access_token",
-    # Newgrounds (4.23.0): the browser session's cookie string; the username stays plaintext identity
-    "ng_cookie",
-    # YouTube (4.24.0): the Google project's secret and the OAuth pair; client id, expiry, handle stay plaintext
-    "yt_client_secret", "yt_refresh_token", "yt_access_token",
-    # Furbooru (Philomena) — optional API key; username stays plaintext identity
-    "fbr_api_key",
-    # CF proxy
-    "cf_worker_url", "cf_worker_key",
-    # Dashboard auth
-    "auth_password_hash", "auth_api_keys",
-    "auth_session_secret", "auth_totp_secret",
-    "auth_totp_enabled", "auth_totp_pending_secret",
-    "auth_totp_backup_codes",   # 2FA recovery codes (SHA-256 hashes) — gap-wave-4
-    "dashboard_password", "dashboard_user",
-    # Integrations
-    "telegram_bot_token", "telegram_chat_id",
-    # Telegram channel posting (Posts module) — bot token is secret; the channel
-    # (@name) stays plaintext identity. Its OWN bot since 4.8.0 — never the
-    # notification bot (that is how a digest once landed in a public channel).
-    "tg_bot_token",
-    # Weekly email digest — SMTP app password (host/user/from/recipients stay
-    # plaintext as non-secret config; only the password is vaulted).
-    "smtp_password",
-    "github_pat",
-    # Trello (spec 005 — commissions sync). BOTH are secrets: the key identifies
-    # the app but the token is bearer-equivalent, and Trello echoes query
-    # parameters in some error bodies, so neither may reach plaintext or a log.
-    "trello_api_key", "trello_token",
-    # The Trello app Secret (spec 006) signs webhook deliveries -- a forged
-    # delivery with it could make the mirror re-read on demand, nothing more,
-    # but it is a signing key and is treated as one.
-    "trello_secret",
-    "turnstile_site_key", "turnstile_secret_key",
-    # Server ↔ desktop
-    "posting_server_url", "posting_server_api_key",
-})
+# The settings kept in the encrypted vault. Since 4.44.0 (spec 011) the list lives in
+# datamap.py, the data classification registry, so one edit there protects a new secret
+# everywhere at once: the vault, the log redactor, error reports and the public copy. The
+# notes on why each field is (or isn't) a secret moved there with it.
+CREDENTIAL_FIELDS = _datamap.vault_fields()
 
 SYNC_EXCLUDE = frozenset({
     "credential_mode",
@@ -1075,6 +1004,27 @@ def get_credential_mode() -> str:
     return "local"
 
 
+# Keys the in-app self-tests left in real settings before 4.44.0, with the exact values
+# they wrote. The vault test swapped VAULT_PATH to a temp file while the app ran, so a
+# save in that window merged its payload into settings.json; the settings test blanked
+# its marker instead of deleting it. Found by the Privacy page's "Unclassified" list.
+_SELF_TEST_LEFTOVERS = {"sample": ("diagnostic",), "n": (42,),
+                        "_diagnostics_test_marker": ("", "diagnostic-roundtrip-token")}
+
+
+def _drop_self_test_leftovers() -> None:
+    """Delete those keys — only while they still hold the self-test's own values. Never raises."""
+    try:
+        s = get_settings()
+        stale = [k for k, vals in _SELF_TEST_LEFTOVERS.items() if k in s and s[k] in vals]
+        if "n" in stale and "sample" not in stale:
+            stale.remove("n")               # a lone "n" = 42 could be someone's; only drop the pair
+        if stale:
+            delete_settings_keys(stale)
+    except Exception:  # noqa: BLE001 — housekeeping must never block start-up
+        pass
+
+
 def ensure_vault() -> int:
     """Startup guard: the credential vault is ALWAYS ON (2.101.0).
 
@@ -1086,6 +1036,7 @@ def ensure_vault() -> int:
 
     Returns the number of fields migrated (0 when already clean).
     """
+    _drop_self_test_leftovers()
     with _settings_lock:
         raw = {}
         if SETTINGS_PATH.exists():
@@ -1243,7 +1194,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.43.2"
+APP_VERSION = "4.44.1"
 
 
 def _app_commit() -> str:

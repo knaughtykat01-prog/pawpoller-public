@@ -65,6 +65,12 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
      r"\1" + MASK),
     # Telegram carries the bot token in the PATH: /bot<id>:<secret>/getUpdates
     (re.compile(r"(?i)(/bot)\d{5,}:[A-Za-z0-9_\-]{15,}"), r"\1" + MASK),
+    # So does a Discord webhook: /api/webhooks/<id>/<token> (4.44.0). The id stays.
+    (re.compile(r"(?i)(/api/webhooks/\d{5,}/)[A-Za-z0-9_\-]{20,}"), r"\1" + MASK),
+    # A story share link IS its token (/share/<token>), and the server's access log
+    # writes every request path — so each visit put a working reading link in the log
+    # (4.44.0, spec 011: share tokens are Restricted).
+    (re.compile(r"(/share/)[A-Za-z0-9_\-]{16,}"), r"\1" + MASK),
     # Authorization: Bearer <t> / Token <t>  (Itaku uses the Token scheme)
     (re.compile(r"(?i)\b(bearer|token)\s+[A-Za-z0-9._~+/=\-]{12,}"),
      r"\1 " + MASK),
@@ -104,12 +110,18 @@ def set_secrets(values) -> int:
     return len(_SECRETS)
 
 
-def secrets_from_settings(settings: dict, is_credential_key) -> list[str]:
+def secrets_from_settings(settings: dict, is_credential_key, is_identity_key=None) -> list[str]:
     """Pick the values worth redacting out of a settings dict.
 
     Takes ``is_credential_key`` as an argument rather than importing config, so
     this module has no dependency on config at all — that dependency is what made
     the 2.193.1 version deadlock-prone.
+
+    ``is_identity_key`` (4.44.0) says which credential keys are your own handles or
+    addresses, kept legible. config passes ``datamap.is_identity_key``: the data
+    classification registry declares them. The name hints below are only the fallback
+    for a caller that passes nothing — guessing from names is how the Discord webhook
+    URL (``…_url``, but it carries its token) went unmasked before 4.44.0.
     """
     out = []
     for key, value in (settings or {}).items():
@@ -120,8 +132,12 @@ def secrets_from_settings(settings: dict, is_credential_key) -> list[str]:
                 continue
         except Exception:  # noqa: BLE001
             continue
-        low = key.lower()
-        if any(hint in low for hint in _IDENTITY_HINTS):
+        try:
+            identity = (is_identity_key(key) if is_identity_key is not None
+                        else any(hint in key.lower() for hint in _IDENTITY_HINTS))
+        except Exception:  # noqa: BLE001 — unsure means mask it
+            identity = False
+        if identity:
             continue
         out.append(value)
     return out
@@ -137,6 +153,10 @@ def scrub(text: str) -> str:
     return text
 
 
+_PLAIN = (str, int, float, bool, type(None))
+_TB_FORMATTER = logging.Formatter()
+
+
 def _scrub_record(record: logging.LogRecord) -> None:
     """Rewrite a record's msg and args in place.
 
@@ -145,16 +165,27 @@ def _scrub_record(record: logging.LogRecord) -> None:
     miss every leaking line.
     """
     try:
-        if isinstance(record.msg, str) and record.msg:
-            record.msg = scrub(record.msg)
         args = record.args
-        if args:
+        values = args.values() if isinstance(args, dict) else (args if isinstance(args, tuple) else ())
+        if any(not isinstance(a, _PLAIN) for a in values):
+            # An object argument — most often an exception, as in ``logger.error("failed: %s", e)``
+            # (~190 call sites) — only becomes text when a handler formats it, which is AFTER this
+            # scrub. Its message can carry a token. Render the line now, then scrub that (4.44.0).
+            record.msg = scrub(record.getMessage())
+            record.args = ()
+        else:
+            if isinstance(record.msg, str) and record.msg:
+                record.msg = scrub(record.msg)
             if isinstance(args, dict):
                 record.args = {k: (scrub(v) if isinstance(v, str) else v)
                                for k, v in args.items()}
             elif isinstance(args, tuple):
                 record.args = tuple(scrub(a) if isinstance(a, str) else a
                                     for a in args)
+        # logger.exception(): the traceback text is made at format time too, and it repeats
+        # the exception's message. Formatters reuse a pre-set exc_text, so set a scrubbed one.
+        if record.exc_info and not record.exc_text:
+            record.exc_text = scrub(_TB_FORMATTER.formatException(record.exc_info))
     except Exception:  # noqa: BLE001 — a scrub failure must never drop a log line
         pass
 

@@ -2258,6 +2258,7 @@ const App = {
         { key: 'notifications', group: 'Monitoring', label: 'Notifications', blurb: 'Who gets told, and about what.' },
         { key: 'telegram', group: 'Monitoring', label: 'Telegram', blurb: 'The bot, what it reports, and channel posting.' },
         { key: 'security', group: 'System', label: 'Security', blurb: '' },
+        { key: 'privacy', group: 'System', label: 'Privacy', blurb: 'What this install holds, how sensitive it is, and where it can go.' },
         { key: 'data', group: 'System', label: 'Data & backups', blurb: '' },
         { key: 'logs', group: 'System', label: 'Logs & diagnostics', blurb: '' },
         { key: 'about', group: 'System', label: 'About & updates', blurb: '' },
@@ -15517,6 +15518,7 @@ const App = {
                     if (window.Diagnostics) window.Diagnostics.mount(document.getElementById('diagnostics-mount'));
                 }
                 if (page === 'polling') this._loadPollingTab();
+                if (page === 'privacy' && window.Privacy) window.Privacy.mount(document.querySelector('.settings-page[data-page="privacy"]'));
                 window.scrollTo({ top: 0 });
             };
             rail?.addEventListener('click', (e) => {
@@ -15540,6 +15542,7 @@ const App = {
                 if (window.Diagnostics) window.Diagnostics.mount(document.getElementById('diagnostics-mount'));
             }
             if (_settingsPage === 'polling') this._loadPollingTab();
+            if (_settingsPage === 'privacy' && window.Privacy) window.Privacy.mount(document.querySelector('.settings-page[data-page="privacy"]'));
 
             // Platforms pane: sort the platform accordions A→Z + give each a logo
             // and a centred title. Runs regardless of the active tab (the pane is

@@ -132,9 +132,9 @@ async def t_settings_roundtrip(ctx: TestContext) -> None:
         assert read_back == val, f"expected {val!r}, got {read_back!r}"
         ctx.detail("written_and_read", val)
     finally:
-        # Cleanup — overwrite to empty string. Settings has no delete
-        # helper; empty value is the convention for "absent".
-        config.save_settings({marker: ""})
+        # Delete it. (Until 4.44.0 this blanked it, leaving the key behind in every
+        # install's settings — the Privacy page listed it as unclassified.)
+        config.delete_settings_keys([marker])
 
 
 @register_test(
@@ -162,37 +162,25 @@ async def t_settings_atomic(ctx: TestContext) -> None:
     description="Encrypt and decrypt a known payload via the live vault key.",
 )
 async def t_vault_crypto(ctx: TestContext) -> None:
-    # _encrypt_vault(dict) writes settings.vault.json; _decrypt_vault() reads it.
-    # Round-trip via a redirected VAULT_PATH so the live vault is never touched.
-    import tempfile
-    from pathlib import Path
+    # Round-trip IN MEMORY with the live key. Until 4.44.0 this pointed config.VAULT_PATH
+    # at a temp file while the app kept running: a settings save in that window merged
+    # this payload into the real settings.json ("sample", "n") and, worse, could write
+    # real credentials into the temp vault that was then deleted. Never swap a global
+    # the running app reads.
+    import json
 
-    enc = getattr(config, "_encrypt_vault", None)
-    dec = getattr(config, "_decrypt_vault", None)
-    if enc is None or dec is None:
-        raise ctx.skip("vault crypto helpers not available in this build")
     try:
-        config._get_vault_key()  # surfaces a real failure if crypto/keyring is broken
+        from cryptography.fernet import Fernet
+        key = config._get_vault_key()  # surfaces a real failure if crypto/keyring is broken
     except Exception as exc:  # noqa: BLE001
         raise ctx.skip(f"vault key unavailable: {exc}")
 
     payload = {"sample": "diagnostic", "n": 42}
-    original = config.VAULT_PATH
-    tmp_dir = tempfile.mkdtemp(prefix="ppdiag-vault-")
-    try:
-        config.VAULT_PATH = Path(tmp_dir) / "settings.vault.json"
-        enc(payload)
-        assert config.VAULT_PATH.exists(), "vault file not written"
-        ctx.detail("blob_bytes", config.VAULT_PATH.stat().st_size)
-        out = dec()
-        assert out == payload, f"decrypted payload doesn't match: {out!r}"
-    finally:
-        config.VAULT_PATH = original
-        try:
-            import shutil as _sh
-            _sh.rmtree(tmp_dir, ignore_errors=True)
-        except Exception:  # noqa: BLE001
-            pass
+    f = Fernet(key)
+    blob = f.encrypt(json.dumps(payload).encode("utf-8"))
+    ctx.detail("blob_bytes", len(blob))
+    out = json.loads(f.decrypt(blob))
+    assert out == payload, f"decrypted payload doesn't match: {out!r}"
 
 
 @register_test(

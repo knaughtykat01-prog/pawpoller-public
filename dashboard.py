@@ -56,6 +56,7 @@ from routes.characters_api import characters_router
 from routes.server_update_api import server_update_router
 from routes.masterpieces_api import masterpieces_router
 from routes.whatsnew_api import whatsnew_router
+from routes.privacy_api import privacy_router
 from routes.tech_api import tech_router
 from routes.media_api import media_router
 from routes.promos_api import promos_router
@@ -676,6 +677,7 @@ app.include_router(artists_router)       # Artist registry (/api/artists/*)
 app.include_router(characters_router)    # Character registry (/api/characters/*)
 app.include_router(server_update_router)  # Server self-update: button + host-agent handoff (/api/server/*)
 app.include_router(whatsnew_router)  # In-app "What's new" changelog popup (/api/whatsnew)
+app.include_router(privacy_router)  # Settings → Privacy: what this install holds (/api/privacy, spec 011)
 app.include_router(backup_router)    # Backup & restore (/api/backup/*)
 app.include_router(mirror_router)    # Server → desktop mirroring (/api/mirror/*)
 app.include_router(discord_router)   # Discord announce webhook (/api/discord/*)
