@@ -62,6 +62,8 @@ global.Utils = {{
     escapeHtml: s => String(s).replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c])),
     formatDate: s => String(s), formatCompact: n => String(n), formatNumber: n => String(n),
     _parseDate: s => new Date(String(s).replace(' ', 'T') + 'Z'),
+    time: {{ parse: s => new Date(String(s).replace(' ', 'T') + 'Z'),
+             format: (d, o) => d.toISOString() }},
 }};
 require({json.dumps(str(SQ))});
 require({json.dumps(str(SHELF))});

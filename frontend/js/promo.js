@@ -367,7 +367,7 @@ const Promo = {
                 this._bgDirty = false; this._bgCleared = false; this._dirty = false;
                 // Change the address without a re-render (hashchange does not fire on replaceState).
                 history.replaceState(null, '', `#/promo/${row.promo_id}`);
-                if (msg) msg.textContent = `Saved${s.story ? ' to ' + s.story : ''} · ${new Date().toLocaleTimeString()}`;
+                if (msg) msg.textContent = `Saved${s.story ? ' to ' + s.story : ''} · ${Utils.time.fmt.time(new Date())}`;
                 this._paintSaveState();
             } catch (e) {
                 if (msg) msg.innerHTML = `<span style="color:var(--danger)">${Utils.escapeHtml(e.message || String(e))}</span>`;

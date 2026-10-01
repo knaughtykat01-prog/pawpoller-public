@@ -186,7 +186,7 @@ async def announce_existing(conn, *, story_name: str, content_type: str = "story
         tg_queries.record_submission(
             conn, account_id=account_id or 0, chat_id=client.channel,
             message_id=result.get("id", 0), title=title or story_name,
-            posted_at=_dt.datetime.now().isoformat(timespec="seconds"),
+            posted_at=_dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),   # UTC (spec 016)
             link=result.get("url", ""), content_type="announcement")
         conn.commit()
     except Exception as e:

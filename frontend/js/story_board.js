@@ -525,7 +525,7 @@
             });
             (d.pending_queue || []).forEach(q => {
                 const pl = plat(q.platform);
-                const when = q.scheduled_at && window.Posting && Posting._schedInstant ? Posting._schedInstant(q.scheduled_at).toLocaleString() : 'next scheduler tick';
+                const when = q.scheduled_at && window.Posting && Posting._schedInstant ? Utils.time.fmt.dateTime(q.scheduled_at) : 'next scheduler tick';
                 const errored = q.status === 'failed' || q.status === 'error';
                 (errored ? bad : queued).push(`<div class="needs-row"><span class="needs-k${errored ? ' needs-k--bad' : ''}">queued</span> ${esc(q.action || '')} ${esc(ch(q.chapter_index || 0))} → ${pl.emoji || ''} ${esc(pl.label)} <span class="muted">(${esc(q.status || 'pending')}, ${esc(when)})</span></div>`);
             });

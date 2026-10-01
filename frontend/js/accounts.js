@@ -749,6 +749,11 @@ window.Accounts = {
                         </select></label>
                     <label style="font-size:12px">Preferred posting time
                         <input type="time" id="pdef-time" value="${this.esc(p.preferred_post_time || '')}"></label>
+                    <label style="font-size:12px" title="Leave on 'My time zone' unless this persona's audience keeps a different clock">in
+                        <select id="pdef-tz" style="width:auto">
+                            <option value="">My time zone</option>
+                            ${(window.App && App._timezoneOptions ? App._timezoneOptions(p.preferred_post_tz || '') : '')}
+                        </select></label>
                     <button class="btn btn-sm btn-primary" id="pdef-save">Save defaults</button>
                     <span id="pdef-msg" class="muted" style="font-size:12px"></span>
                 </div>
@@ -763,6 +768,7 @@ window.Accounts = {
                     default_platforms: plats.join(','),
                     default_rating: document.getElementById('pdef-rating')?.value || '',
                     preferred_post_time: document.getElementById('pdef-time')?.value || '',
+                    preferred_post_tz: document.getElementById('pdef-tz')?.value || '',
                 });
                 if (msg) { msg.textContent = 'Saved.'; msg.style.color = 'var(--success)'; }
             } catch (err) {

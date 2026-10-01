@@ -906,7 +906,8 @@ class PersonaUpdate(BaseModel):
     # Per-persona posting defaults (gap-wave-3 §1)
     default_platforms: str | None = None    # CSV of platform codes
     default_rating: str | None = None       # general | mature | adult | ''
-    preferred_post_time: str | None = None  # "HH:MM" local, '' = none
+    preferred_post_time: str | None = None  # "HH:MM", '' = none
+    preferred_post_tz: str | None = None    # IANA zone of that time; '' = the operator's zone
 
 
 @personas_router.get("")
@@ -960,6 +961,18 @@ async def create_persona_endpoint(req: PersonaCreate):
     return {"ok": True, "persona": persona}
 
 
+def _valid_zone(z):
+    """'' / None pass through; anything else must be a zone zoneinfo knows (spec 016)."""
+    if not z:
+        return z
+    try:
+        from zoneinfo import ZoneInfo
+        ZoneInfo(z)
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"Unknown time zone: {str(z)[:60]}")
+    return z
+
+
 @personas_router.patch("/{persona_id}")
 async def update_persona_endpoint(persona_id: int, req: PersonaUpdate):
     from database import personas as pdb
@@ -971,7 +984,8 @@ async def update_persona_endpoint(persona_id: int, req: PersonaUpdate):
                            sort_order=req.sort_order,
                            default_platforms=req.default_platforms,
                            default_rating=req.default_rating,
-                           preferred_post_time=req.preferred_post_time)
+                           preferred_post_time=req.preferred_post_time,
+                           preferred_post_tz=_valid_zone(req.preferred_post_tz))
         persona = pdb.get_persona(conn, persona_id)
     finally:
         conn.close()

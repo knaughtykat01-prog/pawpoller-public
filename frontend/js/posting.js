@@ -138,7 +138,7 @@ const Posting = {
                     tooltip: {
                         callbacks: {
                             title: (items) => items[0]?.parsed?.x
-                                ? new Date(items[0].parsed.x).toLocaleString('en-AU')
+                                ? Utils.time.fmt.dateTime(items[0].parsed.x)
                                 : '',
                             label: (item) => `${item.dataset.label}: ${item.parsed.y.toLocaleString()}`,
                         },
@@ -187,14 +187,10 @@ const Posting = {
     /* A stored scheduled_at is UTC 'YYYY-MM-DD HH:MM:SS'. Turn it into a real
      * instant for display / for a datetime-local input's LOCAL value. */
     _schedInstant(utcStr) {
-        return new Date((utcStr || '').replace(' ', 'T') + 'Z');
+        return Utils.time.parse(utcStr) || new Date(NaN);
     },
     _toLocalInput(utcStr) {
-        const d = this._schedInstant(utcStr);
-        if (isNaN(d.getTime())) return '';
-        const pad = n => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-            `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        return Utils.time.toPicker(utcStr);   // wall time in the saved zone
     },
 
     async renderQueue() {
@@ -363,7 +359,7 @@ const Posting = {
                     chap = (item.chapter_index || 'Full');
                 }
                 const whenLabel = item.scheduled_at
-                    ? Utils.escapeHtml(this._schedInstant(item.scheduled_at).toLocaleString())
+                    ? Utils.escapeHtml(Utils.time.fmt.dateTime(item.scheduled_at))
                     : '<span class="muted">Immediate</span>';
                 const pending = item.status === 'pending';
                 const isOverdue = this._isOverdue(item);
@@ -417,7 +413,7 @@ const Posting = {
     },
 
     /* Read-only month calendar of what's scheduled (backlog Z completion). Lays
-     * the pending scheduled items onto their local-time days; ‹ › page months,
+     * the pending scheduled items onto their days in the saved zone (spec 016); ‹ › page months,
      * click an item to jump to its detail. Drag-to-reschedule is deliberately
      * out of scope — reschedule lives in the List view's inline editor. */
     _renderQueueCalendar(queue) {
@@ -427,12 +423,13 @@ const Posting = {
             .filter(q => !isNaN(q._dt.getTime()))
             .sort((a, b) => a._dt - b._dt);
 
+        // 'y-m0-d' of the calendar day in the saved zone (month 0-based, like the grid).
+        const key = d => { const s = Utils.time.dayKey(d); return `${+s.slice(0, 4)}-${+s.slice(5, 7) - 1}-${+s.slice(8, 10)}`; };
         if (!this._calMonth) {
-            const anchor = items.length ? items[0]._dt : new Date();
-            this._calMonth = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+            const [ay, am] = key(items.length ? items[0]._dt : new Date()).split('-').map(Number);
+            this._calMonth = new Date(ay, am, 1);
         }
         const y = this._calMonth.getFullYear(), m = this._calMonth.getMonth();
-        const key = d => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
         const byDay = {};
         for (const it of items) { const k = key(it._dt); (byDay[k] = byDay[k] || []).push(it); }
 
@@ -446,12 +443,12 @@ const Posting = {
             const chips = dayItems.map(it => {
                 const ct = it.content_type || 'story';
                 const icon = ct === 'post' ? '&#128172;' : (ct === 'artwork' ? '&#128444;&#65039;' : '&#128214;');
-                const time = it._dt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                const time = Utils.time.fmt.time(it._dt);
                 const label = ct === 'post'
                     ? (it.title_override || ('Post #' + it.story_name))
                     : (it.story_name || '').replace(/_/g, ' ');
                 const plat = PLATFORM_LABELS[it.platform] || it.platform;
-                const tip = `${label} → ${plat} at ${it._dt.toLocaleString()}`;
+                const tip = `${label} → ${plat} at ${Utils.time.fmt.dateTime(it._dt)}`;
                 return `<div class="qcal-item" data-q-goto="${it.queue_id}" title="${Utils.escapeHtml(tip)}">`
                     + `${icon} ${Utils.escapeHtml(time)} ${Utils.escapeHtml(plat)}</div>`;
             }).join('');
@@ -546,13 +543,13 @@ const Posting = {
         const input = row && row.querySelector('.q-when-input');
         const val = input && input.value;
         if (!val) { alert('Pick a date and time.'); return; }
-        const when = new Date(val);
-        if (isNaN(when.getTime())) { alert('Invalid date/time.'); return; }
+        const when = Utils.time.toUtc(val);
+        if (!when) { alert('Invalid date/time.'); return; }
         if (when.getTime() < Date.now()) { alert('Pick a time in the future.'); return; }
         try {
-            // toISOString() converts the LOCAL picker value to a UTC instant.
+            // The picker is wall time in the saved zone; toUtc made it a UTC instant.
             await API.reschedulePostingQueue(queueId, { scheduled_at: when.toISOString() });
-            if (window.toast) window.toast.success(`Rescheduled for ${when.toLocaleString()}`);
+            if (window.toast) window.toast.success(`Rescheduled for ${Utils.time.fmt.dateTime(when)}`);
             this.renderQueue();
         } catch (err) {
             alert('Reschedule failed: ' + err.message);

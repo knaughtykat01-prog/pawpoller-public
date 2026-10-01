@@ -286,10 +286,7 @@ window.Posts = {
 
     /* datetime-local wants 'YYYY-MM-DDTHH:MM' in LOCAL time; default one hour out. */
     _defaultScheduleLocal() {
-        const d = new Date(Date.now() + 60 * 60 * 1000);
-        const pad = n => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-            `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        return Utils.time.pickerIn(60);   // in the saved zone
     },
 
     /* ── @mentions (handle-book) ─────────────────────────────────
@@ -501,10 +498,10 @@ window.Posts = {
         // When scheduling, validate the time before we create anything.
         let scheduledIso = null;
         if (scheduledLocal) {
-            const when = new Date(scheduledLocal);
-            if (isNaN(when.getTime())) { msg.textContent = 'Invalid date/time.'; return; }
+            const when = Utils.time.toUtc(scheduledLocal);   // the picker is in the saved zone
+            if (!when) { msg.textContent = 'Invalid date/time.'; return; }
             if (when.getTime() < Date.now()) { msg.textContent = 'Pick a time in the future.'; return; }
-            scheduledIso = when.toISOString();   // LOCAL picker → UTC instant
+            scheduledIso = when.toISOString();
         }
 
         const btn = document.getElementById('post-submit');
@@ -542,8 +539,7 @@ window.Posts = {
                     platforms, account_ids: this._accountIds(platforms), scheduled_at: scheduledIso,
                     persona_id: this._personaId(),
                 });
-                const when = new Date(scheduledIso);
-                this._toast('success', `Scheduled for ${when.toLocaleString()}`);
+                this._toast('success', `Scheduled for ${Utils.time.fmt.dateTime(scheduledIso)}`);
                 msg.textContent = '';
                 const sf = document.getElementById('post-schedule-form');
                 if (sf) sf.style.display = 'none';

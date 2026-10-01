@@ -660,7 +660,8 @@ def _parse_posted(raw):
     return None, False
 
 
-def get_posting_insights(conn: sqlite3.Connection, tz_offset_minutes: int = 0) -> dict:
+def get_posting_insights(conn: sqlite3.Connection, tz_offset_minutes: int = 0,
+                         zone_name: str | None = None) -> dict:
     """Benchmarks + best-time in one pass over the 17 submission tables.
 
     - platforms: per-platform {metric, count, median} of the headline metric.
@@ -668,11 +669,14 @@ def get_posting_insights(conn: sqlite3.Connection, tz_offset_minutes: int = 0) -
       ratios only — views and likes are never compared to each other).
     - weekday/hour: histograms of RELATIVE engagement (each post ÷ its
       platform's median → cross-platform comparable; 1.0 = typical), bucketed
-      in the caller's timezone via tz_offset_minutes. Each bucket carries its
-      sample count so the UI can grey out thin evidence.
+      in the operator's zone (zone_name, DST-correct; tz_offset_minutes only when
+      no zone loads — 4.50.0). Each bucket carries its sample count so the UI can
+      grey out thin evidence.
     """
     import statistics
-    from datetime import timedelta
+    from datetime import timezone
+
+    zone, _ = _when_zone(zone_name, tz_offset_minutes)
 
     per_platform: dict = {}
     weekday = [[] for _ in range(7)]     # Mon..Sun
@@ -706,7 +710,9 @@ def get_posting_insights(conn: sqlite3.Connection, tz_offset_minutes: int = 0) -
             dt, has_time = _parse_posted(r["d"])
             if not dt:
                 continue
-            local = dt + timedelta(minutes=tz_offset_minutes)
+            # An offset-carrying value is converted, not read by its own clock (bug 9).
+            local = ((dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone(zone)
+                     if has_time else dt)
             weekday[local.weekday()].append(ratio)
             if has_time:
                 hour[local.hour].append(ratio)

@@ -1281,7 +1281,9 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     # columns; also in ensure_personas_table for fresh installs.
     for _col in ("default_platforms TEXT NOT NULL DEFAULT ''",
                  "default_rating TEXT NOT NULL DEFAULT ''",
-                 "preferred_post_time TEXT NOT NULL DEFAULT ''"):
+                 "preferred_post_time TEXT NOT NULL DEFAULT ''",
+                 # 4.50.0 (spec 016): the zone that time is in; '' = the operator's zone.
+                 "preferred_post_tz TEXT NOT NULL DEFAULT ''"):
         try:
             conn.execute(f"ALTER TABLE personas ADD COLUMN {_col}")
         except sqlite3.OperationalError as e:

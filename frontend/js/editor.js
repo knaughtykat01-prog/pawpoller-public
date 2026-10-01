@@ -373,7 +373,7 @@ const Editor = {
             const regenSkipPdfCb = document.getElementById('regen-all-skip-pdf');
 
             const appendRegenLog = (line, color = '') => {
-                const stamp = new Date().toLocaleTimeString();
+                const stamp = Utils.time.fmt.time(new Date());
                 const span = document.createElement('span');
                 if (color) span.style.color = color;
                 span.textContent = `${stamp}  ${line}\n`;
@@ -465,7 +465,7 @@ const Editor = {
         }, 1000);
 
         const append = (line, color = '') => {
-            const stamp = new Date().toLocaleTimeString();
+            const stamp = Utils.time.fmt.time(new Date());
             const span = document.createElement('span');
             if (color) span.style.color = color;
             span.textContent = `${stamp}  ${line}\n`;
@@ -1937,7 +1937,7 @@ const Editor = {
             list.innerHTML = shares.map(s => {
                 const abs = /^https?:/i.test(s.url) ? s.url : (location.origin + s.url);
                 const exp = s.expires_at
-                    ? `expires ${new Date(s.expires_at).toLocaleDateString()}`
+                    ? `expires ${Utils.time.fmt.date(s.expires_at)}`
                     : 'never expires';
                 const stale = s.live === false ? ' · <span style="color:var(--danger)">expired</span>' : '';
                 return `<div class="share-draft-row" data-token="${Utils.escapeHtml(s.token)}"

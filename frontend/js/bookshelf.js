@@ -675,12 +675,12 @@ window.Bookshelf = {
     /* "Fri 20:00" within a week, else "4 Oct". */
     _when(at) {
         if (!at) return '';
-        const d = (window.Utils && Utils._parseDate) ? Utils._parseDate(at) : new Date(String(at).replace(' ', 'T') + 'Z');
+        const d = Utils.time.parse(at);
         if (!d || isNaN(d)) return '';
         const days = (d - Date.now()) / 864e5;
         return days >= -1 && days < 7
-            ? d.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })
-            : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+            ? Utils.time.format(d, { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+            : Utils.time.format(d, { day: 'numeric', month: 'short' });
     },
 
     /* Pooled numbers, words beside the icons for screen readers. */

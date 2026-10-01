@@ -1311,11 +1311,16 @@ def get_sync_status():
                             # We don't have the old hash stored yet, so compare against pub timestamp
                             # If the file's mtime is newer than last_updated, it's changed
                             import datetime
-                            mtime = datetime.datetime.fromtimestamp(full_path.stat().st_mtime)
+                            # Both sides in UTC: last_updated is stored UTC, and a local
+                            # mtime compared with it was hours out on the desktop (spec 016).
+                            mtime = datetime.datetime.fromtimestamp(full_path.stat().st_mtime,
+                                                                    datetime.timezone.utc)
                             if last_updated:
                                 try:
                                     posted_dt = datetime.datetime.fromisoformat(last_updated.replace("Z", "+00:00"))
-                                    if mtime.replace(tzinfo=None) > posted_dt.replace(tzinfo=None):
+                                    if posted_dt.tzinfo is None:
+                                        posted_dt = posted_dt.replace(tzinfo=datetime.timezone.utc)
+                                    if mtime > posted_dt:
                                         changed = True
                                 except (ValueError, TypeError):
                                     pass

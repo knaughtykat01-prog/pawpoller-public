@@ -1232,7 +1232,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.48.0"
+APP_VERSION = "4.50.0"
 
 
 def _app_commit() -> str:
@@ -1754,3 +1754,15 @@ def set_run_on_startup(enabled: bool) -> None:
         return
 
     logger.warning("set_run_on_startup is not supported on this platform (%s)", sys.platform)
+
+
+def display_zone():
+    """The operator's time zone (Settings → Preferences → display_timezone) as a tzinfo; UTC
+    when unset or unloadable. Server-side calendar maths — analytics months/weeks, drip slots —
+    use it so a "day" is the operator's day, daylight saving included (4.50.0, spec 016)."""
+    from datetime import timezone
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(get_settings().get("display_timezone") or "UTC")
+    except Exception:
+        return timezone.utc

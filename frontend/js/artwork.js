@@ -658,17 +658,11 @@ window.Artwork = {
             && this._qpState.options.find(o => o.id === this._qpState.presetId);
         const t = opt && opt.defaults && opt.defaults.time;
         if (t && /^\d{2}:\d{2}$/.test(t)) {
-            const d = new Date();
-            d.setDate(d.getDate() + 1);
-            d.setHours(parseInt(t.slice(0, 2), 10), parseInt(t.slice(3), 10), 0, 0);
-            const pad = n => String(n).padStart(2, '0');
-            return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
-                + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+            const tz = opt.defaults.tz;   // the persona's zone (4.50.0); '' = the saved zone
+            const local = Utils.time.pickerTomorrowAt(t);
+            return tz ? Utils.time.toPicker(Utils.time.toUtc(local, tz)) : local;
         }
-        const d = new Date(Date.now() + 60 * 60 * 1000);
-        const pad = n => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-            `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        return Utils.time.pickerIn(60);
     },
 
     /* Telegram per-piece options.
@@ -1288,6 +1282,7 @@ window.Artwork = {
                         platforms: (p.default_platforms || '').split(',').filter(Boolean),
                         rating: p.default_rating || '',
                         time: p.preferred_post_time || '',
+                        tz: p.preferred_post_tz || '',
                     },
                 });
             }
@@ -1414,8 +1409,8 @@ window.Artwork = {
 
         let scheduledIso = null;
         if (scheduledLocal) {
-            const when = new Date(scheduledLocal);
-            if (isNaN(when.getTime())) { msg.textContent = 'Invalid date/time.'; return; }
+            const when = Utils.time.toUtc(scheduledLocal);   // the picker is in the saved zone
+            if (!when) { msg.textContent = 'Invalid date/time.'; return; }
             if (when.getTime() < Date.now()) { msg.textContent = 'Pick a time in the future.'; return; }
             scheduledIso = when.toISOString();
         }

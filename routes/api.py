@@ -25,7 +25,7 @@ import sqlite3
 import shutil
 import tempfile
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -1532,7 +1532,15 @@ def save_preferences(body: dict):
 
     # ── Timezone ───────────────────────────────────────────────
     if "display_timezone" in body:
-        update["display_timezone"] = str(body["display_timezone"])
+        # Every time on screen, the analytics buckets and the schedules read this, so an
+        # unknown name is refused rather than stored (4.49.0, spec 016).
+        tz = str(body["display_timezone"]).strip()
+        try:
+            from zoneinfo import ZoneInfo
+            ZoneInfo(tz)
+        except Exception:
+            raise HTTPException(400, f"Unknown time zone: {tz[:60]}")
+        update["display_timezone"] = tz
 
     # ── Platforms the operator actually uses (Settings → Platforms) ────
     # Stored as the HIDDEN codes, never the shown ones: a platform connected later
@@ -2759,7 +2767,7 @@ def download_backup():
     finally:
         conn.close()
     db_bytes = config.DB_PATH.read_bytes()
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%SZ")   # UTC, marked (spec 016)
     return Response(
         content=db_bytes,
         media_type="application/octet-stream",
@@ -2943,14 +2951,16 @@ async def stream_logs(
 # ── Historical Analytics ──────────────────────────────────────
 
 @router.get("/analytics/insights")
-def get_analytics_insights(tz_offset: int = 0):
+def get_analytics_insights(tz_offset: int = 0, tz: str = ""):
     """Benchmarks + best-time-to-post (gap-wave-3 §2+3). tz_offset = the
     client's minutes-east-of-UTC (JS: -new Date().getTimezoneOffset()) so the
     weekday/hour buckets land in the user's local clock."""
     from database import analytics_queries
     conn = get_connection()
     try:
-        return analytics_queries.get_posting_insights(conn, tz_offset_minutes=tz_offset)
+        return analytics_queries.get_posting_insights(
+            conn, tz_offset_minutes=tz_offset,
+            zone_name=config.get_settings().get("display_timezone") or tz or None)
     finally:
         conn.close()
 
@@ -3176,6 +3186,12 @@ def get_historical_analytics(weeks: int = Query(12)):
             ("ik",  "ik_snapshots",    "ik_submissions",    None,    "likes",           "comments_count"),
         ]
 
+        # Calendar months / weeks are the OPERATOR's (spec 016): shift the stored UTC by the
+        # zone's current offset. ponytail: one offset for the whole range, so at a daylight-
+        # saving edge an hour can land in the neighbouring month/week — per-row zoneinfo would
+        # mean pulling every snapshot into Python.
+        _off = int(datetime.now(config.display_zone()).utcoffset().total_seconds() // 60)
+        _shift = f"'{_off:+d} minutes'"
         month_data = {}
         for plat, snap_t, _, v_col, f_col, c_col in table_pairs:
             try:
@@ -3184,7 +3200,7 @@ def get_historical_analytics(weeks: int = Query(12)):
                 f_expr = f"MAX({f_col}) - MIN({f_col})" if f_col else "0"
                 c_expr = f"MAX({c_col}) - MIN({c_col})" if c_col else "0"
                 rows = conn.execute(f"""
-                    SELECT strftime('%Y-%m', polled_at) as month,
+                    SELECT strftime('%Y-%m', polled_at, {_shift}) as month,
                            {v_expr} as views_delta,
                            {f_expr} as faves_delta,
                            {c_expr} as comments_delta
@@ -3253,7 +3269,7 @@ def get_historical_analytics(weeks: int = Query(12)):
                 f_expr = f"MAX({f_col}) - MIN({f_col})" if f_col else "0"
                 c_expr = f"MAX({c_col}) - MIN({c_col})" if c_col else "0"
                 rows = conn.execute(f"""
-                    SELECT strftime('%Y-W%W', polled_at) as week_label,
+                    SELECT strftime('%Y-W%W', polled_at, {_shift}) as week_label,
                            {v_expr} as views_delta,
                            {f_expr} as faves_delta,
                            {c_expr} as comments_delta

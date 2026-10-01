@@ -94,27 +94,20 @@ window.TrelloBoard = {
     _dueState(due, done) {
         if (!due) return '';
         if (done) return 'done';
-        const t = new Date(due).getTime();
+        const t = Utils.time.ms(due);
         if (isNaN(t)) return '';
         if (t < Date.now()) return 'over';
         if (t - Date.now() < 24 * 3600 * 1000) return 'soon';
         return '';
     },
     _fmtDate(iso, withTime) {
-        const d = new Date(iso);
-        if (isNaN(d.getTime())) return '';
-        const o = { month: 'short', day: 'numeric' };
-        if (d.getFullYear() !== new Date().getFullYear()) o.year = 'numeric';
-        let s = d.toLocaleDateString(undefined, o);
-        if (withTime) s += ', ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-        return s;
+        if (!Utils.time.parse(iso)) return '';
+        return withTime ? Utils.time.fmt.date(iso) + ', ' + Utils.time.fmt.time(iso) : Utils.time.fmt.date(iso);
     },
-    /* ISO → the value an <input type=date> / type=time shows, in local time. */
+    /* ISO → the value an <input type=date> / type=time shows, in the saved zone. */
     _localParts(iso) {
-        const d = iso ? new Date(iso) : null;
-        if (!d || isNaN(d.getTime())) return { date: '', time: '' };
-        const p = n => String(n).padStart(2, '0');
-        return { date: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, time: `${p(d.getHours())}:${p(d.getMinutes())}` };
+        const v = Utils.time.toPicker(iso);
+        return v ? { date: v.slice(0, 10), time: v.slice(11, 16) } : { date: '', time: '' };
     },
 
     // ── status strip (picker) ────────────────────────────────────────────
@@ -902,7 +895,7 @@ window.TrelloBoard = {
         return `<ul class="tb-comments">${list.map(cm => `
             <li class="tb-comment" data-comment-id="${this.esc(cm.id)}">
                 <div class="tb-comment-meta"><strong>${this.esc(cm.author_name || 'Someone')}</strong>
-                    <span class="muted" title="${this.esc(cm.date ? new Date(cm.date).toLocaleString() : '')}">${this.esc(cm.date ? Utils.timeAgo(cm.date) : '')}</span>
+                    <span class="muted" title="${this.esc(cm.date ? Utils.time.fmt.dateTime(cm.date) : '')}">${this.esc(cm.date ? Utils.timeAgo(cm.date) : '')}</span>
                     ${cm.pending ? '<span class="tb-pending" title="Not in Trello yet — on its way"></span>' : ''}</div>
                 ${this._editing === 'cm:' + cm.id
                     ? `<div class="tb-inline-edit"><textarea class="search-input" data-tb-comment-edit-input="${this.esc(cm.id)}" data-tb-autofocus rows="3" maxlength="16384">${this.esc(cm.text)}</textarea>
@@ -1101,8 +1094,8 @@ window.TrelloBoard = {
             const dd = this._val('tb-due-date');
             const tm = this._val('tb-due-time') || '12:00';
             const body = {
-                start: sd ? new Date(sd + 'T00:00').toISOString() : null,
-                due: dd ? new Date(dd + 'T' + tm).toISOString() : null,
+                start: sd ? Utils.time.toUtcIso(sd + 'T00:00') : null,
+                due: dd ? Utils.time.toUtcIso(dd + 'T' + tm) : null,
                 due_complete: !!(document.getElementById('tb-due-complete') || {}).checked,
             };
             const r = await this._do('Could not save the dates', () => API.updateTrelloCard(cardId, body));

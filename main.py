@@ -62,6 +62,9 @@ logging.basicConfig(
         ),
     ],
 )
+# Log times are UTC on every install (spec 016): the line format stays exactly as update.sh's
+# startup-log gate expects (date time [LEVEL]); only the clock behind it is fixed.
+logging.Formatter.converter = __import__('time').gmtime
 
 # Strip credentials from every record before any handler sees it (2.193.1) —
 # httpx logs full request URLs, several platforms put tokens in them. Desktop

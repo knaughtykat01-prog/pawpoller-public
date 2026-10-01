@@ -188,10 +188,8 @@ window.Masterpieces = {
                 <input type="checkbox" class="bp-check" value="${esc(c)}"${checked ? ' checked' : ''}>
                 <span>${p.emoji || ''} ${esc(p.label)}</span><span class="bp-acct-slot" data-platform="${esc(c)}"></span></label>`;
         };
-        // The next whole hour, local time, as the default start.
-        const d = new Date(Date.now() + 3600e3); d.setMinutes(0, 0, 0);
-        const pad = (n) => String(n).padStart(2, '0');
-        const startVal = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`;
+        // The next whole hour in the saved zone, as the default start.
+        const startVal = Utils.time.pickerIn(60).slice(0, 14) + '00';
 
         let ov = document.getElementById('batch-ov');
         if (!ov) { ov = document.createElement('div'); ov.id = 'batch-ov'; ov.className = 'wn-ov'; document.body.appendChild(ov); }
@@ -267,7 +265,7 @@ window.Masterpieces = {
             return {
                 names, platforms, account_ids,
                 persona_id: host.dataset.personaId ? parseInt(host.dataset.personaId, 10) : null,
-                start: spread && startLocal ? new Date(startLocal).toISOString() : null,
+                start: spread && startLocal ? Utils.time.toUtcIso(startLocal) : null,
                 gap_minutes: spread ? (parseInt($('#bp-every').value, 10) || 0) * parseInt($('#bp-unit').value, 10) : 0,
                 order: $('#bp-order').value,
                 announce: $('#bp-announce').checked,
@@ -275,8 +273,8 @@ window.Masterpieces = {
             };
         };
         const when = (slot) => {
-            const t = Utils._parseDate ? Utils._parseDate(slot) : new Date(String(slot).replace(' ', 'T') + 'Z');
-            return t && !isNaN(t) ? t.toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : esc(slot);
+            const t = Utils.time.parse(slot);
+            return t ? Utils.time.format(t, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : esc(slot);
         };
         const paint = (p, note) => {
             plan = p;
@@ -1665,8 +1663,8 @@ window.Masterpieces = {
         const msg = document.getElementById('mp-pub-msg');
         const val = (document.getElementById('mp-schedule-datetime') || {}).value;
         if (!val) { if (msg) msg.textContent = 'Pick a date and time.'; return; }
-        const when = new Date(val);
-        if (isNaN(when.getTime())) { if (msg) msg.textContent = 'Invalid date/time.'; return; }
+        const when = Utils.time.toUtc(val);
+        if (!when) { if (msg) msg.textContent = 'Invalid date/time.'; return; }
         if (when.getTime() < Date.now()) { if (msg) msg.textContent = 'Pick a time in the future.'; return; }
         const { platforms, accountIds, overrides } = this._publishSelection();
         if (!platforms.length) { if (msg) msg.textContent = 'Tick at least one site.'; return; }
@@ -1687,7 +1685,7 @@ window.Masterpieces = {
             } catch (err) { fail++; console.warn('Schedule failed for', platform, err); }
         }
         this._toast(fail ? 'error' : 'success',
-            `Scheduled ${ok} site${ok === 1 ? '' : 's'} for ${when.toLocaleString()}`
+            `Scheduled ${ok} site${ok === 1 ? '' : 's'} for ${Utils.time.fmt.dateTime(when)}`
             + (fail ? `, ${fail} failed` : ''));
         const form = document.getElementById('mp-schedule-form');
         if (form) form.style.display = 'none';
@@ -1708,7 +1706,7 @@ window.Masterpieces = {
         let html = '<div class="schedule-pending-header">Scheduled</div>';
         for (const it of items) {
             // Stored 'YYYY-MM-DD HH:MM:SS' is UTC; make it a real instant, then localise.
-            const when = new Date(it.scheduled_at.replace(' ', 'T') + 'Z').toLocaleString();
+            const when = Utils.time.fmt.dateTime(it.scheduled_at);
             const plat = (window.PLATFORMS || []).find(p => p.code === it.platform);
             html += '<div class="schedule-pending-item">'
                 + '<span class="schedule-pending-icon">&#128340;</span> '

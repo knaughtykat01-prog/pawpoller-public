@@ -178,7 +178,9 @@ class TelegramPoster(PlatformPoster):
                         chat_id=client.channel,
                         message_id=result.get("id", 0),
                         title=(package.title or package.story_name or ""),
-                        posted_at=__import__("datetime").datetime.now().isoformat(timespec="seconds"),
+                        # Naive UTC like every other stored time — it was the HOST's clock (spec 016).
+                        posted_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+                        .strftime("%Y-%m-%d %H:%M:%S"),
                         link=result.get("url", ""),
                         content_type="artwork" if is_art else "story")
                     _conn.commit()

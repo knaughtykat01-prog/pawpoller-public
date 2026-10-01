@@ -5,7 +5,7 @@
  *
  * All methods are pure (no side-effects, no DOM mutation) except where
  * they return HTML strings for innerHTML injection — those are clearly
- * marked.  Date handling uses Australian (en-AU) locale throughout.
+ * marked.  Dates go through Utils.time: en-AU wording, the operator's time zone.
  */
 
 const Utils = {
@@ -56,79 +56,186 @@ const Utils = {
         return `<span class="delta ${cls}">${sign}${Utils.formatNumber(n)}</span>`;
     },
 
-    /* ── _parseDate (private) ────────────────────────────────────
-     * Normalises the variety of date-string formats returned by the
-     * backend into valid Date objects:
-     *   - Inkbunny's "+00" TZ suffix  -> already parseable, passed through
-     *   - Bare "YYYY-MM-DD HH:MM:SS"  -> gets "T" separator and "Z" suffix
-     *   - ISO with "T" but no "Z"     -> passed through (browser assumes local)
-     *   - Full ISO "...T...Z"         -> already valid, passed through
-     * The leading underscore signals this is an internal helper; all
-     * public date methods delegate to it first.
-     */
-    _parseDate(dateStr) {
-        if (!dateStr) return null;
-        // Handle Inkbunny's "+00" timezone format and bare datetimes
-        let s = dateStr.trim();
-        if (!s.includes('Z') && !s.includes('+') && !s.includes('T')) {
-            s = s.replace(' ', 'T') + 'Z';
-        } else if (!s.includes('T')) {
-            s = s.replace(' ', 'T');
-        }
-        return new Date(s);
+    /* ── time (4.49.0, spec 016) ─────────────────────────────────
+     * The ONE place a date string becomes a Date and a Date becomes text. Every time on
+     * screen is shown in the operator's zone (Settings → Preferences → display_timezone,
+     * set at boot by App._refreshPrefsFromServer), not whatever zone the browser is in.
+     * Storage stays naive UTC; anything without a zone marker is read as UTC.
+     *   parse(v)            → Date | null. Date-only values ("2026-09-26", AO3/SquidgeWorld)
+     *                         come back flagged `dateOnly` and always show as that calendar day.
+     *   fmt.date/time/dateTime(v), dayKey(v)  → text / 'YYYY-MM-DD' in the zone.
+     *   toPicker(v) / toUtc('YYYY-MM-DDTHH:MM') ↔ a datetime-local value in the zone.
+     * Locale stays en-AU (the app's wording so far); the zone is what moved. */
+    time: {
+        zone: null,          // IANA name; null = the browser's own zone
+        locale: 'en-AU',
+        _cache: {},
+        _ISO: /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?\s*(Z|z|[+-]\d{2}(?::?\d{2})?)?$/,
+
+        setZone(z) {
+            let ok = null;
+            if (z) {
+                try { new Intl.DateTimeFormat('en-AU', { timeZone: z }); ok = z; } catch (e) { ok = null; }
+            }
+            if (ok !== this.zone) { this.zone = ok; this._cache = {}; }
+            return ok;
+        },
+
+        /* The zone in use, as a name (the browser's when none is set). */
+        zoneName() {
+            try { return this.zone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
+            catch (e) { return 'UTC'; }
+        },
+
+        parse(v) {
+            if (v === null || v === undefined || v === '') return null;
+            if (v instanceof Date) return isNaN(v) ? null : v;
+            if (typeof v === 'number') return new Date(v);
+            const s = String(v).trim();
+            const m = this._ISO.exec(s);
+            if (m) {
+                const [, y, mo, d, hh, mi, ss, frac, tz] = m;
+                const ms = frac ? Math.round(Number('0.' + frac) * 1000) : 0;
+                let t = Date.UTC(+y, +mo - 1, +d, +(hh || 0), +(mi || 0), +(ss || 0), ms);
+                if (tz && tz !== 'Z' && tz !== 'z') {
+                    const digits = tz.slice(1).replace(':', '');
+                    const off = (+digits.slice(0, 2)) * 60 + (+(digits.slice(2, 4) || 0));
+                    t -= (tz[0] === '+' ? 1 : -1) * off * 60000;
+                }
+                const out = new Date(t);
+                if (isNaN(out)) return null;
+                if (hh === undefined) out.dateOnly = true;
+                return out;
+            }
+            // An HTTP date ("Thu, 02 Oct 2026 01:00:00 GMT") says its zone; prose (FurAffinity
+            // "August 7, 2019 11:57:56 PM"; Newgrounds) doesn't and is stored as UTC.
+            const p = / (GMT|UTC)$/.test(s) ? new Date(s) : new Date(s.replace(/,(\s*\d{1,2}:)/, '$1') + ' UTC');
+            return isNaN(p) ? null : p;
+        },
+
+        _f(opts, dateOnly, zone) {
+            const key = JSON.stringify(opts) + (dateOnly ? '|d' : '') + '|' + (zone || '');
+            if (!this._cache[key]) {
+                const tz = dateOnly ? 'UTC' : (zone || this.zone);
+                this._cache[key] = new Intl.DateTimeFormat(opts.locale || this.locale,
+                    Object.assign({}, opts, { locale: undefined }, tz ? { timeZone: tz } : {}));
+            }
+            return this._cache[key];
+        },
+
+        /* The zone's short name at that instant: "AEST", "AEDT", or "GMT+10" where Intl has none. */
+        abbr(v) {
+            const d = this.parse(v) || new Date();
+            const part = this._f({ hour: 'numeric', timeZoneName: 'short' }).formatToParts(d)
+                .find(x => x.type === 'timeZoneName');
+            return part ? part.value : '';
+        },
+
+        /* Epoch ms of a server time, NaN when unreadable (for comparisons). */
+        ms(v) { const d = this.parse(v); return d ? d.getTime() : NaN; },
+
+        dayKey(v) {
+            const d = this.parse(v);
+            if (!d) return '';
+            return this._f({ locale: 'en-CA', year: 'numeric', month: '2-digit', day: '2-digit' }, d.dateOnly).format(d);
+        },
+
+        /* Any Intl options, in the zone ("Fri 8:00 pm", "October 2026"). */
+        format(v, opts) {
+            const d = this.parse(v);
+            return d ? this._f(opts, d.dateOnly).format(d) : '--';
+        },
+
+        fmt: {
+            date(v) {
+                const T = Utils.time, d = T.parse(v);
+                if (!d) return '--';
+                const sameYear = T.dayKey(d).slice(0, 4) === T.dayKey(new Date()).slice(0, 4);
+                return T._f(sameYear ? { day: 'numeric', month: 'short' }
+                    : { day: 'numeric', month: 'short', year: 'numeric' }, d.dateOnly).format(d);
+            },
+            day(v) {   // "Thu, 1 Oct 2026" — a day heading
+                const T = Utils.time, d = T.parse(v);
+                return d ? T._f({ weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }, d.dateOnly).format(d) : '--';
+            },
+            time(v) {
+                const T = Utils.time, d = T.parse(v);
+                return d ? T._f({ hour: 'numeric', minute: '2-digit' }).format(d) : '--';
+            },
+            dateTime(v) {
+                const T = Utils.time, d = T.parse(v);
+                if (!d) return '--';
+                if (d.dateOnly) return T.fmt.date(d);
+                const key = T.dayKey(d), now = new Date();
+                const yest = new Date(Date.parse(T.dayKey(now) + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+                if (key === T.dayKey(now)) return 'Today ' + T.fmt.time(d);
+                if (key === yest) return 'Yesterday ' + T.fmt.time(d);
+                return T.fmt.date(d) + ', ' + T.fmt.time(d);
+            },
+        },
+
+        /* Minutes the zone (default: the saved one) is ahead of UTC at instant `ms`. */
+        _offset(ms, zone) {
+            const p = {};
+            this._f({ locale: 'en-CA', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit' }, false, zone).formatToParts(new Date(ms))
+                .forEach(x => { p[x.type] = x.value; });
+            const wall = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+            return Math.round((wall - Math.floor(ms / 1000) * 1000) / 60000);
+        },
+
+        /* A Date → 'YYYY-MM-DDTHH:MM' wall time in the zone, for <input type="datetime-local">. */
+        toPicker(v, zone) {
+            const d = this.parse(v);
+            if (!d) return '';
+            const w = new Date(d.getTime() + this._offset(d.getTime(), zone) * 60000);
+            return w.toISOString().slice(0, 16);
+        },
+
+        /* 'YYYY-MM-DDTHH:MM' wall time in the zone → Date (UTC instant), or null.
+         * A time that doesn't exist (the hour skipped when clocks go forward) comes back
+         * moved forward by the gap, flagged `shifted`, so callers can say so. */
+        toUtc(local, zone) {
+            const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(local || ''));
+            if (!m) return null;
+            const guess = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+            let t = guess - this._offset(guess, zone) * 60000;
+            const t2 = guess - this._offset(t, zone) * 60000;
+            const want = String(local).slice(0, 16);
+            const fits = x => this.toPicker(new Date(x), zone) === want;
+            if (!fits(t)) t = fits(t2) ? t2 : Math.max(t, t2);   // in the gap: the later reading
+            const out = new Date(t);
+            if (!fits(t)) out.shifted = true;
+            return out;
+        },
+
+        /* A picker value moved by whole days in WALL time ("same time, N days on") — what a
+         * drip does on the server, so the preview agrees across a daylight-saving change. */
+        addDays(local, days) {
+            const d = new Date(Date.parse(String(local).slice(0, 10) + 'T00:00:00Z') + days * 86400000);
+            return d.toISOString().slice(0, 10) + String(local).slice(10, 16);
+        },
+
+        /* 'YYYY-MM-DDTHH:MM' for `minutes` from now, in the zone (a picker's default). */
+        pickerIn(minutes) { return this.toPicker(new Date(Date.now() + minutes * 60000)); },
+
+        /* Tomorrow (in the zone) at 'HH:MM' -> a picker value. */
+        pickerTomorrowAt(hhmm) {
+            const day = new Date(Date.parse(this.dayKey(new Date()) + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+            return `${day}T${hhmm}`;
+        },
+
+        /* An ISO string with Z for the API ('2026-10-08T07:00:00.000Z'). */
+        toUtcIso(local) {
+            const d = this.toUtc(local);
+            return d ? d.toISOString() : '';
+        },
     },
 
-    /* ── formatDate ───────────────────────────────────────────
-     * Smart short-date formatting in Australian locale (en-AU).
-     * Omits the year when the date falls in the current calendar year
-     * (e.g. "4 Mar") and includes it otherwise (e.g. "4 Mar 2024").
-     * Returns "--" for unparseable or missing input.
-     */
-    formatDate(dateStr) {
-        const d = this._parseDate(dateStr);
-        if (!d || isNaN(d)) return '--';
-        const now = new Date();
-        const sameYear = d.getFullYear() === now.getFullYear();
-        if (sameYear) {
-            return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-        }
-        return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
-    },
-
-    /* ── formatDateTime ────────────────────────────────────────
-     * Relative-friendly date + time string in Australian locale:
-     *   - Same calendar day    -> "Today 2:30 PM"
-     *   - Previous calendar day -> "Yesterday 2:30 PM"
-     *   - Same year            -> "4 Mar, 2:30 PM"
-     *   - Older                -> "4 Mar 2024, 2:30 PM"
-     * Used in snapshot tables, poll logs, and detail views.
-     */
-    formatDateTime(dateStr) {
-        const d = this._parseDate(dateStr);
-        if (!d || isNaN(d)) return '--';
-        const now = new Date();
-        const diffMs = now - d;
-        const diffHrs = diffMs / 3600000;
-
-        // Today: "2:30 PM"
-        if (diffHrs < 24 && d.getDate() === now.getDate()) {
-            return 'Today ' + d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
-        }
-        // Yesterday
-        const yesterday = new Date(now);
-        yesterday.setDate(yesterday.getDate() - 1);
-        if (d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth()) {
-            return 'Yesterday ' + d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
-        }
-        // This year: "4 Mar, 2:30 PM"
-        if (d.getFullYear() === now.getFullYear()) {
-            return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) + ', ' +
-                   d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
-        }
-        // Older
-        return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' +
-               d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
-    },
+    /* Old names, kept for the ~80 callers: thin wrappers over Utils.time (4.49.0). */
+    _parseDate(dateStr) { return Utils.time.parse(dateStr); },
+    formatDate(dateStr) { return Utils.time.fmt.date(dateStr); },
+    formatDateTime(dateStr) { return Utils.time.fmt.dateTime(dateStr); },
 
     /* ── timeAgo ──────────────────────────────────────────────
      * Compact relative-time string using escalating units:
@@ -316,5 +423,9 @@ const Utils = {
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     },
 };
+
+// First paint in the saved zone: App._refreshPrefsFromServer caches it here.
+try { Utils.time.setZone(localStorage.getItem('pp-display-tz')); } catch (e) { /* no storage */ }
+
 // A top-level const is not a window property; 28 call sites guard on window.Utils (4.43.1).
 if (typeof window !== 'undefined') window.Utils = Utils;   // node-run tests have no window

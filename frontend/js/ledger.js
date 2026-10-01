@@ -39,17 +39,12 @@ window.Ledger = {
 
     _date(iso) {
         if (!iso) return null;
-        const d = new Date(iso);
-        return isNaN(d) ? null : d;
+        return Utils.time.parse(iso);   // naive server times are UTC (spec 016)
     },
-    _dayKey(d) { return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; },
-    _dayLabel(d) {
-        try {
-            return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-        } catch (e) { return d.toISOString().slice(0, 10); }
-    },
+    _dayKey(d) { return Utils.time.dayKey(d); },   // the calendar day in the saved zone
+    _dayLabel(d) { return Utils.time.fmt.day(d); },
     _timeLabel(d) {
-        try { return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); }
+        try { return Utils.time.fmt.time(d); }
         catch (e) { return ''; }
     },
 

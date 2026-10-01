@@ -573,6 +573,11 @@ const App = {
            forced on/off. */
         this._initMobileModeWatcher();
 
+        /* The saved time zone and platform choices, once at start (the focus
+           listener below keeps everything current after that). */
+        this._refreshPrefsFromServer({ zoneOnly: true });
+        this._initClock();
+
         /* Cross-device sync: when the tab regains focus (user comes back
            after editing settings on another device or in the desktop app),
            refresh the theme + general prefs so changes flow through without
@@ -590,13 +595,26 @@ const App = {
     /* Pull the latest preferences from the server and apply any drift.
        Currently only the theme has a visible effect — but pulling all
        prefs keeps client-side caches honest if we add more later. */
-    async _refreshPrefsFromServer() {
+    async _refreshPrefsFromServer({ zoneOnly = false } = {}) {
         try {
             const prefs = await API.getPreferences();
             // "Platforms I use" (4.32.3): every list that renders platforms reads this
             // through platforms.js, so it has to land before the first render.
             window.HIDDEN_PLATFORMS = Array.isArray(prefs && prefs.hidden_platforms)
                 ? prefs.hidden_platforms : [];
+            // Every time on screen follows the saved zone (spec 016). Cached so the
+            // next start paints in it before this request returns (utils.js reads it).
+            const zoneBefore = Utils.time.zone;
+            Utils.time.setZone(prefs && prefs.display_timezone);
+            try { localStorage.setItem('pp-display-tz', (prefs && prefs.display_timezone) || ''); } catch (e) { /* private mode */ }
+            this._maybeOfferZone(prefs && prefs.display_timezone);
+            if (Utils.time.zone !== zoneBefore) {
+                if (this._redrawClock) this._redrawClock();
+                if (this.route) this.route();
+            }
+            // At start the theme and layout stay what this device chose (its stored
+            // choice already painted); only a return to the tab pulls them across.
+            if (zoneOnly) return;
             const serverTheme = prefs && prefs.theme;
             if (serverTheme && serverTheme !== this.getCurrentTheme()
                 && this.THEMES.some(t => t.id === serverTheme)) {
@@ -2850,6 +2868,11 @@ const App = {
         // Mode has to come back BEFORE stepOrder() is consulted — it decides
         // which steps exist, so a restored step is only meaningful alongside it.
         if (runtimeMode !== 'server' && typeof _wizSaved.mode === 'string') selectedMode = _wizSaved.mode;
+        // Time zone step (4.49.0, spec 016 FR-008): asked, not assumed — this computer's
+        // zone is only the starting suggestion.
+        let chosenZone = '';
+        try { chosenZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { chosenZone = 'UTC'; }
+        let zoneError = '';
         let pairingUrl = '';
         let pairingKey = '';
         let pairingError = '';
@@ -2859,14 +2882,14 @@ const App = {
          * "skip archive + platforms" branch falls out naturally. */
         const stepOrder = () => {
             if (runtimeMode === 'server') {
-                return ['welcome', 'archive', 'platforms', 'persona', 'tech', 'done'];
+                return ['welcome', 'timezone', 'archive', 'platforms', 'persona', 'tech', 'done'];
             }
             if (selectedMode === 'paired_desktop' || selectedMode === 'connected') {
                 // Paired installs read the server's data — personas live there.
-                return ['welcome', 'mode', 'pairing', 'tech', 'done'];
+                return ['welcome', 'timezone', 'mode', 'pairing', 'tech', 'done'];
             }
             // standalone (or undecided) — full flow
-            return ['welcome', 'mode', 'archive', 'platforms', 'persona', 'tech', 'done'];
+            return ['welcome', 'timezone', 'mode', 'archive', 'platforms', 'persona', 'tech', 'done'];
         };
 
         // Validate against the CURRENT path rather than trusting what was stored:
@@ -2911,6 +2934,28 @@ const App = {
                     <p style="color:var(--text-secondary);margin-bottom:8px;font-size:15px">Publish art, fiction, audio and video across your sites &mdash; and see what happened after.</p>
                     <p style="color:var(--text-muted);margin-bottom:28px;font-size:13px">Let's get you set up in a few quick steps.</p>
                     <button class="btn btn-primary login-btn" id="setup-next">Get Started</button>`;
+            } else if (currentStep === 'timezone') {
+                /* ── Your time zone (FR-008) ─────────────────────────── */
+                let zones = [];
+                try { zones = Intl.supportedValuesOf('timeZone'); } catch (e) { zones = []; }
+                if (!zones.includes('UTC')) zones = ['UTC', ...zones];
+                body = `
+                    <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">Your time zone</h2>
+                    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">PawPoller shows every time in this zone, and uses it
+                        for scheduled posts, your best posting times, Telegram messages and the weekly email. We've filled in the one this
+                        computer uses &mdash; change it if your audience-facing day runs on a different clock.</p>
+                    <div class="login-field">
+                        <label for="setup-tz">Time zone</label>
+                        <input type="text" id="setup-tz" class="search-input" list="setup-tz-list" value="${Utils.escapeHtml(chosenZone)}"
+                            autocomplete="off" spellcheck="false" style="width:100%" aria-describedby="setup-tz-now">
+                        <datalist id="setup-tz-list">${zones.map(z => `<option value="${Utils.escapeHtml(z)}"></option>`).join('')}</datalist>
+                        <div id="setup-tz-now" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
+                    </div>
+                    ${zoneError ? `<div class="login-error" style="margin-top:8px">${Utils.escapeHtml(zoneError)}</div>` : ''}
+                    <div style="display:flex;gap:8px;margin-top:16px">
+                        <button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
+                        <button class="btn btn-primary login-btn" id="setup-next" style="flex:1">Next</button>
+                    </div>`;
             } else if (currentStep === 'mode') {
                 /* ── Step 2: How are you running PawPoller? ─────────── */
                 body = `
@@ -3110,6 +3155,18 @@ const App = {
 
             document.getElementById('setup-back')?.addEventListener('click', goBack);
 
+            /* Time zone step: say what time it is there, as they type. */
+            const tzInput = document.getElementById('setup-tz');
+            const tzNow = () => {
+                const el = document.getElementById('setup-tz-now');
+                if (!el || !tzInput) return;
+                try {
+                    const t = new Intl.DateTimeFormat('en-AU', { timeZone: tzInput.value.trim(), weekday: 'long', hour: 'numeric', minute: '2-digit' }).format(new Date());
+                    el.textContent = `It's ${t} there now.`;
+                } catch (e) { el.textContent = 'Pick a zone from the list — start typing a city, e.g. Sydney or New York.'; }
+            };
+            if (tzInput) { tzInput.addEventListener('input', tzNow); tzNow(); }
+
             document.getElementById('setup-next')?.addEventListener('click', async () => {
                 if (currentStep === 'mode' && selectedMode === 'standalone') {
                     // Persist standalone mode immediately so the polling
@@ -3117,6 +3174,21 @@ const App = {
                     // closes the wizard early.
                     try { await API.setSetupMode({ mode: 'standalone' }); }
                     catch (err) { console.warn('[Setup] save standalone failed:', err); }
+                }
+                if (currentStep === 'timezone') {
+                    const z = (document.getElementById('setup-tz')?.value || '').trim();
+                    let ok = false;
+                    try { new Intl.DateTimeFormat('en-AU', { timeZone: z }); ok = !!z; } catch (e) { ok = false; }
+                    if (!ok) { zoneError = 'PawPoller does not know that time zone. Pick one from the list.'; chosenZone = z; renderStep(); return; }
+                    try {
+                        await API.savePreferences({ display_timezone: z });
+                    } catch (err) {
+                        zoneError = 'Could not save: ' + (err.message || err); chosenZone = z; renderStep(); return;
+                    }
+                    zoneError = '';
+                    chosenZone = z;
+                    Utils.time.setZone(z);
+                    try { localStorage.setItem('pp-display-tz', z); } catch (e) { /* ignore */ }
                 }
                 if (currentStep === 'archive') {
                     const path = document.getElementById('setup-archive-path')?.value.trim();
@@ -3266,13 +3338,8 @@ const App = {
                 const btn = document.getElementById('setup-finish');
                 btn.disabled = true;
                 btn.textContent = 'Saving...';
-                // A fresh install keeps UTC until someone finds the setting, so Telegram
-                // messages and the digest read hours out. Start from this computer's own
-                // zone; Settings → Preferences still overrides it.
-                try {
-                    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                    if (tz) await API.savePreferences({ display_timezone: tz });
-                } catch (e) { /* never block completion */ }
+                // The time zone was ASKED for on its own step (4.49.0) — it used to be
+                // saved here silently from the browser.
                 try {
                     await API.markSetupComplete();
                     // The run is over; nothing should be restored into a later one.
@@ -3702,7 +3769,7 @@ const App = {
                 (s.recent_comments || []).forEach(item => recentActivity.push(
                     { ...item, _platform: p.code, _type: 'comment' }));
             });
-            recentActivity.sort((a, b) => new Date(b.first_seen_at || 0) - new Date(a.first_seen_at || 0));
+            recentActivity.sort((a, b) => (Utils.time.ms(b.first_seen_at) || 0) - (Utils.time.ms(a.first_seen_at) || 0));
 
             const prefs = await API.getPreferences().catch(() => ({}));
             if (this._stale(token)) return;   // the user moved on while we fetched
@@ -4700,6 +4767,121 @@ const App = {
      * (an older one, or a value already saved) is kept so the current choice can never
      * vanish from the menu; the server falls back to UTC for anything it can't read.
      */
+    /* ── The clock (4.50.0, spec 016 FR-006) ───────────────────────────
+     * The time in the operator's zone + its short name, in the top bar. Ticks on the
+     * minute (not every second — nothing here changes faster). Click → a small panel:
+     * the full date, UTC, whether PawPoller's clock agrees with this device, the next
+     * poll, and a link to change the zone. Escape or a click elsewhere closes it. */
+    _initClock() {
+        const btn = document.getElementById('pp-clock');
+        if (!btn || btn.dataset.wired) return;
+        btn.dataset.wired = '1';
+        const draw = () => {
+            const now = new Date();
+            const t = Utils.time.fmt.time(now), ab = Utils.time.abbr(now);
+            btn.innerHTML = `${Utils.escapeHtml(t)}<span class="clock-abbr"> ${Utils.escapeHtml(ab)}</span>`;
+            btn.setAttribute('aria-label', `Time in ${Utils.time.zoneName().replace(/_/g, ' ')}: ${t}. Show time details`);
+        };
+        const tick = () => { draw(); setTimeout(tick, 60000 - (Date.now() % 60000) + 50); };
+        tick();
+        this._redrawClock = draw;   // a zone change redraws at once
+        btn.addEventListener('click', (e) => { e.stopPropagation(); this._toggleClockPop(btn); });
+    },
+
+    async _toggleClockPop(btn) {
+        let pop = document.getElementById('pp-clock-pop');
+        if (pop) { pop.remove(); btn.setAttribute('aria-expanded', 'false'); return; }
+        const T = Utils.time, now = new Date(), esc = Utils.escapeHtml;
+        pop = document.createElement('div');
+        pop.id = 'pp-clock-pop';
+        pop.className = 'clock-pop';
+        pop.setAttribute('aria-label', 'Time details');
+        pop.innerHTML = `
+            <div class="clock-pop-now">${esc(T.format(now, { weekday: 'long', day: 'numeric', month: 'long' }))} · ${esc(T.fmt.time(now))}</div>
+            <dl>
+                <dt>Time zone</dt><dd>${esc(T.zoneName().replace(/_/g, ' '))} (${esc(T.abbr(now))})</dd>
+                <dt>UTC</dt><dd>${esc(new Intl.DateTimeFormat('en-AU', { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' }).format(now))}</dd>
+                <dt>PawPoller's clock</dt><dd id="clock-pop-server">checking…</dd>
+                <dt>Next poll</dt><dd id="clock-pop-poll">checking…</dd>
+            </dl>
+            <a href="#/settings/polling" class="clock-pop-link">Change time zone →</a>`;
+        document.body.appendChild(pop);
+        const r = btn.getBoundingClientRect();
+        pop.style.top = `${Math.round(r.bottom + 6)}px`;
+        pop.style.left = `${Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, Math.round(r.left)))}px`;
+        btn.setAttribute('aria-expanded', 'true');
+        const close = (ev) => {
+            if (ev && ev.type === 'keydown' && ev.key !== 'Escape') return;
+            if (ev && ev.type === 'click' && pop.contains(ev.target) && !ev.target.closest('a')) return;
+            pop.remove();
+            btn.setAttribute('aria-expanded', 'false');
+            document.removeEventListener('click', close);
+            document.removeEventListener('keydown', close);
+            if (ev && ev.type === 'keydown') btn.focus();
+        };
+        setTimeout(() => { document.addEventListener('click', close); document.addEventListener('keydown', close); }, 0);
+
+        // PawPoller's own clock, from the health reply's Date header (whole seconds).
+        try {
+            const t0 = Date.now();
+            const res = await fetch('/api/health', { cache: 'no-store' });
+            const srv = Utils.time.ms(res.headers.get('Date'));   // an HTTP date, always GMT
+            const el = document.getElementById('clock-pop-server');
+            if (el) {
+                if (isNaN(srv)) el.textContent = 'unknown';
+                else {
+                    const gap = Math.round((srv - (t0 + Date.now()) / 2) / 60000);
+                    el.textContent = Math.abs(gap) < 2 ? 'in step with this device'
+                        : `${Math.abs(gap)} min ${gap > 0 ? 'ahead of' : 'behind'} this device`;
+                }
+            }
+        } catch (e) { const el = document.getElementById('clock-pop-server'); if (el) el.textContent = 'unreachable'; }
+        // The next scheduled poll across every platform.
+        try {
+            const h = await API.getPlatformsHealth();
+            let best = null;
+            Object.entries(h || {}).forEach(([code, e]) => {
+                const t = e && e.next_poll_at ? T.ms(e.next_poll_at) : NaN;
+                if (!isNaN(t) && t > Date.now() - 60000 && (!best || t < best.t)) best = { t, code };
+            });
+            const el = document.getElementById('clock-pop-poll');
+            if (el) el.textContent = best
+                ? `${T.fmt.dateTime(best.t)} (${(this._platformLabels || {})[best.code] || best.code.toUpperCase()})`
+                : 'none scheduled';
+        } catch (e) { const el = document.getElementById('clock-pop-poll'); if (el) el.textContent = 'unknown'; }
+    },
+
+    /* An install still on UTC whose computer says otherwise (installs from before
+     * setup asked — spec 016) gets one offer to switch. Answering either way, or
+     * closing it, is remembered on this browser. */
+    _maybeOfferZone(saved) {
+        let here = '';
+        try { here = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return; }
+        if (!here || here === 'UTC' || (saved && saved !== 'UTC')) return;
+        try { if (localStorage.getItem('pp-tz-offer-done')) return; } catch (e) { return; }
+        if (document.getElementById('tz-offer')) return;
+        const done = () => { try { localStorage.setItem('pp-tz-offer-done', '1'); } catch (e) { /* ignore */ } box.remove(); };
+        const box = document.createElement('div');
+        box.id = 'tz-offer';
+        box.className = 'banner banner-info tz-offer';
+        box.setAttribute('role', 'status');
+        box.innerHTML = `<div class="banner-text">PawPoller shows times in <b>UTC</b>, but this computer is set to
+            <b>${Utils.escapeHtml(here.replace(/_/g, ' '))}</b>. Schedules, analytics and every time on screen use this setting.</div>
+            <button type="button" class="btn btn-sm btn-primary" data-tz-use>Use ${Utils.escapeHtml(here.replace(/_/g, ' '))}</button>
+            <button type="button" class="btn btn-sm btn-outline" data-tz-keep>Keep UTC</button>`;
+        box.querySelector('[data-tz-use]').addEventListener('click', async () => {
+            try {
+                await API.savePreferences({ display_timezone: here });
+                Utils.time.setZone(here);
+                try { localStorage.setItem('pp-display-tz', here); } catch (e) { /* ignore */ }
+                done();
+                if (this.route) this.route();
+            } catch (err) { alert('Failed to save: ' + err.message); }
+        });
+        box.querySelector('[data-tz-keep]').addEventListener('click', done);
+        document.body.appendChild(box);
+    },
+
     _timezoneOptions(current) {
         const esc = (s) => (window.Utils && Utils.escapeHtml ? Utils.escapeHtml(s) : s);
         const pretty = (z) => esc(String(z).replace(/_/g, ' '));
@@ -13899,8 +14081,8 @@ const App = {
                     </div>
                     <div class="settings-row">
                         <div>
-                            <span class="settings-label">Display timezone</span>
-                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Timezone for Telegram messages and timestamps</div>
+                            <span class="settings-label">Time zone</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Every time on screen, schedules, analytics, Telegram and the digest use it</div>
                         </div>
                         <select class="filter-select" id="pref-timezone" style="width:auto">
                             ${App._timezoneOptions(prefs.display_timezone || 'UTC')}
@@ -14532,7 +14714,7 @@ const App = {
                     <div class="settings-row">
                         <div>
                             <span class="settings-label">Send the weekly digest</span>
-                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${digest.last_sent_at ? 'Last sent ' + Utils.escapeHtml(new Date(digest.last_sent_at).toLocaleString()) : 'Not sent yet'}</div>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${digest.last_sent_at ? 'Last sent ' + Utils.escapeHtml(Utils.time.fmt.dateTime(digest.last_sent_at)) : 'Not sent yet'}</div>
                         </div>
                         <label class="toggle-switch">
                             <input type="checkbox" id="digest-enabled" ${digest.enabled ? 'checked' : ''}>
@@ -16898,6 +17080,8 @@ const App = {
             document.getElementById('pref-timezone')?.addEventListener('change', async (e) => {
                 try {
                     await API.savePreferences({ display_timezone: e.target.value });
+                    Utils.time.setZone(e.target.value);
+                    try { localStorage.setItem('pp-display-tz', e.target.value); } catch (e2) { /* ignore */ }
                 } catch (err) {
                     alert('Failed to save: ' + err.message);
                 }
@@ -18342,7 +18526,7 @@ const App = {
                 const kp = document.getElementById('autobk-keep'); if (kp) kp.value = s.keep || 7;
                 const dir = document.getElementById('autobk-dir'); if (dir) dir.textContent = s.dir || '';
                 const last = document.getElementById('autobk-last');
-                if (last) last.textContent = s.last_at ? ('Last run: ' + new Date(s.last_at).toLocaleString()) : 'No auto-backup yet.';
+                if (last) last.textContent = s.last_at ? ('Last run: ' + Utils.time.fmt.dateTime(s.last_at)) : 'No auto-backup yet.';
             };
             fetch('/api/backup/auto').then(r => r.json()).then(_autobkFill).catch(() => {});
             const _autobkSave = async (runNow) => {
@@ -19311,7 +19495,7 @@ const App = {
                     html += `<tr>
                         <td>${Utils.escapeHtml(k.name)}</td>
                         <td><code>${Utils.escapeHtml(k.prefix)}...</code></td>
-                        <td>${k.created ? new Date(k.created).toLocaleDateString() : '—'}</td>
+                        <td>${k.created ? Utils.time.fmt.date(k.created) : '—'}</td>
                         <td><button class="btn btn-danger" data-revoke-prefix="${Utils.escapeHtml(k.prefix)}" style="padding:2px 10px;font-size:12px">Revoke</button></td>
                     </tr>`;
                 }
@@ -20312,10 +20496,7 @@ const App = {
         const s = e.target.closest('[data-wtp-schedule]');
         if (s && window.Posts) {
             e.preventDefault();
-            // datetime-local wants local 'YYYY-MM-DDTHH:MM'.
-            const t = new Date(s.dataset.wtpSchedule);
-            const pad = n => String(n).padStart(2, '0');
-            Posts._scheduleAt = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`;
+            Posts._scheduleAt = Utils.time.toPicker(s.dataset.wtpSchedule);   // wall time in the saved zone
             location.hash = '#/posts/new';
         }
     },
@@ -20598,7 +20779,8 @@ const App = {
         try {
             const [data, insights, tagPerf] = await Promise.all([
                 API.getHistoricalAnalytics({ weeks: 12 }),
-                fetch('/api/analytics/insights?tz_offset=' + (-new Date().getTimezoneOffset()))
+                fetch('/api/analytics/insights?tz_offset=' + (-new Date().getTimezoneOffset())
+                    + '&tz=' + encodeURIComponent(Utils.time.zoneName()))
                     .then(r => r.ok ? r.json() : null).catch(() => null),
                 API.getTagPerformance({ min_works: 3, limit: 30 }).catch(() => null),
             ]);

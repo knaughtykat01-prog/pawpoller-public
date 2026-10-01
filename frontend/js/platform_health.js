@@ -56,7 +56,7 @@
         if (entry.last_poll_status === 'error') return 'error';
         if (entry.last_poll_status === 'running') return 'running';
         if (!entry.last_poll_at) return 'unknown';
-        const last = new Date(entry.last_poll_at).getTime();
+        const last = (window.Utils ? Utils.time.ms(entry.last_poll_at) : NaN);
         if (isNaN(last)) return 'unknown';
         const intervalMs = (entry.interval_minutes || 60) * 60 * 1000;
         if (Date.now() - last > intervalMs * 2) return 'stale';
@@ -65,7 +65,7 @@
 
     function relativePast(iso) {
         if (!iso) return 'never';
-        const t = new Date(iso).getTime();
+        const t = (window.Utils ? Utils.time.ms(iso) : NaN);
         if (isNaN(t)) return 'never';
         const seconds = Math.max(0, Math.round((Date.now() - t) / 1000));
         if (seconds < 60) return `${seconds}s ago`;
@@ -79,7 +79,7 @@
 
     function relativeFuture(iso) {
         if (!iso) return null;
-        const t = new Date(iso).getTime();
+        const t = (window.Utils ? Utils.time.ms(iso) : NaN);
         if (isNaN(t)) return null;
         const delta = Math.round((t - Date.now()) / 1000);
         if (delta <= 0) return 'now';
@@ -193,9 +193,7 @@
         const label = LABELS[code] || code.toUpperCase();
         if (entry.throttled_until) {
             const remaining = relativeFuture(entry.throttled_until);
-            const at = new Date(entry.throttled_until).toLocaleTimeString([], {
-                hour: '2-digit', minute: '2-digit',
-            });
+            const at = Utils.time.fmt.time(entry.throttled_until);
             return {
                 kind: 'throttled',
                 title: `${label} is throttled`,

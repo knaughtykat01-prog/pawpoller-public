@@ -30,7 +30,7 @@ window.Commissions = {
     _dueBadge(c) {
         if (!c.due_date) return '';
         const overdue = c.status !== 'delivered' && c.status !== 'paid'
-            && c.due_date < new Date().toISOString().slice(0, 10);
+            && c.due_date < Utils.time.dayKey(new Date());   // today in the saved zone, not UTC
         return `<span class="comm-due${overdue ? ' comm-due--over' : ''}" title="Due ${this.esc(c.due_date)}">${overdue ? '⚠ ' : ''}due ${this.esc(c.due_date)}</span>`;
     },
 

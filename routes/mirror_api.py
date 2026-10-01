@@ -97,7 +97,7 @@ def mirror_manifest(detail: bool = False):
         raise HTTPException(500, detail=f"Cannot read local stores: {e}")
 
     return {
-        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
         "app_version": config.APP_VERSION,
         "artwork": artwork,
         # 3.19.0. Absent from older servers, so the puller treats a missing
@@ -786,7 +786,7 @@ async def mirror_seed_from(body: dict):
         raise HTTPException(409, detail=f"This server already holds {summary}; seeding would replace all of it "
                                         f"with the desktop's copy. Send confirm: \"replace\" to do it anyway.")
     source_url, api_key = _mirror_target(body)
-    config.save_settings({"mirror_seeded_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+    config.save_settings({"mirror_seeded_at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())})
 
     async def _task():
         try:
@@ -800,13 +800,13 @@ async def mirror_seed_from(body: dict):
             config.save_settings({"mirror_seeded_at": ""})      # let them try again
         finally:
             _pull_state["running"] = False
-            _pull_state["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            _pull_state["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
 
     async with _pull_lock:
         if _pull_state["running"]:
             raise HTTPException(409, detail="A mirror pull is already running.")
         _pull_state.update({"running": True, "phase": "starting", "message": "",
-                            "started_at": time.strftime("%Y-%m-%d %H:%M:%S"), "finished_at": None, "result": None})
+                            "started_at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()), "finished_at": None, "result": None})
     asyncio.get_running_loop().create_task(_task())
     return {"status": "started", "source": source_url}
 
@@ -859,13 +859,13 @@ async def mirror_pull(body: dict):
             _pull_state["result"] = {"error": str(e)}
         finally:
             _pull_state["running"] = False
-            _pull_state["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            _pull_state["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
 
     async with _pull_lock:
         if _pull_state["running"]:
             raise HTTPException(409, detail="A mirror pull is already running.")
         _pull_state.update({"running": True, "phase": "starting", "message": "",
-                            "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "started_at": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
                             "finished_at": None, "result": None})
         asyncio.create_task(_task())
 

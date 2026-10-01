@@ -50,9 +50,11 @@ def _options(current: str, tz: str = "") -> list[dict]:
 
 
 class TestTheWizardSetsIt:
-    def test_finishing_setup_saves_this_computers_zone(self):
-        assert "Intl.DateTimeFormat().resolvedOptions().timeZone" in APP
-        assert "display_timezone: tz" in APP
+    def test_setup_starts_from_this_computers_zone(self):
+        # 4.49.0 (spec 016 FR-008): the wizard ASKS, pre-filled with this computer's zone,
+        # instead of saving it silently at Finish (test_time_zones covers the step).
+        assert "chosenZone = Intl.DateTimeFormat().resolvedOptions().timeZone" in APP
+        assert "API.savePreferences({ display_timezone: z })" in APP
 
     def test_the_hand_picked_city_list_is_gone(self):
         assert "'Sydney (AEST/AEDT)'" not in APP

@@ -2066,6 +2066,17 @@ async def schedule_publish(story_name: str, req: ScheduleRequest):
     }
 
 
+def drip_slots(start_dt, interval_days: int, n: int, zone) -> list[str]:
+    """n stored-UTC slot strings, `interval_days` apart in WALL time in `zone` (4.50.0, spec 016):
+    "every 7 days at 20:00" stays 20:00 across a daylight-saving change. An aware datetime plus a
+    timedelta keeps the wall clock and recomputes the offset; the old 24 h steps in UTC drifted
+    an hour instead."""
+    from datetime import timedelta, timezone
+    local = start_dt.astimezone(zone)
+    return [(local + timedelta(days=interval_days * i)).astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            for i in range(n)]
+
+
 class DripRequest(BaseModel):
     platforms: list[str]          # e.g. ["ib", "sf"]
     start: str                    # ISO 8601 — chapter 1's slot
@@ -2088,7 +2099,7 @@ async def drip_schedule(story_name: str, req: DripRequest):
     campaign can be cancelled as a unit (DELETE /api/posting/drip/{group}).
     """
     import uuid
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
     from posting import story_reader, manager
     from database.db import get_connection
     from database import posting_queries
@@ -2152,11 +2163,12 @@ async def drip_schedule(story_name: str, req: DripRequest):
     total = len(chapters)
     slots = []
     queue_ids = []
+    import config as _config
+    slot_strs = drip_slots(start_dt, req.interval_days, len(chapters), _config.display_zone())
     conn = get_connection()
     try:
         for i, ch in enumerate(chapters):
-            slot_dt = start_dt + timedelta(days=req.interval_days * i)
-            slot_str = slot_dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            slot_str = slot_strs[i]
             slots.append({"chapter": ch, "scheduled_at": slot_str})
             for platform in req.platforms:
                 qid = posting_queries.add_to_queue(

@@ -9,9 +9,7 @@
  */
 
 function _toDate(ts) {
-    if (!ts) return new Date(NaN);
-    const s = String(ts);
-    return new Date(s.endsWith('Z') || s.includes('+') ? s : s + 'Z');
+    return (window.Utils && Utils.time.parse(ts)) || new Date(NaN);   // naive = UTC (spec 016)
 }
 
 /**

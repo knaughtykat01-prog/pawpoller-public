@@ -859,8 +859,7 @@ window.PublishCheck = (function () {
                 if (schedForm) {
                     schedForm.style.display = '';
                     // Default to 1 hour from now, rounded to next 5 minutes
-                    const d = new Date(Date.now() + 3600000);
-                    d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+                    const d = new Date(Math.ceil((Date.now() + 3600000) / 300000) * 300000);
                     if (schedDatetime) {
                         schedDatetime.value = _toLocalISOString(d);
                         schedDatetime.focus();
@@ -1287,8 +1286,8 @@ window.PublishCheck = (function () {
 
     function _relativeTime(dateStr) {
         if (!dateStr) return '';
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return '';
+        const d = Utils.time.parse(dateStr);   // naive = UTC; it used to read as local
+        if (!d) return '';
         const diff = Date.now() - d.getTime();
         if (diff < 0) return 'just now';
         const mins = Math.floor(diff / 60000);
@@ -1298,12 +1297,12 @@ window.PublishCheck = (function () {
         if (hrs < 24) return hrs + 'h ago';
         const days = Math.floor(hrs / 24);
         if (days < 30) return days + 'd ago';
-        return d.toLocaleDateString();
+        return Utils.time.fmt.date(d);
     }
 
     function _logAction(action, platName, chTitle, data) {
         _actionLog.unshift({
-            time: new Date().toLocaleTimeString(),
+            time: Utils.time.fmt.time(new Date()),
             action: action,
             platform: platName,
             chapter: chTitle || 'Full story',
@@ -1620,11 +1619,7 @@ window.PublishCheck = (function () {
     // ── Phase 6f: Scheduling helpers ────────────────────────────
 
     function _toLocalISOString(date) {
-        // Format as YYYY-MM-DDTHH:MM for datetime-local input
-        const pad = n => String(n).padStart(2, '0');
-        return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' +
-            pad(date.getDate()) + 'T' + pad(date.getHours()) + ':' +
-            pad(date.getMinutes());
+        return Utils.time.toPicker(date);   // datetime-local value, in the saved zone
     }
 
     // ── Drip scheduling (gap G1, gap-wave-2 §3) ──────────────────────────────
@@ -1695,11 +1690,11 @@ window.PublishCheck = (function () {
         const startVal = document.getElementById('drip-start')?.value;
         const days = parseInt(document.getElementById('drip-interval')?.value, 10) || 7;
         if (!box) return;
-        const start = new Date(startVal);
-        if (!startVal || isNaN(start.getTime())) { box.textContent = ''; return; }
+        const start = Utils.time.toUtc(startVal);
+        if (!startVal || !start) { box.textContent = ''; return; }
         box.innerHTML = chapters.map((r, i) => {
-            const d = new Date(start.getTime() + i * days * 86400000);
-            return 'Ch ' + r.chapter_index + ' → ' + _escape(d.toLocaleString());
+            const d = Utils.time.toUtc(Utils.time.addDays(startVal, i * days));   // same wall time
+            return 'Ch ' + r.chapter_index + ' → ' + _escape(Utils.time.fmt.dateTime(d));
         }).join(' &nbsp;·&nbsp; ');
     }
 
@@ -1709,8 +1704,8 @@ window.PublishCheck = (function () {
         const startVal = document.getElementById('drip-start')?.value;
         const days = parseInt(document.getElementById('drip-interval')?.value, 10);
         if (!platforms.length) { if (msg) msg.textContent = 'Pick at least one platform.'; return; }
-        const start = new Date(startVal);
-        if (!startVal || isNaN(start.getTime())) { if (msg) msg.textContent = 'Invalid start time.'; return; }
+        const start = Utils.time.toUtc(startVal);
+        if (!startVal || !start) { if (msg) msg.textContent = 'Invalid start time.'; return; }
         // A drip is chapters × platforms in one click and a mis-set interval
         // schedules a month of public posts, so it gets the dialog even though
         // a single schedule does not (spec §10 Q4).
@@ -1718,7 +1713,7 @@ window.PublishCheck = (function () {
             title: _currentStory.replace(/_/g, ' '), subtitle: 'Drip campaign',
             verb: 'Schedule', noun: 'sites',
             warning: 'Every unposted chapter to each site, one slot every ' + (days || 7)
-                + ' day(s), starting ' + start.toLocaleString() + '. Cancellable as a unit from Queue & Schedule.',
+                + ' day(s), starting ' + Utils.time.fmt.dateTime(start) + '. Cancellable as a unit from Queue & Schedule.',
             targets: platforms.map(code => {
                 const p = (window.platformByCode && window.platformByCode(code)) || { label: code, emoji: '' };
                 return { code, label: p.label, emoji: p.emoji };
@@ -1759,8 +1754,8 @@ window.PublishCheck = (function () {
         const draft = draftCb ? draftCb.checked : true;
         const resultBox = document.getElementById('publish-action-result');
 
-        // Convert local datetime-local value to ISO 8601 with timezone
-        const localDate = new Date(datetimeLocalVal);
+        // The datetime-local value is wall time in the saved zone -> a UTC instant.
+        const localDate = Utils.time.toUtc(datetimeLocalVal) || new Date(NaN);
         if (isNaN(localDate.getTime())) {
             if (resultBox) {
                 resultBox.innerHTML = '<div class="publish-action-error">Invalid date/time.</div>';
@@ -1802,12 +1797,12 @@ window.PublishCheck = (function () {
                 throw new Error(data.detail || 'HTTP ' + resp.status);
             }
             if (resultBox) {
-                const when = new Date(data.scheduled_at + 'Z');
+                const when = Utils.time.parse(data.scheduled_at);
                 resultBox.innerHTML =
                     '<div class="publish-action-success">' +
                     '<strong>Scheduled!</strong> ' +
                     _escape(action) + ' to ' + _escape(platName) +
-                    ' at ' + when.toLocaleString() +
+                    ' at ' + Utils.time.fmt.dateTime(when) +
                     ' (queue #' + data.queue_id + ')' +
                     '</div>';
             }
@@ -1819,9 +1814,9 @@ window.PublishCheck = (function () {
             _loadScheduledItems(platId, chIdx);
 
             if (window.toast) {
-                const when = new Date(data.scheduled_at + 'Z');
+                const when = Utils.time.parse(data.scheduled_at);
                 window.toast.success(
-                    `Scheduled: ${chTitle || 'Full story'} → ${platName} at ${when.toLocaleString()}`
+                    `Scheduled: ${chTitle || 'Full story'} → ${platName} at ${Utils.time.fmt.dateTime(when)}`
                 );
             }
             _logAction('schedule', platName, chTitle || 'Full story', { ok: true });
@@ -1874,7 +1869,7 @@ window.PublishCheck = (function () {
 
             for (const item of items) {
                 const when = item.scheduled_at
-                    ? new Date(item.scheduled_at + 'Z').toLocaleString()
+                    ? Utils.time.fmt.dateTime(item.scheduled_at)
                     : 'Immediate';
                 const statusCls = item.status === 'processing' ? 'schedule-processing' : '';
                 html += '<div class="schedule-pending-item ' + statusCls + '">' +

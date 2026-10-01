@@ -302,7 +302,7 @@ window.Laurels = {
         let max = 0;
         Object.keys(data || {}).forEach(k => {
             const e = data[k];
-            const t = (e && e.last_poll_at) ? Date.parse(e.last_poll_at) : 0;
+            const t = (e && e.last_poll_at) ? Utils.time.ms(e.last_poll_at) : 0;
             if (t && t > max) max = t;
         });
         return max || null;
@@ -630,8 +630,8 @@ window.Laurels = {
         (rows || []).forEach(r => {
             const ts = r.created_at || r.first_posted_at || r.posted_at || r.timestamp || r.last_updated_at;
             if (!ts) return;
-            const dt = new Date(ts);
-            if (isNaN(dt)) return;
+            const dt = Utils.time.parse(ts);
+            if (!dt) return;
             active.add(keyOf(dt));
         });
         // Walk back 12 weeks from now
