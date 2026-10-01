@@ -2955,6 +2955,25 @@ def get_analytics_insights(tz_offset: int = 0):
         conn.close()
 
 
+@router.get("/analytics/when-to-post")
+def get_when_to_post(tz_offset: int = 0, tz: str = "", site: str = "", kind: str = "", span: int = 365):
+    """The When-to-post section (spec 015): best windows, site shares, habit vs response,
+    the week grid — bucketed in Settings → Preferences' time zone, else the browser's
+    zone name (tz), else its fixed offset (tz_offset, minutes east of UTC; not DST-aware)."""
+    from database import analytics_queries
+    if kind and kind not in analytics_queries.WHEN_KINDS:
+        raise HTTPException(400, "kind must be artwork, story or post")
+    if site and site not in analytics_queries.INSIGHT_TABLES:
+        raise HTTPException(400, "unknown site")
+    conn = get_connection()
+    try:
+        return analytics_queries.get_when_to_post(
+            conn, zone_name=config.get_settings().get("display_timezone") or tz or None,
+            tz_offset_minutes=tz_offset, site=site, kind=kind, span_days=max(0, span))
+    finally:
+        conn.close()
+
+
 @router.get("/analytics/repost-radar")
 def get_repost_radar(min_age_days: int = 60, limit: int = 25):
     """Older, well-performing artwork worth resurfacing to your feed (gap-wave-6).

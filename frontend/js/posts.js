@@ -114,6 +114,13 @@ window.Posts = {
         } catch (e) { this._contacts = []; }   // tagging is additive — degrade to none
 
         this._renderCompose(document.getElementById('post-compose'));
+        // A time handed over from Analytics → When to post ("Schedule for …"): open the
+        // picker pre-filled. It only pre-fills; nothing is scheduled until Confirm.
+        if (this._scheduleAt) {
+            document.getElementById('post-schedule-form').style.display = '';
+            document.getElementById('post-schedule-datetime').value = this._scheduleAt;
+            this._scheduleAt = null;
+        }
         // An image handed over from the Promo Maker ("💬 Send to Posts"), else
         // re-sync previews for anything still pending from an earlier visit.
         if (this._handoffFiles && this._handoffFiles.length) {

@@ -65,6 +65,17 @@ def test_every_app_theme_meets_aa():
     assert not fails, "\n".join(fails)
 
 
+def test_the_when_to_post_scale_reads_in_every_theme():
+    """Spec 015: the best step of the heat scale stands out from the card (3:1) and from
+    the worst step, in every theme; light themes run the scale the other way round."""
+    fails = []
+    for theme, t in _themes().items():
+        for a, b in (("--heat-5", "--bg-card"), ("--heat-5", "--heat-0")):
+            if ratio(t[a], t[b]) < 3.0:
+                fails.append(f"app:{theme} {a}/{b} {ratio(t[a], t[b]):.2f}<3")
+    assert not fails, "\n".join(fails)
+
+
 # ── Marketing site ───────────────────────────────────────────────────────────
 
 SITE = ROOT / "site"

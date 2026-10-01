@@ -22,6 +22,22 @@
 :root {
     /* ── Backgrounds ─────────────────────────────────────── */
     --bg-primary:    #13111a;
+    /* When to post (spec 015): Magma, worse → better; light themes run it pale → dark. */
+    --heat-0: #3b0f70;
+    --heat-1: #721f81;
+    --heat-2: #b5367a;
+    --heat-3: #e55064;
+    --heat-4: #fb8761;
+    --heat-5: #fec287;
+    /* Okabe–Ito categorical — sites in the ring; words always sit beside them. */
+    --cat-1: #0072b2;
+    --cat-2: #e69f00;
+    --cat-3: #009e73;
+    --cat-4: #cc79a7;
+    --cat-5: #56b4e9;
+    --cat-6: #d55e00;
+    --cat-7: #f0e442;
+    --cat-8: #999999;
     --bg-secondary:  #1c1926;
     --bg-card:       #241f30;
     --bg-tertiary:   #2d2840;
@@ -153,6 +169,12 @@
    component treatment follow in later reskin slices. */
 [data-theme="quill"] {
     --bg-primary:    #f4f0e8;   /* warm paper ground */
+    --heat-0: #fcf3e9;
+    --heat-1: #fecf92;
+    --heat-2: #fe9f6d;
+    --heat-3: #de4968;
+    --heat-4: #8c2981;
+    --heat-5: #3b0f70;
     --bg-secondary:  #faf7f1;
     --bg-card:       #fffdf8;
     --bg-tertiary:   #efe9dd;
@@ -209,6 +231,12 @@
 /* ── Light ───────────────────────────────────────────────── */
 [data-theme="light"] {
     --bg-primary:    #f8f6fb;
+    --heat-0: #fcf3e9;
+    --heat-1: #fecf92;
+    --heat-2: #fe9f6d;
+    --heat-3: #de4968;
+    --heat-4: #8c2981;
+    --heat-5: #3b0f70;
     --bg-secondary:  #ffffff;
     --bg-card:       #ffffff;
     --bg-tertiary:   #f0ecf5;
@@ -265,6 +293,12 @@
 /* ── Parchment (warm sepia paper) ────────────────────────── */
 [data-theme="parchment"] {
     --bg-primary:    #f4ead7;
+    --heat-0: #fcf3e9;
+    --heat-1: #fecf92;
+    --heat-2: #fe9f6d;
+    --heat-3: #de4968;
+    --heat-4: #8c2981;
+    --heat-5: #3b0f70;
     --bg-secondary:  #faf3e3;
     --bg-card:       #faf3e3;
     --bg-tertiary:   #ede1c5;
@@ -411,6 +445,12 @@
    made 2005 look the way it did. */
 [data-theme="retro_2005"] {
     --bg-primary:    #d4d0c8;   /* silver window chrome */
+    --heat-0: #fcf3e9;
+    --heat-1: #fecf92;
+    --heat-2: #fe9f6d;
+    --heat-3: #de4968;
+    --heat-4: #8c2981;
+    --heat-5: #3b0f70;
     --bg-secondary:  #ece9d8;   /* Luna beige panel */
     --bg-card:       #ffffff;   /* white content, like a 2005 page body */
     --bg-tertiary:   #e8e6de;

@@ -20262,9 +20262,199 @@ const App = {
             </div>`;
     },
 
-    /* Benchmarks + best-time sections (gap-wave-3 §2+3). Relative-engagement
-     * buckets: 1.0 = a typical post on that platform; buckets with < 3 posts
-     * are greyed (thin evidence, not advice). */
+    /* When to post (4.48.0, spec 015). Best windows first, then where the audience is,
+     * then your habit against how posts do, the gap between them, and the whole week on
+     * request. Plain maths over your own history (GET /api/analytics/when-to-post);
+     * engagement is relative — 1.0× = a typical post on that site. Filters refetch;
+     * the metric and hour/weekday switches redraw from the data already loaded. */
+    _wtp: { site: '', kind: '', span: 365, metric: 'views', mode: 'hour' },
+    _wtpData: null,
+    _WTP_DAYS: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+
+    async _loadWhenToPost() {
+        const el = document.getElementById('wtp');
+        if (!el) return;
+        const f = this._wtp;
+        let tz = '';
+        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { /* offset only */ }
+        const q = new URLSearchParams({ tz_offset: -new Date().getTimezoneOffset(), tz,
+            site: f.site, kind: f.kind, span: f.span });
+        let d = null;
+        try {
+            const r = await fetch('/api/analytics/when-to-post?' + q);
+            d = r.ok ? await r.json() : null;
+        } catch (e) { d = null; }
+        if (!document.body.contains(el)) return;   // navigated away meanwhile
+        this._wtpData = d;
+        el.innerHTML = d ? this._wtpHtml(d)
+            : '<h3>When to post</h3><p class="muted">Could not load your posting times. Try again shortly.</p>';
+        if (!el.dataset.wired) {
+            el.dataset.wired = '1';
+            el.addEventListener('click', e => this._wtpClick(e));
+            el.addEventListener('change', e => {
+                if (e.target.id === 'wtp-site') { this._wtp.site = e.target.value; this._loadWhenToPost(); }
+            });
+        }
+    },
+
+    _wtpClick(e) {
+        const b = e.target.closest('[data-wtp]');
+        if (b) {
+            const [key, raw] = b.dataset.wtp.split(':');
+            this._wtp[key] = key === 'span' ? parseInt(raw, 10) : raw;
+            if (key === 'metric' || key === 'mode') {
+                document.getElementById('wtp').innerHTML = this._wtpHtml(this._wtpData);
+            } else {
+                this._loadWhenToPost();
+            }
+            return;
+        }
+        const s = e.target.closest('[data-wtp-schedule]');
+        if (s && window.Posts) {
+            e.preventDefault();
+            // datetime-local wants local 'YYYY-MM-DDTHH:MM'.
+            const t = new Date(s.dataset.wtpSchedule);
+            const pad = n => String(n).padStart(2, '0');
+            Posts._scheduleAt = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}`;
+            location.hash = '#/posts/new';
+        }
+    },
+
+    _wtpShade(v) {
+        const i = v < 0.5 ? 0 : v < 0.8 ? 1 : v < 1.05 ? 2 : v < 1.35 ? 3 : v < 1.7 ? 4 : 5;
+        return `var(--heat-${i})`;
+    },
+
+    _wtpSeg(key, opts) {
+        const cur = String(this._wtp[key]);
+        return `<div class="wtp-seg" role="group">${opts.map(([v, label]) =>
+            `<button type="button" data-wtp="${key}:${v}" aria-pressed="${String(v) === cur}">${label}</button>`).join('')}</div>`;
+    },
+
+    _wtpHtml(d) {
+        const esc = Utils.escapeHtml;
+        const f = this._wtp;
+        const hh = h => String(h % 24).padStart(2, '0') + ':00';
+        const x = v => `${Number(v).toFixed(1)}×`;
+        const days = this._WTP_DAYS;
+
+        const siteOpts = [['', 'All sites'], ...(d.sites || []).map(s => [s.code, s.label])]
+            .map(([c, l]) => `<option value="${esc(c)}"${c === f.site ? ' selected' : ''}>${esc(l)}</option>`).join('');
+        const bar = `<div class="wtp-bar">
+            <select id="wtp-site" aria-label="Site" style="width:auto">${siteOpts}</select>
+            ${this._wtpSeg('kind', [['', 'Everything'], ['artwork', 'Artwork'], ['story', 'Stories'], ['post', 'Posts']])}
+            ${this._wtpSeg('span', [[90, '90 days'], [365, '1 year'], [0, 'All']])}
+        </div>`;
+
+        // Best windows (US1)
+        const cards = d.too_few
+            ? `<div class="wtp-card"><div class="when">Not enough history yet</div>
+                 <div class="meta">${d.timed_posts} post${d.timed_posts === 1 ? '' : 's'} with a time here; PawPoller
+                 needs ${d.min_timed} before it names your best times. Widen the filters, or check back later.</div></div>`
+            : (d.windows || []).map((w, i) => `<div class="wtp-card">
+                <div class="meta">Best time #${i + 1}</div>
+                <div class="when">${days[w.day]}<br>${hh(w.h0)}–${hh(w.h1 + 1)}</div>
+                <div class="lift">${Number(w.lift).toFixed(2)}×</div>
+                <div class="meta">a typical post · <span class="wtp-conf">${esc(w.confidence)}</span> · ${w.count} posts</div>
+              </div>`).join('') || '<div class="wtp-card"><div class="meta">No time slot has 3 or more posts yet.</div></div>';
+
+        // Where the audience is (US2)
+        const metricWord = { views: 'views', faves: 'faves', comments: 'comments' }[f.metric];
+        const sh = (d.shares || {})[f.metric] || { total: 0, sites: [] };
+        let arcs = '';
+        if (sh.sites.length === 1) {
+            arcs = `<circle cx="100" cy="100" r="75" fill="none" stroke="var(--cat-1)" stroke-width="34"><title>${esc(sh.sites[0].label)}: 100%</title></circle>`;
+        } else {
+            let a0 = -Math.PI / 2;
+            const P = (a, r) => `${(100 + r * Math.cos(a)).toFixed(2)},${(100 + r * Math.sin(a)).toFixed(2)}`;
+            sh.sites.forEach((s, k) => {
+                const a1 = a0 + (s.value / sh.total) * 2 * Math.PI, big = a1 - a0 > Math.PI ? 1 : 0;
+                arcs += `<path d="M${P(a0, 92)} A92,92 0 ${big} 1 ${P(a1, 92)} L${P(a1, 58)} A58,58 0 ${big} 0 ${P(a0, 58)} Z"
+                    fill="var(--cat-${k + 1})" stroke="var(--bg-tertiary)" stroke-width="2"><title>${esc(s.label)}: ${s.pct}%</title></path>`;
+                a0 = a1;
+            });
+        }
+        const ring = `<div class="wtp-ring">
+            <h4><span>Where your audience is</span>${this._wtpSeg('metric', [['views', 'Views'], ['faves', 'Faves'], ['comments', 'Comments']])}</h4>
+            ${sh.total ? `<svg viewBox="0 0 200 200" width="170" height="170" role="img"
+                aria-label="Share of ${metricWord} by site: ${esc(sh.sites.map(s => `${s.label} ${s.pct}%`).join(', '))}">${arcs}
+                <text x="100" y="98" text-anchor="middle" font-size="22" font-weight="800" fill="var(--text-primary)">${Utils.formatNumber(sh.total)}</text>
+                <text x="100" y="118" text-anchor="middle" font-size="11" fill="var(--text-muted)">${metricWord}, all sites</text></svg>
+              <div class="wtp-legend">${sh.sites.map((s, k) => `<div><i style="background:var(--cat-${k + 1})"></i>
+                <span>${esc(s.label)}</span><strong>${Math.round(s.pct)}%</strong><span class="ab">${Utils.formatNumber(s.value)}</span></div>`).join('')}</div>`
+            : `<p class="muted" style="grid-column:1/-1;margin:0">No ${metricWord} recorded for these filters.${f.metric === 'views' ? ' (e621 and Furbooru count a score, not views — see Faves.)' : ''}</p>`}
+        </div>`;
+
+        // Habit vs response (US3)
+        const byHour = f.mode === 'hour';
+        const B = byHour ? d.hour : d.weekday;
+        const labels = byHour ? B.map((_, h) => (h % 3 === 0 ? String(h).padStart(2, '0') : ''))
+            : days.map(s => s.slice(0, 3));
+        const cols = `grid-template-columns:repeat(${B.length},1fr)`;
+        const hm = Math.max(...B.map(b => b.count), 1);
+        const rm = Math.max(...B.map(b => b.median), 0.01);
+        const name = i => (byHour ? hh(i) : days[i]);
+        const habit = B.map((b, i) => `<div class="habit" style="height:${Math.round(b.count / hm * 100)}%"
+            title="${name(i)}: ${b.count} posts (${Math.round(b.share * 100)}%)"></div>`).join('');
+        const resp = B.map((b, i) => `<div style="height:${Math.round(b.median / rm * 100)}%;background:${this._wtpShade(b.median)};${b.count < 3 ? 'opacity:.35' : ''}"
+            title="${name(i)}: ${x(b.median)} a typical post · ${b.count} posts${b.count < 3 ? ' (too few to trust)' : ''}"></div>`).join('');
+
+        // The gap (US3)
+        let gap = '';
+        const g = d.gap;
+        if (g) {
+            const best = g.best;
+            const bx = `${Number(best.lift).toFixed(2)}×`;   // the card's number, so the two agree (SC-002)
+            const habitRange = `${hh(g.habit_h0)} and ${hh(g.habit_h1 + 1)}`;
+            const pct = Math.round(g.habit_share * 100);
+            const link = g.next_at ? ` — <a href="#/posts/new" data-wtp-schedule="${esc(g.next_at)}" style="font-weight:600;color:var(--accent)">Schedule the next one for ${days[best.day]} ${hh(best.h0)} →</a>` : '';
+            gap = `<div class="wtp-gap">${g.aligned
+                ? `<b>No gap:</b> ${pct}% of your pieces already go up between ${habitRange}, which covers your best time (${days[best.day]} ${hh(best.h0)}–${hh(best.h1 + 1)}, <b>${bx}</b>).${link}`
+                : `<b>The gap:</b> ${pct}% of your pieces go up between ${habitRange}, when posts do <b>${x(g.habit_lift)}</b> a typical post.
+                   Posts on ${days[best.day]} between <b>${hh(best.h0)} and ${hh(best.h1 + 1)}</b> do <b>${bx}</b>${link}`}</div>`;
+        }
+
+        // The whole week (US4)
+        const outlined = new Set((d.windows || []).flatMap(w =>
+            Array.from({ length: w.h1 - w.h0 + 1 }, (_, i) => `${w.day}:${w.h0 + i}`)));
+        const heat = '<div></div>' + Array.from({ length: 24 }, (_, h) =>
+            `<div class="hl">${h % 3 === 0 ? String(h).padStart(2, '0') : ''}</div>`).join('')
+            + d.grid.map((row, di) => `<div class="dl">${days[di].slice(0, 3)}</div>` + row.map((c, h) => {
+                const cls = !c.count ? 'empty' : c.count < 3 ? 'thin' : '';
+                const say = c.count ? `${x(c.median)} a typical post, ${c.count} post${c.count === 1 ? '' : 's'}` : 'no posts';
+                return `<div class="wtp-cell ${cls} ${outlined.has(`${di}:${h}`) ? 'best' : ''}"
+                    style="${c.count ? `background-color:${this._wtpShade(c.median)}` : ''}"
+                    title="${days[di]} ${hh(h)}: ${say}" aria-label="${days[di]} ${hh(h)}: ${say}" role="img"></div>`;
+            }).join('')).join('');
+        const key = `<div class="wtp-key"><span>Worse</span>${[0, 1, 2, 3, 4, 5].map(i =>
+            `<i style="background:var(--heat-${i})"></i>`).join('')}<span>Better</span>
+            <span style="width:12px"></span><i class="wtp-cell thin" style="background-color:var(--heat-3)"></i><span>under 3 posts</span>
+            <span style="width:12px"></span><i class="wtp-cell best" style="background:var(--heat-4)"></i><span>a best time</span></div>`;
+
+        return `
+            <h3 style="margin-bottom:.2rem">When to post</h3>
+            <p class="muted" style="margin:0 0 .6rem;font-size:13px">Each post is compared with a typical post on its own site
+                (1.0× = typical), in ${esc(d.zone)} time. Plain maths over your own history — no AI.</p>
+            ${bar}
+            <div class="wtp-top">
+                <div><div class="wtp-kicker">Your best times</div><div class="wtp-cards">${cards}</div></div>
+                ${ring}
+            </div>
+            <div style="margin-top:20px">
+                <div class="wtp-bar" style="margin-bottom:6px">${this._wtpSeg('mode', [['hour', 'By hour'], ['day', 'By weekday']])}
+                    <span class="muted" style="font-size:12px">your posting habit against how posts actually do</span></div>
+                <div class="wtp-lane"><div><b>When you post</b><div class="muted" style="font-size:12px">share of your pieces</div></div>
+                    <div class="wtp-bars" style="${cols}">${habit}</div></div>
+                <div class="wtp-lane"><div><b>How they do</b><div class="muted" style="font-size:12px">relative engagement</div></div>
+                    <div class="wtp-bars" style="${cols}">${resp}</div></div>
+                <div class="wtp-lane" style="align-items:start"><div></div><div class="wtp-ticks" style="${cols}">${labels.map(l => `<span>${l}</span>`).join('')}</div></div>
+            </div>
+            ${gap}
+            <details style="margin-top:14px"><summary style="cursor:pointer;color:var(--accent);font-weight:600">See the whole week (day × hour)</summary>
+                <div class="wtp-heat">${heat}</div>${key}</details>`;
+    },
+
+    /* Benchmarks (gap-wave-3 §2). The best-time half moved to When to post (spec 015). */
     _insightsHtml(ins) {
         if (!ins || !Object.keys(ins.platforms || {}).length) return '';
         const esc = Utils.escapeHtml;
@@ -20275,18 +20465,6 @@ const App = {
         const plats = Object.entries(ins.platforms).map(([c, p]) => `<tr>
             <td>${esc(c)}</td><td>${Utils.formatNumber(p.median)} ${esc(p.metric)}</td>
             <td class="muted">${p.count} pieces</td></tr>`).join('');
-        const bar = (b, label) => {
-            const thin = b.count < 3;
-            const w = Math.min(100, Math.round((b.median || 0) * 50));
-            return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;${thin ? 'opacity:.35' : ''}"
-                title="${b.count} post(s)"><span style="width:32px;text-align:right">${label}</span>
-                <div style="flex:1;background:var(--bg-hover);border-radius:3px;height:10px">
-                    <div style="width:${w}%;height:10px;border-radius:3px;background:var(--accent)"></div>
-                </div><span class="muted" style="width:58px">${b.median || 0}× · n=${b.count}</span></div>`;
-        };
-        const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        const weekdayBars = (ins.weekday || []).map((b, i) => bar(b, days[i])).join('');
-        const hourBars = (ins.hour || []).map((b, i) => bar(b, String(i).padStart(2, '0'))).join('');
         return `
             <div class="chart-container">
                 <h3>Benchmarks</h3>
@@ -20298,13 +20476,6 @@ const App = {
                 <div class="table-scroll"><table class="data-table">
                     <thead><tr><th>Platform</th><th>Median per piece</th><th>Sample</th></tr></thead>
                     <tbody>${plats}</tbody></table></div>
-            </div>
-            <div class="chart-container">
-                <h3>When your audience responds <span class="muted" style="font-size:.7em">relative engagement by local posting time; greyed = under 3 posts</span></h3>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
-                    <div><h4 style="margin:.2rem 0">By weekday</h4>${weekdayBars}</div>
-                    <div><h4 style="margin:.2rem 0">By hour posted</h4>${hourBars}</div>
-                </div>
             </div>`;
     },
 
@@ -20454,6 +20625,8 @@ const App = {
                     ${Components.highlightCard('Best Month (Comments)', bestMonth.comments ? `+${Utils.formatNumber(bestMonth.comments.delta)}` : '--', bestMonth.comments ? bestMonth.comments.period : '')}
                 </div>
 
+                <div class="chart-container" id="wtp"><h3>When to post</h3><p class="muted">Loading your posting times…</p></div>
+
                 ${fastest.length ? `
                 <div class="chart-container">
                     <h3>Fastest Growing All-Time</h3>
@@ -20488,6 +20661,7 @@ const App = {
 
             if (this._stale(_rt)) return;
             this._setContent(html);
+            this._loadWhenToPost();
 
             let weeklyChart = null;
             if (weekly.length) {

@@ -721,6 +721,220 @@ def get_posting_insights(conn: sqlite3.Connection, tz_offset_minutes: int = 0) -
             "weekday": _buckets(weekday), "hour": _buckets(hour)}
 
 
+# ── When to post (4.48.0, spec 015) ──────────────────────────────────────────
+# The combined timing page: best windows, where the audience is, habit vs response,
+# the day × hour grid. Same relative-engagement maths as get_posting_insights (a post
+# ÷ its site's median of the headline metric), bucketed in the operator's display
+# time zone (DST-correct via zoneinfo). Deterministic; nothing stored.
+WHEN_KINDS = ("artwork", "story", "post")
+_STORY_SITES = {"ao3", "sqw", "wp"}                      # unlinked rows on these → story
+_POST_SITES = {"tw", "bsky", "mast", "tum", "thr", "ig"}  # unlinked microblog rows → post
+_MIN_CELL = 3      # a bucket needs this many posts before it is evidence
+_MIN_TIMED = 20    # below this many timed posts, don't name best windows at all
+
+
+def _when_zone(zone_name, tz_offset_minutes):
+    """(tzinfo, label): the display time zone when it loads, else the browser's fixed
+    offset (a desktop without tzdata, or no zone saved yet — spec 016 removes this)."""
+    from datetime import timezone, timedelta
+    if zone_name:
+        try:
+            from zoneinfo import ZoneInfo
+            return ZoneInfo(zone_name), zone_name
+        except Exception:
+            pass
+    m = abs(tz_offset_minutes)
+    label = f"UTC{'+' if tz_offset_minutes >= 0 else '-'}{m // 60:02d}:{m % 60:02d} (this browser)"
+    return timezone(timedelta(minutes=tz_offset_minutes)), label
+
+
+def _confidence(n: int) -> str:
+    return "sure" if n >= 8 else "fairly sure" if n >= 5 else "early sign"
+
+
+def _best_windows(grid, limit: int = 3) -> list[dict]:
+    """FR-002. grid[day][hour] = list of relative-engagement ratios. Take the best cell
+    with ≥ 3 posts, grow it over neighbouring hours of the same day while each stays
+    within 85 % of it, score the window by the median of every post in it; repeat on
+    what's left. A chosen window and the hour either side of it are spent, so the
+    cards are different choices, never three adjacent hours of one day."""
+    import statistics
+    med = [[statistics.median(c) if len(c) >= _MIN_CELL else None for c in row] for row in grid]
+    used: set = set()
+    out: list[dict] = []
+    while len(out) < limit:
+        seeds = [(med[d][h], d, h) for d in range(7) for h in range(24)
+                 if med[d][h] is not None and (d, h) not in used]
+        if not seeds:
+            break
+        best, d, h = max(seeds, key=lambda s: (s[0], -s[1], -s[2]))   # ties: earliest day, hour
+
+        def ok(x):
+            return (0 <= x < 24 and med[d][x] is not None and (d, x) not in used
+                    and med[d][x] >= 0.85 * best)
+        h0 = h1 = h
+        while ok(h0 - 1):
+            h0 -= 1
+        while ok(h1 + 1):
+            h1 += 1
+        pooled = [r for x in range(h0, h1 + 1) for r in grid[d][x]]
+        out.append({"day": d, "h0": h0, "h1": h1, "lift": round(statistics.median(pooled), 2),
+                    "count": len(pooled), "confidence": _confidence(len(pooled))})
+        used.update((d, x) for x in range(h0 - 1, h1 + 2))
+    out.sort(key=lambda w: -w["lift"])   # stable: equal lifts keep seed order
+    return out
+
+
+def _habit_range(counts: list[int]):
+    """The shortest run of hours (wrapping midnight) holding ≥ 40 % of the posts →
+    (first_hour, last_hour, share), or None with no timed posts."""
+    total = sum(counts)
+    if not total:
+        return None
+    for length in range(1, 25):
+        cover, neg_start = max((sum(counts[(s + i) % 24] for i in range(length)), -s)
+                               for s in range(24))
+        if cover >= 0.4 * total:
+            s = -neg_start
+            return s, (s + length - 1) % 24, cover / total
+    return None   # unreachable: length 24 covers everything
+
+
+def _next_at(zone, day: int, hour: int, now) -> str:
+    """The next `day` at `hour`:00 in `zone`, as a UTC ISO string (for the schedule link)."""
+    from datetime import timedelta, timezone
+    local = now.astimezone(zone)
+    for add in range(8):
+        cand = (local + timedelta(days=add)).replace(hour=hour, minute=0, second=0, microsecond=0)
+        if cand.weekday() == day and cand > local:
+            return cand.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return ""
+
+
+def _shares(totals: dict) -> dict:
+    """Site share of one metric: ranked, the top 6 kept and the rest folded into
+    "Other N sites" once there are more than 7."""
+    ranked = sorted(((v, c) for c, v in totals.items() if v > 0), key=lambda x: (-x[0], x[1]))
+    total = sum(v for v, _ in ranked)
+    keep, rest = (ranked, []) if len(ranked) <= 7 else (ranked[:6], ranked[6:])
+
+    def row(code, label, v):
+        return {"code": code, "label": label, "value": v, "pct": round(100 * v / total, 1)}
+    sites = [row(c, platform_metrics.get(c).label, v) for v, c in keep]
+    if rest:
+        sites.append(row("", f"Other {len(rest)} sites", sum(v for v, _ in rest)))
+    return {"total": total, "sites": sites}
+
+
+def get_when_to_post(conn: sqlite3.Connection, *, zone_name: str | None = None,
+                     tz_offset_minutes: int = 0, site: str = "", kind: str = "",
+                     span_days: int = 365, now=None) -> dict:
+    """Everything the When-to-post section shows, for one set of filters (FR-001).
+
+    site = a platform code or "" (all); kind = artwork / story / post or "" (all);
+    span_days = how far back (0 = all time). A post's kind comes from its publication
+    link where PawPoller knows it, else from the site (story archives → story,
+    microblogs → post, the rest → artwork). Sites that only store a date count in
+    the weekday view only. Imported pieces use the site's own post date (the
+    submission row), never the import date."""
+    import statistics
+    from datetime import datetime, timedelta, timezone
+
+    zone, zone_label = _when_zone(zone_name, tz_offset_minutes)
+    now = now or datetime.now(timezone.utc)
+    since = now - timedelta(days=span_days) if span_days else None
+
+    kinds: dict = {}
+    try:
+        for r in conn.execute("SELECT platform, external_id, content_type FROM publications"
+                              " WHERE external_id != ''"):
+            kinds[(r["platform"], str(r["external_id"]))] = r["content_type"]
+    except sqlite3.OperationalError:
+        pass
+
+    grid = [[[] for _ in range(24)] for _ in range(7)]
+    weekday = [[] for _ in range(7)]
+    hour = [[] for _ in range(24)]
+    totals = {"views": {}, "faves": {}, "comments": {}}
+    present: list[str] = []
+
+    for code, table in INSIGHT_TABLES.items():
+        spec = platform_metrics.get(code)
+        date_col = INSIGHT_DATE_COL.get(code, "posted_at")
+        cols = {"m": INSIGHT_PRIMARY[code], "views": spec.views,   # None for score/engagement sites
+                "faves": spec.faves, "comments": spec.comments}
+        sel = ", ".join(f"{c} AS {k}" if c else f"NULL AS {k}" for k, c in cols.items())
+        try:
+            rows = conn.execute(f"SELECT submission_id AS sid, {sel}, {date_col} AS d"
+                                f" FROM {table}").fetchall()
+        except sqlite3.OperationalError:
+            continue   # table/column missing on this install — skip platform
+        picked = []
+        for r in rows:
+            dt, has_time = _parse_posted(r["d"])
+            if dt is None:
+                continue
+            aware = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+            if since and aware < since:
+                continue
+            k = kinds.get((code, str(r["sid"]))) or (
+                "story" if code in _STORY_SITES else "post" if code in _POST_SITES else "artwork")
+            if kind and k != kind:
+                continue
+            # A date-only value is already the site's calendar day — converting its
+            # midnight would shift it across the date line.
+            picked.append((r, aware.astimezone(zone) if has_time else dt, has_time))
+        if not picked:
+            continue
+        present.append(code)
+        if site and code != site:
+            continue
+        for key in ("views", "faves", "comments"):
+            if cols[key]:
+                totals[key][code] = totals[key].get(code, 0) + sum(max(0, r[key] or 0) for r, _, _ in picked)
+        med = statistics.median([r["m"] or 0 for r, _, _ in picked])
+        if med <= 0:
+            continue
+        for r, local, has_time in picked:
+            ratio = (r["m"] or 0) / med
+            weekday[local.weekday()].append(ratio)
+            if has_time:
+                hour[local.hour].append(ratio)
+                grid[local.weekday()][local.hour].append(ratio)
+
+    def bucket(g, total):
+        return {"median": round(statistics.median(g), 2) if g else 0, "count": len(g),
+                "share": round(len(g) / total, 3) if total else 0}
+    timed = sum(len(g) for g in hour)
+    dated = sum(len(g) for g in weekday)
+    too_few = timed < _MIN_TIMED
+    windows = [] if too_few else _best_windows(grid)
+
+    gap = None
+    habit = _habit_range([len(g) for g in hour])
+    if windows and habit:
+        h0, h1, share = habit
+        hrs = [(h0 + i) % 24 for i in range((h1 - h0) % 24 + 1)]
+        in_habit = [r for x in hrs for r in hour[x]]
+        best = windows[0]
+        gap = {"habit_h0": h0, "habit_h1": h1, "habit_share": round(share, 3),
+               "habit_lift": round(statistics.median(in_habit), 2),
+               "aligned": all(x in hrs for x in range(best["h0"], best["h1"] + 1)),
+               "best": best, "next_at": _next_at(zone, best["day"], best["h0"], now)}
+
+    return {
+        "zone": zone_label, "filters": {"site": site, "kind": kind, "span_days": span_days},
+        "sites": [{"code": c, "label": platform_metrics.get(c).label} for c in present],
+        "posts": dated, "timed_posts": timed, "too_few": too_few, "min_timed": _MIN_TIMED,
+        "windows": windows, "gap": gap,
+        "shares": {k: _shares(v) for k, v in totals.items()},
+        "hour": [bucket(g, timed) for g in hour],
+        "weekday": [bucket(g, dated) for g in weekday],
+        "grid": [[{"median": round(statistics.median(c), 2) if c else 0, "count": len(c)}
+                  for c in row] for row in grid],
+    }
+
+
 # The "gallery" platforms whose submission `posted_at` is the artwork's REAL
 # original post date (what makes a piece "old"). Publications.first_posted_at is
 # the PawPoller *import* date for back-catalogue art — useless for age — so the
