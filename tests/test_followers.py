@@ -146,7 +146,8 @@ class TestClientContract:
             "ws", "da", "wp", "ik", "bsky", "tw", "mast", "pix", "fn", "tg",
             "sc",   # SoundCloud: followers_count on /me (4.22.0)
             "ng",   # Newgrounds: the profile's FANS count (4.23.0)
-            "yt"}   # YouTube: the channel's subscriberCount (4.24.0)
+            "yt",   # YouTube: the channel's subscriberCount (4.24.0)
+            "pic"}  # Picarto: the channel's public follower count (4.46.0)
 
 
 # ── API endpoint ──────────────────────────────────────────────

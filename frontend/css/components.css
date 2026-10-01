@@ -1888,22 +1888,6 @@ a.stat-card:hover {
 .platform-badge.ig { background: #E1306C25; --badge: var(--platform-ig); }
 .platform-badge.e621 { background: #012e5725; --badge: var(--platform-e621); }
 
-/* ── Submissions: discovered-art import suggestion banner ──── */
-.subs-suggest-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-    background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
-    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-    border-radius: var(--radius);
-    padding: 0.8rem 1rem;
-    margin-bottom: 1.25rem;
-    color: var(--text-secondary);
-}
-.subs-suggest-banner strong { color: var(--text-primary); }
-
 /* ── FA Metadata ─────────────────────────────────────────── */
 .fa-metadata {
     display: grid;
@@ -2399,23 +2383,13 @@ a.stat-card:hover {
 .story-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 .story-card { display: flex; flex-direction: column; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; text-decoration: none; color: var(--text-primary); transition: var(--transition); cursor: pointer; }
 .story-card:hover { border-color: var(--accent-dim); transform: translateY(-2px); box-shadow: var(--shadow); }
-.story-card-cover { height: 120px; background-size: cover; background-position: center; }
 .story-card-body { padding: 14px; flex: 1; display: flex; flex-direction: column; }
-.story-card-header { margin-bottom: 8px; }
 .story-card-title { font-size: 1.05rem; font-weight: 600; margin: 0 0 4px; line-height: 1.3; }
-.story-card-meta { display: flex; gap: 6px; flex-wrap: wrap; }
-.story-card-desc { color: var(--text-muted); font-size: 0.85rem; line-height: 1.4; margin-bottom: 10px; flex: 1; }
-.story-card-footer { display: flex; justify-content: space-between; align-items: center; }
-.story-card-stats { font-size: 0.8rem; color: var(--text-muted); }
-.story-card-platforms { display: flex; gap: 3px; }
 .plat-badge { font-size: 0.9rem; opacity: 0.3; }
-.plat-badge.plat-published { opacity: 1; }
 .story-rating { font-size: 0.7rem; padding: 1px 6px; border-radius: var(--radius-pill); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
 .story-rating.rating-explicit { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
 .story-rating.rating-mature { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); }
 .story-rating.rating-general { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
-.story-category { font-size: 0.75rem; color: var(--text-muted); }
-.story-warning { color: var(--warning); }
 
 /* ── Detail-page tabs (2.150.0) ─────────────────────────────
    Reusable tab strip for a detail page's secondary sections, so the page is
@@ -2509,7 +2483,6 @@ a.stat-card:hover {
 /* ── Posting Module: Mobile ──────────────────────────────────── */
 @media (max-width: 768px) {
     .story-card-grid { grid-template-columns: 1fr; }
-    .story-card-cover { height: 80px; }
     .story-detail-cover { height: 140px; }
     .totals-strip { gap: 4px; padding: 12px; }
     .totals-stat { min-width: calc(50% - 4px); }

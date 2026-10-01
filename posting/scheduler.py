@@ -31,6 +31,10 @@ SCHEDULER_CHECK_INTERVAL = 60
 # Runtime mode: set by the calling entry point (main.py or server.py)
 _runtime_mode: str = "server"
 
+# time.monotonic() at the top of each loop round (4.45.5) — /api/health/ready reads
+# it to tell a stalled scheduler from a quiet one. 0.0 = the loop hasn't run yet.
+LAST_TICK: float = 0.0
+
 
 def _instance_id() -> str:
     """Who this process is, for the queue claim's ``claimed_by``.
@@ -89,7 +93,9 @@ async def _scheduler_loop() -> None:
     # Brief startup delay to let other services initialize
     await asyncio.sleep(5)
 
+    global LAST_TICK
     while True:
+        LAST_TICK = time.monotonic()
         try:
             settings = config.get_settings()
             if not settings.get("posting_enabled", False):

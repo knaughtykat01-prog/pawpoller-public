@@ -623,6 +623,7 @@ class AccountUpdate(BaseModel):
     handle: str | None = None
     enabled: bool | None = None
     credentials: dict | None = None
+    never_post: bool | None = None       # FRIENDGUARD (4.45.4)
 
 
 def _accounts_conn():
@@ -666,8 +667,10 @@ async def list_accounts_endpoint(platform: str | None = None):
         adb.seed_default_accounts(conn, config.get_settings())
         rows = adb.list_accounts(conn, platform=platform)
         # Attach per-account stat rollups so the UI can show numbers side by side.
+        never = adb.never_post_ids()
         for r in rows:
             r["stats"] = adb.account_stats(conn, r["account_id"], r["platform"])
+            r["never_post"] = r["account_id"] in never
     finally:
         conn.close()
     return {
@@ -824,6 +827,12 @@ async def update_account_endpoint(account_id: int, req: AccountUpdate):
         conn.close()
     if req.credentials:
         _save_account_credentials(account, req.credentials)
+    if req.never_post is not None:
+        never = adb.never_post_ids()
+        never = never | {account_id} if req.never_post else never - {account_id}
+        config.save_settings({"never_post_account_ids": sorted(never)})
+        logger.info("Account #%s never-post %s", account_id, "on" if req.never_post else "off")
+    account["never_post"] = account_id in adb.never_post_ids()
     return {"ok": True, "account": account}
 
 

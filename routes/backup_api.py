@@ -3,7 +3,8 @@
 A backup is a .zip of the user's own data under DATA_DIR: the SQLite database
 (all analytics, publications, masterpieces, links…), settings.json + the
 encrypted credential vault, and the app-managed media folders (artwork,
-posts_media, and the story-archive when it lives under DATA_DIR). Logs and
+posts_media, stories, inbox, promos, commission_files, podcasts, and the
+story-archive when it lives under DATA_DIR). Logs and
 transient caches (ig_media) are excluded.
 
 Restore is DESTRUCTIVE — it replaces the DB + settings + vault and merges media
@@ -39,7 +40,11 @@ _MAX_BACKUP_BYTES = 2 * 1024 * 1024 * 1024      # 2 GB restore-upload cap
 # files overwrite same-named, existing extras are left alone — never a blind
 # media wipe). ig_media (transient IG image stash) is deliberately not included.
 _BACKUP_FILES = ["pawpoller.db", "settings.json", "settings.vault.json"]
-_BACKUP_DIRS = ["artwork", "posts_media", "story-archive"]
+# BACKUPGAPS (4.45.5): the other folders of the operator's own work — unused uploads, promos,
+# commission files, podcasts, and stories kept under data/. `datamap` routes each path here as
+# "files"; `tests/test_data_classification.py::test_backup_dirs_match_the_registry` holds the two together.
+_BACKUP_DIRS = ["artwork", "posts_media", "story-archive", "stories", "inbox", "promos",
+                "commission_files", "podcasts"]
 
 
 def _data_dir() -> Path:

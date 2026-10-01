@@ -849,6 +849,20 @@ const API = {
     fullYTResync() { return this.post('/api/yt/poll/full-resync'); },
     getYTPollProgress() { return this.get('/api/yt/poll/progress'); },
 
+    /* ── Picarto (spec 013, 4.46.0) — channel name only, no login ─── */
+    getPICStatus() { return this.get('/api/pic/status'); },
+    getPICSummary(params) { return this.get('/api/pic/summary', params); },
+    getPICSubmissions(params) { return this.get('/api/pic/submissions', params); },
+    getPICSubmission(id) { return this.get(`/api/pic/submissions/${encodeURIComponent(id)}`); },
+    getPICAggregate(params) { return this.get('/api/pic/aggregate', params); },
+    getPICPollLog(limit) { return this.get('/api/pic/poll_log', { limit }); },
+    triggerPICPoll() { return this.post('/api/pic/poll/trigger'); },
+    fullPICResync() { return this.post('/api/pic/poll/full-resync'); },
+    getPICPollProgress() { return this.get('/api/pic/poll/progress'); },
+    /* Saves a channel name after Picarto confirms it exists → { status, channel, adult }; 400 if not found. */
+    savePICChannel(data) { return this.post('/api/pic/channel', data); },
+    getPICChannelStatus(accountId) { return this.get('/api/pic/channel/status', accountId ? { account_id: accountId } : undefined); },
+
     /* ── Newgrounds (MEDIAPLATS §5, 4.23.0) ───────────────────────── */
     getNGAuthStatus(accountId) { return this.get('/api/ng/auth/status', accountId ? { account_id: accountId } : undefined); },
     /* A pasted cookie string + username; the route refuses a session signed in as someone else. */
@@ -1179,7 +1193,6 @@ const API = {
     saveTurnstileConfig(data) { return this.post('/api/auth/turnstile-config', data); },
 
     /* ── Posting Module ───────────────────────────────────────── */
-    getPostingStories() { return this.get('/api/posting/stories'); },
     getPostingStory(name) { return this.get(`/api/posting/stories/${encodeURIComponent(name)}`); },
     /* Story board (4.5.0): the editable record + its mtime, the per-site tag
      * view, and recording a hand-posted copy by URL (preview, then confirm). */

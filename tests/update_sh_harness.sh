@@ -102,3 +102,10 @@ FAKE_LOGS='2026-09-30 02:45:00,275 [ERROR] polling.multi_account: ib account 3 (
 
 echo "=== 14. remote text posing as a chain marker does not excuse a later crash"
 FAKE_LOGS='2026-09-30 02:45:00,275 [ERROR] polling.fn_poller: fn poll failed: x\nTraceback (most recent call last):\n  File "c.py"\nValueError: site said:\nDuring handling of the above exception, another exception occurred:\nException in thread worker:\nTraceback (most recent call last):\n  crash' run ./update.sh
+
+echo "=== 15. a timestamped record quoted INSIDE a message is not a record"
+FAKE_LOGS='2026-09-30 10:00:00,1 [ERROR] polling.fn: FN poll failed\nTraceback (most recent call last):\n  File a\nhttpx.HTTPStatusError: 403 body=x | 2026-01-01 00:00:00 [ERROR] polling.z: poll failed\nTraceback (most recent call last):\nRuntimeError: real crash' run ./update.sh
+
+echo "=== 16. a chain marker partway through a line is not Python's"
+FAKE_LOGS='2026-09-30 10:00:00,1 [ERROR] polling.fn: FN poll failed\nTraceback (most recent call last):\n  File a\nhttpx.HTTPStatusError: 403 body: During handling of the above exception\nTraceback (most recent call last):\nRuntimeError: real crash' run ./update.sh
+

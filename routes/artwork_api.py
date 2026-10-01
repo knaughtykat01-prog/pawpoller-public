@@ -895,17 +895,18 @@ async def artwork_sync_upload(file: UploadFile = File(...)):
 async def artwork_sync_push(body: dict):
     """Push the local artwork archive to a remote PawPoller server.
 
-    Body: {
-        "server_url": "http://34.xx.xx.xx:8420",  // optional, uses setting
-        "api_key": "pp_xxxx",                      // optional, uses setting
-        "artwork_name": "Autumn_Study"             // optional, one artwork only
-    }
+    Body: {"artwork_name": "Autumn_Study"}   // optional, one artwork only
+
+    4.46.1 (release review, High — the twin of SYNCPUSH, 4.45.4): the server and key come from
+    settings ONLY, and the name must be one folder directly inside the archive. The body used to
+    name the server (the stored key went wherever it said) and the name wasn't confined, so
+    "../.." packed and sent any folder on the machine.
     """
     import httpx as _httpx
 
     settings = config.get_settings()
-    server_url = body.get("server_url") or settings.get("posting_server_url", "")
-    api_key = body.get("api_key") or settings.get("posting_server_api_key", "")
+    server_url = settings.get("posting_server_url", "")
+    api_key = settings.get("posting_server_api_key", "")
     if not server_url:
         raise HTTPException(400, detail="No server URL configured (posting_server_url).")
 
@@ -918,7 +919,11 @@ async def artwork_sync_push(body: dict):
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
             if art_filter:
+                if not isinstance(art_filter, str):
+                    raise HTTPException(400, detail="Invalid artwork name")
                 art_path = archive_path / art_filter
+                if art_path.name != art_filter or art_path.resolve().parent != archive_path.resolve():
+                    raise HTTPException(400, detail="Invalid artwork name")
                 if not art_path.is_dir():
                     raise HTTPException(404, detail=f"Artwork not found: {art_filter}")
                 tar.add(str(art_path), arcname=art_filter)

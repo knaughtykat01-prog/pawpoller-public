@@ -531,6 +531,7 @@
     border: 1px solid var(--accent);
 }
 .pp-notif-reconnect:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+a.pp-notif-reconnect { text-decoration: none; text-align: center; }   /* the update item's link (4.45.4) */
 .pp-notif-mute:disabled, .pp-notif-reconnect:disabled { opacity: 0.5; cursor: default; }
 
 .pp-notif-item-ico { flex-shrink: 0; width: 18px; text-align: center; line-height: 1.4; }

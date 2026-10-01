@@ -127,6 +127,21 @@ _posters: dict[tuple[str, int | None], PlatformPoster] = {}
 
 def _get_poster(platform: str, account_id: int | None = None) -> PlatformPoster:
     """Get or create a platform poster instance for a specific account."""
+    # FRIENDGUARD (4.45.4): every post, edit and sync builds its poster here, so a
+    # "Never post" account can't be reached by a path that forgot to check.
+    # None = the platform's default account, which is checked too.
+    from database import accounts as accounts_db
+    blocked = accounts_db.never_post_ids()
+    if blocked:
+        aid = account_id
+        if aid is None:
+            conn = get_connection()
+            try:
+                aid = accounts_db.get_default_account_id(conn, platform)
+            finally:
+                conn.close()
+        if aid in blocked:
+            raise ValueError(accounts_db.NEVER_POST_ERROR)
     key = (platform, account_id)
     if key not in _posters:
         if platform == "ib":
@@ -210,7 +225,19 @@ def _resolve_account_id(platform: str, account_id: int | None,
       else the platform's default account, created if missing. ``create=True``
       stays here deliberately; changing it is a behaviour change for every
       existing caller and belongs in its own release.
+
+    Either way a "Never post" account is refused (4.45.4, FRIENDGUARD) — before
+    the poster, so the result reads as a refusal beside the other sites.
     """
+    resolved = _resolve_account_id_unchecked(platform, account_id, persona_id)
+    from database import accounts as accounts_db
+    if resolved is not None and resolved in accounts_db.never_post_ids():
+        raise ValueError(accounts_db.NEVER_POST_ERROR)
+    return resolved
+
+
+def _resolve_account_id_unchecked(platform: str, account_id: int | None,
+                                  persona_id: int | None) -> int:
     if persona_id is not None:
         from database import personas as personas_db
         conn = get_connection()
@@ -1055,7 +1082,11 @@ async def update_story(
         if not ext_id:
             continue
 
-        poster = _get_poster(plat, account_id)
+        try:
+            poster = _get_poster(plat, account_id)
+        except ValueError as e:
+            results.append(_refused(plat, e, chapter_index=ch_idx))
+            continue
         package = story_reader.build_package(story, ch_idx, plat)
         if extras:
             package.extra.update(extras)
@@ -1243,12 +1274,13 @@ async def update_artwork(
 
         # Resolve None → the platform's default account (a concrete id is required
         # for _get_poster / the publication + log writes), mirroring post_artwork.
-        account_id = _resolve_account_id(plat, account_id)
         try:
+            account_id = _resolve_account_id(plat, account_id)
             poster = _get_poster(plat, account_id)
-        except ValueError:
+        except ValueError as e:
             results.append({"platform": plat, "submission_id": ext_id,
-                            "success": False, "skipped": True, "reason": "no poster"})
+                            "success": False, "skipped": True,
+                            "reason": str(e) if "Never post" in str(e) else "no poster"})
             continue
         # Non-editable platforms are post-only — never silently overwrite them.
         # `supports_artwork_edit` catches the subtler case: DeviantArt CAN edit

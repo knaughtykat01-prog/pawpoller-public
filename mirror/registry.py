@@ -58,12 +58,12 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, field
 
-# The 22 platforms that own a submissions/snapshots/poll_log trio. Inkbunny is
+# The 23 platforms that own a submissions/snapshots/poll_log trio. Inkbunny is
 # the unprefixed one — the app began as an Inkbunny analytics tool and those
 # tables kept their original names.
 PLATFORM_PREFIXES = (
     "", "ao3_", "bsky_", "da_", "e621_", "fa_", "fbr_", "fn_", "ig_", "ik_",
-    "mast_", "ng_", "pix_", "sc_", "sf_", "sqw_", "thr_", "tum_", "tw_", "wp_", "ws_", "yt_",
+    "mast_", "ng_", "pic_", "pix_", "sc_", "sf_", "sqw_", "thr_", "tum_", "tw_", "wp_", "ws_", "yt_",
 )
 
 SRV = "SRV"
@@ -154,6 +154,7 @@ _RULES += [
     _srv("ao3_kudos_users", "Poll output (AO3)."),
     _srv("sqw_kudos_users", "Poll output (SquidgeWorld)."),
     _srv("fa_profile_stats", "Poll output (FurAffinity profile counters)."),
+    _srv("pic_channel_snapshots", "Poll output (Picarto channel counters, 4.46.0)."),
     _srv("account_follower_snapshots", "Time series; same reasoning as *_snapshots."),
 ]
 

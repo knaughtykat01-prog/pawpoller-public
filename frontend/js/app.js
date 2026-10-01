@@ -98,6 +98,7 @@ const App = {
     _ngCompareIds: new Set(),
     _ngCompareMetric: 'views',
     _ytSortState: { field: 'views', order: 'desc' },
+    _picSortState: { field: 'posted_at', order: 'desc' },
     _ytCompareIds: new Set(),
     _ytCompareMetric: 'views',
     _fbrSortState: { field: 'score', order: 'desc' },
@@ -869,6 +870,10 @@ const App = {
             }
             const info = await API.checkUpdate().catch(() => ({ available: false, current: '?', latest: '?' }));
             this._renderSidebarVersion(container, info);
+            // The check is what tells the bell (4.45.4) — refresh it now rather than in a minute,
+            // and look again every 6 hours for a dashboard that stays open for days.
+            if (info.available && window.NotificationCenter) NotificationCenter.poll();
+            if (!this._updateRecheck) this._updateRecheck = setInterval(() => this._initSidebarVersion(), 6 * 3600 * 1000);
         } catch {
             container.innerHTML = '';
         }
@@ -882,10 +887,10 @@ const App = {
             // show only the version banner — admin updates via
             // `pawupdate` / `docker compose up --build` on the host.
             const updateBtn = isServer
-                ? `<span class="version-text" title="Update with pawupdate / docker compose --build on the host" style="font-size:10px;color:var(--text-muted)">rebuild on host</span>`
+                ? `<a class="btn-update-now" href="#/settings/about" title="A server install updates on the host — Settings → About says how">How to update</a>`
                 : `<button class="btn-update-now" id="sidebar-update-btn">Update Now</button>`;
             container.innerHTML = `
-                <span class="update-available">v${Utils.escapeHtml(info.latest)} available</span>
+                <a class="update-available" href="#/settings/about"><span aria-hidden="true">⬆</span> v${Utils.escapeHtml(info.latest)} available</a>
                 ${updateBtn}`;
             document.getElementById('sidebar-update-btn')?.addEventListener('click', async () => {
                 if (!confirm('Download and apply the update? The app will restart.')) return;
@@ -1287,6 +1292,12 @@ const App = {
             this.renderYTDetail(parts[2]);
         } else if (parts[0] === 'yt' && parts[1] === 'compare') {
             this.renderYTCompare();
+        } else if (parts[0] === 'pic' && (!parts[1] || parts[1] === '')) {
+            this.renderPICDashboard();
+        } else if (parts[0] === 'pic' && parts[1] === 'submissions' && !parts[2]) {
+            this.renderPICSubmissions();
+        } else if (parts[0] === 'pic' && parts[1] === 'submission' && parts[2]) {
+            this.renderPICDetail(parts[2]);
         } else if (parts[0] === 'fbr' && (!parts[1] || parts[1] === '')) {
             this.renderFBRDashboard();
         } else if (parts[0] === 'fbr' && parts[1] === 'submissions' && !parts[2]) {
@@ -1556,9 +1567,11 @@ const App = {
         const emoji = plat ? plat.emoji : '';
         const color = plat ? plat.color : 'var(--accent)';
         const route = window.platformRoute || ((c, s) => s ? '#/' + c + '/' + s : '#/' + c);
-        const subName = sub === 'subs' ? 'Submissions'
+        // Picarto's "submissions" are recorded streams, with no stats to compare (4.46.0).
+        const isPic = code === 'pic';
+        const subName = sub === 'subs' ? (isPic ? 'Recordings' : 'Submissions')
             : sub === 'compare' ? 'Compare'
-            : sub === 'detail' ? 'Submission' : 'Dashboard';
+            : sub === 'detail' ? (isPic ? 'Recording' : 'Submission') : 'Dashboard';
 
         const crumb = '<a href="#/platforms">Platforms</a> <span class="sep">›</span> '
             + '<a href="' + route(code) + '">' + label + '</a> '
@@ -1568,8 +1581,8 @@ const App = {
             '<a href="' + route(code, sname) + '" class="' + (sub === key ? 'active' : '') + '">' + name + '</a>';
         const subtabs = '<div class="ctx-subtabs">'
             + tab('dash', 'Dashboard', '')
-            + tab('subs', 'Submissions', 'submissions')
-            + tab('compare', 'Compare', 'compare')
+            + tab('subs', isPic ? 'Recordings' : 'Submissions', 'submissions')
+            + (isPic ? '' : tab('compare', 'Compare', 'compare'))
             + '</div>';
 
         const options = (window.PLATFORMS || []).map(p =>
@@ -1798,6 +1811,7 @@ const App = {
                 { key: 'sc', auth: auth.scAuth?.has_credentials, name: 'SoundCloud', statusFn: 'getSCStatus', logFn: 'getSCPollLog', tableFn: 'scPollLogTable' },
                 { key: 'ng', auth: auth.ngAuth?.has_credentials, name: 'Newgrounds', statusFn: 'getNGStatus', logFn: 'getNGPollLog', tableFn: 'ngPollLogTable' },
                 { key: 'yt', auth: auth.ytAuth?.has_credentials, name: 'YouTube', statusFn: 'getYTStatus', logFn: 'getYTPollLog', tableFn: 'ytPollLogTable' },
+                { key: 'pic', auth: auth.picAuth?.has_credentials, name: 'Picarto', statusFn: 'getPICStatus', logFn: 'getPICPollLog', tableFn: 'picPollLogTable' },
                 { key: 'fbr', auth: auth.fbrAuth?.has_credentials, name: 'Furbooru', statusFn: 'getFBRStatus', logFn: 'getFBRPollLog', tableFn: 'fbrPollLogTable' },
                 // Telegram's auth lives in the channel settings, not an
                 // /auth/status route, so its gate reads the health endpoint's
@@ -1968,7 +1982,7 @@ const App = {
     _platformLabels: {
         ib: 'Inkbunny', fa: 'FurAffinity', ws: 'Weasyl', sf: 'SoFurry',
         sqw: 'SquidgeWorld', ao3: 'AO3', da: 'DeviantArt', wp: 'Wattpad',
-        ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon', tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram', e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru', sc: 'SoundCloud', ng: 'Newgrounds', yt: 'YouTube',
+        ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon', tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram', e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru', sc: 'SoundCloud', ng: 'Newgrounds', yt: 'YouTube', pic: 'Picarto',
         tg: 'Telegram',
     },
 
@@ -1980,7 +1994,7 @@ const App = {
         // Mirrors polling/session_check.py::CHECKABLE. Telegram's bot token
         // does not expire, but the bot can be removed from the channel — the
         // check catches that, which is otherwise invisible until a post fails.
-        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt'];
+        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt', 'pic'];
         const LABELS = (window.PlatformHealth && window.PlatformHealth.LABELS) || {};
         const DOT = { valid: 'connected', expired: 'disconnected', error: 'warn', unconfigured: 'muted' };
         const WORD = { valid: 'Valid', expired: 'Expired', error: 'Unverified', unconfigured: 'Not configured' };
@@ -2080,7 +2094,7 @@ const App = {
      * Falls back to the cached snapshot only if the health fetch fails/empty. */
     async _configuredPollCodes() {
         const ALL = ['ib', 'fa', 'ws', 'sf', 'sqw', 'ao3', 'da', 'wp', 'ik',
-            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt'];
+            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt', 'pic'];
         try {
             const health = await API.getPlatformsHealth();
             if (health && typeof health === 'object') {
@@ -2095,7 +2109,7 @@ const App = {
             bsky: a.bskyAuth?.has_credentials, tw: a.twAuth?.has_credentials, mast: a.mastAuth?.has_credentials,
             tum: a.tumAuth?.has_credentials, pix: a.pixAuth?.has_credentials, thr: a.thrAuth?.has_credentials,
             ig: a.igAuth?.has_credentials, e621: a.e621Auth?.has_credentials,
-            fn: a.fnAuth?.has_credentials, fbr: a.fbrAuth?.has_credentials, sc: a.scAuth?.has_credentials, ng: a.ngAuth?.has_credentials, yt: a.ytAuth?.has_credentials,
+            fn: a.fnAuth?.has_credentials, fbr: a.fbrAuth?.has_credentials, sc: a.scAuth?.has_credentials, ng: a.ngAuth?.has_credentials, yt: a.ytAuth?.has_credentials, pic: a.picAuth?.has_credentials,
             // No tgAuth snapshot exists — Telegram is configured through the
             // channel settings rather than an /auth route — so this fallback
             // asks PlatformHealth, which reads the same server-side gate.
@@ -2135,7 +2149,7 @@ const App = {
         if (!confirm(`Full resync re-fetches every ${label} submission from scratch. This can take several minutes and will hit ${label}'s rate limits hard. Continue?`)) return;
         btn.disabled = true;
         btn.textContent = 'Syncing...';
-        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync' };
+        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync' };
         try {
             await API[fns[platform]]();
             btn.textContent = 'Done!';
@@ -2750,6 +2764,7 @@ const App = {
             { key: 'sc', name: 'SoundCloud', emoji: '&#127925;', color: '#ff5500', url: 'https://soundcloud.com/you/apps' },
             { key: 'ng', name: 'Newgrounds', emoji: '&#127916;', color: '#f5a623', url: 'https://www.newgrounds.com/login' },
             { key: 'yt', name: 'YouTube', emoji: '&#128250;', color: '#ff0000', url: 'https://console.cloud.google.com/apis/library/youtube.googleapis.com' },
+            { key: 'pic', name: 'Picarto', emoji: '&#127909;', color: '#2c9dd8', url: 'https://picarto.tv/' },
         ];
 
         /* Detect runtime and pre-load existing state so the wizard can
@@ -3511,7 +3526,7 @@ const App = {
             bsky: () => API.getBSKYSummary(), tw: () => API.getTWSummary(),
             mast: () => API.getMASTSummary(), tum: () => API.getTUMSummary(),
             pix: () => API.getPIXSummary(), thr: () => API.getTHRSummary(), ig: () => API.getIGSummary(),
-            e621: () => API.getE621Summary(), fn: () => API.getFNSummary(), fbr: () => API.getFBRSummary(), sc: () => API.getSCSummary(), ng: () => API.getNGSummary(), yt: () => API.getYTSummary(),
+            e621: () => API.getE621Summary(), fn: () => API.getFNSummary(), fbr: () => API.getFBRSummary(), sc: () => API.getSCSummary(), ng: () => API.getNGSummary(), yt: () => API.getYTSummary(), pic: () => API.getPICSummary(),
             tg: () => API.getTGSummary(),
         };
         const [results, health] = await Promise.all([
@@ -10490,6 +10505,218 @@ const App = {
         }
     },
 
+    // ── Picarto Dashboard / Recordings / Recording detail (spec 013, 4.46.0) ──
+    // The headline numbers are the CHANNEL's (lifetime views, followers, subscribers),
+    // not a sum over recordings — Picarto reports 0 views for every recording, so the
+    // recordings pages show no view figure at all.
+
+    /* 3723456 ms → "1:02:03". Picarto reports recording length in milliseconds. */
+    _picDuration(ms) {
+        const t = Math.round((Number(ms) || 0) / 1000);
+        if (!t) return '';
+        const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+        return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    },
+
+    _picLiveLine(online, lastLive) {
+        if (online) return '<span class="telegram-status connected">&#9679; Live now</span>';
+        if (lastLive) return `<span class="muted">Last live ${Utils.escapeHtml(Utils.timeAgo(lastLive))}</span>`;
+        return '<span class="muted">Not live yet</span>';
+    },
+
+    async renderPICDashboard() {
+        const token = this._routeToken();
+        this._loading();
+        try {
+            const [summary, agg] = await Promise.all([
+                API.getPICSummary({ account_id: this._acctId('pic') }),
+                API.getPICAggregate({ ...Utils.getDateRange(this._dateRange), account_id: this._acctId('pic') }),
+            ]);
+            const snaps = agg.snapshots || [];
+            const health = window.PlatformHealth && window.PlatformHealth.get('pic');
+            const isUnconfigured = health && health.configured === false;
+            const channels = summary.channels || [];
+            // Recordings may legitimately be zero forever (a premium feature), so "no data" means
+            // no channel numbers yet — not no recordings.
+            if (isUnconfigured || (!snaps.length && !summary.total_views && !summary.followers)) {
+                if (this._stale(token)) return;
+                this._setContent(`
+                    ${this._refreshIndicatorHtml()}
+                    <div class="page-header"><h1>Picarto Dashboard</h1></div>
+                    ${Components.platformEmptyState('pic', isUnconfigured ? {} : { reason: 'Picarto is connected but the channel has not been polled yet. The first poll may still be running.' })}
+                `);
+                return;
+            }
+            // growthRateCards speaks views/faves/comments; Picarto's second number is followers.
+            const rates = summary.growth_rates ? Object.fromEntries(Object.entries(summary.growth_rates).map(
+                ([k, r]) => [k, r && { views_per_day: r.views_per_day, faves_per_day: r.followers_per_day }])) : null;
+            const channelTable = channels.length > 1 ? `
+                <div class="chart-container">
+                    <h3>Channels</h3>
+                    <table class="data-table">
+                        <thead><tr><th>Channel</th><th>Views</th><th>Followers</th><th>Subscribers</th><th>Last live</th></tr></thead>
+                        <tbody>${channels.map(c => `
+                            <tr>
+                                <td data-label="Channel">${Utils.escapeHtml(c.name || '')}</td>
+                                <td data-label="Views">${Utils.formatNumber(c.views || 0)}</td>
+                                <td data-label="Followers">${Utils.formatNumber(c.followers || 0)}</td>
+                                <td data-label="Subscribers">${Utils.formatNumber(c.subscribers || 0)}</td>
+                                <td data-label="Last live">${this._picLiveLine(c.online, c.last_live)}</td>
+                            </tr>`).join('')}</tbody>
+                    </table>
+                </div>` : '';
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h1>Picarto Dashboard</h1>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" data-poll="pic">Poll Now</button>
+                        <button class="btn btn-secondary" data-resync="pic">Full Resync</button>
+                        <button class="btn btn-secondary" data-export="pic">Export CSV</button>
+                    </div>
+                </div>
+                <p style="margin:0 0 12px">${this._picLiveLine(summary.online, summary.last_live)}</p>
+                <div class="stats-grid">
+                    ${Components.statCard('Lifetime views', summary.total_views || 0)}
+                    ${Components.statCard('Followers', summary.followers || 0)}
+                    ${Components.statCard('Subscribers', summary.subscribers || 0)}
+                    ${Components.statCard('Recordings', summary.total_submissions || 0, null, '#/pic/submissions')}
+                </div>
+                ${rates ? Components.growthRateCards(rates, { views: 'views/day', faves: 'followers/day', comments: null }) : ''}
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-row">
+                    <div class="chart-container"><h3>Views Over Time</h3><div class="chart-wrap"><canvas id="chart-agg-views"></canvas></div></div>
+                    <div class="chart-container"><h3>Followers Over Time</h3><div class="chart-wrap"><canvas id="chart-agg-followers"></canvas></div></div>
+                </div>
+                ${channelTable}
+            `;
+            if (this._stale(token)) return;
+            this._setContent(html);
+            // Two charts, not one: lifetime views run orders of magnitude above followers,
+            // so on a shared axis the follower line would read as flat.
+            if (snaps.length) {
+                Charts.aggregateLine('chart-agg-views', snaps, ['views']);
+                Charts.aggregateLine('chart-agg-followers', snaps, ['followers']);
+            }
+            this._bindDateRange(() => this.renderPICDashboard());
+            this._startAutoRefresh(() => this.renderPICDashboard());
+        } catch (err) {
+            if (this._stale(token)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading Picarto dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderPICSubmissions() {
+        const _rt = this._routeToken();
+        this._loading();
+        try {
+            const data = await API.getPICSubmissions({
+                sort_by: this._picSortState.field, order: this._picSortState.order, account_id: this._acctId('pic'),
+            });
+            const all = data.submissions || [];
+            // No view figure on purpose: Picarto reports 0 for every recording.
+            const grid = (subs) => {
+                if (!subs.length) return '<div class="empty-state"><p>No recordings match.</p></div>';
+                return `<div class="submission-card-grid">${subs.map(s => {
+                    const thumb = Utils.safeUrl(s.thumbnail_url);
+                    const dur = this._picDuration(s.duration_ms);
+                    return `
+                    <a href="#/pic/submission/${encodeURIComponent(s.submission_id)}" class="submission-card">
+                        ${thumb ? `<div class="submission-card-thumb"><img src="${Utils.escapeHtml(thumb)}" loading="lazy" alt=""></div>` : ''}
+                        <div class="submission-card-body">
+                            ${s.adult ? '<span class="card-type-badge" title="Adult (18+) stream">18+</span>' : ''}
+                            <div class="submission-card-title">${Utils.escapeHtml(s.title || '(untitled)')}</div>
+                            ${dur ? `<div class="submission-card-stats"><span class="submission-card-stat">${dur} <small>long</small></span></div>` : ''}
+                            ${s.posted_at ? `<div class="submission-card-date">${Utils.formatDate(s.posted_at)}</div>` : ''}
+                        </div>
+                    </a>`;
+                }).join('')}</div>`;
+            };
+            const sortKey = `${this._picSortState.field}:${this._picSortState.order}`;
+            const opt = (v, label) => `<option value="${v}" ${sortKey === v ? 'selected' : ''}>${label}</option>`;
+            const html = all.length ? `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header"><h1>Picarto Recordings</h1></div>
+                <div class="toolbar">
+                    <input type="text" class="search-input" id="search-input" placeholder="Search recordings..." aria-label="Search recordings">
+                    <select class="filter-select" id="pic-sort" aria-label="Sort recordings">
+                        ${opt('posted_at:desc', 'Newest')}
+                        ${opt('duration_ms:desc', 'Longest')}
+                        ${opt('title:asc', 'Title')}
+                    </select>
+                </div>
+                <div id="grid-container">${grid(all)}</div>
+            ` : `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header"><h1>Picarto Recordings</h1></div>
+                <div class="empty-state">
+                    <h3>No recordings yet</h3>
+                    <p>Recording past streams is a Picarto premium feature — if it's on for your channel, recordings appear here after the next poll.</p>
+                </div>
+            `;
+            if (this._stale(_rt)) return;
+            this._setContent(html);
+            const sortSel = document.getElementById('pic-sort');
+            if (sortSel) sortSel.addEventListener('change', () => {
+                const [field, order] = sortSel.value.split(':');
+                this._picSortState = { field, order };
+                this.renderPICSubmissions();
+            });
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) searchInput.addEventListener('input', () => {
+                const q = searchInput.value.toLowerCase();
+                document.getElementById('grid-container').innerHTML =
+                    grid(all.filter(s => (s.title || '').toLowerCase().includes(q)));
+            });
+            this._startAutoRefresh(() => this.renderPICSubmissions());
+        } catch (err) {
+            if (this._stale(_rt)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading Picarto recordings</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderPICDetail(postId) {
+        const _rt = this._routeToken();
+        this._loading();
+        try {
+            const [data, pins, allTags] = await Promise.all([
+                API.getPICSubmission(postId),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getTags().catch(() => ({ tags: [] })),
+            ]);
+            const sub = data.submission;
+            const fullId = String(sub.submission_id);
+            const isPinned = (pins.pins || []).some(p => p.platform === 'pic' && String(p.submission_id) === fullId);
+            const currentTags = Array.isArray(sub.tags) ? sub.tags : [];
+            const thumb = Utils.safeUrl(sub.thumbnail_url);
+            const dur = this._picDuration(sub.duration_ms);
+            const link = Utils.safeUrl(sub.link);
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <a href="#/pic/submissions" class="back-link">&larr; Back to Picarto Recordings</a>
+                <div class="detail-header">
+                    ${thumb ? `<img class="detail-thumb" src="${Utils.escapeHtml(thumb)}" alt="" style="max-width:240px;border-radius:8px;margin-right:16px">` : ''}
+                    <div class="detail-info">
+                        <h2>${Utils.escapeHtml(sub.title || '(untitled)')}</h2>
+                        <div class="detail-meta">${sub.username ? 'by ' + Utils.escapeHtml(sub.username) + ' &middot; ' : ''}${Utils.formatDate(sub.posted_at)}${dur ? ' &middot; ' + dur + ' long' : ''}${sub.adult ? ' &middot; <span class="card-type-badge" title="Adult (18+) stream">18+</span>' : ''}</div>
+                        ${link ? `<div class="detail-meta"><a href="${Utils.escapeHtml(link)}" target="_blank" rel="noopener">Watch on Picarto</a></div>` : ''}
+                        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <button class="btn ${isPinned ? 'btn-danger' : 'btn-secondary'} btn-pin" data-platform="pic" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">${isPinned ? 'Unpin' : 'Pin'}</button>
+                            ${currentTags.map(t => Components.tagBadge(t)).join('')}
+                            <button class="btn btn-secondary btn-add-tag" data-platform="pic" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">+ Tag</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            if (this._stale(_rt)) return;
+            this._setContent(html);
+            this._bindDetailPinTag('pic', fullId, allTags.tags || [], () => this.renderPICDetail(postId));
+        } catch (err) {
+            if (this._stale(_rt)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading Picarto recording</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
     async renderE621Dashboard() {
         const token = this._routeToken();
         this._loading();
@@ -12506,7 +12733,7 @@ const App = {
                 // Determine platform badge colour and the correct hash route prefix
                 const badgeMap = { fa: '<span class="platform-badge fa">FA</span>', ws: '<span class="platform-badge ws">WS</span>', sf: '<span class="platform-badge sf">SF</span>', sqw: '<span class="platform-badge sqw">SqW</span>', ao3: '<span class="platform-badge ao3">AO3</span>', da: '<span class="platform-badge da">DA</span>', wp: '<span class="platform-badge wp">WP</span>', ik: '<span class="platform-badge ik">IK</span>', bsky: '<span class="platform-badge bsky">BSKY</span>', tw: '<span class="platform-badge tw">TW</span>', ib: '<span class="platform-badge ib">IB</span>' };
                 const badge = badgeMap[m.platform] || badgeMap.ib;
-                const prefixMap = { fa: '/fa/submission/', ws: '/ws/submission/', sf: '/sf/submission/', sqw: '/sqw/submission/', ao3: '/ao3/submission/', da: '/da/submission/', wp: '/wp/submission/', ik: '/ik/submission/', bsky: '/bsky/submission/', tw: '/tw/submission/', mast: '/mast/submission/', tum: '/tum/submission/', pix: '/pix/submission/', thr: '/thr/submission/', ig: '/ig/submission/', e621: '/e621/submission/', fn: '/fn/submission/', fbr: '/fbr/submission/', sc: '/sc/submission/', ng: '/ng/submission/', yt: '/yt/submission/', ib: '/submission/' };
+                const prefixMap = { fa: '/fa/submission/', ws: '/ws/submission/', sf: '/sf/submission/', sqw: '/sqw/submission/', ao3: '/ao3/submission/', da: '/da/submission/', wp: '/wp/submission/', ik: '/ik/submission/', bsky: '/bsky/submission/', tw: '/tw/submission/', mast: '/mast/submission/', tum: '/tum/submission/', pix: '/pix/submission/', thr: '/thr/submission/', ig: '/ig/submission/', e621: '/e621/submission/', fn: '/fn/submission/', fbr: '/fbr/submission/', sc: '/sc/submission/', ng: '/ng/submission/', yt: '/yt/submission/', pic: '/pic/submission/', ib: '/submission/' };
                 const prefix = prefixMap[m.platform] || prefixMap.ib;
                 return `
                     <tr>
@@ -13056,7 +13283,7 @@ const App = {
         try {
             // Core settings: only fetch what General/Platforms/Telegram/Data/About tabs need.
             // Polling tab data is loaded lazily when the user clicks into it.
-            const [creds, prefs, telegram, tgFeatures, pollPausedState, faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, updateInfo, postingSettings, browserLoginInfo, setupStatus, digest, tgChannel, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, serverUpdate] = await Promise.all([
+            const [creds, prefs, telegram, tgFeatures, pollPausedState, faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, updateInfo, postingSettings, browserLoginInfo, setupStatus, digest, tgChannel, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth, serverUpdate] = await Promise.all([
                 API.getCredentials(),
                 API.getPreferences(),
                 API.getTelegram(),
@@ -13089,6 +13316,7 @@ const App = {
                 API.getSCAuthStatus().catch(() => ({ has_credentials: false, has_app: false, username: '' })),
                 API.getNGAuthStatus().catch(() => ({ has_credentials: false, username: '' })),
                 API.getYTAuthStatus().catch(() => ({ has_credentials: false, has_app: false, username: '' })),
+                API.getPICChannelStatus().catch(() => ({ has_credentials: false, channel: '', has_data: false })),
                 API.getServerUpdateStatus().catch(() => ({ applicable: false, host_agent_installed: false, available: false, in_progress: false })),
             ]);
 
@@ -13106,7 +13334,7 @@ const App = {
             const _pollingOwner = setupStatus.polling_owner || (_isServer ? 'local' : (_isPaired ? 'server' : 'local'));
 
             // Store auth state for lazy-loaded polling tab
-            this._pollingAuth = { faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth };
+            this._pollingAuth = { faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth };
 
             // Store browser login availability for platform connect forms
             const _browserLoginAvailable = browserLoginInfo.available;
@@ -13131,7 +13359,7 @@ const App = {
                     </div>
                     ${App._settingsRailHtml(_settingsPage, {
                         connection: _isServer ? 'server' : (_isPaired ? 'paired' : (_isConnectedPending ? 'restart' : (_setupMode === 'connected' ? 'connected' : 'standalone'))),
-                        platforms: `${[faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth].filter(a => a && (a.has_credentials || a.has_cookies || a.has_key)).length + (creds.username ? 1 : 0)} connected`,
+                        platforms: `${[faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth].filter(a => a && (a.has_credentials || a.has_cookies || a.has_key)).length + (creds.username ? 1 : 0)} connected`,
                         polling: pollPausedState.polling_paused ? 'paused' : (_pollingOwner === 'local' ? (_isServer ? 'this server' : 'this computer') : 'server'),
                         about: updateInfo && updateInfo.current && updateInfo.current !== '?' ? updateInfo.current : '',
                         telegram: telegram.connected ? 'connected' : '',
@@ -15412,6 +15640,41 @@ const App = {
                     </div>
                 </details>
 
+                <details class="settings-accordion" data-platform="pic">
+                    <summary><span class="status-dot ${picAuth.has_credentials ? this._credStatus('pic', picAuth.channel).cls : 'disconnected'}"></span>Picarto${picAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(picAuth.channel || '')}</span>` : ''}</summary>
+                    <div class="accordion-body">
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">PawPoller reads your channel's public numbers — lifetime views, followers, subscribers and your recorded streams. It only needs your channel name; there's no password or login.</p>
+                    ${picAuth.has_credentials ? `
+                    <div class="settings-row">
+                        <div><span class="settings-label">Status</span></div>
+                        ${this._credStatus('pic', picAuth.channel).html}
+                    </div>
+                    <div class="settings-row" style="margin-top:8px">
+                        <div>
+                            <span class="settings-label">Picarto desktop notifications</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Toast + Telegram alerts for Picarto activity</div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="pref-pic-notifications" aria-label="Picarto desktop notifications" ${prefs.pic_notifications_enabled ? 'checked' : ''}>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    ` : ''}
+                    <div style="display:flex;flex-direction:column;gap:4px;max-width:400px;margin-top:12px">
+                        <label for="pic-channel" class="settings-label">Channel name</label>
+                        <input type="text" id="pic-channel" class="search-input" placeholder="Your Picarto channel name" autocomplete="off" spellcheck="false" value="${Utils.escapeHtml(picAuth.channel || '')}">
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="pic-connect-btn">Save</button>
+                        ${picAuth.has_credentials ? `
+                        <button class="btn btn-secondary" id="pic-poll-btn">Picarto Poll Now</button>
+                        <button class="btn btn-secondary" id="pic-resync-btn">Full Resync</button>
+                        ` : ''}
+                        <span id="pic-msg" role="status" aria-live="polite" style="font-size:13px"></span>
+                    </div>
+                    </div>
+                </details>
+
                 <details class="settings-accordion" data-platform="fbr">
                     <summary><span class="status-dot ${fbrAuth.has_credentials ? this._credStatus('fbr', fbrAuth.username).cls : 'disconnected'}"></span>Furbooru${fbrAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(fbrAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
@@ -15696,7 +15959,7 @@ const App = {
                         wp: 'triggerWPPoll', ik: 'triggerIKPoll', bsky: 'triggerBSKYPoll', tw: 'triggerTWPoll',
                         mast: 'triggerMASTPoll', tum: 'triggerTUMPoll', pix: 'triggerPIXPoll',
                         thr: 'triggerTHRPoll', ig: 'triggerIGPoll', e621: 'triggerE621Poll',
-                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', tg: 'triggerTGPoll', sc: 'triggerSCPoll', ng: 'triggerNGPoll', yt: 'triggerYTPoll' };
+                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', tg: 'triggerTGPoll', sc: 'triggerSCPoll', ng: 'triggerNGPoll', yt: 'triggerYTPoll', pic: 'triggerPICPoll' };
                     const codes = await this._configuredPollCodes();
                     const triggers = codes.map(c => API[TRIGGERS[c]]());
                     const results = await Promise.allSettled(triggers);
@@ -15733,7 +15996,7 @@ const App = {
                         wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync',
                         mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync',
                         thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync',
-                        fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync' };
+                        fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync' };
                     const codes = await this._configuredPollCodes();
                     const resyncs = codes.map(c => API[RESYNCS[c]]());
                     const results = await Promise.allSettled(resyncs);
@@ -18007,6 +18270,47 @@ const App = {
             if (fbrResyncBtn) {
                 fbrResyncBtn.addEventListener('click', () => this._pollingTabResync({
                     btn: fbrResyncBtn, msgId: 'fbr-msg', platform: 'fbr', apiMethod: 'fullFBRResync',
+                }));
+            }
+            // ── Picarto (spec 013): save + verify a channel name, poll, resync. No login. ──
+            const picConnectBtn = document.getElementById('pic-connect-btn');
+            if (picConnectBtn) {
+                picConnectBtn.addEventListener('click', async () => {
+                    const msg = document.getElementById('pic-msg');
+                    const channel = document.getElementById('pic-channel').value.trim();
+                    if (!channel) {
+                        msg.textContent = 'Type your channel name first';
+                        msg.style.color = 'var(--danger)';
+                        return;
+                    }
+                    picConnectBtn.disabled = true;
+                    picConnectBtn.textContent = 'Checking...';
+                    msg.textContent = '';
+                    try {
+                        const r = await API.savePICChannel({ channel });
+                        msg.textContent = `Saved — found the channel ${r.channel || channel}${r.adult ? ' (18+ channel)' : ''}`;
+                        msg.style.color = 'var(--success)';
+                        setTimeout(() => this.renderSettings(), 1500);
+                    } catch (err) {
+                        let detail = err.message.replace(/^API \d+:\s*/, '');
+                        try { detail = JSON.parse(detail).detail || detail; } catch {}
+                        msg.textContent = detail;
+                        msg.style.color = 'var(--danger)';
+                        picConnectBtn.textContent = 'Save';
+                        picConnectBtn.disabled = false;
+                    }
+                });
+            }
+            const picPollBtn = document.getElementById('pic-poll-btn');
+            if (picPollBtn) {
+                picPollBtn.addEventListener('click', () => this._pollingTabPoll({
+                    btn: picPollBtn, msgId: 'pic-msg', platform: 'pic', apiMethod: 'triggerPICPoll',
+                }));
+            }
+            const picResyncBtn = document.getElementById('pic-resync-btn');
+            if (picResyncBtn) {
+                picResyncBtn.addEventListener('click', () => this._pollingTabResync({
+                    btn: picResyncBtn, msgId: 'pic-msg', platform: 'pic', apiMethod: 'fullPICResync',
                 }));
             }
             // Danger zone — Uninstall PawPoller

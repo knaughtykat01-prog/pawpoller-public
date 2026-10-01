@@ -360,10 +360,10 @@ const Components = {
                             <span class="growth-val" style="color:var(--danger)">${fmt(r.faves_per_day)}</span>
                             <span class="growth-lbl">${ml.faves}</span>
                         </div>
-                        <div class="growth-metric">
+                        ${ml.comments === null ? '' : `<div class="growth-metric">
                             <span class="growth-val" style="color:var(--success)">${fmt(r.comments_per_day)}</span>
                             <span class="growth-lbl">${ml.comments}</span>
-                        </div>
+                        </div>`}
                     </div>
                 </div>
             `;
@@ -1866,6 +1866,14 @@ const Components = {
         `;
     },
 
+    /* Picarto's poll log (spec 013) — YouTube's columns; "Subs" counts recordings found. */
+    picPollLogTable(polls) {
+        if (!polls || polls.length === 0) {
+            return '<p style="color:var(--text-muted)">No Picarto polls recorded yet.</p>';
+        }
+        return this.ytPollLogTable(polls);
+    },
+
     /* ── Publish confirmation + results (4.1.0) ────────────────────
      *
      * The first reusable modal in the codebase. app.js:15838 says outright
@@ -2835,6 +2843,7 @@ const Components = {
             ib: '\u{1F43E}', fa: '\u{1F98A}', ws: '\u{1F98E}', sf: '\u{1F43A}',
             sqw: '\u{1F991}', ao3: '\u{1F4D6}', da: '\u{1F3A8}', wp: '\u{1F4D9}',
             ik: '\u{1F3AF}', bsky: '\u{1F98B}', tw: '\u{1F426}', mast: '\u{1F418}', tum: '\u{1F4D8}', pix: '\u{1F58C}', thr: '\u{1F9F5}', ig: '\u{1F4F8}', e621: '\u{1F43E}',
+            pic: '\u{1F3A5}',
         };
         const emoji = emojis[code] || '\u{1F517}';
         // Two distinct states:

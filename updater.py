@@ -43,6 +43,22 @@ def is_official_asset(url: str) -> bool:
             and not p.query and not p.fragment)
 
 
+# What the last check found, for the notification bell (4.45.4, routes/api.py
+# get_notifications). The bell polls every minute and GitHub allows 60 unauthenticated
+# calls an hour, so it reads this instead of asking. {"latest", "seen_at"} while a newer
+# release is out; empty otherwise. seen_at is when THIS process first saw that version.
+LATEST: dict = {}
+
+
+def _remember(latest: str, available: bool) -> None:
+    if not available:
+        LATEST.clear()
+    elif LATEST.get("latest") != latest:
+        from datetime import datetime, timezone
+        LATEST.clear()
+        LATEST.update(latest=latest, seen_at=datetime.now(timezone.utc).isoformat())
+
+
 def check_for_update() -> dict:
     """Check GitHub releases for a newer version.
 
@@ -105,6 +121,7 @@ def check_for_update() -> dict:
         # The Windows .exe installer ships for fresh installs and shows
         # up on the website, but isn't what the in-app updater pulls.
         download_url = _pick_update_asset(data.get("assets", []))
+        _remember(latest_tag, available)
 
         return {
             "available": available,

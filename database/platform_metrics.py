@@ -247,6 +247,14 @@ _REGISTRY: tuple[PlatformMetrics, ...] = (
         family="views", views="views", faves="favorites_count", comments="comments_count",
         labels={"faves": "Likes"},
     ),
+    # Picarto (4.46.0, spec 013): the numbers are CHANNEL-level (pic_channel_snapshots) and reach the
+    # dashboard + Overview through /api/pic/summary and /api/pic/aggregate. The registry entry points at
+    # the recordings table, whose `views` Picarto reports as 0 every time — so per-recording roll-ups
+    # (links, sparklines, digests) contribute nothing rather than something invented.
+    PlatformMetrics(
+        code="pic", label="Picarto", table="pic_submissions", snapshots="pic_snapshots",
+        family="views", views="views",
+    ),
     PlatformMetrics(
         code="fbr", label="Furbooru", table="fbr_submissions", snapshots="fbr_snapshots",
         family="score", score="score", faves="favorites_count", comments="comments_count",

@@ -25,6 +25,8 @@ def test_registry_has_all_platforms():
         "ng",
         # YouTube (4.24.0): the channel's uploads' views / likes / comments + subscribers.
         "yt",
+        # Picarto (4.46.0, spec 013): the channel's lifetime views / followers / subscribers + recordings.
+        "pic",
     }
 
 

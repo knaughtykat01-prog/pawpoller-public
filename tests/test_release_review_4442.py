@@ -124,3 +124,17 @@ def test_the_set_aside_vault_is_owner_only(monkeypatch):
     config.get_settings()
     config.save_settings({"theme": "dark"})
     assert any(n.startswith(config.VAULT_PATH.name + ".unreadable-") for n in locked), locked
+
+
+def test_two_set_asides_in_the_same_second_both_survive():
+    """4.45.3: the set-aside name is per-second; a second one gets a counter instead of replacing it."""
+    import datamap
+    for _ in range(2):
+        config.VAULT_PATH.write_text(json.dumps({"version": 1, "encrypted": "garbage"}), encoding="utf-8")
+        config.get_settings()                       # read fails -> flagged unreadable
+        config.save_settings({"theme": "dark"})     # -> set aside
+    kept = sorted(config.VAULT_PATH.parent.glob(config.VAULT_PATH.name + ".unreadable-*"))
+    assert len(kept) == 2, kept
+    for k in kept:                                   # the test vault has a test_ prefix; the real one doesn't
+        real = "settings.vault.json" + k.name.split(config.VAULT_PATH.name, 1)[1]
+        assert datamap.path_class("data/" + real) == "restricted", real

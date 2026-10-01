@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 _LABELS = {
     "ao3": "AO3", "sqw": "SquidgeWorld", "sf": "SoFurry", "e621": "e621", "fbr": "Furbooru",
-    "mast": "Mastodon", "tum": "Tumblr", "bsky": "Bluesky", "pix": "Pixiv", "yt": "YouTube",
+    "mast": "Mastodon", "tum": "Tumblr", "bsky": "Bluesky", "pix": "Pixiv", "yt": "YouTube", "pic": "Picarto",
     "ig": "Instagram", "thr": "Threads", "ng": "Newgrounds", "sc": "SoundCloud", "fn": "FurryNetwork",
     "ik": "Itaku", "wp": "Wattpad", "ws": "Weasyl", "ib": "Inkbunny",
 }
@@ -130,6 +130,12 @@ def _b_yt(c, pk):
                     expires_at=exp)
 
 
+def _b_pic(c, pk):
+    # No proxy kwargs: Picarto's public API is reached directly (verified from the server, 2026-10-01).
+    from clients.pic.client import PicClient
+    return PicClient(c.get("pic_channel", ""))
+
+
 def _b_ig(c, pk):
     from clients.ig.client import IgClient
     return IgClient(access_token=c.get("ig_access_token", ""), user_id=c.get("ig_user_id", ""), **pk)
@@ -205,6 +211,7 @@ PROBES = {
     "pix":  (lambda c: bool(c.get("pix_refresh_token")), _b_pix, "session_str", False),
     "yt":   (lambda c: bool(c.get("yt_client_id") and c.get("yt_client_secret") and c.get("yt_refresh_token")), _b_yt, "session_str", False),
     "ig":   (lambda c: bool(c.get("ig_access_token")), _b_ig, "session_str", False),
+    "pic":  (lambda c: bool(c.get("pic_channel")), _b_pic, "pic", False),
     "thr":  (lambda c: bool(c.get("thr_access_token")), _b_thr, "session_str", False),
     "ng":   (lambda c: bool(c.get("ng_cookie")), _b_ng, "session_dict", False),
     "sc":   (lambda c: bool(c.get("sc_client_id") and c.get("sc_client_secret") and c.get("sc_refresh_token")), _b_sc, "session_str", True),
@@ -222,6 +229,11 @@ async def _run(kind, client, creds) -> dict:
     if kind == "session_str":
         name = await client.validate_session()
         return _ok(name) if name else _invalid("Not logged in — re-enter this account's credentials.")
+    if kind == "pic":                              # Picarto — a channel name, not a login (4.46.0)
+        name = await client.validate_session()
+        if name:
+            return _ok(name, f"Found the Picarto channel {name}.")
+        return _invalid(f"Picarto has no channel called {creds.get('pic_channel', '')!s} — check the spelling.")
     if kind == "session_dict":                     # Newgrounds — the FA-shaped dict, incl. wrong_account
         r = await client.validate_session() or {}
         if r.get("ok"):

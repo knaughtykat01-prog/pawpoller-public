@@ -65,9 +65,9 @@ def test_widths_snap_to_a_few_sizes():
 
 def test_grids_ask_for_thumbnails_and_viewers_do_not():
     """The Library's links come from the server; the viewer and posting must keep
-    asking for the original."""
+    asking for the original. (artwork.js's hub grid, the third caller, was removed
+    in 4.45.5.)"""
     for path, needle in (("routes/submissions_api.py", "&w=400"), ("routes/api.py", "&w=400"),
-                         ("frontend/js/artwork.js", "&w=400"),
                          ("frontend/js/work_picker.js", "&w=400")):
         assert needle in open(path, encoding="utf-8").read(), path
     reader = open("posting/artwork_reader.py", encoding="utf-8").read()

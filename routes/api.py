@@ -38,7 +38,7 @@ from database.db import get_connection, init_db
 from database import (
     queries, fa_queries, ws_queries, sf_queries, sqw_queries, ao3_queries,
     da_queries, wp_queries, ik_queries, bsky_queries, tw_queries, mast_queries, tum_queries, pix_queries, thr_queries, ig_queries,
-    e621_queries, fn_queries, fbr_queries, tg_queries, sc_queries, ng_queries, yt_queries,
+    e621_queries, fn_queries, fbr_queries, tg_queries, sc_queries, ng_queries, yt_queries, pic_queries,
     group_queries, analytics_queries, platform_metrics,
     accounts as accounts_db,
 )
@@ -67,6 +67,62 @@ async def health_check():
     version alone can't say which code is running. update.sh checks it.
     """
     return {"status": "ok", "version": config.APP_VERSION, "commit": config.APP_COMMIT}
+
+
+# /api/health/ready thresholds (4.45.5). The scheduler loops every minute, but one post
+# can hold it for a while (a large video upload), so only a long silence counts.
+_SCHEDULER_STALL_S = 45 * 60
+_DISK_LOW_PCT = 5.0
+
+
+@router.get("/health/ready")
+def health_ready():
+    """Is the app able to do its work, not just answering? (4.45.5, CICDLEARN 5)
+
+    503 + ``problems`` when the database doesn't answer, the data disk is nearly
+    full, or the posting scheduler has gone silent — so a monitor probing this
+    (the Tech Centre's down alert) catches a stuck app, not only a dead one.
+    Numbers only, no names or paths: it answers without a login, like /api/health.
+    ``last_poll_min`` and ``queue_overdue`` are reported but never fail it —
+    polling can be paused and a queue can wait on purpose.
+    """
+    import shutil
+    import time as _t
+    from fastapi.responses import JSONResponse
+    from posting import scheduler
+
+    problems, out = [], {"version": config.APP_VERSION, "commit": config.APP_COMMIT}
+    t0 = _t.perf_counter()
+    try:
+        conn = get_connection()
+        try:
+            conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+            out["db_ms"] = round((_t.perf_counter() - t0) * 1000, 1)
+            last = conn.execute("SELECT MAX(started_at) FROM poll_log").fetchone()[0]
+            out["queue_overdue"] = conn.execute(
+                "SELECT count(*) FROM posting_queue WHERE status = 'pending' "
+                "AND scheduled_at <= datetime('now', '-30 minutes')").fetchone()[0]
+            if last:
+                out["last_poll_min"] = conn.execute(
+                    "SELECT CAST((julianday('now') - julianday(?)) * 1440 AS INTEGER)", (last,)).fetchone()[0]
+        finally:
+            conn.close()
+    except Exception as e:  # noqa: BLE001
+        problems.append(f"database: {type(e).__name__}")
+    try:
+        du = shutil.disk_usage(config.DATA_DIR)
+        out["disk_free_pct"] = round(100 * du.free / du.total, 1)
+        if out["disk_free_pct"] < _DISK_LOW_PCT:
+            problems.append("disk nearly full")
+    except OSError:
+        pass
+    if scheduler.LAST_TICK:
+        out["scheduler_age_s"] = int(_t.monotonic() - scheduler.LAST_TICK)
+        if out["scheduler_age_s"] > _SCHEDULER_STALL_S:
+            problems.append("posting scheduler stalled")
+    out["status"] = "degraded" if problems else "ok"
+    out["problems"] = problems
+    return JSONResponse(out, status_code=503 if problems else 200)
 
 
 # In-memory credentials for "don't remember me" logins.
@@ -334,6 +390,7 @@ _PLATFORM_HEALTH_CONFIG = [
     ("sc",  sc_queries,  "get_sc_last_poll",  "sc_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["sc"]),
     ("ng",  ng_queries,  "get_ng_last_poll",  "ng_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["ng"]),
     ("yt",  yt_queries,  "get_yt_last_poll",  "yt_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["yt"]),
+    ("pic", pic_queries, "get_pic_last_poll", "pic_poll_interval_minutes", accounts_db.DEFAULT_CRED_CHECKS["pic"]),
 ]
 
 
@@ -752,6 +809,23 @@ def get_notifications(limit: int = 40):
             _tconn.close()
     except Exception as e:
         logger.debug("notifications: throttle events skipped: %s", e)
+
+    # A newer PawPoller release (4.45.4). From the last update check, not a fresh one
+    # (see updater.LATEST). A version skipped in Settings → About stays quiet here too.
+    try:
+        _up = dict(updater.LATEST)
+        _skip = str(config.get_settings().get("update_skip_version") or "").strip()
+        if _up.get("latest") and _up["latest"] != _skip:
+            items.append({
+                "timestamp": _up["seen_at"],
+                "platform": "update",
+                "kind": "update",
+                "status": "info",
+                "summary": f"PawPoller {_up['latest']} is available",
+                "detail": f"You have {config.APP_VERSION}. Open Settings → About to update.",
+            })
+    except Exception as e:  # noqa: BLE001
+        logger.debug("notifications: update event skipped: %s", e)
 
     items.sort(key=lambda e: _norm_ts(e.get("timestamp")), reverse=True)
 

@@ -552,6 +552,28 @@
       ],
     },
 
+    // ── Picarto (spec 013, 4.46.0) ───────────────────────────
+    pic: {
+      kind: 'Analytics', difficulty: 'Easy',
+      summary: 'Watch your Picarto channel grow: lifetime views, followers, subscribers, when you were last live, and your recorded streams.',
+      need: ['Your Picarto channel name — nothing else (no password, no login)'],
+      steps: [
+        { t: 'Find your channel name', b: 'Open your channel on Picarto. Your channel name is the last part of the address in your browser: in <code>picarto.tv/YourName</code> it is <b>YourName</b>.',
+          link: { label: 'picarto.tv', url: 'https://picarto.tv' } },
+        { t: 'Paste it into PawPoller', b: 'Go to <b>Settings → Platforms → Picarto</b> and type or paste the name into <b>Channel name</b>.' },
+        { t: 'Click Save', b: 'PawPoller checks with Picarto that the channel exists. You will see <b>Saved — found the channel …</b> with the name spelled the way Picarto spells it, or a message saying no channel by that name was found.' },
+        { t: 'Click Poll now', b: 'Click <b>Picarto Poll Now</b>. After a few seconds your numbers appear on the <b>Picarto</b> dashboard.' },
+      ],
+      paste: 'Settings → Platforms → Picarto → Channel name, then Save',
+      renew: { when: 'Nothing expires', how: 'If you rename your channel on Picarto, type the new name into Settings and click <b>Save</b> again.' },
+      notes: [
+        'The dashboard shows your lifetime channel views, followers and subscribers, a chart of how they change over time, and whether you are live now or when you were last live.',
+        'Recorded streams only appear if <b>recording</b> is turned on for your channel — it is a Picarto premium feature. Without it, the recordings list stays empty, and that is normal.',
+        'Picarto does not count views on individual recordings, so PawPoller does not show a view number for them.',
+        'Adult (18+) channels work exactly the same.',
+      ],
+    },
+
     // ── Trello (commissions board, spec 005) ─────────────────
     // Not a publishing platform, so it has no entry in PLATFORMS and does not
     // appear on the Getting Started hub. Reached from Settings → Trello and from

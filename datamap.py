@@ -233,7 +233,7 @@ def P(name, group, why="", backup="", obsolete=False):
 # uses the bare names. A test checks this matches what init_db actually creates.
 PLATFORM_PREFIXES = (
     "ao3", "bsky", "da", "e621", "fa", "fbr", "fn", "ig", "ik", "mast", "ng", "pix",
-    "sc", "sf", "sqw", "tg", "thr", "tum", "tw", "wp", "ws", "yt",
+    "pic", "sc", "sf", "sqw", "tg", "thr", "tum", "tw", "wp", "ws", "yt",
 )
 
 # ── Tables ────────────────────────────────────────────────────────────────────
@@ -283,6 +283,7 @@ _TABLES = (
     T("snapshots", "Numbers over time", "Inkbunny numbers per poll."),
     T("<P>_snapshots", "Numbers over time", "That site's numbers per poll."),
     T("fa_profile_stats", "Numbers over time", "FurAffinity profile views per poll."),
+    T("pic_channel_snapshots", "Numbers over time", "Picarto channel views, followers and subscribers per poll."),
     T("account_follower_snapshots", "Numbers over time", "Follower counts per poll."),
     T("goals", "Numbers over time", "Milestones you set."),
     # internal — history
@@ -367,7 +368,7 @@ _SETTINGS = (
     # Your handles, in the settings file.
     *(S(k, _HANDLE, identity=True) for k in (
         "fa_username", "ws_username", "e621_username", "fbr_username", "fn_username", "ng_username",
-        "sc_username", "yt_username", "ig_username", "thr_username", "sf_display_name", "mast_handle",
+        "sc_username", "yt_username", "pic_channel", "ig_username", "thr_username", "sf_display_name", "mast_handle",
         "mast_instance_url", "tum_blog", "ig_user_id", "pix_user_id", "thr_user_id", "tg_channel",
         "ao3_target_user", "da_target_user", "ik_target_user", "sqw_target_user", "tw_target_user",
         "wp_target_user", "auth_username", "default_author", "smtp_username", "smtp_from",
@@ -380,7 +381,7 @@ _SETTINGS = (
         "da_client_id", "sc_client_id", "yt_client_id", "dashboard_layout", "discord_announce_on_publish",
         "display_timezone", "email_digest_enabled", "email_digest_interval_days", "hidden_platforms",
         "logs_panel_enabled", "minimize_to_tray", "mirror_auto_check", "mirror_check_interval_minutes",
-        "mobile_mode", "muted_session_codes", "notification_comments_only", "notification_min_faves_delta",
+        "mobile_mode", "muted_session_codes", "never_post_account_ids", "notification_comments_only", "notification_min_faves_delta",
         "notification_min_views_delta", "notifications_enabled", "pawpoller_attribution",
         "pinned_submissions", "poll_interval_minutes", "polling_paused", "polling_paused_platforms",
         "setup_mode", "smtp_host", "smtp_port", "smtp_use_tls", "theme", "tours_seen", "trello",
@@ -456,18 +457,18 @@ _PATHS = (
     P("data/.update-request", _HOUSE, "An update asked for from the dashboard.", backup="derivable"),
     P("data/.update-agent-seen", _HOUSE, "When the update helper last checked in.", backup="derivable"),
     P("data/artwork/", "Unpublished work", "Your artwork files.", backup="files"),
-    P("data/stories/", "Unpublished work", "Your story files.", backup=_BACKUPGAPS),
+    P("data/stories/", "Unpublished work", "Your story files.", backup="files"),
     P("story-archive/", "Unpublished work", "Your story files (desktop default location).", backup="files"),
     P("data/posts_media/", "Unpublished work", "Pictures attached to posts.", backup="files"),
-    P("data/inbox/", "Unpublished work", "Media you uploaded but haven't used yet.", backup=_BACKUPGAPS),
-    P("data/promos/", "Unpublished work", "Promo images and their backgrounds.", backup=_BACKUPGAPS),
+    P("data/inbox/", "Unpublished work", "Media you uploaded but haven't used yet.", backup="files"),
+    P("data/promos/", "Unpublished work", "Promo images and their backgrounds.", backup="files"),
     P("data/ig_pending/", "Unpublished work", "Pictures waiting to go to Instagram.", backup="derivable"),
     P("data/thumbs/", "Unpublished work", "Small copies of covers, remade when needed.", backup="derivable"),
     P("data/trello_covers/", "Your boards", "Card cover images, fetched again from Trello when needed.",
       backup="derivable"),
-    P("data/commission_files/", "People you work with", "Files a commission client sent you.", backup=_BACKUPGAPS),
+    P("data/commission_files/", "People you work with", "Files a commission client sent you.", backup="files"),
     P("helpers/", _HOUSE, "A small program downloaded for the Instagram picture link.", backup="derivable"),
-    P("data/podcasts/", "Your podcast", "Your podcast audio and artwork.", backup=_BACKUPGAPS),
+    P("data/podcasts/", "Your podcast", "Your podcast audio and artwork.", backup="files"),
     P("logs/", "Logs", "The app's logs, with secrets masked.", backup="derivable"),
 )
 
@@ -486,7 +487,7 @@ ROW_RULES = (
 _ACCT = re.compile(r"^acct_\d+_(.+)$")
 
 
-_STAMP = r"\d{8}-\d{6}"   # <stamp>: a UTC time stamp in a file name, 20260930-024500
+_STAMP = r"\d{8}-\d{6}(?:-\d+)?"   # <stamp>: a UTC time stamp in a file name, 20260930-024500[-2]
 
 
 def _compile(entry: Entry) -> re.Pattern | None:

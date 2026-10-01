@@ -37,6 +37,7 @@
     const isFailure = (it) => it.status === 'error' || it.status === 'failed' || it.status === 'partial';
 
     function statusIcon(it) {
+        if (it.kind === 'update') return '⬆';
         if (isFailure(it)) return '✕';
         if (it.status === 'warn') return '⚠';
         if (it.status === 'running') return '⋯';
@@ -97,7 +98,9 @@
             // creds, for platforms with a reconnect spec) + Mute/Unmute (auto-
             // clears on recovery, server-side — the "I know, stop nagging" one).
             let actions = '';
-            if (it.kind === 'session') {
+            if (it.kind === 'update') {
+                actions = `<div class="pp-notif-actions-col"><a class="pp-notif-reconnect" href="#/settings/about">Update</a></div>`;
+            } else if (it.kind === 'session') {
                 const canRc = window.Reconnect && Reconnect.canReconnect(it.platform);
                 actions = `<div class="pp-notif-actions-col">`
                     + (canRc ? `<button class="pp-notif-reconnect" type="button" data-idx="${i}">Reconnect</button>` : '')
@@ -137,7 +140,7 @@
         _panel.querySelector('.pp-notif-close')?.addEventListener('click', () => close());
         _panel.querySelector('.pp-notif-clear')?.addEventListener('click', () => clearAll());
         // Close the dropdown when a link inside it is clicked (SPA navigation).
-        _panel.querySelector('.pp-notif-all')?.addEventListener('click', () => close());
+        _panel.querySelectorAll('a[href^="#/"]').forEach((a) => a.addEventListener('click', () => close()));
         // Mute / unmute a session-health alert (keeps the panel open).
         _panel.querySelectorAll('.pp-notif-mute').forEach((btn) => {
             btn.addEventListener('click', async (e) => {
@@ -185,7 +188,20 @@
     const LIVE_KINDS = new Set(['session', 'sync', 'throttle']);
     let _hwm = '';
 
+    /* A new release is told once per version, with a toast, whether or not this is the
+     * first poll — it's news, not history (4.45.4). Remembered per browser. */
+    function announceUpdate(items) {
+        const it = items.find((x) => x.kind === 'update');
+        if (!it || !window.toast) return;
+        let told = '';
+        try { told = localStorage.getItem('pp-update-told') || ''; } catch (e) { /* storage blocked */ }
+        if (told === it.summary) return;
+        try { localStorage.setItem('pp-update-told', it.summary); } catch (e) { /* storage blocked */ }
+        window.toast.info(it.summary + ' — open the 🔔 or Settings → About to update.', 12000);
+    }
+
     function maybeToast(items) {
+        announceUpdate(items);
         const newest = items.reduce((m, it) => (normTs(it.timestamp) > m ? normTs(it.timestamp) : m), '');
         if (!_seeded) {
             items.forEach((it) => _seen.add(key(it)));

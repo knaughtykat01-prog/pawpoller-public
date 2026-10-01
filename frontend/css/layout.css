@@ -256,7 +256,19 @@
 }
 .sidebar-version .btn-check-update:hover { border-color: var(--accent); color: var(--accent); }
 .sidebar-version .btn-check-update:disabled { opacity: 0.5; cursor: default; }
-.sidebar-version .update-available { color: var(--success); font-weight: 600; }
+/* 4.45.4: a new release is a boxed, clickable line, not a green word you could miss. */
+.sidebar-version .update-available {
+    display: block;
+    color: var(--success);
+    font-weight: 600;
+    text-decoration: none;
+    border: 1px solid var(--success);
+    border-radius: 6px;
+    padding: 4px 8px;
+    margin: 0 8px 4px;
+}
+.sidebar-version .update-available:hover { text-decoration: underline; }
+.sidebar-version a.btn-update-now { text-decoration: none; }
 .sidebar-version .btn-update-now {
     background: var(--success);
     border: none;

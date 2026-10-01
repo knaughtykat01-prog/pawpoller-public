@@ -20,6 +20,10 @@ PUBLISH = [
     ("post", "/api/editor/stories/Some_Story/schedule"), ("post", "/api/editor/stories/Some_Story/drip"),
     ("post", "/api/posts/12/publish"), ("post", "/api/posts/12/schedule"), ("post", "/api/promos/3/announce"),
     ("post", "/api/masterpieces/Some_Piece/sync"), ("post", "/api/podcasts/2/episodes"),
+    # PODLOCK (4.45.4): every podcast write changes the public RSS feed.
+    ("post", "/api/podcasts"), ("patch", "/api/podcasts/2"), ("delete", "/api/podcasts/2"),
+    ("post", "/api/podcasts/2/artwork"), ("patch", "/api/podcasts/episodes/5"),
+    ("delete", "/api/podcasts/episodes/5"),
 ]
 
 
@@ -70,8 +74,13 @@ def test_a_stranger_cannot_mint_a_key_and_walk_past_the_gate(monkeypatch):
     assert r.status_code == 403 and "dashboard password" in r.text
     # The server's own machine can still mint one for a desktop to pair with…
     local = TestClient(dashboard.app, raise_server_exceptions=False, client=("127.0.0.1", 50000))
-    key = local.post("/api/auth/api-keys", json={"name": "paired desktop"}).json()["key"]
-    # …and that key is what lets the paired desktop through, remotely.
-    keyed = TestClient(dashboard.app, raise_server_exceptions=False, headers={"Authorization": f"Bearer {key}"})
-    assert keyed.post("/api/artwork/publish", json={}).status_code == 400          # reached the route
-    assert remote.get("/api/settings/sync").status_code == 403                    # no key, no vault
+    minted = local.post("/api/auth/api-keys", json={"name": "paired desktop"}).json()
+    key = minted["key"]
+    try:
+        # …and that key is what lets the paired desktop through, remotely.
+        keyed = TestClient(dashboard.app, raise_server_exceptions=False, headers={"Authorization": f"Bearer {key}"})
+        assert keyed.post("/api/artwork/publish", json={}).status_code == 400      # reached the route
+        assert remote.get("/api/settings/sync").status_code == 403                # no key, no vault
+    finally:
+        # TESTKEYLEAK (4.45.4): a real key in the shared test settings; later tests must not see it.
+        assert local.delete(f"/api/auth/api-keys/{minted['prefix']}").status_code == 200

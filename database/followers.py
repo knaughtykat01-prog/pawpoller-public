@@ -31,7 +31,8 @@ FOLLOWER_PLATFORMS = {"ws", "da", "wp", "ik", "bsky", "tw", "mast", "pix", "fn",
                       "yt",   # YouTube: the channel's subscriberCount, unless hidden (4.24.0)
                       # Telegram: a channel's subscriber count. The only
                       # per-channel number the Bot API exposes.
-                      "tg"}
+                      "tg",
+                      "pic"}  # Picarto: the channel's public follower count (4.46.0)
 
 
 def ensure_follower_tables(conn: sqlite3.Connection) -> None:

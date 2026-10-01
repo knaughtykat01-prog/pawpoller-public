@@ -104,7 +104,7 @@ def test_update_sh_backs_up_checks_and_rolls_back():
     assert "exit=0" in part(10) and "[healthy, database ok]" in part(10), part(10)
     assert "exit=1" in part(11) and "crashed or failed while starting" in part(11) and "crash" in part(11), part(11)
     # Release review of 4.45.2: nothing may make a real crash look handled.
-    for n in (12, 13, 14):
+    for n in (12, 13, 14, 15, 16):            # 15/16: 4.45.3, remote text can't fake a record or a marker
         assert "exit=1" in part(n) and "crashed or failed while starting" in part(n), part(n)
     eight = part(8)          # the checkout was pulled to B, but A is what runs: going back means A
     import re

@@ -195,6 +195,14 @@ def test_backup_coverage():
             assert route[4:] in rows, f"{e.name}: {route} names no backlog row"
 
 
+def test_backup_dirs_match_the_registry():
+    """BACKUPGAPS (4.45.5): every data/ folder the registry routes to "files" is in the backup, and back."""
+    from routes import backup_api
+    registry = {e.name[len("data/"):-1] for e in datamap.ENTRIES
+                if e.kind == "path" and e.name.startswith("data/") and e.name.endswith("/") and e.backup_route == "files"}
+    assert registry == set(backup_api._BACKUP_DIRS) - {"story-archive"}, registry ^ set(backup_api._BACKUP_DIRS)
+
+
 def test_the_registry_is_well_formed_and_holds_no_personal_data():
     seen = set()
     for e in datamap.ENTRIES:

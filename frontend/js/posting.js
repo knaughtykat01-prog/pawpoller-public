@@ -7,9 +7,8 @@
  *
  * The Stories HUB (#/posting) is RETIRED (2.155.0, backlog L): it was /api/works
  * filtered to stories with no search/sort — a strict subset of the Library's
- * Stories segment, linking to the same detail page below. The route redirects to
- * #/library/type/story, so `renderUpload()` here is unreachable; it's kept only
- * as a port source and is tracked for removal (backlog L2).
+ * Stories segment. The route redirects to #/library/type/story; its
+ * `renderUpload()` card grid was removed in 4.45.5 (backlog L2).
  */
 
 /* ── File-size formatter ─────────────────────────────────────
@@ -71,92 +70,10 @@ const PLATFORM_LABELS = {
     inkbunny: '🐾 Inkbunny', furaffinity: '🦊 FurAffinity', weasyl: '🦎 Weasyl',
     sofurry: '🐺 SoFurry', squidgeworld: '🦑 SquidgeWorld', ao3: '📖 AO3', deviantart: '🎨 DeviantArt', itaku: '🎯 Itaku', bluesky: '🦋 Bluesky', wattpad: '📙 Wattpad',
 };
-const PLATFORM_EMOJI = {
-    ib: '🐾', fa: '🦊', ws: '🦎', sf: '🐺', sqw: '🦑', ao3: '📖', da: '🎨', ik: '🎯', bsky: '🦋', wp: '📙',
-    inkbunny: '🐾', furaffinity: '🦊', weasyl: '🦎', sofurry: '🐺', squidgeworld: '🦑', ao3: '📖', deviantart: '🎨', itaku: '🎯', bluesky: '🦋', wattpad: '📙',
-};
-const PLAT_ID = { inkbunny: 'ib', furaffinity: 'fa', weasyl: 'ws', sofurry: 'sf', squidgeworld: 'sqw', ao3: 'ao3', deviantart: 'da', itaku: 'ik', bluesky: 'bsky', wattpad: 'wp' };
 
 const Posting = {
 
-    /* ── 1. Stories Hub (Card Grid) ──────────────────────────── */
-    async renderUpload() {
-        const _rt = App._routeToken();   // route race guard (App._stale)
-        if (App._stale(_rt)) return;
-        App._setContent('<div class="page-header"><h1>Stories</h1></div><div class="loading">Loading stories...</div>');
-
-        try {
-            const { stories } = await API.getPostingStories();
-
-            if (!stories.length) {
-                if (App._stale(_rt)) return;
-                App._setContent(`
-                    <div class="page-header"><h1>Stories</h1></div>
-                    <div class="empty-state"><h3>No stories found</h3><p>Sync your archive with <code>pawsync.bat</code></p></div>`);
-                return;
-            }
-
-            const cards = stories.map(s => {
-                const title = Utils.escapeHtml(s.title || s.name.replace(/_/g, ' '));
-                const words = (s.word_count || 0).toLocaleString();
-                const chs = s.chapters || 0;
-                const rating = s.rating ? `<span class="story-rating rating-${s.rating}">${s.rating}</span>` : '';
-                const category = s.category ? `<span class="story-category">${Utils.escapeHtml(s.category)}</span>` : '';
-
-                // Platform badges
-                const published = s.published_platforms || [];
-                const available = (s.platforms || []).map(p => PLAT_ID[p] || p);
-                const platformBadges = available.map(p => {
-                    const emoji = PLATFORM_EMOJI[p] || '📦';
-                    const isPublished = published.includes(p);
-                    return `<span class="plat-badge ${isPublished ? 'plat-published' : 'plat-available'}" title="${isPublished ? 'Published' : 'Not uploaded'}">${emoji}</span>`;
-                }).join('');
-
-                // Cover image. Sub-story names contain a slash
-                // (e.g. My_Story/Nice_Version) and image paths can be
-                // nested (Images/cover.png), so both go through encodeURIComponent
-                // and ride as query params on /api/posting/image rather than path
-                // segments — keeps the round-trip unambiguous.
-                const coverSrc = s.images && s.images.cover
-                    ? `/api/posting/image?story=${encodeURIComponent(s.name)}&file=${encodeURIComponent(s.images.cover)}`
-                    : '';
-                const coverHtml = coverSrc ? `<div class="story-card-cover" style="background-image:url('${coverSrc}')"></div>` : '';
-
-                // Description
-                const desc = s.description ? Utils.escapeHtml(s.description.substring(0, 120)) + (s.description.length > 120 ? '...' : '') : '';
-
-                // Warnings
-                const warnings = (s.warnings || []).length > 0
-                    ? `<span class="story-warning" title="${Utils.escapeHtml(s.warnings.join(', '))}">⚠</span>` : '';
-
-                return `
-                    <a href="#/library/work/${Utils.escapeHtml(s.name)}" class="story-card">
-                        ${coverHtml}
-                        <div class="story-card-body">
-                            <div class="story-card-header">
-                                <h3 class="story-card-title">${title} ${warnings}</h3>
-                                <div class="story-card-meta">${rating} ${category}</div>
-                            </div>
-                            <p class="story-card-desc">${desc}</p>
-                            <div class="story-card-footer">
-                                <span class="story-card-stats">${words} words${chs > 0 ? ` · ${chs} ch` : ''}</span>
-                                <div class="story-card-platforms">${platformBadges}</div>
-                            </div>
-                        </div>
-                    </a>`;
-            }).join('');
-
-            if (App._stale(_rt)) return;
-            App._setContent(`
-                <div class="page-header"><h1>Stories</h1>
-                    <p class="page-subtitle">${stories.length} stories in archive</p>
-                </div>
-                <div class="story-card-grid">${cards}</div>`);
-        } catch (err) {
-            if (App._stale(_rt)) return;
-            App._setContent(`<div class="error-state"><h3>Error loading stories</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
-        }
-    },
+    /* ── 1. Stories Hub — renderUpload() removed in 4.45.5 (backlog L2) ── */
 
     /* ── 2. Story Detail Page ────────────────────────────────── */
     /* renderStoryDetail (the tabbed story page) was deleted in 4.5.0 — the

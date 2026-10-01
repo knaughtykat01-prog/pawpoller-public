@@ -42,6 +42,7 @@ from routes.fn_api import fn_router
 from routes.sc_api import sc_router
 from routes.ng_api import ng_router
 from routes.yt_api import yt_router
+from routes.pic_api import pic_router
 from routes.fbr_api import fbr_router
 from routes.tg_api import tg_router
 from routes.posting_api import posting_router
@@ -473,6 +474,7 @@ def _is_rate_limited(ip: str) -> bool:
 
 _AUTH_EXEMPT_PATHS = frozenset({
     "/api/health",
+    "/api/health/ready",         # 4.45.5: numbers only, for a monitor (the Tech Centre probe)
     "/api/auth/dashboard-status",
     "/api/auth/dashboard-login",
     "/api/auth/dashboard-setup",
@@ -519,6 +521,9 @@ _SENSITIVE_WHEN_OPEN_PREFIXES = (
     # archive, which is a write primitive, not just a read.
     "/api/mirror",
     "/api/artwork/sync/upload",
+    # 4.46.1, release review: the two PUSH routes send the archive and the stored key out.
+    "/api/posting/sync/push",
+    "/api/artwork/sync/push",
     # 4.34.4: the channel routes BROADCAST to real subscribers, and a poll needs
     # nothing but a question and two options -- no story, no publication, no
     # upload. On an unconfigured instance that is a remote caller putting words
@@ -560,7 +565,9 @@ _PUBLISH_WHEN_OPEN = re.compile(
     # 4.43.2 (release review): these put words live too — a masterpiece sync rewrites
     # title/description/tags on every live upload; a podcast episode goes out on the
     # public /feed/ RSS.
-    r"|masterpieces/.+/sync|podcasts/[^/]+/episodes)(/|$)")
+    # 4.45.4 (PODLOCK): EVERY podcast write, not just a new episode — editing a feed or an
+    # episode, its artwork, or deleting one changes what the public /feed/ RSS serves.
+    r"|masterpieces/.+/sync|podcasts)(/|$)")
 
 
 def _sensitive_when_open(request: Request) -> bool:
@@ -661,6 +668,7 @@ app.include_router(fn_router)    # FurryNetwork routes (/api/fn/*)
 app.include_router(sc_router)    # SoundCloud routes (/api/sc/*), MEDIAPLATS (4.22.0)
 app.include_router(ng_router)    # Newgrounds routes (/api/ng/*), MEDIAPLATS (4.23.0)
 app.include_router(yt_router)    # YouTube routes (/api/yt/*), MEDIAPLATS (4.24.0)
+app.include_router(pic_router)   # Picarto routes (/api/pic/*), spec 013 (4.46.0)
 app.include_router(fbr_router)   # Furbooru routes (/api/fbr/*)
 app.include_router(tg_router)    # Telegram channel analytics (/api/tg/*)
 app.include_router(tech_router)  # Tech Centre consent/status/reports (/api/tech/*)

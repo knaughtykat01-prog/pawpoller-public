@@ -147,8 +147,8 @@ async def send_telegram(text: str) -> bool:
 
 # ── Poll cycle summary ───────────────────────────────────────
 
-PLATFORM_EMOJI = {"ib": "🐾", "fa": "🦊", "ws": "🦎", "sf": "🐺", "sqw": "🦑", "ao3": "📖", "da": "🎨", "wp": "📙", "ik": "🎯", "bsky": "🦋", "tw": "🐦", "mast": "🐘", "tum": "📘", "pix": "🖌", "thr": "🧵", "ig": "📷", "e621": "🐾", "fn": "🌐", "fbr": "🖼", "sc": "🎵", "ng": "🎬", "yt": "📺"}
-PLATFORM_NAME = {"ib": "Inkbunny", "fa": "FurAffinity", "ws": "Weasyl", "sf": "SoFurry", "sqw": "SquidgeWorld", "ao3": "AO3", "da": "DeviantArt", "wp": "Wattpad", "ik": "Itaku", "bsky": "Bluesky", "tw": "X/Twitter", "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads", "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "sc": "SoundCloud", "ng": "Newgrounds", "yt": "YouTube"}
+PLATFORM_EMOJI = {"ib": "🐾", "fa": "🦊", "ws": "🦎", "sf": "🐺", "sqw": "🦑", "ao3": "📖", "da": "🎨", "wp": "📙", "ik": "🎯", "bsky": "🦋", "tw": "🐦", "mast": "🐘", "tum": "📘", "pix": "🖌", "thr": "🧵", "ig": "📷", "e621": "🐾", "fn": "🌐", "fbr": "🖼", "sc": "🎵", "ng": "🎬", "yt": "📺", "pic": "🎥"}
+PLATFORM_NAME = {"ib": "Inkbunny", "fa": "FurAffinity", "ws": "Weasyl", "sf": "SoFurry", "sqw": "SquidgeWorld", "ao3": "AO3", "da": "DeviantArt", "wp": "Wattpad", "ik": "Itaku", "bsky": "Bluesky", "tw": "X/Twitter", "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads", "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "sc": "SoundCloud", "ng": "Newgrounds", "yt": "YouTube", "pic": "Picarto"}
 
 
 # ── Persona / account context (multi-account notification labelling) ─────────

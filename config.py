@@ -259,7 +259,11 @@ def _set_aside_unreadable_vault() -> None:
     if not (_vault_unreadable and VAULT_PATH.exists()):
         return
     import time as _t
-    kept = VAULT_PATH.with_name(f"{VAULT_PATH.name}.unreadable-{_t.strftime('%Y%m%d-%H%M%S', _t.gmtime())}")
+    base = f"{VAULT_PATH.name}.unreadable-{_t.strftime('%Y%m%d-%H%M%S', _t.gmtime())}"
+    kept, n = VAULT_PATH.with_name(base), 1
+    while kept.exists():                  # never replace an earlier set-aside from the same second
+        n += 1
+        kept = VAULT_PATH.with_name(f"{base}-{n}")
     os.replace(VAULT_PATH, kept)
     _secure_file_permissions(kept)       # it may have been restored by hand with loose permissions
     _vault_unreadable = False
@@ -781,6 +785,8 @@ PLATFORM_CREDENTIAL_FIELDS = {
            "yt_token_expires_at", "yt_username", "yt_long_uploads"],
     # Furbooru (Philomena booru; poll-only). Username + optional API key.
     "fbr": ["fbr_username", "fbr_api_key"],
+    # Picarto (4.46.0, spec 013; poll-only). The public channel name — an identity, not a secret.
+    "pic": ["pic_channel"],
 }
 
 # ── Proactive credential-age tracking (backlog W) ──────────────────
@@ -1226,7 +1232,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.45.2"
+APP_VERSION = "4.46.1"
 
 
 def _app_commit() -> str:

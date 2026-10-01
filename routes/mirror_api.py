@@ -292,8 +292,14 @@ def mirror_db_snapshot():
 
 def _mirror_target(body: dict) -> tuple[str, str]:
     settings = config.get_settings()
-    server_url = (body.get("server_url") or settings.get("posting_server_url", "")).rstrip("/")
-    api_key = body.get("api_key") or settings.get("posting_server_api_key", "")
+    saved_url = (settings.get("posting_server_url", "") or "").rstrip("/")
+    server_url = (body.get("server_url") or saved_url).rstrip("/")
+    # 4.46.1 (release review): the STORED key only ever goes to the SAVED server. Seeding from a
+    # server typed into the form is still allowed, with the key typed beside it — never ours.
+    if server_url == saved_url:
+        api_key = body.get("api_key") or settings.get("posting_server_api_key", "")
+    else:
+        api_key = body.get("api_key") or ""
     if not server_url:
         raise HTTPException(400, detail="No server URL configured (posting_server_url).")
     # Matches auto_sync.py / settings_api.py: the payload carries a bearer

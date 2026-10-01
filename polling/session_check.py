@@ -38,14 +38,14 @@ _lock = threading.Lock()
 # Platforms with a real validate_session() network check. Order = check order.
 CHECKABLE: tuple[str, ...] = ("ao3", "sf", "sqw", "bsky", "mast", "tum", "pix",
                               "thr", "ig", "e621", "fn", "fbr", "tg", "sc", "ng", "yt",
-                              "tw")
+                              "pic", "tw")
 
 # Human labels for log/UI fallback (the frontend has its own map too).
 LABELS = {
     "ao3": "AO3", "sf": "SoFurry", "sqw": "SquidgeWorld", "bsky": "Bluesky",
     "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads",
     "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "sc": "SoundCloud",
-    "ng": "Newgrounds", "yt": "YouTube",
+    "ng": "Newgrounds", "yt": "YouTube", "pic": "Picarto",
     "tg": "Telegram", "tw": "X/Twitter",
 }
 
@@ -57,6 +57,8 @@ LABELS = {
 # nothing.
 _EXPIRED_DETAIL = {
     "tg": "Telegram refused the channel — check the bot is still an admin of it.",
+    # Picarto has no login to expire; a failed check means the channel name stopped resolving (4.46.0).
+    "pic": "Picarto has no channel by that name any more — check the channel name in Settings.",
 }
 _DEFAULT_EXPIRED_DETAIL = "Session/cookie is no longer valid — re-enter credentials."
 
@@ -103,6 +105,8 @@ def _configured(code: str, s: dict) -> bool:
                     or (official_api.is_enabled(s) and s.get("tw_api_bearer_token")))
     if code == "fbr":
         return bool(s.get("fbr_username"))   # public read API — username is enough
+    if code == "pic":
+        return bool(s.get("pic_channel"))    # public read API — the channel name is enough (4.46.0)
     if code == "tg":
         # 4.8.0: only the posting bot counts — the notification bot is never
         # borrowed for channels. A channel is mandatory because there is nothing
@@ -205,6 +209,14 @@ async def _validate(code: str, s: dict):
         from polling.sc_poller import _get_or_create_client
         c = _get_or_create_client({k: s.get(k, "") for k in (
             "sc_client_id", "sc_client_secret", "sc_access_token", "sc_refresh_token", "sc_token_expires_at")})
+    elif code == "pic":
+        # No login to expire: "valid" means the channel still exists under that name.
+        from clients.pic.client import PicClient
+        c = PicClient(s.get("pic_channel", ""))
+        try:
+            return bool(await c.validate_session())
+        finally:
+            await c.close()
     elif code == "yt":
         from polling.yt_poller import _get_or_create_client
         c = _get_or_create_client({k: s.get(k, "") for k in (

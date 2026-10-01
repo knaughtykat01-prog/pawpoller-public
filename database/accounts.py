@@ -50,7 +50,9 @@ PLATFORMS = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky",
              # 4.23.0 (MEDIAPLATS): Newgrounds — poll + post, browser cookie session (no API).
              "ng",
              # 4.24.0 (MEDIAPLATS): YouTube — poll + post, Google OAuth user token.
-             "yt"]
+             "yt",
+             # 4.46.0 (spec 013): Picarto — poll only, public API, the channel name is the credential.
+             "pic"]
 
 # Platforms that publish but have nothing to poll: no stats table, so anything
 # aggregating stats must skip them rather than query a table that does not
@@ -79,6 +81,7 @@ PLATFORM_NAMES = {
     "sc": "SoundCloud",
     "ng": "Newgrounds",
     "yt": "YouTube",
+    "pic": "Picarto",
 }
 
 # Predicate per platform: does settings hold credentials for a default account?
@@ -124,6 +127,8 @@ DEFAULT_CRED_CHECKS = {
     "ng": lambda s: bool(s.get("ng_cookie")),
     # YouTube: the browser approval's refresh token IS the credential (4.24.0).
     "yt": lambda s: bool(s.get("yt_refresh_token")),
+    # Picarto: the channel name is all it needs — the public API reads it with no login (4.46.0).
+    "pic": lambda s: bool(s.get("pic_channel")),
 }
 
 # The flat settings key whose value names the default account (for display).
@@ -163,6 +168,7 @@ _HANDLE_KEYS = {
     "sc": ["sc_username"],
     "ng": ["ng_username"],
     "yt": ["yt_username"],
+    "pic": ["pic_channel"],
 }
 
 
@@ -267,6 +273,28 @@ def backfill_account_handles(conn: sqlite3.Connection,
     if fixed:
         logger.info("accounts: filled in %d handle(s) that were empty or held a URL", fixed)
     return fixed
+
+
+def never_post_ids(settings: dict | None = None) -> set[int]:
+    """Accounts PawPoller must never post to, edit or sync (4.45.4, FRIENDGUARD).
+
+    For an account someone else owns that is here only to be polled. A setting, not a
+    column or a constant: the ids are this instance's, and none ship in the code.
+    Set from Settings → Accounts ("Never post").
+    """
+    if settings is None:
+        import config
+        settings = config.get_settings()
+    out: set[int] = set()
+    for v in settings.get("never_post_account_ids") or []:
+        try:
+            out.add(int(v))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+NEVER_POST_ERROR = "This account is marked \"Never post\" — PawPoller will not post to it, edit it or sync it."
 
 
 def get_default_account_id(conn: sqlite3.Connection, platform: str,

@@ -50,6 +50,7 @@ _FN_SCHEMA_PATH = config.resource_path("database/fn_schema.sql")      # FurryNet
 _SC_SCHEMA_PATH = config.resource_path("database/sc_schema.sql")      # SoundCloud tables (4.22.0)
 _NG_SCHEMA_PATH = config.resource_path("database/ng_schema.sql")      # Newgrounds tables (4.23.0)
 _YT_SCHEMA_PATH = config.resource_path("database/yt_schema.sql")      # YouTube tables (4.24.0)
+_PIC_SCHEMA_PATH = config.resource_path("database/pic_schema.sql")    # Picarto tables (4.46.0, spec 013)
 _FBR_SCHEMA_PATH = config.resource_path("database/fbr_schema.sql")    # Furbooru tables
 _TG_SCHEMA_PATH = config.resource_path("database/tg_schema.sql")      # Telegram tables
 _POSTING_SCHEMA_PATH = config.resource_path("database/posting_schema.sql")  # Posting module tables
@@ -168,6 +169,7 @@ def init_db() -> None:
         conn.executescript(ng_schema_sql)
         yt_schema_sql = _YT_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(yt_schema_sql)
+        conn.executescript(_PIC_SCHEMA_PATH.read_text(encoding="utf-8"))
         fbr_schema_sql = _FBR_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(fbr_schema_sql)
         tg_schema_sql = _TG_SCHEMA_PATH.read_text(encoding="utf-8")

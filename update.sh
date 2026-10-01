@@ -232,25 +232,27 @@ fi
 # HANDLED platform error (a site down, a bot check) logged with its trace. A scheduled poll
 # landing seconds after the restart once failed a healthy deploy this way (4.45.2).
 # Tight on purpose, so a real crash can't hide behind one:
-#  - a "record" is a line with the app's own timestamp + [LEVEL] (text inside a message
-#    can't pose as one);
+#  - a "record" is a line that STARTS with the app's timestamp + [LEVEL] — optionally after
+#    docker compose's "service-1  | " prefix, and nothing else — so a timestamp buried in a
+#    message (a site's error body quoted in an exception) doesn't count as one (4.45.3);
 #  - a handled poll error excuses a traceback only if it is the very NEXT non-blank line —
 #    anything else in between (a thread's "Exception in thread…", uvicorn's own "ERROR:")
 #    ends the excuse;
 #  - a chained trace is excused only right under Python's "During handling of the above
-#    exception" / "The above exception was the direct cause" line, inside a trace;
+#    exception" / "The above exception was the direct cause" line — which must START the
+#    line (after the same prefix), inside a trace;
 #  - [CRITICAL] anywhere always counts.
 # Prints each severe line plus the 8 after it, for the message below. POSIX awk only (no
 # {n} intervals), so gawk, mawk and busybox all run it.
 severe="$(printf '%s\n' "$logs" | awk '
-  { rec = ($0 ~ /^([^|]*[|] +)?[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9:,.]+ \[(DEBUG|INFO|WARNING|ERROR|CRITICAL)\]/)
+  { rec = ($0 ~ /^([A-Za-z0-9_.-]+ +[|] +)?[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9:,.]+ \[(DEBUG|INFO|WARNING|ERROR|CRITICAL)\]/)
     tb = ($0 ~ /Traceback \(most recent call last\)/)
-    blank = ($0 ~ /^([^|]*[|])? *$/) }
+    blank = ($0 ~ /^([A-Za-z0-9_.-]+ +[|])? *$/) }
   /\[CRITICAL\]/ { n = 9 }
   rec { expect = ($0 ~ /\[ERROR\] polling\.[A-Za-z0-9_]+: .*poll failed/); chain = 0; intrace = 0 }
   !rec && tb { if (!(expect || chain)) n = 9; expect = 0; chain = 0; intrace = 1 }
   !rec && !tb && !blank {
-    if (intrace && $0 ~ /During handling of the above exception|The above exception was the direct cause/) chain = 1
+    if (intrace && $0 ~ /^([A-Za-z0-9_.-]+ +[|] +)?(During handling of the above exception|The above exception was the direct cause)/) chain = 1
     else { expect = 0; chain = 0 }
   }
   n > 0 { print; n-- }

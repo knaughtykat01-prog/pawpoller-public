@@ -280,6 +280,11 @@ window.Accounts = {
             cb.addEventListener('change', () => this._toggle(cb.dataset.toggle, cb.dataset.enabled === '1')));
         el.querySelectorAll('[data-delete]').forEach(btn =>
             btn.addEventListener('click', () => this._delete(btn.dataset.delete)));
+        el.querySelectorAll('[data-never-post]').forEach(cb =>
+            cb.addEventListener('change', async () => {
+                try { await API.updateAccount(cb.dataset.neverPost, { never_post: cb.checked }); }
+                catch (err) { cb.checked = !cb.checked; window.toast && toast.error('Could not save: ' + err.message); }
+            }));
         this._wireDaAuthorise(el);
         el.querySelectorAll('[data-creds]').forEach(btn =>
             btn.addEventListener('click', () => this._editCredentials(
@@ -356,6 +361,10 @@ window.Accounts = {
         const toggle = `<label class="toggle-switch" title="${a.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable'}">
                 <input type="checkbox" data-toggle="${a.account_id}" data-enabled="${a.enabled ? 1 : 0}" ${a.enabled ? 'checked' : ''}>
                 <span class="toggle-slider"></span></label>`;
+        // FRIENDGUARD (4.45.4): an account kept here only to be polled — posting, editing
+        // and syncing to it are refused everywhere.
+        const neverPost = `<label class="acct-never-post" title="PawPoller will never post to, edit or sync this account — for an account that isn't yours">
+                <input type="checkbox" data-never-post="${a.account_id}" ${a.never_post ? 'checked' : ''}> Never post</label>`;
         const rename = `<button class="btn btn-sm" data-rename="${a.account_id}" data-label="${this.esc(a.label || '')}">Rename</button>`;
         /* Per-account credential re-entry (3.20.0). Until this existed, the
            only visible place to paste a renewed cookie/token was the main
@@ -389,6 +398,7 @@ window.Accounts = {
             <span class="acct-actions">
                 <span class="persona-wrap"><span>Persona</span>${this._personaSelect(a)}</span>
                 ${toggle}
+                ${neverPost}
                 ${rename}
                 ${creds}
                 ${test}

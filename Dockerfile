@@ -1,10 +1,15 @@
 FROM python:3.11-slim
 WORKDIR /app
 
-# WeasyPrint runtime deps (HTML→PDF rendering, used by the editor)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# WeasyPrint runtime deps (HTML→PDF rendering, used by the editor).
+# fonts-wqy-microhei (PDFCJK, 4.45.5): Chinese / Japanese / Korean in a story PDF rendered as
+# empty boxes. WenQuanYi Micro Hei covers all three in ~5 MB (Noto CJK is ~100 MB); pango falls back to it.
+# apt-get upgrade (4.46.1): the base image lagged Debian's OpenSSL security fix (Trivy HIGH, CVE-2026-75804 /
+# CVE-2026-84782). ponytail: this layer is cached, so a later Debian fix lands only when this line changes or the
+# image is rebuilt with --no-cache; the release scan (deploy/security_scan.py candidate) is what catches it.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
     libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libcairo2 \
-    libgdk-pixbuf-2.0-0 libffi8 fonts-dejavu-core \
+    libgdk-pixbuf-2.0-0 libffi8 fonts-dejavu-core fonts-wqy-microhei \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-server.txt .

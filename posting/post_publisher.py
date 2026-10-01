@@ -146,6 +146,9 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
 
     account_id, creds = _resolve_creds(platform, account_id, settings)
     result["account_id"] = account_id
+    if account_id in accounts_db.never_post_ids(settings):          # FRIENDGUARD (4.45.4)
+        result["error"] = accounts_db.NEVER_POST_ERROR
+        return result
 
     try:
         if platform == "bsky":

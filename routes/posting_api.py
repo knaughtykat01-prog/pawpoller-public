@@ -1155,18 +1155,17 @@ async def sync_push(body: dict):
     Called from the desktop instance. Tars the local archive and POSTs it
     to the remote server's /api/posting/sync/upload endpoint.
 
-    Body: {
-        "server_url": "http://34.xx.xx.xx:8420",  // optional, uses setting if omitted
-        "api_key": "pp_xxxx",                      // optional, uses setting if omitted
-        "story_name": "Example_Story"               // optional, sync one story only
-    }
+    Body: {"story_name": "Example_Story"}   // optional, sync one story only
+
+    SYNCPUSH (4.45.4): the server and key come from settings ONLY. The body used to name
+    the server, and the stored API key + the whole archive went wherever it said.
     """
     import httpx as _httpx
     from posting.story_reader import get_archive_path
 
     settings = config.get_settings()
-    server_url = body.get("server_url") or settings.get("posting_server_url", "")
-    api_key = body.get("api_key") or settings.get("posting_server_api_key", "")
+    server_url = settings.get("posting_server_url", "")
+    api_key = settings.get("posting_server_api_key", "")
 
     if not server_url:
         raise HTTPException(400, detail="No server URL configured. Set posting_server_url in settings.")
@@ -1182,7 +1181,12 @@ async def sync_push(body: dict):
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
             if story_filter:
+                # One folder directly inside the archive — no "..", no subpath, no absolute path.
+                if not isinstance(story_filter, str):
+                    raise HTTPException(400, detail="Invalid story name")
                 story_path = archive_path / story_filter
+                if story_path.name != story_filter or story_path.resolve().parent != archive_path.resolve():
+                    raise HTTPException(400, detail="Invalid story name")
                 if not story_path.is_dir():
                     raise HTTPException(404, detail=f"Story not found: {story_filter}")
                 tar.add(str(story_path), arcname=story_filter)
