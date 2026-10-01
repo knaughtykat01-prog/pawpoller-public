@@ -37,6 +37,7 @@
     flex-shrink: 0;
 }
 .guide-modal-emoji { font-size: 1.5rem; line-height: 1; }
+.guide-modal-logo { width: 28px; height: 28px; object-fit: contain; border-radius: 6px; flex-shrink: 0; }
 .guide-modal-title {
     font-family: var(--font-display);
     font-weight: 700;
@@ -241,6 +242,7 @@
 .guide-hub-card:hover { border-color: var(--accent); background: var(--bg-hover); transform: translateY(-2px); }
 .guide-hub-card-top { display: flex; align-items: center; gap: 0.55rem; }
 .guide-hub-card-emoji { font-size: 1.4rem; line-height: 1; }
+.guide-hub-card-logo { width: 24px; height: 24px; object-fit: contain; border-radius: 5px; flex-shrink: 0; }
 .guide-hub-card-name { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; color: var(--text-primary); }
 .guide-hub-card-kind { font-size: 0.78rem; color: var(--text-muted); }
 .guide-hub-card-sum { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.45; }

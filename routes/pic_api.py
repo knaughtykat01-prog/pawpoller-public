@@ -75,12 +75,14 @@ async def pic_save_channel(body: dict):
         raise HTTPException(502, f"Couldn't reach Picarto: {type(e).__name__}")
     finally:
         await client.close()
-    if not ch:
+    # Picarto's own spelling, kept only if it is still a clean channel name (4.46.2, release review).
+    canonical = clean_channel(ch["name"]) if ch else ""
+    if not canonical:
         raise HTTPException(400, f"No Picarto channel called {name}.")
-    config.save_settings({_key(aid, is_default): ch["name"]})
-    _sync_handle(aid, ch["name"])
+    config.save_settings({_key(aid, is_default): canonical})
+    _sync_handle(aid, canonical)
     logger.info("Picarto channel saved (account=%s)", aid)
-    return {"status": "success", "channel": ch["name"], "adult": ch["adult"]}
+    return {"status": "success", "channel": canonical, "adult": ch["adult"]}
 
 
 def _sync_handle(aid: int | None, handle: str) -> None:

@@ -54,47 +54,9 @@
 .mp-fold-chosen { font-size: .85rem; }
 .mp-fold-chosen:not(.muted) { color: var(--accent); font-weight: 600; }
 
-/* ── Grid + cards (rendered inside Library under the type filter) ── */
-.mp-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 1rem;
-}
-.mp-card {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--card-border, var(--border));
-    border-radius: 12px;
-    overflow: hidden;
-    background: var(--surface, var(--bg-secondary));
-    text-decoration: none;
-    color: inherit;
-    transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
-}
-.mp-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
-    border-color: var(--accent);
-}
-.mp-cover {
-    aspect-ratio: 1 / 1;                 /* art is square-ish; show more of the image than a 16:9 */
-    background: var(--bg-secondary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-}
-.mp-cover-img { width: 100%; height: 100%; object-fit: cover; }
-.mp-cover-ph { font-size: 2.4rem; opacity: .5; }
-
-/* Grid toolbar (＋ New Masterpiece) above the cards */
-.mp-gridbar { display: flex; justify-content: flex-end; margin: 0 0 1rem; }
-.mp-body { padding: .7rem .8rem .8rem; display: flex; flex-direction: column; gap: .35rem; }
-.mp-name { font-weight: 600; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mp-meta { font-size: .82rem; display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; color: var(--text-secondary); }
+/* The Masterpieces grid + card rules went with the grid in 4.47.0 (spec 014):
+   the Library draws one card per piece (bookshelf.css). */
 .mp-plat { font-size: 1rem; }
-.mp-stats { font-size: .82rem; color: var(--text-secondary); }
-.mp-personas-inline { display: flex; gap: .3rem; flex-wrap: wrap; margin-top: .1rem; }
 
 /* ── Detail view ── */
 /* 2.158.0: the head is a STAGE — a giant blurred/translucent copy of the
@@ -505,18 +467,13 @@ html[data-mobile="1"] #shelf-view-btn { display: none; }
 .qp-plat-chip.is-media-refused { cursor: not-allowed !important; }
 
 /* ── Batch: select several, post each on its own (4.43.0, spec 010) ── */
-.mp-gridbar { gap: .5rem; flex-wrap: wrap; }
-.mp-card.is-selectable { cursor: pointer; }
-.mp-card.is-selectable:hover { transform: none; }
-.mp-card.is-picked { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
-.mp-cover { position: relative; }
 .mp-tick {
     position: absolute; top: .5rem; left: .5rem; z-index: 1;
     width: 1.6rem; height: 1.6rem; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     background: rgba(0, 0, 0, .45); border: 2px solid #fff; color: #fff; font-weight: 700;
 }
-.mp-card.is-picked .mp-tick { background: var(--accent); border-color: var(--accent); }
+.is-picked > .mp-tick { background: var(--accent); border-color: var(--accent); }
 .mp-selbar {
     position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 3000;
     display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; justify-content: center;

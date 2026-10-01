@@ -82,7 +82,11 @@ def test_summarize_many_matches_per_item():
         names = ["Wolf", "Fox", "Empty"]
         batched = mq.summarize_many(conn, names)
         per_item = {n: mq.summarize(conn, n) for n in names}
-        assert batched == per_item
+        # `by_variant` (4.47.0) is a batched-only extra for the Library's version
+        # tiles; everything the single-piece summary has must still match exactly.
+        assert {n: {k: v for k, v in s.items() if k != "by_variant"}
+                for n, s in batched.items()} == per_item
+        assert batched["Wolf"]["by_variant"][""]["platforms"] == ["fa", "ws"]
 
         # Spot-check the actual content so a shared bug in both can't pass silently.
         assert batched["Wolf"]["totals"]["views"] == 70

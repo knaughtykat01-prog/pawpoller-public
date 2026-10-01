@@ -39,7 +39,7 @@ def _package(art, platform):
 def test_a_booru_gets_the_character_tag(registry, tmp_path):
     art = _art(tmp_path, ["Sample Fox"])
     tags = [t.lower() for t in _package(art, "e621").tags]
-    assert "sample_fox_(owner)" in tags
+    assert "character:sample_fox_(owner)" in tags
 
 
 def test_a_character_without_a_tag_adds_nothing(registry, tmp_path):
@@ -64,8 +64,7 @@ def test_character_tags_lead_so_a_trim_keeps_them(registry, tmp_path):
     """Per-platform budgets drop from the tail, as with the artist tag."""
     art = _art(tmp_path, ["Sample Fox", "Second Fur"], tags=["wolf", "forest"])
     tags = [t.lower() for t in _package(art, "e621").tags]
-    assert tags[:2] == ["sample_fox_(owner)", "second_fur_(owner)"] or \
-        set(tags[:3]) >= {"sample_fox_(owner)", "second_fur_(owner)"}
+    assert tags[:2] == ["character:sample_fox_(owner)", "character:second_fur_(owner)"]
 
 
 def test_an_explicit_tag_list_is_posted_exactly(registry, tmp_path):
@@ -92,3 +91,12 @@ def _art(tmp_path, characters, tags=None):
         characters=list(characters),
         tags_by_platform={"core": list(tags or ["wolf"]), "auxiliary": []},
     )
+
+
+def test_e621_marks_the_character_and_drops_a_bare_copy(registry, tmp_path):
+    """A tag e621 has never seen is filed as GENERAL unless the upload names its
+    category (E6CAT) - so the registry tag goes up as `character:`, once."""
+    art = _art(tmp_path, ["Sample Fox"], tags=["sample_fox_(owner)", "wolf"])
+    tags = [t.lower() for t in _package(art, "e621").tags]
+    assert tags[0] == "character:sample_fox_(owner)"
+    assert "sample_fox_(owner)" not in tags and "wolf" in tags

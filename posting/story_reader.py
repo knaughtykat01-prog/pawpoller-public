@@ -224,6 +224,12 @@ def _story_entry(path: Path, parent_name: str = "") -> dict:
             entry["description"] = data.get("description", "")
             entry["word_count"] = data.get("word_count", 0)
             entry["chapters"] = data.get("chapters", 0)
+            # Index + title per chapter (4.47.0, spec 014) so the Library's chapter
+            # tiles can name them without loading every story in full.
+            entry["chapter_titles"] = [
+                {"index": int(c.get("index") or i), "title": str(c.get("title") or "")}
+                for i, c in enumerate(data.get("chapter_info") or [], start=1)
+                if isinstance(c, dict)]
             entry["rating"] = data.get("rating", "")
             entry["category"] = data.get("category", "")
             entry["formats"] = data.get("formats", {})

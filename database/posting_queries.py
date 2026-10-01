@@ -875,6 +875,27 @@ def index_publications_by_cell(
     return best, accounts
 
 
+def scheduled_parts(conn: sqlite3.Connection) -> dict[tuple, list[dict]]:
+    """Pending queue rows, earliest first, per work (4.47.0, spec 014).
+
+    ``{(content_type, story_name): [{chapter_index, variant_key, scheduled_at}]}``
+    — one row per (chapter, version) with its EARLIEST pending time. One query for
+    the whole catalogue, so the Library can say "Scheduled Fri" on a card and on
+    the version or chapter tile it belongs to without a request per card.
+    """
+    rows = conn.execute(
+        "SELECT COALESCE(content_type, 'story') AS ct, story_name, chapter_index, "
+        "COALESCE(variant_key, '') AS vk, MIN(scheduled_at) AS at FROM posting_queue "
+        "WHERE status = 'pending' GROUP BY ct, story_name, chapter_index, vk "
+        "ORDER BY at").fetchall()
+    out: dict[tuple, list[dict]] = {}
+    for r in rows:
+        out.setdefault((r["ct"], r["story_name"]), []).append({
+            "chapter_index": r["chapter_index"] or 0, "variant_key": r["vk"],
+            "scheduled_at": r["at"] or ""})
+    return out
+
+
 def count_active_jobs(conn: sqlite3.Connection, story_name: str) -> int:
     """Queue rows for this story that haven't finished yet.
 

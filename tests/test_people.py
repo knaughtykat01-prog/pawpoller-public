@@ -212,7 +212,7 @@ class TestPackage:
         conn.commit()
         _piece(archive, "Mine", artist={"key": key, **INK})
         pkg = ar.build_artwork_package(ar.load_artwork("Mine"), "e621", account_id=e6)
-        assert pkg.tags[0] == "ink_wolf", "the booru artist tag is the person's e621 handle"
+        assert pkg.tags[0] == "artist:ink_wolf", "the booru artist tag is the person's e621 handle"
         assert "Art by" not in pkg.description
 
     def test_the_same_piece_posted_by_another_persona_is_credited(self, conn, archive):
@@ -222,7 +222,7 @@ class TestPackage:
         conn.commit()
         _piece(archive, "Theirs", artist={"key": key, **INK})
         pkg = ar.build_artwork_package(ar.load_artwork("Theirs"), "e621", account_id=pen_e6)
-        assert "Art by" in pkg.description and pkg.tags[0] == "inkwolf"
+        assert "Art by" in pkg.description and pkg.tags[0] == "artist:inkwolf"
 
     def test_own_with_no_row_still_tags_when_the_persona_has_a_person(self, conn, archive):
         ink, e6 = _persona_with_account(conn, "Inkwolf")
@@ -230,7 +230,7 @@ class TestPackage:
         conn.commit()
         _piece(archive, "Own_Legacy", artist_status="own")
         pkg = ar.build_artwork_package(ar.load_artwork("Own_Legacy"), "e621", account_id=e6)
-        assert pkg.tags[0] == "ink_wolf" and "Art by" not in pkg.description
+        assert pkg.tags[0] == "artist:ink_wolf" and "Art by" not in pkg.description
 
     def test_own_without_an_account_is_unchanged(self, archive):
         _piece(archive, "Own_Plain", artist_status="own")

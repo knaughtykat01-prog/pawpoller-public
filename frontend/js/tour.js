@@ -148,7 +148,7 @@ window.Tour = (function () {
          * pointed at DOM that no longer renders, so they toured nothing. */
         'library': [
             { target: null, title: 'Your Library', body: 'Every work you’ve made — stories and artwork alike — on one shelf, with views, favourites and comments pulled in from every platform it’s live on.' },
-            { target: '.shelf-segs', title: 'Filter by type', body: 'All, Stories, Artwork, Masterpieces, or Discovered. <em>Masterpieces</em> group the versions of one piece; <em>Discovered</em> is what polling found that isn’t in your library yet.' },
+            { target: '.shelf-segs', title: 'Filter by type', body: 'All, Stories, Artwork, or Discovered. Each piece is one card; press the button on its picture to see its other versions, or a story’s chapters. <em>Discovered</em> is what polling found that isn’t in your library yet.' },
             { target: '.shelf-discovered-banner', title: 'Discovered art', body: 'When polling finds art on your accounts that isn’t here yet, this offers to import the lot in one go.' },
             { target: '#shelf-search', title: 'Search the shelf', body: 'Type a title to narrow the shelf instantly — handy once you’re tracking a lot of pieces.' },
             { target: '.shelf-sort', title: 'Sort', body: 'Newest, A–Z, most platforms — or by pooled views, favourites and comments to see what’s actually landing.' },

@@ -16,8 +16,15 @@
 
 ## What it does NOT do
 
-- **No telemetry / phone-home.** PawPoller makes network calls only to (a) the platforms you connect and (b) update
-  checks you can disable. It sends nothing to the PawPoller project or any analytics service.
+- **Nothing goes to the PawPoller project unless you say yes.** PawPoller makes network calls to (a) the platforms
+  you connect, (b) GitHub, to check for updates, and (c) **only if you opted in**, the PawPoller Tech Centre:
+  - **technical error reports** — the error and a short log excerpt, with passwords, tokens, cookies, email
+    addresses, @handles, other people's names and the paths of web addresses removed before sending;
+  - **anonymous usage check-ins** — a random install ID, the app version, operating system, which platform types
+    are connected (not which accounts) and rough library sizes.
+
+  Both are off until you agree, and either can be switched off in Settings at any time. No analytics service, no
+  advertising tracker.
 - **No third-party ad/tracking.**
 
 ## Where the data lives

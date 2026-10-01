@@ -4,9 +4,13 @@
  * + masterpiece.json, and (Phase 1) a membership table linking every site-upload
  * of that image so their stats pool. See docs/specs/masterpieces.md.
  *
- *   - renderGrid(gridEl, filters)  — the managed grid, shown inside Library under
- *                                    the "Masterpieces" segment (bookshelf.js).
  *   - renderDetail(name)           — the #/masterpieces/{name} detail view.
+ *   - the batch dialog (_openBatch) and its selection bar — driven from the Library.
+ *
+ * 4.47.0 (spec 014): the Masterpieces GRID is gone. The Library shows one card per
+ * piece with the same pooled numbers, and its Artwork view carries the grid's tools
+ * (Select → batch, Find duplicates, New, Restore). Select-mode state still lives
+ * here because the batch dialog does; the Library renders the ticks.
  *
  * Phase 3 adds membership management to the detail view: same-image **suggestions**
  * (native perceptual-hash, no AI) with one-click **attach**, and **detach** on each
@@ -17,7 +21,7 @@
 window.Masterpieces = {
     _personas: {},          // persona_id -> {name, color}
     _personasLoaded: false,
-    _cache: null,           // [] of masterpiece list rows, per Library session
+    _cache: null,           // [] of masterpiece list rows (the piece page's prev/next list)
     _current: null,         // name of the Masterpiece the detail view is showing
     _wired: false,          // document click delegate attached once
     // Platforms whose poster can't edit in place (supports_edit=False, mirrors the
@@ -27,10 +31,9 @@ window.Masterpieces = {
     // badge is correct here and must NOT be copied to the story matrix.
     _POST_ONLY: new Set(['bsky', 'ig', 'fn', 'da', 'tg', 'tw']),
 
-    /* Drop the list cache so the next grid render refetches (called on each
-       Library open by bookshelf.render). Also leaves the junk-bin view, so a
-       fresh Library visit always starts on the normal grid. */
-    resetCache() { this._cache = null; this._junkView = false; },
+    /* Drop the list cache so the piece page's prev/next list refetches (called on
+       each Library open by bookshelf.render). */
+    resetCache() { this._cache = null; },
 
     /* ── small shared helpers (same shape as collections.js) ── */
     esc(s) {
@@ -99,177 +102,27 @@ window.Masterpieces = {
         }).join('');
     },
 
-    /* ── Grid (rendered into Library's #shelf-grid) ── */
-
-    _junkView: false,       // grid shows junked pieces instead of active ones
-    _lastGrid: null,         // {el, filters} so the Junk toggle can re-render
-
-    async renderGrid(gridEl, filters) {
-        if (!gridEl) return;
-        // Tear down the previous window's scroll observer before re-rendering
-        // (filter change / junk toggle re-enters here).
-        if (this._gridObserver) { this._gridObserver.disconnect(); this._gridObserver = null; }
-        filters = filters || {};
-        this._lastGrid = { el: gridEl, filters };
-        await this._loadPersonas();
-        if (this._cache === null) {
-            gridEl.className = '';
-            gridEl.innerHTML = `<div class="loading-spinner">Loading your masterpieces…</div>`;
-            try {
-                const d = await API.getMasterpieces();
-                this._cache = (d && d.masterpieces) || [];
-            } catch (err) {
-                gridEl.className = '';
-                gridEl.innerHTML = `<div class="card error">Couldn't load masterpieces: ${this.esc(err.message)}</div>`;
-                return;
-            }
-        }
-
-        // Junk split (2.149.0): junked pieces are kept but live behind the Junk view.
-        const junked = this._cache.filter(m => m.status === 'junk');
-        let list = (this._junkView ? junked : this._cache.filter(m => m.status !== 'junk')).slice();
-        const persona = filters.persona || 0;
-        const q = (filters.search || '').toLowerCase();
-        const sort = filters.sort || 'recent';
-        if (persona) list = list.filter(m => ((m.summary && m.summary.persona_ids) || []).includes(persona));
-        if (q) list = list.filter(m => (m.title || '').toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q));
-        if (sort === 'title') list.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-        else if (sort === 'platforms') list.sort((a, b) =>
-            (((b.summary && b.summary.platforms) || []).length) - (((a.summary && a.summary.platforms) || []).length));
-        else list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-
-        const newBtn = `<a class="btn btn-primary btn-sm" href="#/artwork/new"
-            title="Upload a new image, describe it once, and publish it across sites">＋ New Masterpiece</a>`;
-        const dupBtn = `<a class="btn btn-sm" href="#/masterpieces/duplicates"
-            title="Find Masterpieces of the same image and merge them into one">🔍 Find duplicates</a>`;
-        // The Junk toggle appears once anything is junked (or while viewing the bin).
-        const junkBtn = (junked.length || this._junkView)
-            ? `<button class="btn btn-sm${this._junkView ? ' btn-primary' : ''}" data-mp-junkview type="button"
-                title="Pulled art you've binned — kept on disk, hidden from the grid, restorable">
-                🗑 Junk (${junked.length})</button>` : '';
-        const junkBanner = this._junkView
-            ? `<div class="card muted" style="margin:.4rem 0 .8rem;padding:.5rem .8rem">Showing the junk bin —
-                these stay on disk and keep their site-links, they're just hidden from the grid.
-                <strong>♻ Restore</strong> puts one back.</div>` : '';
-        // Select several → post them as a batch (4.43.0, spec 010). Not in the junk bin.
-        const selBtn = this._junkView ? '' : `<button class="btn btn-sm${this._selMode ? ' btn-primary' : ''}" data-mp-select type="button"
-            title="Tick several pieces and post them in one go — each as its own submission, spread out over time">☑ ${this._selMode ? 'Selecting…' : 'Select'}</button>`;
-        const bar = `<div class="mp-gridbar">${selBtn}${newBtn}${dupBtn}${junkBtn}</div>${junkBanner}`;
-        this._lastList = list;
-        gridEl.className = '';
-        if (!list.length) {
-            gridEl.innerHTML = `${bar}
-                <div class="empty-state"><h3>${this._junkView ? 'The junk bin is empty' : 'No masterpieces yet'}</h3>
-                <p class="muted">${this._junkView
-                    ? 'Nothing junked. Use 🗑 Junk on a masterpiece’s page to move it here.'
-                    : 'Every artwork folder is a masterpiece. Create one, or promote a gallery image (★ Master) to link its copies across sites and pool their stats.'}</p></div>`;
-        } else {
-            // Windowed render (perf guardrail): only the first page of cards goes
-            // into the DOM; the rest stream in as you scroll. Keeps a 1000s-piece
-            // library from building thousands of image nodes up front. The data is
-            // already fully fetched + filtered above — this only paces the DOM.
-            gridEl.innerHTML = `${bar}
-                <div class="mp-grid"></div>
-                <div class="mp-grid-sentinel" aria-hidden="true" style="height:1px"></div>`;
-            this._windowInto(gridEl.querySelector('.mp-grid'),
-                             gridEl.querySelector('.mp-grid-sentinel'), list);
-        }
-        this._wireGridBar(gridEl);
-        this._paintSelBar();
-    },
-
-    /* Stream `list` into `grid` a page at a time, appending the next page when
-     * `sentinel` nears the viewport. Renders the first page synchronously so the
-     * grid is never empty. */
-    _windowInto(grid, sentinel, list) {
-        const PAGE = 60;
-        let i = 0;
-        const renderNext = () => {
-            const slice = list.slice(i, i + PAGE);
-            if (slice.length) {
-                grid.insertAdjacentHTML('beforeend', slice.map(m => this._card(m)).join(''));
-                i += slice.length;
-            }
-            if (i >= list.length) {
-                if (this._gridObserver) { this._gridObserver.disconnect(); this._gridObserver = null; }
-                if (sentinel) sentinel.remove();
-            }
-        };
-        renderNext();                                   // first page, synchronously
-        if (i < list.length && 'IntersectionObserver' in window) {
-            this._gridObserver = new IntersectionObserver(entries => {
-                if (entries.some(e => e.isIntersecting)) renderNext();
-            }, { rootMargin: '600px' });                // prefetch before it's visible
-            this._gridObserver.observe(sentinel);
-        } else if (i < list.length) {
-            // No IntersectionObserver (very old browser) — render the rest now.
-            while (i < list.length) renderNext();
-        }
-    },
-
-    _wireGridBar(gridEl) {
-        gridEl.querySelector('[data-mp-select]')?.addEventListener('click', () => {
-            this._selMode = !this._selMode;
-            if (!this._selMode) this._sel.clear();
-            const g = this._lastGrid || {};
-            this.renderGrid(g.el || gridEl, g.filters);
-        });
-        // In select mode a card click ticks it instead of opening it. Delegated once per
-        // grid element (cards stream in later), like Restore below.
-        if (!gridEl.dataset.mpSelectWired) {
-            gridEl.dataset.mpSelectWired = '1';
-            gridEl.addEventListener('click', (e) => {
-                if (!this._selMode) return;
-                const card = e.target.closest('.mp-card[data-mp-name]');
-                if (!card || !gridEl.contains(card)) return;
-                e.preventDefault();
-                this._toggleSel(card);
-            });
-            gridEl.addEventListener('keydown', (e) => {
-                if (!this._selMode || (e.key !== ' ' && e.key !== 'Enter')) return;
-                const card = e.target.closest('.mp-card[data-mp-name]');
-                if (!card) return;
-                e.preventDefault();
-                this._toggleSel(card);
-            });
-        }
-        const toggle = gridEl.querySelector('[data-mp-junkview]');
-        if (toggle) toggle.addEventListener('click', () => {
-            this._junkView = !this._junkView;
-            const g = this._lastGrid || {};
-            this.renderGrid(g.el || gridEl, g.filters);
-        });
-        // Restore is delegated (once per grid element) so cards streamed in later
-        // by _windowInto still get it. gridEl persists across re-renders, hence the
-        // guard against stacking listeners.
-        if (!gridEl.dataset.mpRestoreWired) {
-            gridEl.dataset.mpRestoreWired = '1';
-            gridEl.addEventListener('click', async (e) => {
-                const btn = e.target.closest('[data-mp-restore]');
-                if (!btn || !gridEl.contains(btn)) return;
-                e.preventDefault(); e.stopPropagation();   // card is an <a> — don't navigate
-                btn.disabled = true;
-                try {
-                    await API.setMasterpieceStatus(btn.dataset.name, '');
-                    this._toast('success', 'Restored to the grid');
-                    this._cache = null;
-                    const g = this._lastGrid || {};
-                    this.renderGrid(g.el || gridEl, g.filters);
-                } catch (err) {
-                    btn.disabled = false;
-                    this._toast('error', 'Restore failed: ' + (err.message || err));
-                }
-            });
-        }
-    },
+    /* The grid that lived here (renderGrid / _windowInto / _wireGridBar / _card)
+       was removed in 4.47.0 (spec 014): the Library shows one card per piece now. */
 
     /* ── Batch: select several, post each on its own (4.43.0, spec 010) ─────────
-     * The Library half. The server plans (posting/batch.py — no side effects), the
+     * The Library half. Since 4.47.0 the Library (bookshelf.js) owns the Select
+     * button and the ticks on its cards; this keeps the selection, the bar and the
+     * dialog, and repaints the Library through _repaintHost(). The server plans (posting/batch.py — no side effects), the
      * person checks the plan, and only then is it queued as ordinary posting-queue rows
      * the scheduler fires on their slots. Spread out by default; announcements off. */
     _selMode: false,
     _sel: new Set(),
     _BATCH_ANNOUNCERS: ['tg', 'tw', 'bsky'],
+
+    _repaintHost() {
+        if (window.Bookshelf && document.getElementById('shelf-grid')) {
+            Bookshelf._renderControls();
+            Bookshelf._paint();
+        } else {
+            this._paintSelBar();
+        }
+    },
 
     _toggleSel(card) {
         const name = card.dataset.mpName;
@@ -307,8 +160,7 @@ window.Masterpieces = {
                 if (act === 'none') this._sel.clear();
                 if (act === 'done') { this._selMode = false; this._sel.clear(); }
                 if (act === 'post') { this._openBatch(); return; }
-                const g = this._lastGrid || {};
-                if (g.el) this.renderGrid(g.el, g.filters);
+                this._repaintHost();
             });
         }
         const n = this._sel.size;
@@ -486,8 +338,7 @@ window.Masterpieces = {
                 if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
                 close();
                 this._selMode = false; this._sel.clear();
-                const g = this._lastGrid || {};
-                if (g.el) this.renderGrid(g.el, g.filters);
+                this._repaintHost();
                 this._toast('success', `Queued ${data.pieces} piece${data.pieces === 1 ? '' : 's'} (${data.rows} posts) — see Queue & Schedule`);
             } catch (err) {
                 $('#bp-queue').disabled = false;
@@ -506,7 +357,7 @@ window.Masterpieces = {
         app.innerHTML = `
             <div class="page-header">
                 <h1>Tidy up Masterpieces</h1>
-                <p class="muted"><a href="#/masterpieces">← Back to Masterpieces</a> · Two ways your library ends up
+                <p class="muted"><a href="#/library/type/artwork">← Back to the Library</a> · Two ways your library ends up
                 with more cards than pieces — the same image posted to several sites, and the same piece in different
                 renders (rough/final, SFW/NSFW). Review each below and fold them into one.</p>
             </div>
@@ -853,48 +704,6 @@ window.Masterpieces = {
 
     /* The local file a card shows: the image, or a video / audio piece's poster. */
     _coverFile(m) { return (m.media_kind || 'image') === 'image' ? m.image : m.thumbnail; },
-
-    _cover(m, cls) {
-        // A video / audio piece's file is not a picture (the image route answers 415):
-        // its cover is the poster thumbnail, else a placeholder for its kind (4.43.1).
-        const kind = m.media_kind || 'image';
-        const canon = this._canonUrl(m.name, this._coverFile(m));
-        if (canon) return `<img class="${cls}" src="${this.esc(canon)}" alt="" loading="lazy">`;
-        const s = m.summary || {};
-        if (s.cover_thumb) return `<img class="${cls}" src="${this.esc(this._thumbSrc(s.cover_platform, s.cover_thumb))}" alt="" loading="lazy">`;
-        return `<div class="mp-cover-ph">${kind === 'video' ? '🎬' : kind === 'audio' ? '🎵' : '🖼️'}</div>`;
-    },
-
-    _card(m) {
-        const s = m.summary || {};
-        const t = s.totals || {};
-        const nSites = s.member_count || 0;
-        // Live member platforms if we have them, else the master's configured targets.
-        const plats = (s.platforms && s.platforms.length ? s.platforms : (m.platforms || []));
-        const badges = plats.slice(0, 8).map(c =>
-            `<span class="mp-plat" title="${this.esc(this._plat(c).label)}">${this._plat(c).emoji || c}</span>`).join('');
-        const personas = this._personaChips(s.persona_ids);
-        // In the junk view every card carries a one-click Restore.
-        const restore = this._junkView
-            ? `<button class="btn btn-sm" data-mp-restore data-name="${this.esc(m.name)}"
-                style="margin-top:.35rem" type="button">♻ Restore</button>` : '';
-        // Raw slug in the href (folder names are [\w-] slugs); the API layer
-        // encodes once when fetching — mirrors Bookshelf's #/library/work/{name}.
-        const picked = this._selMode && this._sel.has(m.name);
-        const tick = this._selMode ? `<span class="mp-tick" aria-hidden="true">${picked ? '✓' : ''}</span>` : '';
-        return `
-            <a class="mp-card${this._selMode ? ' is-selectable' : ''}${picked ? ' is-picked' : ''}" href="#/masterpieces/${this.esc(m.name)}"
-               data-mp-name="${this.esc(m.name)}"${this._selMode ? ` role="checkbox" aria-checked="${picked}"` : ''}>
-                <div class="mp-cover" data-rating="${this.esc((m.rating || '').toLowerCase())}">${tick}${this._cover(m, 'mp-cover-img')}</div>
-                <div class="mp-body">
-                    <div class="mp-name" title="${this.esc(m.title || m.name)}">${this.esc(m.title || m.name)}</div>
-                    <div class="mp-meta">${badges}<span class="muted">· ${nSites} site${nSites === 1 ? '' : 's'}</span></div>
-                    <div class="mp-stats">👁 ${this._fmt(t.views)} · ❤ ${this._fmt(t.favorites)} · 💬 ${this._fmt(t.comments)}</div>
-                    ${personas ? `<div class="mp-personas-inline">${personas}</div>` : ''}
-                    ${restore}
-                </div>
-            </a>`;
-    },
 
     /* ── Detail (#/masterpieces/{name}) ── */
 

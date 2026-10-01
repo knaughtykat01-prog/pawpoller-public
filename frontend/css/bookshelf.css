@@ -155,19 +155,120 @@ html:has(#shelf-controls) { scroll-padding-top: 7rem; }
     font-family: var(--font-serif); font-weight: 700; font-size: 3.4rem;
     color: color-mix(in srgb, var(--accent) 65%, var(--text-muted)); opacity: .8;
 }
-/* Variant books (2.190.1) — a render of an artwork piece, shown right after its
-   master book. Dashed cover + a corner badge distinguish them from the master. */
-.book--variant .book-cover { border-style: dashed; }
-.book--variant:hover .book-cover { border-style: solid; }
+/* ── One card per piece (4.47.0, spec 014) ──
+   A card is a <div> holding the link, so the cover toggle can be a real button
+   (a button inside a link is invalid and unreachable by keyboard). */
+.book[hidden] { display: none; }
+.book-link { display: flex; flex-direction: column; text-decoration: none; color: inherit; }
+.book-link:focus-visible { outline: none; }
+.book-link:focus-visible .book-cover { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* A piece with versions/chapters looks like a small stack. */
+.book--stacked .book-link .book-cover {
+    box-shadow: 4px 4px 0 -1px var(--bg-primary), 4px 4px 0 0 var(--card-border-inner),
+                8px 8px 0 -1px var(--bg-primary), 8px 8px 0 0 var(--card-border-inner),
+                0 2px 8px rgba(0,0,0,.14);
+}
+.book--stacked { margin: 0 8px 8px 0; }
+
+/* The toggle sits on the cover's bottom-right: an overlay the cover's size, so it
+   lines up without being inside the link. */
+.book-fanslot { position: absolute; top: 0; left: 0; right: 0; aspect-ratio: 3 / 4; pointer-events: none; z-index: 2; }
+/* On a card the ＋ Collection affordance sits bottom-left of the cover, clear of
+   the status chip (top-left, now wider: "Ch 1–8 live") and the toggle. */
+.book-fanslot .book-collect { top: auto; right: auto; left: 8px; bottom: 8px; pointer-events: auto; }
+.book-fan {
+    position: absolute; right: 8px; bottom: 8px; pointer-events: auto;
+    display: inline-flex; align-items: center; gap: 5px; min-height: 30px;
+    padding: 4px 10px 4px 8px; border: 0; border-radius: 999px; cursor: pointer;
+    font: inherit; font-size: 12px; font-weight: 700;
+    background: rgba(255,255,255,.94); color: #1d1a26; box-shadow: 0 1px 4px rgba(0,0,0,.25);
+}
+.book-fan svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.book-fan:hover { background: #fff; }
+.book-fan:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.book-fan.is-open { background: var(--accent); color: #fff; }
+.book-fan-chev { display: inline-block; transition: transform .15s ease; }
+.book-fan.is-open .book-fan-chev { transform: rotate(180deg); }
+
+/* Part tiles — placed straight after their card in the grid, so they flow on to
+   its right and wrap like any card. Dashed covers say "part of the one before". */
+.book--part { animation: shelf-part-in .18s ease-out; }
+.book--part .book-cover { border-style: dashed; }
+.book--part:hover .book-cover { border-style: solid; }
+@keyframes shelf-part-in { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
 .book-vbadge {
     position: absolute; top: 6px; left: 6px; z-index: 2;
     font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
     padding: .1rem .35rem; border-radius: 999px;
     background: rgba(0,0,0,.6); color: #fff;
 }
-.book-vlabel {
-    font-size: 11px; font-weight: 600; color: var(--text-secondary);
-    border: 1px solid var(--card-border-inner); border-radius: 999px; padding: 0 .4rem;
+.book-chcover {
+    aspect-ratio: 3 / 4; border-radius: 10px; border: 1px dashed var(--card-border-inner);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .2rem;
+    background: color-mix(in srgb, var(--accent) 9%, var(--bg-card));
+    transition: transform .18s ease;
+}
+.book--chapter:hover .book-chcover { transform: translateY(-4px); border-style: solid; }
+.book-chnum { font-family: var(--font-serif); font-weight: 800; font-size: 2.6rem; line-height: 1; color: var(--accent); }
+.book-chword { font-size: .72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
+.book-reach { height: 5px; border-radius: 999px; background: color-mix(in srgb, var(--text-muted) 25%, transparent); overflow: hidden; margin-top: .35rem; }
+.book-reach i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.book--more {
+    aspect-ratio: 3 / 4; justify-content: center; align-items: center; text-align: center; gap: .4rem;
+    border: 1px dashed var(--card-border-inner); border-radius: 10px; padding: 1rem;
+    color: var(--accent); text-decoration: none;
+}
+.book--more:hover { border-style: solid; }
+.book-more-n { font-weight: 700; }
+.book-more-go { font-size: .78rem; color: var(--text-secondary); }
+
+/* Status chips: under the title (scheduled next) and on part tiles. */
+.book-chips { margin-top: .2rem; }
+.book-chip {
+    display: inline-block; font-size: .66rem; font-weight: 700; letter-spacing: .02em;
+    color: var(--text-muted); border: 1px solid var(--card-border-inner);
+    border-radius: 999px; padding: 0 .45rem; margin-left: .15rem; white-space: nowrap;
+}
+.book-chip--sched { color: var(--warning, #b4690e); border-color: var(--warning, #b4690e); }
+.book-nums { display: flex; flex-wrap: wrap; gap: .55rem; font-size: .74rem; color: var(--text-secondary); margin-top: .25rem; }
+.book-personas { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .25rem; }
+.book-persona { display: inline-flex; align-items: center; gap: .25rem; font-size: .7rem; color: var(--text-secondary); }
+.book-persona-dot { width: 7px; height: 7px; border-radius: 50%; }
+.book-restore { margin-top: .4rem; align-self: flex-start; }
+
+/* Select mode (batch posting): the tick sits top-right, the cover link is inert. */
+.book.is-selectable { cursor: pointer; }
+.book.is-selectable .book-collect { display: none; }
+.book.is-selectable:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 10px; }
+.book > .mp-tick { left: auto; right: .5rem; z-index: 3; }
+.book.is-picked .book-cover { box-shadow: 0 0 0 3px var(--accent); }
+
+/* The tools row: the versions/chapters switch + the art tools. */
+.shelf-tools { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin: -.4rem 0 1.1rem; }
+.shelf-tools-sp { flex: 1; }
+.shelf-switch {
+    display: inline-flex; align-items: center; gap: .5rem; min-height: 32px;
+    background: none; border: 0; padding: 0; cursor: pointer;
+    font: inherit; font-size: .85rem; color: var(--text-secondary);
+}
+.shelf-switch-track {
+    width: 34px; height: 20px; border-radius: 999px; position: relative; flex: none;
+    background: var(--bg-tertiary, var(--bg-card)); border: 1px solid var(--card-border-inner);
+    transition: background .15s ease;
+}
+.shelf-switch-track::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--text-muted); transition: left .15s ease, background .15s ease;
+}
+.shelf-switch[aria-checked="true"] { color: var(--text-primary); }
+.shelf-switch[aria-checked="true"] .shelf-switch-track { background: var(--accent); }
+.shelf-switch[aria-checked="true"] .shelf-switch-track::after { left: 16px; background: #fff; }
+.shelf-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .book--part { animation: none; }
+    .book-fan-chev, .shelf-switch-track, .shelf-switch-track::after, .book-chcover { transition: none; }
 }
 
 /* Truth-telling ribbon */
@@ -177,7 +278,9 @@ html:has(#shelf-controls) { scroll-padding-top: 7rem; }
     text-transform: uppercase; color: #fff; background: var(--accent);
     padding: .2rem .5rem; border-radius: 999px; box-shadow: 0 1px 4px rgba(0,0,0,.25);
 }
-.book-ribbon.is-draft { background: color-mix(in srgb, var(--text-muted) 78%, transparent); }
+.book-ribbon.is-draft,
+.book-ribbon--draft { background: color-mix(in srgb, var(--text-muted) 78%, transparent); }
+.book-ribbon--scheduled { background: var(--warning, #b4690e); color: #1d1a26; }
 .book-spine { padding: .6rem .1rem 0; }
 .book-title {
     font-family: var(--font-serif); font-weight: 600; font-size: 1.02rem; line-height: 1.2;
@@ -307,3 +410,5 @@ html:has(#shelf-controls) { scroll-padding-top: 7rem; }
     font-size: .68rem; font-weight: 600; letter-spacing: .02em;
     pointer-events: none;
 }
+/* A video/audio piece with versions: the length moves up so the toggle has the corner. */
+.book--stacked .book-media-badge { bottom: 2.6rem; }

@@ -431,7 +431,9 @@ async def import_backup(file: UploadFile = File(...)):
                 restored.append(f)
         # A scheduled backup carries no media; it lives in the mirror beside the
         # zips on this machine. Restore from it when the zip names one.
-        mirror = _auto_backup_dir() / manifest["media_mirror"] if manifest.get("media_mirror") else None
+        # RESTOREMIRROR (4.46.2): the name comes from the uploaded file, so only OUR mirror name is
+        # honoured — anything else could point the restore at same-named folders elsewhere on disk.
+        mirror = _auto_backup_dir() / MEDIA_MIRROR if manifest.get("media_mirror") == MEDIA_MIRROR else None
         for d in _BACKUP_DIRS:
             sd = src_data / d
             if not sd.is_dir() and mirror is not None and (mirror / d).is_dir():

@@ -745,6 +745,13 @@
     const p = _plat(code);
     return (p && p.emoji) || '';
   }
+  /* The site's logo where one is bundled (platforms.js sets p.logo), else its emoji —
+     the same rule the Platforms page uses. alt="" because the name sits beside it. */
+  function icon(code, cls) {
+    const p = _plat(code);
+    if (p && p.logo) return '<img class="' + cls + '-logo" src="' + p.logo + '" alt="" loading="lazy">';
+    return '<span class="' + cls + '-emoji" aria-hidden="true">' + emoji(code) + '</span>';
+  }
 
   /* Render the full guide body (used by both the modal and the hub detail). */
   function renderBody(code) {
@@ -806,7 +813,7 @@
     el.innerHTML =
       '<div class="guide-modal-card" role="dialog" aria-modal="true" aria-label="How to get started: ' + label(code) + '">' +
         '<div class="guide-modal-head">' +
-          '<span class="guide-modal-emoji">' + emoji(code) + '</span>' +
+          icon(code, 'guide-modal') +
           '<h3 class="guide-modal-title">How to get started: ' + label(code) + '</h3>' +
           '<button class="guide-modal-close" type="button" aria-label="Close">&times;</button>' +
         '</div>' +
@@ -825,7 +832,7 @@
       if (!g) return '';
       return '<button class="guide-hub-card" type="button" data-guide="' + p.code + '">' +
         '<div class="guide-hub-card-top">' +
-          '<span class="guide-hub-card-emoji">' + (p.emoji || '') + '</span>' +
+          icon(p.code, 'guide-hub-card') +
           '<span class="guide-hub-card-name">' + p.label + '</span>' +
         '</div>' +
         '<div class="guide-hub-card-kind">' + g.kind + '</div>' +

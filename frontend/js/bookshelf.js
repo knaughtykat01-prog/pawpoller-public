@@ -12,12 +12,20 @@
  * with no sort/search, and "Artwork" was /api/works filtered to artwork plus a
  * discovered-tile surface. Both are now segments here and their hub routes
  * redirect in. Deep-link a segment with #/library/type/{story|artwork|
- * masterpiece|discovered}.
+ * discovered|unfiled}.
+ *
+ * ONE CARD PER PIECE (4.47.0, spec 014). The Masterpieces segment showed the same
+ * pieces as Artwork a second time, and every extra version of a piece was its own
+ * card. Now a piece is one card that pools every upload of it (what Masterpieces
+ * pooled), and its versions — or a story's chapters — fan out from a toggle on the
+ * cover as tiles placed right after it. The Masterpieces grid's tools moved here:
+ * Select → post as a batch (still Masterpieces._openBatch), Find duplicates, New,
+ * and Restore in the junk view. #/masterpieces and …/type/masterpiece redirect to
+ * Artwork.
  *
  * Reuses the real endpoints, adds almost no backend —
  *   - list          → API.getWorks()            (GET /api/works)
  *   - story detail  → API.getPostingStory(name) (GET /api/posting/stories/{name})
- *   - masterpieces  → Masterpieces.renderGrid()     (its own managed surface)
  *   - discovered    → Submissions.renderDiscoveredInto()  (the review surface)
  * DETAIL routes are deliberately untouched — merging the hubs doesn't merge the
  * pages behind them. Artwork keeps #/artwork/image/{name}; only the richer STORY
@@ -29,7 +37,7 @@
 window.Bookshelf = {
     _works: [],
     _personas: [],
-    _type: 'all',      // all | story | artwork | masterpiece | discovered
+    _type: 'all',      // all | story | artwork | discovered | unfiled
     _persona: 0,       // 0 = all
     _search: '',
     _sort: 'recent',   // recent | title | platforms
@@ -39,7 +47,20 @@ window.Bookshelf = {
 
     /* Valid #/library/type/{t} targets — guards the deep-link + the redirects
        from the retired hubs against typos silently showing an empty shelf. */
-    TYPES: ['all', 'story', 'artwork', 'masterpiece', 'discovered', 'unfiled'],
+    TYPES: ['all', 'story', 'artwork', 'discovered', 'unfiled'],
+
+    /* The retired Masterpieces segment (4.47.0) — old links land on Artwork. */
+    normaliseType(t) { return t === 'masterpiece' ? 'artwork' : t; },
+
+    /* Versions & chapters (4.47.0, spec 014). `_partsAll` is the "Show versions &
+       chapters" switch; `_openMap` holds per-card overrides keyed "type:name";
+       `_forceOpen` is per-render — cards a search matched only through a part. */
+    _PARTS_KEY: 'pp_library_parts',
+    _OPEN_KEY: 'pp_library_open',
+    _partsAll: false,
+    _openMap: {},
+    _forceOpen: new Set(),
+    _MAX_CHAPTER_TILES: 4,
 
     esc(s) {
         return (window.Utils && Utils.escapeHtml)
@@ -117,9 +138,10 @@ window.Bookshelf = {
         }
         this._works = (data && data.works) || [];
         this._personas = (data && data.personas) || [];
-        // Fresh masterpiece data per Library open (the grid is lazy-loaded on first
-        // switch to the Masterpieces segment; this just drops any stale cache).
+        // The piece page's prev/next list is Masterpieces' cache; drop it so it
+        // follows any change made since (4.47.0: the grid that also used it is gone).
         if (window.Masterpieces && Masterpieces.resetCache) Masterpieces.resetCache();
+        this._loadPartsState();
         this._renderControls();
         this._paint();
         this._loadDiscovered();   // discovered-art import banner (moved from Submissions)
@@ -240,11 +262,37 @@ window.Bookshelf = {
                     ${(window.visiblePlatforms ? window.visiblePlatforms() : (window.PLATFORMS || []))
                         .map(p => `<option value="${this.esc(p.code)}"${p.code === this._platform ? ' selected' : ''}>${this.esc(p.emoji ? p.emoji + ' ' + p.label : p.label)}</option>`).join('')}
                 </select>`;
+        // Tools row (4.47.0): the versions/chapters switch, and the Masterpieces
+        // grid's tools — they act on artwork, so they show on All and Artwork.
+        const arty = this._type === 'all' || this._type === 'artwork';
+        const sel = !!(window.Masterpieces && Masterpieces._selMode);
+        const tools = isDisc ? '' : `
+            <div class="shelf-tools">
+                <button type="button" class="shelf-switch" id="shelf-parts" role="switch"
+                    aria-checked="${this._partsAll}">
+                    <span class="shelf-switch-track" aria-hidden="true"></span>Show versions &amp; chapters</button>
+                ${arty && this._status !== 'junk' ? `
+                <span class="shelf-tools-sp"></span>
+                <button class="btn btn-sm${sel ? ' btn-primary' : ''}" data-mp-select type="button"
+                    title="Tick several pieces and post them in one go — each as its own submission, spread out over time">☑ ${sel ? 'Selecting…' : 'Select'}</button>
+                <a class="btn btn-sm" href="#/masterpieces/duplicates"
+                    title="Find pieces that are the same image, or the same piece in different renders, and fold them into one">🔍 Find duplicates</a>
+                <a class="btn btn-primary btn-sm" href="#/artwork/new"
+                    title="Upload a new image, describe it once, and publish it across sites">＋ New artwork</a>` : ''}
+            </div>`;
         el.innerHTML = `
             <div class="shelf-controls">
-                <div class="shelf-segs">${seg('all', 'All')}${seg('story', 'Stories')}${seg('artwork', 'Artwork')}${seg('masterpiece', 'Masterpieces')}${seg('discovered', this._discLabel())}${seg('unfiled', 'Unfiled')}</div>
+                <div class="shelf-segs">${seg('all', 'All')}${seg('story', 'Stories')}${seg('artwork', 'Artwork')}${seg('discovered', this._discLabel())}${seg('unfiled', 'Unfiled')}</div>
                 ${shelfControls}
-            </div>`;
+            </div>${tools}`;
+        el.querySelector('#shelf-parts')?.addEventListener('click', () => this._setPartsAll(!this._partsAll));
+        el.querySelector('[data-mp-select]')?.addEventListener('click', () => {
+            if (!window.Masterpieces) return;
+            Masterpieces._selMode = !Masterpieces._selMode;
+            if (!Masterpieces._selMode) Masterpieces._sel.clear();
+            this._renderControls();
+            this._paint();
+        });
 
         el.querySelectorAll('[data-shelf-type]').forEach(b =>
             b.addEventListener('click', () => this.switchType(b.dataset.shelfType)));
@@ -255,7 +303,8 @@ window.Bookshelf = {
         const so = el.querySelector('#shelf-sort');
         if (so) { so.value = this._sort; so.addEventListener('change', () => { this._sort = so.value; this._paint(); }); }
         const st = el.querySelector('#shelf-status');
-        if (st) { st.value = this._status; st.addEventListener('change', () => { this._status = st.value; this._paint(); }); }
+        // Re-renders the bar too: the junk view hides Select (there is nothing to post).
+        if (st) { st.value = this._status; st.addEventListener('change', () => { this._status = st.value; this._renderControls(); this._paint(); }); }
         const pf = el.querySelector('#shelf-platform');
         if (pf) { pf.value = this._platform; pf.addEventListener('change', () => { this._platform = pf.value; this._paint(); }); }
     },
@@ -266,6 +315,7 @@ window.Bookshelf = {
      * /api/works call just to show a filter of data we're already holding.
      * replaceState still leaves a URL you can refresh, bookmark or share. */
     switchType(t) {
+        t = this.normaliseType(t);
         if (!this.TYPES.includes(t)) return;
         this._type = t;
         try {
@@ -322,13 +372,22 @@ window.Bookshelf = {
         // bare words still meaning title/name. Falls back to the old substring
         // match if the module failed to load, so a bad deploy degrades to the
         // previous behaviour rather than to a shelf that ignores what you type.
+        //
+        // Parts (4.47.0, spec 014): a piece also matches when only one of its
+        // versions or chapters does — "nsfw" finds the piece with an NSFW version,
+        // `rating:adult` finds a General piece whose other version is Adult — and
+        // that card is drawn opened to show the part.
+        this._forceOpen = new Set();
         if (this._search) {
-            if (parsed) {
-                list = list.filter(w => SearchQuery.match(w, parsed));
-            } else {
-                const q = this._search.toLowerCase();
-                list = list.filter(w => (w.title || '').toLowerCase().includes(q) || (w.name || '').toLowerCase().includes(q));
-            }
+            const q = this._search.toLowerCase();
+            const hit = parsed
+                ? (x => SearchQuery.match(x, parsed))
+                : (w => (w.title || '').toLowerCase().includes(q) || (w.name || '').toLowerCase().includes(q));
+            list = list.filter(w => {
+                if (hit(w)) return true;
+                if (this._parts(w).some(hit)) { this._forceOpen.add(this._key(w)); return true; }
+                return false;
+            });
         }
         if (this._sort === 'title') list.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
         else if (this._sort === 'platforms') list.sort((a, b) => (b.platforms || []).length - (a.platforms || []).length);
@@ -375,18 +434,13 @@ window.Bookshelf = {
         if (!grid) return;
         // Tear down the previous window's scroll observer (segment/filter change).
         if (this._gridObserver) { this._gridObserver.disconnect(); this._gridObserver = null; }
-        // Masterpieces are their own managed surface (master-record-per-image, from
-        // /api/masterpieces) — hand the grid to the Masterpieces module, passing the
-        // shared shelf filters so persona/search/sort keep working across segments.
-        if (this._type === 'masterpiece') {
-            if (window.Masterpieces) {
-                Masterpieces.renderGrid(grid, { persona: this._persona, search: this._search, sort: this._sort });
-            } else {
-                grid.className = '';
-                grid.innerHTML = `<div class="empty-state"><h3>Masterpieces unavailable</h3></div>`;
-            }
-            return;
+        this._wireGrid(grid);
+        // Select mode belongs to the shelf; leaving it for Discovered/Unfiled ends it.
+        if (window.Masterpieces && Masterpieces._selMode
+            && (this._type === 'discovered' || this._type === 'unfiled' || this._status === 'junk')) {
+            Masterpieces._selMode = false; Masterpieces._sel.clear();
         }
+        if (window.Masterpieces && Masterpieces._paintSelBar) Masterpieces._paintSelBar();
         // Discovered — the polled-but-unlinked review queue, folded in from the
         // retired Artwork hub (2.155.0). Submissions owns the rows AND their
         // actions (link · import · ★ Master · 🚫 Ignore · per-platform bulk);
@@ -407,6 +461,11 @@ window.Bookshelf = {
             return;
         }
         const list = this._filtered();
+        // "Select all shown" in the batch bar selects the art on screen.
+        if (window.Masterpieces) {
+            Masterpieces._lastList = list.filter(w => w.content_type === 'artwork');
+            Masterpieces._paintSelBar();
+        }
         if (!list.length) {
             grid.className = '';
             // The bin says what it is: "no works match" reads like a broken
@@ -503,26 +562,183 @@ window.Bookshelf = {
         }
     },
 
-    /* A single "book" on the shelf. The cover is the hero; a small gilt ribbon
-       tells the truth (how many platforms it's live on, or "Draft"). Stories
-       open the rich Library detail; artwork keeps its own detail route. */
+    /* ── One card per piece (4.47.0, spec 014) ─────────────────────────────── */
+
+    _key(w) { return `${w.content_type}:${w.name}`; },
+
+    /* A work's parts as pseudo-works the search grammar can test: versions for art
+       (title = the version's label, its own rating and sites), chapters for stories. */
+    _parts(w) {
+        if (w.content_type === 'story') {
+            return (w.chapters || []).map(c => ({ ...w, title: c.title || '', platforms: c.platforms || [] }));
+        }
+        return (w.variants || []).map(v => ({
+            ...w, title: v.label || v.key || '', rating: v.rating || w.rating,
+            platforms: v.platforms || [],
+        }));
+    },
+
+    _partCount(w) {
+        return w.content_type === 'story'
+            ? ((w.chapters || []).length ? (w.chapter_count || w.chapters.length) : 0)
+            : (w.variants || []).length;
+    },
+
+    _loadPartsState() {
+        try {
+            this._partsAll = localStorage.getItem(this._PARTS_KEY) === '1';
+            const m = JSON.parse(localStorage.getItem(this._OPEN_KEY) || '{}');
+            this._openMap = (m && typeof m === 'object') ? m : {};
+        } catch { this._partsAll = false; this._openMap = {}; }   // blocked storage: closed, nothing remembered
+    },
+
+    _savePartsState() {
+        try {
+            localStorage.setItem(this._PARTS_KEY, this._partsAll ? '1' : '0');
+            localStorage.setItem(this._OPEN_KEY, JSON.stringify(this._openMap));
+        } catch { /* blocked storage: works for this visit only */ }
+    },
+
+    /* The switch opens or closes EVERY card, so it clears the per-card overrides. */
+    _setPartsAll(on) {
+        this._partsAll = !!on;
+        this._openMap = {};
+        this._savePartsState();
+        const sw = document.getElementById('shelf-parts');
+        if (sw) sw.setAttribute('aria-checked', String(this._partsAll));
+        const grid = document.getElementById('shelf-grid');
+        if (grid) grid.querySelectorAll('[data-fan]').forEach(b => this._applyOpen(grid, b.dataset.fan));
+    },
+
+    _isOpen(key) {
+        if (this._forceOpen && this._forceOpen.has(key)) return true;
+        return Object.prototype.hasOwnProperty.call(this._openMap, key) ? !!this._openMap[key] : this._partsAll;
+    },
+
+    _applyOpen(grid, key) {
+        const open = this._isOpen(key);
+        const sel = window.CSS && CSS.escape ? CSS.escape(key) : key.replace(/["\\]/g, '\\$&');
+        grid.querySelectorAll(`[data-part-of="${sel}"]`).forEach(t => { t.hidden = !open; });
+        const b = grid.querySelector(`[data-fan="${sel}"]`);
+        if (b) {
+            b.setAttribute('aria-expanded', String(open));
+            b.classList.toggle('is-open', open);
+            b.setAttribute('aria-label', (open ? 'Hide ' : 'Show ') + b.dataset.what);
+        }
+        b?.closest('.book')?.classList.toggle('is-open', open);
+    },
+
+    /* Delegated once per grid element (cards stream in later): the cover toggle,
+       Restore in the junk view, and Select mode's tick-instead-of-open. */
+    _wireGrid(grid) {
+        if (grid.dataset.shelfWired) return;
+        grid.dataset.shelfWired = '1';
+        grid.addEventListener('click', async (e) => {
+            const fan = e.target.closest('[data-fan]');
+            if (fan && grid.contains(fan)) {
+                e.preventDefault();
+                const key = fan.dataset.fan;
+                this._openMap[key] = !this._isOpen(key);
+                if (this._forceOpen) this._forceOpen.delete(key);
+                this._savePartsState();
+                this._applyOpen(grid, key);
+                return;
+            }
+            const rb = e.target.closest('[data-restore]');
+            if (rb && grid.contains(rb)) {
+                e.preventDefault();
+                rb.disabled = true;
+                try {
+                    await API.setMasterpieceStatus(rb.dataset.restore, '');
+                    this._toast('success', 'Restored to the Library');
+                    await this.render();
+                } catch (err) {
+                    rb.disabled = false;
+                    this._toast('error', 'Restore failed: ' + (err.message || err));
+                }
+                return;
+            }
+            if (window.Masterpieces && Masterpieces._selMode) {
+                const card = e.target.closest('.book[data-mp-name]');
+                if (card && grid.contains(card)) { e.preventDefault(); Masterpieces._toggleSel(card); }
+            }
+        });
+        grid.addEventListener('keydown', (e) => {
+            if (!(window.Masterpieces && Masterpieces._selMode) || (e.key !== ' ' && e.key !== 'Enter')) return;
+            const card = e.target.closest('.book[data-mp-name]');
+            if (!card || e.target.closest('[data-fan]')) return;
+            e.preventDefault();
+            Masterpieces._toggleSel(card);
+        });
+    },
+
+    /* "Fri 20:00" within a week, else "4 Oct". */
+    _when(at) {
+        if (!at) return '';
+        const d = (window.Utils && Utils._parseDate) ? Utils._parseDate(at) : new Date(String(at).replace(' ', 'T') + 'Z');
+        if (!d || isNaN(d)) return '';
+        const days = (d - Date.now()) / 864e5;
+        return days >= -1 && days < 7
+            ? d.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+            : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    },
+
+    /* Pooled numbers, words beside the icons for screen readers. */
+    _nums(stats, isStory) {
+        const s = stats || {};
+        const fmt = n => (window.Utils && Utils.formatCompact) ? Utils.formatCompact(n || 0) : String(n || 0);
+        const bits = [];
+        if (s.views) bits.push(`<span title="${isStory ? 'Reads' : 'Views'}"><span aria-hidden="true">👁</span> ${fmt(s.views)}<span class="sr-only"> ${isStory ? 'reads' : 'views'}</span></span>`);
+        if (s.favorites) bits.push(`<span title="Favourites"><span aria-hidden="true">❤</span> ${fmt(s.favorites)}<span class="sr-only"> favourites</span></span>`);
+        if (s.comments) bits.push(`<span title="Comments"><span aria-hidden="true">💬</span> ${fmt(s.comments)}<span class="sr-only"> comments</span></span>`);
+        return bits.length ? `<div class="book-nums">${bits.join('')}</div>` : '';
+    },
+
+    _platIcons(codes, max = 8) {
+        return (codes || []).slice(0, max).map(c =>
+            `<span class="book-plat" title="${this.esc(this._plat(c).label)}">${this._plat(c).emoji || this.esc(c)}</span>`).join('');
+    },
+
+    /* The status chip on the cover (Live on N / Scheduled / Draft) and, when more is
+       queued, a second chip under the title ("Ch 10–12 · Fri 20:00", "Next · Fri"). */
+    _statusChips(w) {
+        const st = w.status || {};
+        const state = st.state || ((w.platforms || []).length ? 'live' : 'draft');
+        const label = st.label || (state === 'live' ? `Live on ${(w.platforms || []).length}` : 'Draft');
+        const when = this._when(st.next_at);
+        const coverLabel = state === 'scheduled' && when ? `Scheduled · ${when}` : label;
+        const chip = `<span class="book-ribbon book-ribbon--${this.esc(state)}">${this.esc(coverLabel)}</span>`;
+        let extra = '';
+        if (state === 'live' && st.next_at) {
+            const what = st.scheduled_label || 'Next';
+            extra = `<span class="book-chip book-chip--sched">${this.esc(what)}${when ? ' · ' + this.esc(when) : ''}</span>`;
+        }
+        return { chip, extra, state };
+    },
+
+    _personaLine(w) {
+        if (this._personas.length < 2) return '';
+        const by = {};
+        this._personas.forEach(p => { by[p.id] = p; });
+        const chips = (w.persona_ids || []).map(id => by[id]).filter(Boolean).map(p =>
+            `<span class="book-persona"><span class="book-persona-dot" style="background:${this.esc(p.color || 'var(--accent)')}"></span>${this.esc(p.name)}</span>`).join('');
+        return chips ? `<div class="book-personas">${chips}</div>` : '';
+    },
+
+    /* A single "book" on the shelf: one per piece. The cover carries the status
+       chip and, when the piece has versions or chapters, the toggle that fans them
+       out as tiles right after the card. Stories open the story board; artwork the
+       piece page. */
     _book(w) {
         const isStory = w.content_type === 'story';
         const href = isStory ? `#/library/work/${w.name}` : (w.detail_route || '#/library');
-        // Truth-telling: a gilt ribbon only when a work is actually out there —
-        // "N live" (platforms it's posted to), or "published" when we know it has
-        // publications but no posted-status platforms. Unpublished works stay
-        // clean (no cover ribbon), marked only by a quiet "Draft" in the meta.
-        const nPlat = (w.platforms || []).length;
-        let ribbon = '';
-        if (nPlat) ribbon = `<span class="book-ribbon" title="Live on ${nPlat} platform${nPlat === 1 ? '' : 's'}">${nPlat} live</span>`;
-        else if (w.publication_count) ribbon = `<span class="book-ribbon" title="Published">published</span>`;
-        const draftTag = (!nPlat && !w.publication_count) ? `<span class="book-draft">Draft</span>` : '';
+        const key = this._key(w);
+        const { chip, extra } = this._statusChips(w);
         // Attribution warning (3.5.2). The owner's standing rule is that credit is
         // always present, so a piece with no artist recorded is a problem to
         // surface, not a neutral state — most of all before it posts. Stories
         // are exempt: they have an author, not an artist.
-        const noArtist = (w.content_type !== 'story' && w.needs_artist)
+        const noArtist = (!isStory && w.needs_artist)
             ? `<span class="book-noartist" title="No artist recorded — add one before posting">no artist</span>`
             : '';
         const initials = this.esc((w.title || w.name || '?').trim().charAt(0).toUpperCase());
@@ -533,8 +749,8 @@ window.Bookshelf = {
         const mediaBadge = (window.MediaKinds && w.media_kind && w.media_kind !== 'image')
             ? `<span class="book-media-badge" title="${this.esc(w.media_kind)}">${this.esc(MediaKinds.badge(w.media, w.media_kind))}</span>` : '';
         const cover = w.thumb_url
-            ? `<div class="book-cover"${rAttr} style="background-image:url('${this.esc(w.thumb_url)}')">${ribbon}${mediaBadge}</div>`
-            : `<div class="book-cover book-cover--blank"${rAttr}><span class="book-initial">${initials}</span>${ribbon}${mediaBadge}</div>`;
+            ? `<div class="book-cover"${rAttr} style="background-image:url('${this.esc(w.thumb_url)}')">${chip}${mediaBadge}</div>`
+            : `<div class="book-cover book-cover--blank"${rAttr}><span class="book-initial">${initials}</span>${chip}${mediaBadge}</div>`;
         const rating = w.rating ? `<span class="book-rating">${this.esc(w.rating)}</span>` : '';
         // The date "Recently posted" sorts by, on the card — a sort key nobody
         // can see cannot be checked (4.3.1). ≈ = matched to an upload by title;
@@ -546,8 +762,6 @@ window.Bookshelf = {
             : (w.created_at
                 ? `<div class="book-posted muted" title="No site upload linked, so no post date — sorts by when it was added">Added ${Utils.formatDate(w.created_at)}</div>`
                 : '');
-        const plats = (w.platforms || []).slice(0, 8).map(c =>
-            `<span class="book-plat" title="${this.esc(this._plat(c).label)}">${this._plat(c).emoji || c}</span>`).join('');
         // Carried over from the retired Stories hub (2.155.0) so folding it in
         // costs nothing: a ⚠ warnings tooltip, a category chip and a short blurb.
         const warns = (w.warnings || []).length
@@ -566,45 +780,100 @@ window.Bookshelf = {
         const collect = `<span class="book-collect" role="button" tabindex="-1"
             data-add-collection data-mtype="work" data-mref="${this.esc(w.content_type + ':' + w.name)}"
             data-label="${this.esc(w.title || w.name)}" title="Add to a collection">＋ Collection</span>`;
+
+        // The toggle on the cover — only when there is something to fan out.
+        const n = this._partCount(w);
+        const open = n ? this._isOpen(key) : false;
+        const word = isStory ? `${n} ch` : `${n} version${n === 1 ? '' : 's'}`;
+        const what = `${isStory ? `${n} chapters` : word} of ${w.title || w.name}`;
+        const fan = n ? `
+            <button type="button" class="book-fan${open ? ' is-open' : ''}" data-fan="${this.esc(key)}"
+                data-what="${this.esc(what)}" aria-expanded="${open}" aria-label="${open ? 'Hide' : 'Show'} ${this.esc(what)}">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="1.5" width="9" height="9" rx="1.5"/><path d="M2.5 4.5v8a1.5 1.5 0 0 0 1.5 1.5h8"/></svg>${this.esc(word)}<span class="book-fan-chev" aria-hidden="true">›</span></button>` : '';
+
+        // Select mode (batch posting) ticks art cards instead of opening them.
+        const selMode = !isStory && window.Masterpieces && Masterpieces._selMode;
+        const picked = selMode && Masterpieces._sel.has(w.name);
+        const selAttrs = !isStory ? ` data-mp-name="${this.esc(w.name)}"` : '';
+        const tick = selMode ? `<span class="mp-tick" aria-hidden="true">${picked ? '✓' : ''}</span>` : '';
+        // In the junk view every art card carries a one-click Restore (was the
+        // Masterpieces grid's; the Library's Junk filter is its home now).
+        const restore = (!isStory && w.is_junk)
+            ? `<button class="btn btn-sm book-restore" type="button" data-restore="${this.esc(w.name)}">♻ Restore</button>` : '';
+
         return `
-            <a class="book" href="${this.esc(href)}">
-                ${cover}
-                ${collect}
-                <div class="book-spine">
-                    <div class="book-title">${this.esc(w.title || w.name)}${warns}</div>
-                    <div class="book-meta">${w.meta ? this.esc(w.meta) : (isStory ? 'Story' : 'Artwork')}${rating ? ' · ' : ''}${rating}${category ? ' ' : ''}${category}${draftTag ? ' ' + draftTag : ''}${noArtist ? ' ' + noArtist : ''}</div>
-                    ${postedLine}
-                    ${series ? `<div class="book-series-line">${series}</div>` : ''}
-                    ${blurb}
-                    <div class="book-plats">${plats}</div>
-                </div>
-            </a>${this._variantBooks(w)}`;
+            <div class="book${n ? ' book--stacked' : ''}${open ? ' is-open' : ''}${selMode ? ' is-selectable' : ''}${picked ? ' is-picked' : ''}"${selAttrs}${selMode ? ` role="checkbox" aria-checked="${picked}" tabindex="0"` : ''}>
+                <a class="book-link" href="${this.esc(href)}"${selMode ? ' tabindex="-1"' : ''}>
+                    ${cover}
+                    <div class="book-spine">
+                        <div class="book-title">${this.esc(w.title || w.name)}${warns}</div>
+                        <div class="book-meta">${w.meta ? this.esc(w.meta) : (isStory ? 'Story' : 'Artwork')}${rating ? ' · ' : ''}${rating}${category ? ' ' : ''}${category}${noArtist ? ' ' + noArtist : ''}</div>
+                        ${extra ? `<div class="book-chips">${extra}</div>` : ''}
+                        ${postedLine}
+                        ${series ? `<div class="book-series-line">${series}</div>` : ''}
+                        ${blurb}
+                        ${this._nums(w.stats, isStory)}
+                        <div class="book-plats">${this._platIcons(w.platforms)}</div>
+                        ${this._personaLine(w)}
+                    </div>
+                </a>
+                ${tick}<div class="book-fanslot">${collect}${fan}</div>${restore}
+            </div>${n ? this._partTiles(w, key, open) : ''}`;
     },
 
-    /* A tile per non-primary variant of an artwork work (2.190.1), rendered right
-     * after its master card so the Library shows every render, not just the
-     * master.
-     *
-     * 2.193.0: each tile now links to its OWN variant via the '?v=<key>' selector
-     * the backend puts on v.detail_route. Before this the key was dropped and
-     * every variant tile opened the master's hero image, which is exactly what
-     * made the two detail pages feel inconsistent. Falls back to the master route
-     * if an older payload has no per-variant route. */
-    _variantBooks(w) {
-        const vs = w.variants || [];
-        if (!vs.length || !w.detail_route) return '';
-        return vs.map(v => {
+    /* The tiles a card fans out: every other version of a piece, or a story's first
+       chapters + "+N more". Rendered hidden when closed, so opening is instant and
+       keeps focus on the toggle. */
+    _partTiles(w, key, open) {
+        const hid = open ? '' : ' hidden';
+        const of = ` data-part-of="${this.esc(key)}"`;
+        const partChip = (p) => {
+            if (p.status === 'live') return '';
+            if (p.status === 'scheduled') {
+                const when = this._when(p.scheduled_at);
+                return `<span class="book-chip book-chip--sched">Scheduled${when ? ' · ' + this.esc(when) : ''}</span>`;
+            }
+            return '<span class="book-chip">Not posted</span>';
+        };
+        if (w.content_type === 'story') {
+            const chs = w.chapters || [];
+            const shown = chs.slice(0, this._MAX_CHAPTER_TILES);
+            const top = Math.max(1, ...chs.map(c => (c.stats || {}).views || 0));
+            const tiles = shown.map(c => {
+                const reads = (c.stats || {}).views || 0;
+                return `
+            <a class="book book--part book--chapter" href="#/library/work/${this.esc(w.name)}"${of}${hid}
+               title="Chapter ${c.index} of ${this.esc(w.title || w.name)}">
+                <div class="book-chcover"><span class="book-chnum">${c.index}</span><span class="book-chword">chapter</span></div>
+                <div class="book-spine">
+                    <div class="book-title">${this.esc(c.title)}</div>
+                    <div class="book-plats">${this._platIcons(c.platforms)}${partChip(c)}</div>
+                    <div class="book-reach" role="img" aria-label="${reads} reads"><i style="width:${Math.round(reads / top * 100)}%"></i></div>
+                    <div class="book-posted">${(window.Utils && Utils.formatNumber) ? Utils.formatNumber(reads) : reads} reads</div>
+                </div>
+            </a>`;
+            }).join('');
+            const more = chs.length - shown.length;
+            return tiles + (more > 0 ? `
+            <a class="book book--part book--more" href="#/library/work/${this.esc(w.name)}"${of}${hid}>
+                <span class="book-more-n">+${more} more chapter${more === 1 ? '' : 's'}</span>
+                <span class="book-more-go">Open the story →</span>
+            </a>` : '');
+        }
+        return (w.variants || []).map(v => {
             const rAttr = ` data-rating="${this.esc((v.rating || w.rating || '').toLowerCase())}"`;
             const cover = v.thumb_url
-                ? `<div class="book-cover"${rAttr} style="background-image:url('${this.esc(v.thumb_url)}')"><span class="book-vbadge">variant</span></div>`
-                : `<div class="book-cover book-cover--blank"${rAttr}><span class="book-vbadge">variant</span></div>`;
+                ? `<div class="book-cover"${rAttr} style="background-image:url('${this.esc(v.thumb_url)}')"><span class="book-vbadge">version</span></div>`
+                : `<div class="book-cover book-cover--blank"${rAttr}><span class="book-vbadge">version</span></div>`;
             return `
-            <a class="book book--variant" href="${this.esc(v.detail_route || w.detail_route)}"
-               title="${this.esc(v.label || v.key)} — a variant of ${this.esc(w.title || w.name)}">
+            <a class="book book--part" href="${this.esc(v.detail_route || w.detail_route)}"${of}${hid}
+               title="${this.esc(v.label || v.key)} — a version of ${this.esc(w.title || w.name)}">
                 ${cover}
                 <div class="book-spine">
-                    <div class="book-title">${this.esc(w.title || w.name)}</div>
-                    <div class="book-meta"><span class="book-vlabel">${this.esc(v.label || v.key)}</span></div>
+                    <div class="book-title">${this.esc(v.label || v.key)}</div>
+                    <div class="book-meta">${v.rating ? `<span class="book-rating">${this.esc(v.rating)}</span>` : ''}</div>
+                    ${this._nums(v.stats)}
+                    <div class="book-plats">${this._platIcons(v.platforms)}${partChip(v)}</div>
                 </div>
             </a>`;
         }).join('');

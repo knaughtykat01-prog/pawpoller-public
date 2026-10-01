@@ -533,42 +533,75 @@ def ensure_indexed_bulk(conn: sqlite3.Connection, names) -> int:
     return len(missing)
 
 
-def summarize_many(conn: sqlite3.Connection, names) -> dict:
+def summarize_many(conn: sqlite3.Connection, names, extra: dict | None = None) -> dict:
     """Batched :func:`summarize` for the whole grid → ``{name: summary}``.
 
     Same per-name output as ``summarize(conn, name)`` but resolves ALL members,
     submission rows and the persona map in O(platforms) queries instead of
     O(total members). Names with no members yield the zeroed summary.
+
+    ``extra`` (4.47.0, spec 014): ``{name: [{platform, submission_id, account_id,
+    variant_key, url}]}`` — uploads known from somewhere other than the member table
+    (the Library passes its posted publications). They are pooled with the members,
+    de-duplicated on ``(platform, submission_id)``, so one upload never counts twice.
+    Needed because not every upload has a member row: on the live catalogue 46 of 189
+    posted artwork publications had none, and the Library card would lose their numbers.
+
+    ``by_variant`` (4.47.0) splits the same locations by the version they show
+    (``''`` = the piece's own image), for the Library's version tiles. A member's
+    ``variant_key`` wins; a publication's only fills in when the member has none.
     """
     names = list(names)
+    extra = extra or {}
     a2p = _acct_to_persona(conn)
     members_by_name = get_members_bulk(conn, names)
     all_pairs = {(m["platform"], str(m["submission_id"]))
                  for ms in members_by_name.values() for m in ms}
+    all_pairs |= {(e["platform"], str(e["submission_id"]))
+                  for es in extra.values() for e in es if e.get("submission_id")}
     rows = _submission_rows_bulk(conn, all_pairs)
 
     out: dict[str, dict] = {}
     for name in names:
         members = members_by_name.get(name, [])
-        locs: list[dict] = []
+        # (platform, sid) -> the upload, members first so their variant_key wins.
+        uploads: dict[tuple, dict] = {}
         for m in members:
-            loc = _location_from_row(
-                m["platform"], str(m["submission_id"]),
-                rows.get((m["platform"], str(m["submission_id"]))),
-                account_id=m.get("account_id"), source="masterpiece")
+            uploads[(m["platform"], str(m["submission_id"]))] = {
+                "account_id": m.get("account_id"), "variant_key": m.get("variant_key") or "",
+                "url": ""}
+        for e in extra.get(name, []):
+            sid = str(e.get("submission_id") or "")
+            if not sid:
+                continue
+            u = uploads.setdefault((e["platform"], sid), {
+                "account_id": e.get("account_id"), "variant_key": "", "url": ""})
+            if not u["variant_key"]:
+                u["variant_key"] = e.get("variant_key") or ""
+            if not u["url"]:
+                u["url"] = e.get("url") or ""
+        locs: list[tuple[dict, str]] = []
+        for (plat, sid), u in uploads.items():
+            loc = _location_from_row(plat, sid, rows.get((plat, sid)), url=u["url"],
+                                     account_id=u["account_id"], source="masterpiece")
             if loc:
-                locs.append(loc)
+                locs.append((loc, u["variant_key"]))
 
         tot = {"views": 0, "favorites": 0, "comments": 0}
         persona_ids: set = set()
         platforms: set = set()
+        by_variant: dict[str, dict] = {}
         cover_thumb, cover_platform = "", ""
-        for l in locs:
+        for l, vkey in locs:
+            bv = by_variant.setdefault(vkey, {
+                "totals": {"views": 0, "favorites": 0, "comments": 0}, "platforms": set()})
             for k in tot:
                 v = l["stats"].get(k)
                 if v:
                     tot[k] += v
+                    bv["totals"][k] += v
             platforms.add(l["platform"])
+            bv["platforms"].add(l["platform"])
             aid = l.get("account_id")
             if aid in a2p:
                 persona_ids.add(a2p[aid])
@@ -582,6 +615,8 @@ def summarize_many(conn: sqlite3.Connection, names) -> dict:
             "platforms": sorted(platforms),
             "cover_thumb": cover_thumb,
             "cover_platform": cover_platform,
+            "by_variant": {k: {"totals": v["totals"], "platforms": sorted(v["platforms"])}
+                           for k, v in by_variant.items()},
         }
     return out
 

@@ -537,8 +537,13 @@ def _src(rel):
 
 
 def test_library_select_mode_and_batch_dialog_are_wired():
-    js = _src("frontend/js/masterpieces.js")
-    assert "data-mp-select" in js and "_toggleSel(card)" in js and "e.preventDefault();" in js
+    # 4.47.0 (spec 014): the Masterpieces grid is gone; the Library owns the Select
+    # button and the ticks, and still hands the selection to Masterpieces' dialog.
+    shelf = _src("frontend/js/bookshelf.js")
+    assert "data-mp-select" in shelf and "Masterpieces._toggleSel(card)" in shelf
+    assert "e.preventDefault(); Masterpieces._toggleSel(card)" in shelf
+    js = _src("frontend/js/masterpieces.js").replace("\r\n", "\n")
+    assert "_toggleSel(card) {" in js and "_paintSelBar()" in js
     dlg = js.split("async _openBatch() {", 1)[1].split("\n    },", 1)[0]
     assert "API.batchPlan(body())" in dlg and "'/api/artwork/batch'" in dlg
     assert "confirm_live: true" in dlg and "expect" in dlg and "resp.status === 409" in dlg

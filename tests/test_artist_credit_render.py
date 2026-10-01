@@ -301,7 +301,9 @@ def test_package_credit_differs_per_platform(piece):
 
 def test_artist_tag_prepended_on_booru_platforms(piece):
     """Prepended, not appended — budgets trim from the tail."""
-    assert ar.build_artwork_package(piece, "e621").tags[0] == "inkwolf"
+    # e621 gets its own category prefix: a bare name it has never seen is filed as a
+    # GENERAL tag and the post shows no artist (E6CAT).
+    assert ar.build_artwork_package(piece, "e621").tags[0] == "artist:inkwolf"
     assert ar.build_artwork_package(piece, "ib").tags[0] == "inkwolf"
 
 
@@ -322,6 +324,9 @@ def test_artist_tag_not_duplicated_when_already_present(tmp_path, monkeypatch):
     monkeypatch.setattr(ar, "get_artwork_archive_path", lambda: tmp_path)
     monkeypatch.setattr("posting.attribution.maybe_append", lambda desc, plat: desc)
     tags = ar.build_artwork_package(ar.load_artwork("P2"), "e621").tags
+    assert [t.lower().split(":")[-1] for t in tags].count("inkwolf") == 1
+    assert tags[0] == "artist:inkwolf"
+    tags = ar.build_artwork_package(ar.load_artwork("P2"), "ib").tags
     assert [t.lower() for t in tags].count("inkwolf") == 1
 
 

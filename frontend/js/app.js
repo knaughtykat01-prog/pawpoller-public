@@ -1445,9 +1445,9 @@ const App = {
             // Masterpiece detail (read-only, Phase 2). Name may contain slashes.
             if (window.Masterpieces) window.Masterpieces.renderDetail(nameFrom(1));
         } else if (parts[0] === 'masterpieces') {
-            // The managed grid lives inside Library under its own type filter —
-            // land there with the Masterpieces segment pre-selected.
-            if (window.Bookshelf) { window.Bookshelf._type = 'masterpiece'; window.Bookshelf.render(); }
+            // The Masterpieces grid is gone (4.47.0, spec 014): one card per piece in
+            // Library → Artwork, which carries its tools. Old links land there.
+            window.location.replace('#/library/type/artwork');
         } else if (parts[0] === 'library' && parts[1] === 'discovered') {
             // Discovered-art bucket, moved under Library (Submissions retired, 2.117.0).
             // Still its own page — it's also a Library segment (2.155.0), but this
@@ -1456,7 +1456,10 @@ const App = {
         } else if (parts[0] === 'library' && parts[1] === 'type' && parts[2]) {
             // Deep-link a Library segment (2.155.0) — how the retired Stories and
             // Artwork hubs land here, and what the segment bar writes to the URL.
-            if (window.Bookshelf) {
+            if (parts[2] === 'masterpiece') {
+                // The Masterpieces segment was folded into Artwork (4.47.0, spec 014).
+                window.location.replace('#/library/type/artwork');
+            } else if (window.Bookshelf) {
                 window.Bookshelf._type = window.Bookshelf.TYPES.includes(parts[2]) ? parts[2] : 'all';
                 window.Bookshelf.render();
             }

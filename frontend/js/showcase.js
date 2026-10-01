@@ -97,7 +97,7 @@ window.Showcase = {
         }));
         this._shelves = [
             { kind: 'story', label: 'Stories', open: '#/library/type/story', items: stories },
-            { kind: 'art', label: 'Artwork', open: '#/library/type/masterpiece', items: art },
+            { kind: 'art', label: 'Artwork', open: '#/library/type/artwork', items: art },
         ];
         this._active = 0;
         this._focus = [0, 0];

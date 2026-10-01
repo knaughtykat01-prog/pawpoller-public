@@ -86,6 +86,21 @@ _CHARACTER_TAG_PLATFORMS = frozenset({"e621", "fbr"})
 _TITLED_PLATFORMS = frozenset({"fa", "ws", "ib", "ik", "da", "sf", "fn"})
 
 
+def _e621_categorised(tags, names, category: str) -> list[str]:
+    """*names* moved to the front of *tags* as ``category:name`` (4.46.3, E6CAT).
+
+    e621 files a tag it has never seen as GENERAL unless the upload names its category,
+    so an artist or character with no e621 tag yet landed as a general tag and the post
+    showed no artist at all. The ``artist:`` / ``character:`` prefix is e621's own upload
+    syntax; on a tag that already exists it changes nothing. Any bare copy already in the
+    list (a hand-typed tag) is dropped so the prefixed one is the only one sent.
+    """
+    names = [str(n).strip().lower() for n in names if str(n).strip()]
+    drop = set(names)
+    rest = [t for t in tags if str(t).lower().split(":", 1)[-1] not in drop]
+    return [f"{category}:{n}" for n in names] + rest
+
+
 def _canonical_tag_list(tags: dict) -> list[str]:
     """core + auxiliary, de-duplicated, order preserved.
 
@@ -699,7 +714,9 @@ def build_artwork_package(
         # A self-drawn piece tags the person's own e621 handle (4.6.0) — the
         # one fix `own` needed most: on a booru the artist tag IS the index.
         atag = artist_credit.artist_tag(self_row or artist, prefer_handle=self_row is not None)
-        if atag and atag not in {str(t).lower() for t in tags}:
+        if atag and platform == "e621":
+            tags = _e621_categorised(tags, [atag], "artist")
+        elif atag and atag not in {str(t).lower() for t in tags}:
             tags = [atag] + list(tags)
 
     # Character tags on the booru sites (4.33.0). A character has always existed twice:
@@ -720,11 +737,14 @@ def build_artwork_package(
         except Exception as e:                    # a registry hiccup must not stop a post
             logger.warning("Character tags unavailable for %s: %s", artwork.name, e)
             ctags = []
-        have = {str(t).lower() for t in tags}
-        # Prepended like the artist tag: per-platform budgets trim from the TAIL.
-        add = [t for t in ctags if t.lower() not in have]
-        if add:
-            tags = add + list(tags)
+        if platform == "e621":
+            tags = _e621_categorised(tags, ctags, "character")
+        else:
+            have = {str(t).lower() for t in tags}
+            # Prepended like the artist tag: per-platform budgets trim from the TAIL.
+            add = [t for t in ctags if t.lower() not in have]
+            if add:
+                tags = add + list(tags)
 
     settings = config.get_settings()
     rating = (rating_override

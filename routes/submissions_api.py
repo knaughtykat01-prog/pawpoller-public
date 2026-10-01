@@ -230,6 +230,94 @@ def recent_key(w: dict) -> tuple:
     return (1, d) if d else (0, w.get("created_at") or "")
 
 
+def _part_state(roll: dict | None, sched: list[dict], *, variant_key: str | None = None,
+                chapter_index: int | None = None) -> dict:
+    """Sites, numbers and status of one version or chapter (4.47.0, spec 014).
+
+    `roll` is a {platforms, totals} slice; `sched` the work's pending queue rows,
+    narrowed here to this part. Status: live once it is on any site, else
+    scheduled (with the earliest time), else draft.
+    """
+    roll = roll or {}
+    plats = list(roll.get("platforms") or [])
+    tot = roll.get("totals") or {}
+    mine = [r for r in sched
+            if (variant_key is None or r["variant_key"] == variant_key)
+            and (chapter_index is None or r["chapter_index"] == chapter_index)]
+    at = min((r["scheduled_at"] for r in mine if r["scheduled_at"]), default="")
+    return {
+        "platforms": plats,
+        "stats": {"views": tot.get("views", 0) or 0, "favorites": tot.get("favorites", 0) or 0,
+                  "comments": tot.get("comments", 0) or 0},
+        "status": "live" if plats else ("scheduled" if mine else "draft"),
+        "scheduled_at": at,
+    }
+
+
+def _work_status(platforms: list, sched: list[dict]) -> dict:
+    """The card's status chip for a piece of art or a one-shot story."""
+    at = min((r["scheduled_at"] for r in sched if r["scheduled_at"]), default="")
+    if platforms:
+        return {"state": "live", "label": f"Live on {len(platforms)}", "next_at": at}
+    if sched:
+        return {"state": "scheduled", "label": "Scheduled", "next_at": at}
+    return {"state": "draft", "label": "Draft", "next_at": ""}
+
+
+def _ch_range(nums: list[int]) -> str:
+    """'1-9' (en dash) for a contiguous run of chapters, '' otherwise."""
+    if not nums:
+        return ""
+    nums = sorted(set(nums))
+    if nums[-1] - nums[0] + 1 != len(nums):
+        return ""
+    return str(nums[0]) if len(nums) == 1 else f"{nums[0]}\u2013{nums[-1]}"
+
+
+def _story_parts(s: dict, wp: list[dict], sched: list[dict], platforms: list) -> dict:
+    """chapters + status for a story card (4.47.0, spec 014).
+
+    Chapters come from the story's own chapter list; each one's sites and reads
+    from the publications with that chapter_index (chapter 0 is a whole-story
+    upload and counts only toward the work). A one-shot story has no chapter list
+    and gets the same status as a piece of art.
+    """
+    titles = {c["index"]: c["title"] for c in (s.get("chapter_titles") or [])}
+    n = max(int(s.get("chapters") or 0), len(titles))
+    if n <= 1:
+        return {"chapters": [], "chapter_count": n, "status": _work_status(platforms, sched)}
+    by_ch: dict[int, list] = {}
+    for p in wp:
+        by_ch.setdefault(int(p.get("chapter_index") or 0), []).append(p)
+    chapters = []
+    for i in range(1, n + 1):
+        cp = by_ch.get(i, [])
+        tot = platform_metrics.pooled((p.get("platform"), p.get("stats")) for p in cp)
+        roll = {"platforms": sorted({p["platform"] for p in cp if p.get("status") == "posted"}),
+                "totals": {"views": tot["views"], "favorites": tot["faves"], "comments": tot["comments"]}}
+        chapters.append({"index": i, "title": titles.get(i) or f"Chapter {i}",
+                         **_part_state(roll, sched, chapter_index=i)})
+    live = [c["index"] for c in chapters if c["status"] == "live"]
+    later = [c["index"] for c in chapters if c["status"] == "scheduled"]
+    next_at = min((c["scheduled_at"] for c in chapters if c["scheduled_at"]), default="")
+    if live:
+        rng = _ch_range(live)
+        label = f"Ch {rng} live" if rng else f"{len(live)} of {n} ch live"
+        state = "live"
+    elif platforms:   # only whole-story uploads (chapter 0)
+        label, state = f"Live on {len(platforms)}", "live"
+    elif later:
+        label, state = "Scheduled", "scheduled"
+    else:
+        label, state = "Draft", "draft"
+    sched_label = ""
+    if later:
+        rng = _ch_range(later)
+        sched_label = f"Ch {rng}" if rng else f"{len(later)} ch"
+    return {"chapters": chapters, "chapter_count": n, "status": {
+        "state": state, "label": label, "next_at": next_at, "scheduled_label": sched_label}}
+
+
 def assemble_works(
     *,
     stories: list[dict],
@@ -244,6 +332,8 @@ def assemble_works(
     sort: str = "recent",
     junk: dict[str, str] | None = None,
     estimated: set | None = None,   # keys whose date came from a title match (4.3.1)
+    rollups: dict | None = None,    # artwork name -> masterpiece_queries.summarize_many row (4.47.0)
+    scheduled: dict | None = None,  # (content_type, name) -> posting_queries.scheduled_parts rows (4.47.0)
 ) -> dict:
     """Pure grouping/filter/sort over already-fetched data (unit-testable).
 
@@ -284,6 +374,9 @@ def assemble_works(
         return platforms, len(wp), pids, {
             "views": totals["views"], "favorites": totals["faves"],
             "comments": totals["comments"], "score": totals["score"]}
+
+    rollups = rollups or {}
+    scheduled = scheduled or {}
 
     works: list[dict] = []
 
@@ -330,6 +423,8 @@ def assemble_works(
                 # Tags (3.14.0) so `tag:` / `-tag:` search has something to match.
                 "tags": list(s.get("tags") or []),
             })
+            works[-1].update(_story_parts(s, pub_map.get(("story", s["name"]), []),
+                                          scheduled.get(("story", s["name"]), []), platforms))
 
     if type in ("all", "artwork"):
         for a in artworks:
@@ -355,6 +450,21 @@ def assemble_works(
                 for v in (a.get("variants") or [])
                 if v.get("key") and v.get("image")
             ]
+            # One card per piece (4.47.0, spec 014): the card pools what the Masterpieces
+            # tab pooled - every member upload of the piece, not only the publications -
+            # and each version tile carries its own sites, numbers and status.
+            roll = rollups.get(a["name"])
+            if roll:
+                platforms = sorted(set(platforms) | set(roll.get("platforms") or []))
+                pids = sorted(set(pids) | set(roll.get("persona_ids") or []))
+                rt = roll.get("totals") or {}
+                stats = {**stats, "views": rt.get("views", 0) or 0,
+                         "favorites": rt.get("favorites", 0) or 0,
+                         "comments": rt.get("comments", 0) or 0}
+            art_sched = scheduled.get(("artwork", a["name"]), [])
+            by_variant = (roll or {}).get("by_variant") or {}
+            for vt in variant_tiles:
+                vt.update(_part_state(by_variant.get(vt["key"]), art_sched, variant_key=vt["key"]))
             _rec = platform_metrics.normalize_posted(a.get("original_posted_at"))
             _resolved = (posted_dates or {}).get(("artwork", a["name"]), "")
             works.append({
@@ -400,6 +510,8 @@ def assemble_works(
                 # see exactly the set that would be posted, or a `tag:` query and
                 # a publish would disagree about what a piece is tagged.
                 "tags": _canonical_tag_list(a.get("tags") or {}),
+                "main": _part_state(by_variant.get(""), art_sched, variant_key=""),
+                "status": _work_status(platforms, art_sched),
             })
 
     if persona:
@@ -543,6 +655,19 @@ def list_works(
             title_dates = _title_dates(conn, artworks, have=set(posted_dates))
             posted_dates.update(title_dates)
             estimated = set(title_dates)
+            # One card per piece (4.47.0): pool member uploads + posted publications
+            # per piece and per version, batched (O(platforms) queries).
+            extra: dict[str, list] = {}
+            for p in pubs:
+                if p.get("content_type") == "artwork" and p.get("external_id"):
+                    extra.setdefault(p["story_name"], []).append({
+                        "platform": p["platform"], "submission_id": p["external_id"],
+                        "account_id": p.get("account_id"),
+                        "variant_key": p.get("variant_key") or "",
+                        "url": p.get("external_url") or ""})
+            rollups = masterpiece_queries.summarize_many(
+                conn, [a["name"] for a in artworks], extra=extra)
+            scheduled = posting_queries.scheduled_parts(conn)
         finally:
             conn.close()
         return assemble_works(
@@ -552,6 +677,8 @@ def list_works(
             posted_dates=posted_dates,
             estimated=estimated,
             junk=junk,
+            rollups=rollups,
+            scheduled=scheduled,
             acct_to_persona=acct_to_persona,
             personas=personas,
             type=type, persona=persona, search=search, sort=sort,

@@ -130,9 +130,13 @@ async def announce_existing(conn, *, story_name: str, content_type: str = "story
         return {"status": "preview", "text": text,
                 "links": [list(p) for p in links]}
 
-    from posting.platforms.telegram import TelegramPoster
-    poster = TelegramPoster()
-    poster.account_id = account_id or 0
+    # TGNEVERPOST (4.46.2): built through the manager like every other poster, so a
+    # "Never post" Telegram account is refused here too.
+    from posting import manager
+    try:
+        poster = manager._get_poster("tg", account_id or None)
+    except ValueError as e:
+        return {"status": "error", "error": str(e)}
     try:
         creds = poster._resolve_creds("tg", settings)
     except Exception:
