@@ -3576,91 +3576,13 @@ const App = {
      * top viewed/faved lists, recent activity feed, and top fans table.
      * Binds date range bar and starts auto-refresh. */
 
-    /* renderPlatformsHub() — the Platforms hub (#/platforms): a bold
-     * colour-tile grid of all 11 platforms with headline stats and a live
-     * status dot (populated by platform_health via #pg-status-{code}).
-     * Replaces the old modal popover; driven by window.PLATFORMS. */
+    /* renderPlatformsHub() — the Platforms page (#/platforms). Spec 020 moved the page into
+     * platforms_hub.js (Needs attention, calm tiles or a list, not-set-up chips, the shared
+     * Choose-platforms panel), fed by ONE request, GET /api/platforms/overview. */
     async renderPlatformsHub() {
         const _rt = this._routeToken();   // route race guard (see _stale)
         this._loading('rows', 'Platforms');
-        const plats = window.PLATFORMS || [];
-        const fetchers = {
-            ib: () => API.getSummary(), fa: () => API.getFASummary(), ws: () => API.getWSSummary(),
-            sf: () => API.getSFSummary(), sqw: () => API.getSQWSummary(), ao3: () => API.getAO3Summary(),
-            da: () => API.getDASummary(), wp: () => API.getWPSummary(), ik: () => API.getIKSummary(),
-            bsky: () => API.getBSKYSummary(), tw: () => API.getTWSummary(),
-            mast: () => API.getMASTSummary(), tum: () => API.getTUMSummary(),
-            pix: () => API.getPIXSummary(), thr: () => API.getTHRSummary(), ig: () => API.getIGSummary(),
-            e621: () => API.getE621Summary(), fn: () => API.getFNSummary(), fbr: () => API.getFBRSummary(), sc: () => API.getSCSummary(), ng: () => API.getNGSummary(), yt: () => API.getYTSummary(), pic: () => API.getPICSummary(),
-            tg: () => API.getTGSummary(),
-        };
-        const [results, health] = await Promise.all([
-            Promise.all(plats.map(p =>
-                (fetchers[p.code] ? fetchers[p.code]() : Promise.resolve(null)).catch(() => null)
-            )),
-            API.getPlatformsHealth().catch(() => ({})),
-        ]);
-
-        const fmt = (n) => Utils.formatCompact(n || 0);
-        const tiles = plats.map((p, i) => {
-            const d = results[i] || {};
-            // Read through the registry rather than guessing at column names.
-            // The old literal chain was `total_favorites || total_votes ||
-            // total_likes`, which missed Tumblr's `total_notes`, both boorus'
-            // `total_score` and Telegram's `total_reactions` — so those tiles
-            // showed a headline 0 no matter how much engagement they had.
-            const stat = (key) => (window.platformStat
-                ? window.platformStat(p.code, d, key) : 0);
-            const views = stat('views');
-            const faves = stat('faves') || stat('score');
-            const subs = d.total_submissions || 0;
-            const primary = views > 0 ? views : faves;
-            // The platform's own word for it — "Notes" on Tumblr, "Reactions"
-            // on Telegram — lower-cased to sit in the tile's subtitle line.
-            const primaryLabel = (window.platformMetricLabel
-                ? window.platformMetricLabel(p.code, views > 0 ? 'views' : (stat('faves') ? 'faves' : 'score'))
-                : (views > 0 ? 'Views' : 'Faves')).toLowerCase();
-            const route = window.platformRoute ? window.platformRoute(p.code) : '#/' + p.code;
-            // No credentials for this platform yet → nudge onboarding with a
-            // "Setup guide" button (data-guide is handled by the Guides delegate;
-            // it preventDefaults so it opens the guide instead of following the tile).
-            const configured = !!(health[p.code] && health[p.code].configured);
-            const body = configured
-                ? `<div class="hub-tile-num">${fmt(primary)}</div>
-                   <div class="hub-tile-sub">${primaryLabel} · ${subs} works</div>`
-                : `<div class="hub-tile-sub hub-tile-notset">Not set up yet</div>
-                   ${window.PlatformGuides && window.PlatformGuides.has(p.code)
-                       ? `<span class="hub-tile-guide" role="button" tabindex="0" data-guide="${p.code}">&#128214; Setup guide</span>`
-                       : ''}`;
-            return `
-                <a href="${route}" class="hub-tile${configured ? '' : ' hub-tile--unset'}" data-platform="${p.code}" style="--pc:${p.color}">
-                    <span class="hub-tile-wm">${p.emoji}</span>
-                    ${p.pollOnly ? '<span class="hub-tile-pill">poll only</span>' : ''}
-                    <div class="hub-tile-top">
-                        <span class="hub-tile-logo">${p.logo ? `<img src="${p.logo}" alt="${p.label} logo" loading="lazy">` : `<span class="hub-tile-emoji">${p.emoji}</span>`}</span>
-                        <span class="platform-grid-status pp-health-dot" id="pg-status-${p.code}" data-tooltip=""></span>
-                    </div>
-                    <div class="hub-tile-name">${p.label}</div>
-                    ${body}
-                </a>`;
-        }).join('');
-
-        if (this._stale(_rt)) return;
-        this._setContent(`
-            <div class="page-header">
-                <h1>Platforms</h1>
-            </div>
-            <div class="hub-grid" id="platform-grid">${tiles}</div>
-            <p class="logo-disclaimer">Platform names and logos are trademarks of their respective owners.
-            PawPoller is an independent tool, not affiliated with or endorsed by any of these platforms;
-            their logos are shown solely to identify each service.</p>
-        `);
-
-        /* Populate live status dots immediately (platform_health re-fetches
-           then renders into #pg-status-{code}). */
-        if (window.PlatformHealth && window.PlatformHealth.fetchOnce) {
-            window.PlatformHealth.fetchOnce();
-        }
+        if (window.PlatformsHub) await window.PlatformsHub.render(this, _rt);
     },
 
     async renderOverview() {
@@ -14922,12 +14844,12 @@ const App = {
                     <summary>Platforms I use <span class="summary-meta">— hide the ones you don't</span></summary>
                     <div class="accordion-body">
                     <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">
-                        Untick a site to keep it out of the Platforms hub, the Overview charts and the
-                        Library's platform filter. Nothing is deleted and nothing stops being checked —
-                        it just stops filling up lists. A site you connect later appears on its own.
+                        Switch a site off to keep it out of the Platforms page, menus, pickers and
+                        analytics. Nothing is deleted. If the site is connected, you choose whether
+                        PawPoller keeps checking it for new stats in the background. A site you connect
+                        later appears on its own.
                     </p>
-                    <div id="platform-visibility" class="platform-checkboxes"></div>
-                    <span id="platform-visibility-msg" style="font-size:12px;color:var(--text-muted)"></span>
+                    <div id="platform-visibility"></div>
                     </div>
                 </details>
 
@@ -17229,29 +17151,12 @@ const App = {
             });
 
             // ── Platforms I use (Settings → Platforms) ───────────────
+            // The same Choose-platforms control as the Platforms page (spec 020, platform_picker.js):
+            // grouped switches, hide-all-not-set-up, and "keep checking it?" for a connected site.
             const pvBox = document.getElementById('platform-visibility');
-            if (pvBox) {
-                const hidden = new Set(window.HIDDEN_PLATFORMS || []);
-                pvBox.innerHTML = (window.PLATFORMS || []).map(p => `
-                    <label class="checkbox-label">
-                        <input type="checkbox" data-pv="${Utils.escapeHtml(p.code)}"${hidden.has(p.code) ? '' : ' checked'}>
-                        ${Utils.escapeHtml(p.emoji ? p.emoji + ' ' + p.label : p.label)}
-                    </label>`).join('');
-                pvBox.addEventListener('change', async (e) => {
-                    const box = e.target.closest('[data-pv]');
-                    if (!box) return;
-                    const next = [...pvBox.querySelectorAll('[data-pv]')]
-                        .filter(b => !b.checked).map(b => b.dataset.pv);
-                    const msg = document.getElementById('platform-visibility-msg');
-                    try {
-                        await API.savePreferences({ hidden_platforms: next });
-                        window.HIDDEN_PLATFORMS = next;
-                        if (msg) { msg.textContent = 'Saved'; setTimeout(() => { msg.textContent = ''; }, 1500); }
-                    } catch (err) {
-                        box.checked = !box.checked;
-                        if (msg) msg.textContent = 'Could not save: ' + (err.message || err);
-                    }
-                });
+            if (pvBox && window.PlatformPicker) {
+                pvBox.classList.add('pk-inline');
+                window.PlatformPicker.mount(pvBox);
             }
 
             // ── Credits (Settings → About) ───────────────────────────

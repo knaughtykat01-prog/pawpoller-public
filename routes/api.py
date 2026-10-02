@@ -21,6 +21,7 @@ import csv
 import io
 import json
 import logging
+import re
 import sqlite3
 import shutil
 import tempfile
@@ -473,9 +474,14 @@ def get_platforms_health():
         throttled_until  : ISO datetime | None — currently AO3-only
                            (sourced from ao3 client backoff cache)
     """
+    return _health_snapshot()
+
+
+def _health_snapshot(settings: dict | None = None) -> dict:
+    """The per-platform health entries behind /platforms/health and /platforms/overview."""
     from datetime import datetime, timedelta, timezone
     from polling.session_check import get_session_health
-    settings = config.get_settings()
+    settings = settings if settings is not None else config.get_settings()
     sessions = get_session_health()
     fallback_interval = int(settings.get("poll_interval_minutes", 60))
     out: dict = {}
@@ -499,7 +505,12 @@ def get_platforms_health():
                     entry["last_poll_at"] = started
                     entry["last_poll_status"] = last.get("status")
                     if last.get("status") in ("error", "partial"):
-                        entry["last_poll_error"] = last.get("error_message")
+                        # 4.54.0 release review (Medium): poll errors are raw exception text, and
+                        # a client error can carry a URL with a token in it. Mask credentials
+                        # before the text reaches /platforms/health, the overview or the page.
+                        import log_redaction
+                        err = last.get("error_message")
+                        entry["last_poll_error"] = log_redaction.scrub(str(err)) if err else err
                     if started:
                         # SQLite stores started_at via datetime('now') as
                         # naive UTC; tag it explicitly so the frontend's
@@ -538,6 +549,213 @@ def get_platforms_health():
     finally:
         conn.close()
     return out
+
+
+# ── The Platforms page (spec 020) ──────────────────────────────────
+
+_TREND_DAYS = 30
+_SERIES_TTL_S = 600
+# ponytail: one in-process cache of each platform's 30-day series, 10 minutes. The series
+# only moves when a poll lands (every few hours), and building it scans the snapshot table;
+# move it to a per-poll write if snapshot tables ever get big enough for the first load to drag.
+_series_cache: dict[str, tuple[float, list, float | None]] = {}
+
+# What an unreachable site looks like in a poll error: a Cloudflare challenge, a timeout,
+# a refused or reset connection. Nothing the operator can fix, unlike a failed login.
+_UNREACHABLE_RE = re.compile(
+    r"cloudflare|cf-mitigated|challenge|timed? ?out|timeout|unreachable|connection (?:refused|reset|error)"
+    r"|name resolution|getaddrinfo|ssl|service unavailable", re.I)
+
+
+def _headline_key(spec) -> str | None:
+    """The tile's number: views where the site counts them, else its likes / favourites word,
+    else the booru score."""
+    if spec.views:
+        return "views"
+    if spec.faves:
+        return "faves"
+    if spec.score:
+        return "score"
+    return None
+
+
+def _daily_series(conn, spec, col: str, days: int = _TREND_DAYS) -> tuple[list, float | None]:
+    """A daily total of `col` over the last `days` days, and its change in percent.
+
+    Each work keeps its last known value until a newer snapshot replaces it, so a day with
+    no poll never dips the line, and a work's number counts from its first snapshot on.
+    Change is last vs first day with data, and None with under a week of history or a
+    zero start — never a misleading +0%."""
+    from datetime import datetime, timedelta, timezone
+    today = datetime.now(timezone.utc).date()
+    start = today - timedelta(days=days - 1)
+    start_s = start.isoformat()
+    snap = spec.snapshots
+    current = {r[0]: (r[1] or 0) for r in conn.execute(
+        f"SELECT submission_id, MAX({col}) FROM {snap} WHERE polled_at < ? GROUP BY submission_id",
+        (start_s,)).fetchall()}
+    by_day: dict[str, list] = {}
+    for d, sid, v in conn.execute(
+            f"SELECT substr(polled_at, 1, 10), submission_id, MAX({col}) FROM {snap} "
+            f"WHERE polled_at >= ? GROUP BY substr(polled_at, 1, 10), submission_id", (start_s,)).fetchall():
+        by_day.setdefault(d, []).append((sid, v or 0))
+    series = []
+    for i in range(days):
+        day = (start + timedelta(days=i)).isoformat()
+        for sid, v in by_day.get(day, []):
+            current[sid] = v
+        series.append({"day": day, "value": sum(current.values()) if current else None})
+    known = [(i, s["value"]) for i, s in enumerate(series) if s["value"] is not None]
+    change = None
+    if len(known) >= 2 and known[-1][0] - known[0][0] >= 6 and known[0][1] > 0:
+        change = round(100.0 * (known[-1][1] - known[0][1]) / known[0][1], 1)
+    return series, change
+
+
+def _platform_numbers(conn, code: str) -> dict:
+    """Headline number (in the site's own word), works and the 30-day trend for one platform."""
+    import time
+    spec = platform_metrics.get(code)
+    if not spec:
+        return {"headline": None, "works": 0, "series": [], "change_pct": None}
+    key = _headline_key(spec)
+    col = {"views": spec.views, "faves": spec.faves, "score": spec.score}.get(key) if key else None
+    row = conn.execute(f"SELECT COUNT(*), {('SUM(' + col + ')') if col else '0'} FROM {spec.table}").fetchone()
+    out = {"works": int(row[0] or 0),
+           "headline": {"key": key, "label": spec.label_for(key), "value": int(row[1] or 0)} if col else None}
+    hit = _series_cache.get(code)
+    if hit and time.time() - hit[0] < _SERIES_TTL_S:
+        out["series"], out["change_pct"] = hit[1], hit[2]
+    elif col:
+        out["series"], out["change_pct"] = _daily_series(conn, spec, col)
+        _series_cache[code] = (time.time(), out["series"], out["change_pct"])
+    else:
+        out["series"], out["change_pct"] = [], None
+    return out
+
+
+def _role(code: str, can_poll: bool) -> str:
+    """What the site does, from what the code can actually do — not a hand-kept flag."""
+    from posting import manager, post_publisher
+    posts = code in manager.WORK_POSTERS or code in post_publisher.SUPPORTED
+    if code == "tg":
+        return "posts + reactions"   # its poll reads reactions and subscribers, not a catalogue
+    if can_poll and posts:
+        return "polls + posts"
+    if can_poll:
+        return "polls only"
+    return "posts only" if posts else ""
+
+
+def _attention_for(code: str, label: str, h: dict | None, cred: dict | None) -> list[dict]:
+    """The problems on one platform worth the operator's attention, each with ONE fix.
+
+    Deterministic, from stored health: an expired login or one about to expire →
+    reconnect; the site unreachable (a Cloudflare block, a timeout) → pause; another poll
+    failure → poll now; the site's own rate limit → wait until it lifts."""
+    from datetime import datetime, timezone
+    if not h or not h.get("configured"):
+        return []
+    items = []
+
+    def item(level, title, detail, action, **extra):
+        items.append({"code": code, "level": level, "title": title, "detail": detail,
+                      "action": action, **extra})
+
+    session = h.get("session") or {}
+    if session.get("status") == "expired":
+        item("error", f"{label}: signed out", session.get("detail") or
+             "The site no longer accepts the saved login. Sign in again so posting and checking keep working.",
+             "reconnect")
+    elif cred and cred.get("age_days") is not None and cred.get("ttl_days"):
+        left = int(cred["ttl_days"]) - int(cred["age_days"])
+        if left <= 0:
+            item("error", f"{label}: login has probably expired",
+                 "These logins last about {} days. Paste fresh cookies before posting fails.".format(cred["ttl_days"]),
+                 "reconnect")
+        elif left <= 3:
+            item("warn", f"{label}: login expires in {left} day{'' if left == 1 else 's'}",
+                 "Paste fresh cookies before then so posting and checking keep working.", "reconnect")
+    until = h.get("throttled_until")
+    if until:
+        try:
+            if datetime.fromisoformat(str(until).replace("Z", "+00:00")) > datetime.now(timezone.utc):
+                item("info", f"{label}: the site asked PawPoller to slow down",
+                     "Checking pauses until then and carries on by itself.", "wait", until=until)
+        except ValueError:
+            pass
+    if h.get("last_poll_status") in ("error", "partial"):
+        err = str(h.get("last_poll_error") or "")
+        if _UNREACHABLE_RE.search(err):
+            item("error", f"{label}: can't reach the site",
+                 "The site is blocking or not answering requests. Nothing to fix on your side; "
+                 "checking carries on by itself, or you can pause it.", "pause", error=err[:300])
+        else:
+            item("warn", f"{label}: the last check failed", err[:300] or "No reason was given.", "poll")
+    return items
+
+
+@router.get("/platforms/overview")
+def platforms_overview():
+    """Everything the Platforms page needs in one call (spec 020): per platform its role,
+    headline number in its own word, works, 30-day daily series and change, health, and
+    whether it is paused; the attention items; a summary line; the hidden list and order.
+
+    One platform's failure is contained — it reports `error`, the rest still load."""
+    from posting import manager
+    from database.accounts import PLATFORM_NAMES, DEFAULT_CRED_CHECKS
+    settings = config.get_settings()
+    health = _health_snapshot(settings)
+    try:
+        creds = {r["code"]: r for r in config.credential_age_report(settings)}
+    except Exception:
+        creds = {}
+    paused = set(settings.get("polling_paused_platforms") or [])
+    codes = [c for c, *_ in _PLATFORM_HEALTH_CONFIG]
+    codes += sorted(c for c in manager.WORK_POSTERS if c not in codes)
+    platforms, attention = [], []
+    conn = get_connection()
+    try:
+        try:   # scheduled rows per site: hiding a site never stops them, and the prompt says so
+            queued = {r[0]: r[1] for r in conn.execute(
+                "SELECT platform, COUNT(*) FROM posting_queue WHERE status = 'pending' GROUP BY platform")}
+        except sqlite3.Error:
+            queued = {}
+        for code in codes:
+            label = PLATFORM_NAMES.get(code, code)
+            h = health.get(code)
+            can_poll = h is not None
+            configured = bool(h["configured"]) if h else bool(DEFAULT_CRED_CHECKS.get(code, lambda s: False)(settings))
+            entry = {"code": code, "label": label, "configured": configured, "can_poll": can_poll,
+                     "role": _role(code, can_poll), "paused": code in paused, "health": h, "error": "",
+                     "queued": int(queued.get(code, 0))}
+            try:
+                entry.update(_platform_numbers(conn, code))
+            except Exception as e:
+                logger.warning("platforms/overview: %s numbers failed: %s", code, e)
+                entry.update({"headline": None, "works": 0, "series": [], "change_pct": None,
+                              "error": "Couldn't read this site's numbers"})
+            items = [] if code in paused else _attention_for(code, label, h, creds.get(code))
+            entry["attention"] = items
+            attention += items
+            platforms.append(entry)
+    finally:
+        conn.close()
+    live = [p for p in platforms if p["configured"] and p["can_poll"]]
+    need = {i["code"] for i in attention}
+    lasts = [p["health"]["last_poll_at"] for p in live if p["health"].get("last_poll_at")]
+    nexts = [p["health"]["next_poll_at"] for p in live
+             if p["health"].get("next_poll_at") and not p["paused"]]
+    return {
+        "platforms": platforms,
+        "attention": attention,
+        "summary": {"working": sum(1 for p in live if p["code"] not in need and not p["paused"]),
+                    "need_you": len(need), "paused": sum(1 for p in live if p["paused"]),
+                    "last_poll_at": max(lasts) if lasts else None,
+                    "next_poll_at": min(nexts) if nexts else None},
+        "hidden": list(settings.get("hidden_platforms") or []),
+        "order": list(settings.get("platform_order") or []),
+    }
 
 
 @router.get("/platforms/sessions")
@@ -1379,6 +1597,7 @@ def get_preferences():
         "credits": settings.get("credits", []),
         "announce_defaults": settings.get("announce_defaults", {}),
         "hidden_platforms": settings.get("hidden_platforms", []),
+        "platform_order": settings.get("platform_order", []),   # the Platforms page's "My order" (spec 020)
         "theme": settings.get("theme", "dark"),
         "mobile_mode": settings.get("mobile_mode", "auto"),
         "auto_sync_enabled": settings.get("auto_sync_enabled", True),
@@ -1574,14 +1793,17 @@ def save_preferences(body: dict):
     # Stored as the HIDDEN codes, never the shown ones: a platform connected later
     # then shows up by default, so a filtered view can never quietly under-count new
     # work (the same doctrine as the per-widget exclusions in platforms.js).
-    if "hidden_platforms" in body:
-        known = set(platform_metrics.ALL_CODES)
+    from posting.manager import WORK_POSTERS
+    known_platforms = set(platform_metrics.ALL_CODES) | set(WORK_POSTERS)   # + the post-only ones
+    for key in ("hidden_platforms", "platform_order"):    # platform_order: "My order" (spec 020)
+        if key not in body:
+            continue
         codes = []
-        for code in (body.get("hidden_platforms") or [])[:50]:
+        for code in (body.get(key) or [])[:50]:
             code = str(code).strip().lower()[:16]
-            if code in known and code not in codes:
+            if code in known_platforms and code not in codes:
                 codes.append(code)
-        update["hidden_platforms"] = codes
+        update[key] = codes
 
     # ── Credits (Settings → About) ─────────────────────────────
     # The people who helped: testers, translators, whoever the operator wants to

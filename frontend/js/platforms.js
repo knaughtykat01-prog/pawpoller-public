@@ -9,41 +9,41 @@
  * ===========================================================================*/
 (function () {
     const PLATFORMS = [
-        { code: 'ib',   label: 'Inkbunny',     emoji: '\u{1F43E}', color: 'var(--platform-ib)',   pollOnly: false },
-        { code: 'fa',   label: 'FurAffinity',  emoji: '\u{1F98A}', color: 'var(--platform-fa)',   pollOnly: false },
-        { code: 'ws',   label: 'Weasyl',       emoji: '\u{1F98E}', color: 'var(--platform-ws)',   pollOnly: false },
-        { code: 'sf',   label: 'SoFurry',      emoji: '\u{1F4DC}', color: 'var(--platform-sf)',   pollOnly: false },
-        { code: 'sqw',  label: 'SquidgeWorld', emoji: '\u{1F999}', color: 'var(--platform-sqw)',  pollOnly: false },
-        { code: 'ao3',  label: 'AO3',          emoji: '\u{1F4D6}', color: 'var(--platform-ao3)',  pollOnly: false },
-        { code: 'da',   label: 'DeviantArt',   emoji: '\u{1F3A8}', color: 'var(--platform-da)',   pollOnly: false },
-        { code: 'wp',   label: 'Wattpad',      emoji: '\u{1F4D3}', color: 'var(--platform-wp)',   pollOnly: true  },
-        { code: 'ik',   label: 'Itaku',        emoji: '\u{1F5BC}', color: 'var(--platform-ik)',   pollOnly: true  },
-        { code: 'bsky', label: 'Bluesky',      emoji: '\u{1F98B}', color: 'var(--platform-bsky)', pollOnly: true  },
-        { code: 'tw',   label: 'X / Twitter',  emoji: '\u{1F426}', color: 'var(--platform-tw)',   pollOnly: false },
-        { code: 'mast', label: 'Mastodon',     emoji: '\u{1F418}', color: 'var(--platform-mast)', pollOnly: true  },
-        { code: 'tum',  label: 'Tumblr',       emoji: '\u{1F4D8}', color: 'var(--platform-tum)',  pollOnly: true  },
-        { code: 'pix',  label: 'Pixiv',        emoji: '\u{1F58C}', color: 'var(--platform-pix)',  pollOnly: true  },
-        { code: 'thr',  label: 'Threads',      emoji: '\u{1F9F5}', color: 'var(--platform-thr)',  pollOnly: true  },
-        { code: 'ig',   label: 'Instagram',    emoji: '\u{1F4F8}', color: 'var(--platform-ig)',   pollOnly: true  },
-        { code: 'e621', label: 'e621',         emoji: '\u{1F43E}', color: 'var(--platform-e621)', pollOnly: false },
-        { code: 'fn',   label: 'FurryNetwork', emoji: '\u{1F310}', color: '#3b8ed0',               pollOnly: false },
-        { code: 'fbr',  label: 'Furbooru',     emoji: '\u{1F5BC}', color: '#3d7b3d',               pollOnly: false },
+        { code: 'ib',   label: 'Inkbunny',     emoji: '\u{1F43E}', color: 'var(--platform-ib)' },
+        { code: 'fa',   label: 'FurAffinity',  emoji: '\u{1F98A}', color: 'var(--platform-fa)' },
+        { code: 'ws',   label: 'Weasyl',       emoji: '\u{1F98E}', color: 'var(--platform-ws)' },
+        { code: 'sf',   label: 'SoFurry',      emoji: '\u{1F4DC}', color: 'var(--platform-sf)' },
+        { code: 'sqw',  label: 'SquidgeWorld', emoji: '\u{1F999}', color: 'var(--platform-sqw)' },
+        { code: 'ao3',  label: 'AO3',          emoji: '\u{1F4D6}', color: 'var(--platform-ao3)' },
+        { code: 'da',   label: 'DeviantArt',   emoji: '\u{1F3A8}', color: 'var(--platform-da)' },
+        { code: 'wp',   label: 'Wattpad',      emoji: '\u{1F4D3}', color: 'var(--platform-wp)'  },
+        { code: 'ik',   label: 'Itaku',        emoji: '\u{1F5BC}', color: 'var(--platform-ik)'  },
+        { code: 'bsky', label: 'Bluesky',      emoji: '\u{1F98B}', color: 'var(--platform-bsky)'  },
+        { code: 'tw',   label: 'X / Twitter',  emoji: '\u{1F426}', color: 'var(--platform-tw)' },
+        { code: 'mast', label: 'Mastodon',     emoji: '\u{1F418}', color: 'var(--platform-mast)'  },
+        { code: 'tum',  label: 'Tumblr',       emoji: '\u{1F4D8}', color: 'var(--platform-tum)'  },
+        { code: 'pix',  label: 'Pixiv',        emoji: '\u{1F58C}', color: 'var(--platform-pix)'  },
+        { code: 'thr',  label: 'Threads',      emoji: '\u{1F9F5}', color: 'var(--platform-thr)'  },
+        { code: 'ig',   label: 'Instagram',    emoji: '\u{1F4F8}', color: 'var(--platform-ig)'  },
+        { code: 'e621', label: 'e621',         emoji: '\u{1F43E}', color: 'var(--platform-e621)' },
+        { code: 'fn',   label: 'FurryNetwork', emoji: '\u{1F310}', color: '#3b8ed0' },
+        { code: 'fbr',  label: 'Furbooru',     emoji: '\u{1F5BC}', color: '#3d7b3d' },
         // Reactions and subscriber counts make Telegram pollable as of 4.0.10,
         // so it is no longer postOnly and DOES appear in analytics. It has no
         // view counter and never will (not in the Bot API at all), which the
         // "engagement" metric family already handles — same as Bluesky/Tumblr.
-        { code: 'tg',   label: 'Telegram',     emoji: '\u{1F4E3}', color: '#2AABEE',               pollOnly: false },
+        { code: 'tg',   label: 'Telegram',     emoji: '\u{1F4E3}', color: '#2AABEE' },
         // 4.21.1 (MEDIAPLATS): a podcast feed PawPoller serves — post-only (RSS has no listener counts).
-        { code: 'pod',  label: 'Podcast feed', emoji: '\u{1F399}', color: '#8e44ad',               pollOnly: false, postOnly: true },
+        { code: 'pod',  label: 'Podcast feed', emoji: '\u{1F399}', color: '#8e44ad', postOnly: true },
         // 4.22.0 (MEDIAPLATS): SoundCloud — audio, OAuth 2.1; plays / likes / comments.
-        { code: 'sc',   label: 'SoundCloud',   emoji: '\u{1F3B5}', color: '#ff5500',               pollOnly: false },
+        { code: 'sc',   label: 'SoundCloud',   emoji: '\u{1F3B5}', color: '#ff5500' },
         // 4.23.0 (MEDIAPLATS): Newgrounds — audio + movie portals, cookie session; Listens / Faves / score.
-        { code: 'ng',   label: 'Newgrounds',   emoji: '\u{1F3AC}', color: '#f5a623',               pollOnly: false },
+        { code: 'ng',   label: 'Newgrounds',   emoji: '\u{1F3AC}', color: '#f5a623' },
         // 4.24.0 (MEDIAPLATS): YouTube — video, Google OAuth; views / likes / comments (private until audited).
-        { code: 'yt',   label: 'YouTube',      emoji: '\u{1F4FA}', color: '#ff0000',               pollOnly: false },
+        { code: 'yt',   label: 'YouTube',      emoji: '\u{1F4FA}', color: '#ff0000' },
         // 4.46.0 (spec 013): Picarto — art livestreams; channel name only, no login. Lifetime channel
         // views / followers / subscribers + recorded streams. Nothing to post to.
-        { code: 'pic',  label: 'Picarto',      emoji: '\u{1F3A5}', color: '#2c9dd8',               pollOnly: true  },
+        { code: 'pic',  label: 'Picarto',      emoji: '\u{1F3A5}', color: '#2c9dd8'  },
     ];
 
     /* ── Metric metadata ──────────────────────────────────────────────────
@@ -225,8 +225,8 @@
      * renders as a bare code with no icon.
      *
      * ⚠ The test is `metrics`, not a flag. The original filtered on
-     * `p.postOnly` — a property no entry has ever defined, since the entries
-     * carry `pollOnly` — so `!p.postOnly` was true for all twenty and the
+     * `p.postOnly` — a property no entry had ever defined (the entries then carried a
+     * poll-only flag, retired in 4.54.0) — so `!p.postOnly` was true for all twenty and the
      * filter returned the whole list. It gave the right answer only because
      * the post-only set happened to be empty; the next broadcast-only platform
      * would have been silently folded into every chart as a row of zeros.

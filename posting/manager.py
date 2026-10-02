@@ -164,6 +164,47 @@ def _ch_label(ch_idx: int, chapter_list: list[int]) -> str:
     return f"Ch {ch_idx}" + (f" ({chapter_list.index(ch_idx) + 1} of {n})" if n > 1 and ch_idx in chapter_list else "")
 
 
+# Every site PawPoller can post a story / artwork / media piece to, and its poster class
+# (module, class), imported on first use. The one table: `_get_poster` builds from it and
+# the Platforms page reads WORK_POSTERS for "what this site does" (spec 020), so the two
+# can never disagree. Microblog posts (Mastodon, Threads, Tumblr…) go through
+# posting/post_publisher.py instead — see its SUPPORTED.
+_POSTER_CLASSES = {
+    "ib": ("posting.platforms.inkbunny", "InkbunnyPoster"),
+    "bsky": ("posting.platforms.bluesky", "BlueskyPoster"),
+    "ws": ("posting.platforms.weasyl", "WeasylPoster"),
+    "sf": ("posting.platforms.sofurry", "SoFurryPoster"),
+    "fa": ("posting.platforms.furaffinity", "FurAffinityPoster"),
+    "sqw": ("posting.platforms.squidgeworld", "SquidgeWorldPoster"),
+    "ao3": ("posting.platforms.ao3", "AO3Poster"),
+    "tg": ("posting.platforms.telegram", "TelegramPoster"),
+    "pod": ("posting.platforms.podcast", "PodcastPoster"),
+    "sc": ("posting.platforms.soundcloud", "SoundCloudPoster"),
+    "ng": ("posting.platforms.newgrounds", "NewgroundsPoster"),
+    "yt": ("posting.platforms.youtube", "YouTubePoster"),
+    "tw": ("posting.platforms.twitter", "TwitterPoster"),
+    "ik": ("posting.platforms.itaku", "ItakuPoster"),
+    "da": ("posting.platforms.deviantart", "DeviantArtPoster"),
+    "e621": ("posting.platforms.e621", "E621Poster"),
+    "fn": ("posting.platforms.furrynetwork", "FurryNetworkPoster"),
+    "fbr": ("posting.platforms.furbooru", "FurbooruPoster"),
+    "ig": ("posting.platforms.instagram", "InstagramPoster"),
+}
+WORK_POSTERS = frozenset(_POSTER_CLASSES)
+
+
+def _poster_class_known(platform: str) -> bool:
+    """True when `platform` has a poster class that actually imports (no network, no account)."""
+    spec = _POSTER_CLASSES.get(platform)
+    if not spec:
+        return False
+    import importlib
+    try:
+        return hasattr(importlib.import_module(spec[0]), spec[1])
+    except ImportError:
+        return False
+
+
 def _get_poster(platform: str, account_id: int | None = None) -> PlatformPoster:
     """Get or create a platform poster instance for a specific account."""
     # FRIENDGUARD (4.45.4): every post, edit and sync builds its poster here, so a
@@ -183,65 +224,12 @@ def _get_poster(platform: str, account_id: int | None = None) -> PlatformPoster:
             raise ValueError(accounts_db.NEVER_POST_ERROR)
     key = (platform, account_id)
     if key not in _posters:
-        if platform == "ib":
-            from posting.platforms.inkbunny import InkbunnyPoster
-            poster: PlatformPoster = InkbunnyPoster()
-        elif platform == "bsky":
-            from posting.platforms.bluesky import BlueskyPoster
-            poster = BlueskyPoster()
-        elif platform == "ws":
-            from posting.platforms.weasyl import WeasylPoster
-            poster = WeasylPoster()
-        elif platform == "sf":
-            from posting.platforms.sofurry import SoFurryPoster
-            poster = SoFurryPoster()
-        elif platform == "fa":
-            from posting.platforms.furaffinity import FurAffinityPoster
-            poster = FurAffinityPoster()
-        elif platform == "sqw":
-            from posting.platforms.squidgeworld import SquidgeWorldPoster
-            poster = SquidgeWorldPoster()
-        elif platform == "ao3":
-            from posting.platforms.ao3 import AO3Poster
-            poster = AO3Poster()
-        elif platform == "tg":
-            from posting.platforms.telegram import TelegramPoster
-            poster = TelegramPoster()
-        elif platform == "pod":
-            from posting.platforms.podcast import PodcastPoster
-            poster = PodcastPoster()
-        elif platform == "sc":
-            from posting.platforms.soundcloud import SoundCloudPoster
-            poster = SoundCloudPoster()
-        elif platform == "ng":
-            from posting.platforms.newgrounds import NewgroundsPoster
-            poster = NewgroundsPoster()
-        elif platform == "yt":
-            from posting.platforms.youtube import YouTubePoster
-            poster = YouTubePoster()
-        elif platform == "tw":
-            from posting.platforms.twitter import TwitterPoster
-            poster = TwitterPoster()
-        elif platform == "ik":
-            from posting.platforms.itaku import ItakuPoster
-            poster = ItakuPoster()
-        elif platform == "da":
-            from posting.platforms.deviantart import DeviantArtPoster
-            poster = DeviantArtPoster()
-        elif platform == "e621":
-            from posting.platforms.e621 import E621Poster
-            poster = E621Poster()
-        elif platform == "fn":
-            from posting.platforms.furrynetwork import FurryNetworkPoster
-            poster = FurryNetworkPoster()
-        elif platform == "fbr":
-            from posting.platforms.furbooru import FurbooruPoster
-            poster = FurbooruPoster()
-        elif platform == "ig":
-            from posting.platforms.instagram import InstagramPoster
-            poster = InstagramPoster()
-        else:
+        spec = _POSTER_CLASSES.get(platform)
+        if spec is None:
             raise ValueError(f"Unknown platform: {platform}")
+        import importlib
+        module, cls = spec
+        poster: PlatformPoster = getattr(importlib.import_module(module), cls)()
         # All posters carry an account_id; account-aware posters (IB, and FA
         # once refactored) read it in _ensure_client to authenticate as the
         # right account. None means "the platform's default account".

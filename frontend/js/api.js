@@ -533,6 +533,9 @@ const API = {
     // Per-platform health snapshot (single fetch for sidebar dots,
     // header subtitles, and throttle banners).
     getPlatformsHealth() { return this.get('/api/platforms/health'); },
+    /* Everything the Platforms page needs in one call (spec 020): role, headline, works,
+       30-day series, health, attention items, summary, hidden list, order. */
+    getPlatformsOverview() { return this.get('/api/platforms/overview'); },
     getPlatformSessions() { return this.get('/api/platforms/sessions'); },
     triggerSessionCheck() { return this.post('/api/platforms/sessions/check', {}); },
     getCredentialAge() { return this.get('/api/platforms/credential-age'); },

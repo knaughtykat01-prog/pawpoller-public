@@ -383,7 +383,7 @@ _SETTINGS = (
         "logs_panel_enabled", "minimize_to_tray", "mirror_auto_check", "mirror_check_interval_minutes",
         "mobile_mode", "muted_session_codes", "never_post_account_ids", "notification_comments_only", "notification_min_faves_delta",
         "notification_min_views_delta", "notifications_enabled", "pawpoller_attribution",
-        "pinned_submissions", "poll_interval_minutes", "polling_paused", "polling_paused_platforms",
+        "pinned_submissions", "platform_order", "poll_interval_minutes", "polling_paused", "polling_paused_platforms",
         "setup_mode", "smtp_host", "smtp_port", "smtp_use_tls", "theme", "tours_seen", "trello",
         "update_skip_version", "watcher_notifications_enabled", "tech_reports", "tech_usage",
         "milestone_comments", "milestone_faves", "milestone_score", "milestone_views",

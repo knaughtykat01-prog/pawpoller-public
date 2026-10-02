@@ -169,9 +169,9 @@ class TestXPoster:
         mp = open("frontend/js/masterpieces.js", encoding="utf-8").read()
         line = next(l for l in mp.splitlines() if "_POST_ONLY:" in l)
         assert "'tw'" in line, "a tweet cannot be edited; sync must skip it, not fail it"
-        pl = open("frontend/js/platforms.js", encoding="utf-8").read()
-        line = next(l for l in pl.splitlines() if "code: 'tw'" in l)
-        assert "pollOnly: false" in line, "the hub would still badge X 'poll only'"
+        # The hub's role comes from the server's real poster list since 4.54.0 (spec 020).
+        from posting.manager import WORK_POSTERS
+        assert "tw" in WORK_POSTERS, "the hub would badge X 'polls only'"
 
     def test_posts_image_then_tweet_with_the_sensitive_flag_from_the_rating(self, tw):
         poster, made, img = tw

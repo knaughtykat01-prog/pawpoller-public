@@ -63,11 +63,15 @@ class TestOneSourceOfTruth:
     def test_it_is_loaded_before_anything_renders(self):
         assert "window.HIDDEN_PLATFORMS = Array.isArray(prefs && prefs.hidden_platforms)" in APP_JS
 
-    def test_settings_offers_every_platform_to_untick(self):
+    def test_settings_offers_every_platform_to_switch_off(self):
+        """Since 4.54.0 (spec 020) Settings mounts the same Choose-platforms control as the
+        Platforms page, and that control still stores the HIDDEN codes."""
         assert 'id="platform-visibility"' in APP_JS
-        assert "savePreferences({ hidden_platforms: next })" in APP_JS
-        wiring = APP_JS[APP_JS.index("const pvBox = document.getElementById('platform-visibility')"):][:1400]
-        assert ".filter(b => !b.checked)" in wiring, "hidden = unticked, not the other way round"
+        wiring = APP_JS[APP_JS.index("const pvBox = document.getElementById('platform-visibility')"):][:400]
+        assert "PlatformPicker.mount(pvBox)" in wiring
+        picker = open("frontend/js/platform_picker.js", encoding="utf-8").read()
+        assert "savePreferences({ hidden_platforms: next })" in picker
+        assert "window.PLATFORMS" in picker, "every platform is offered"
 
 
 class TestTheLibraryFilter:
