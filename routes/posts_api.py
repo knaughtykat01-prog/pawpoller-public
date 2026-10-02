@@ -7,8 +7,12 @@ query-param image server.
 """
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import logging
-from datetime import datetime, timezone
+import re
+import socket
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import json
@@ -59,13 +63,194 @@ def _media_dir() -> Path:
 
 
 @posts_router.get("")
-def list_posts(limit: int = Query(100, ge=1, le=500)):
-    """The Posts feed — every composed post, newest-first, with publications."""
+def list_posts(limit: int = Query(100, ge=1, le=500), status: str | None = Query(None),
+               persona_id: int | None = Query(None), q: str | None = Query(None, max_length=200)):
+    """The Posts feed — newest first, each post with its numbers (spec 018).
+
+    Every publication on the page is resolved against the platforms' stored rows in ONE
+    batched pass (one query per platform, however many posts), so the feed shows each
+    site's likes / reposts / replies / views without a request per post. Filters:
+    ``status`` scheduled | failed, ``persona_id``, ``q`` (literal text search)."""
+    status = status if status in ("scheduled", "failed") else None
     conn = get_connection()
     try:
-        return {"posts": posts_queries.list_posts(conn, limit=limit)}
+        posts = posts_queries.list_posts(conn, limit=limit, status=status,
+                                         persona_id=persona_id, q=q)
+        personas = _attach_numbers(conn, posts)
+        return {"posts": posts, "counts": posts_queries.post_counts(conn),
+                "personas": personas}
     finally:
         conn.close()
+
+
+def _attach_numbers(conn, posts: list[dict]) -> list[dict]:
+    """Resolve every listed post's publications in one pass; add totals, the sites that
+    failed, and the persona each post went out as. Returns the persona list (for the filter)."""
+    from database import collections_queries as cq
+    from database import personas as personas_db
+    flat = [pub for p in posts for pub in p.get("publications") or []]
+    resolved = _resolve_post_publications(conn, flat) if flat else []
+    a2p = cq._acct_to_persona(conn)
+    personas = {pp["persona_id"]: {"persona_id": pp["persona_id"], "name": pp["name"],
+                                   "color": pp.get("color") or ""}
+                for pp in personas_db.list_personas(conn)}
+    i = 0
+    for p in posts:
+        n = len(p.get("publications") or [])
+        p["publications"] = resolved[i:i + n]
+        i += n
+        p["totals"] = _post_totals(p["publications"])
+        p["failed_sites"] = _failed_sites(p["publications"])
+        p["persona"] = _persona_of(p, a2p, personas)
+    return list(personas.values())
+
+
+def _failed_sites(pubs: list[dict]) -> list[str]:
+    """Sites where the post failed and did not post on any account (FR-002)."""
+    posted = {p["platform"] for p in pubs if p.get("status") == "posted"}
+    out: list[str] = []
+    for p in pubs:
+        if p.get("status") == "failed" and p["platform"] not in posted and p["platform"] not in out:
+            out.append(p["platform"])
+    return out
+
+
+def _persona_of(post: dict, a2p: dict, personas: dict) -> dict | None:
+    """The persona a post went out (or is scheduled to go out) as; None = no persona."""
+    for pub in post.get("publications") or []:
+        pid = a2p.get(pub.get("account_id"))
+        if pid in personas:
+            return personas[pid]
+    for s in post.get("scheduled") or []:
+        pid = s.get("persona_id") or a2p.get(s.get("account_id"))
+        if pid in personas:
+            return personas[pid]
+    return None
+
+
+@posts_router.get("/summary")
+def posts_summary():
+    """The header strip and the side column (spec 018 US3, FR-003) — stored data only.
+
+    Months run in the operator's time zone. "Likes" are the likes the month's posts hold
+    now, not likes received during the month (no site reports those per day)."""
+    conn = get_connection()
+    try:
+        return _summary(conn)
+    finally:
+        conn.close()
+
+
+def _summary(conn) -> dict:
+    from database import platform_metrics
+    fmt = "%Y-%m-%d %H:%M:%S"
+    now_local = datetime.now(config.display_zone())
+    start_this = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    start_last = (start_this - timedelta(days=1)).replace(day=1)
+    t_this = start_this.astimezone(timezone.utc).strftime(fmt)
+    t_last = start_last.astimezone(timezone.utc).strftime(fmt)
+    t_30 = (datetime.now(timezone.utc) - timedelta(days=30)).strftime(fmt)
+    since = min(t_last, t_30)
+
+    recent: dict[int, tuple[str, str]] = {}
+    for r in conn.execute("SELECT post_id, body, created_at FROM posts "
+                          "WHERE COALESCE(parent_post_id, 0) = 0").fetchall():
+        when = platform_metrics.normalize_posted(r["created_at"])
+        if when and when >= since:
+            recent[r["post_id"]] = (when, r["body"] or "")
+    ids = list(recent)
+    pubs: list[dict] = []
+    for k in range(0, len(ids), 500):
+        chunk = ids[k:k + 500]
+        pubs += [dict(x) for x in conn.execute(
+            f"SELECT * FROM post_publications WHERE post_id IN ({','.join('?' * len(chunk))})",
+            chunk).fetchall()]
+    by_post: dict[int, list] = {}
+    for pub in (_resolve_post_publications(conn, pubs) if pubs else []):
+        by_post.setdefault(pub["post_id"], []).append(pub)
+
+    s = {"posts_this_month": 0, "posts_last_month": 0, "likes_this_month": 0,
+         "likes_last_month": 0, "reposts_this_month": 0, "best_site": None,
+         "best_post": None, "by_site_30d": [], "zone": str(config.display_zone())}
+    site_month: dict[str, int] = {}
+    site_30: dict[str, int] = {}
+    best = None
+    for pid, (when, body) in recent.items():
+        plist = by_post.get(pid, [])
+        if not any(p.get("status") == "posted" for p in plist):
+            continue                                   # a draft or a failure is not a post
+        tot = _post_totals(plist)
+        if when >= t_this:
+            s["posts_this_month"] += 1
+            s["likes_this_month"] += tot["favorites"]
+            s["reposts_this_month"] += tot["reposts"]
+            if tot["favorites"] and (best is None or tot["favorites"] > best["favorites"]):
+                best = {"post_id": pid, "body": " ".join(body.split())[:140],
+                        "favorites": tot["favorites"], "reposts": tot["reposts"]}
+        elif t_last <= when < t_this:
+            s["posts_last_month"] += 1
+            s["likes_last_month"] += tot["favorites"]
+        for p in plist:
+            fav = (p.get("stats") or {}).get("favorites")
+            if fav is None:
+                continue
+            if when >= t_this:
+                site_month[p["platform"]] = site_month.get(p["platform"], 0) + int(fav)
+            if when >= t_30:
+                site_30[p["platform"]] = site_30.get(p["platform"], 0) + int(fav)
+    s["best_post"] = best
+    if site_month and max(site_month.values()) > 0:
+        s["best_site"] = max(site_month, key=site_month.get)
+    s["by_site_30d"] = [{"platform": k, "favorites": v}
+                        for k, v in sorted(site_30.items(), key=lambda kv: -kv[1])]
+
+    # Coming up: the next three scheduled posts, one line each.
+    nxt: dict[int, dict] = {}
+    for row in posts_queries.pending_post_schedules(conn):
+        e = nxt.get(row["post_id"])
+        if e is None:
+            if len(nxt) >= 3:
+                continue
+            e = nxt[row["post_id"]] = {"post_id": row["post_id"],
+                                       "scheduled_at": row["scheduled_at"], "platforms": []}
+        if row["platform"] not in e["platforms"]:
+            e["platforms"].append(row["platform"])
+    for e in nxt.values():
+        post = posts_queries.get_post(conn, e["post_id"]) or {}
+        e["body"] = " ".join((post.get("body") or "").split())[:90]
+        e["thread_count"] = len(posts_queries.get_thread_parts(conn, e["post_id"]))
+    s["coming_up"] = list(nxt.values())
+    return s
+
+
+@posts_router.get("/rules")
+def posts_rules():
+    """Each site's character limit and media rules — the composer's one source (FR-005)."""
+    return post_publisher.rules()
+
+
+@posts_router.post("/preview")
+def preview_post(payload: dict):
+    """How a draft comes out on each chosen site, with every reason one would refuse or
+    change it (FR-004). Nothing is stored or sent."""
+    body = str(payload.get("body") or "")[:20000]
+    platforms = [str(p) for p in (payload.get("platforms") or [])][:12]
+    parts = [str(p)[:20000] for p in (payload.get("parts") or [])][:24]
+    mentions = payload.get("mentions") if isinstance(payload.get("mentions"), list) else []
+    mentions = mentions[:50]
+    ids = payload.get("account_ids") if isinstance(payload.get("account_ids"), dict) else {}
+    account_ids = {}
+    for k, v in ids.items():
+        try:
+            account_ids[str(k)] = int(v)
+        except (TypeError, ValueError):
+            pass
+    try:
+        image_count = max(0, min(int(payload.get("image_count") or 0), _MAX_IMAGES))
+    except (TypeError, ValueError):
+        image_count = 0
+    return {"sites": post_publisher.preview(body, platforms, mentions, image_count, parts,
+                                            account_ids)}
 
 
 @posts_router.get("/image")
@@ -92,7 +277,8 @@ def get_post_image(post_id: int = Query(...), idx: int = Query(0, ge=0)):
 # post id. A contact carries a person's per-platform @handle so the composer can
 # tag them with one alias and the publisher expands it per network.
 
-_CONTACT_KEYS = ("name", "handle_bsky", "handle_tw", "handle_mast", "handle_thr", "handle_tum")
+_CONTACT_KEYS = ("name", "alias", "handle_bsky", "handle_tw", "handle_mast", "handle_thr",
+                 "handle_tum")
 
 
 @posts_router.get("/contacts")
@@ -104,6 +290,16 @@ def list_contacts():
         conn.close()
 
 
+@posts_router.get("/contacts/suggest")
+def suggest_contacts():
+    """@names from the operator's own posts that no contact answers to yet (spec 018 US5)."""
+    conn = get_connection()
+    try:
+        return {"suggestions": posts_queries.suggest_contacts(conn)}
+    finally:
+        conn.close()
+
+
 @posts_router.post("/contacts")
 def create_contact(payload: dict):
     fields = {k: str(payload.get(k, "") or "") for k in _CONTACT_KEYS}
@@ -111,6 +307,9 @@ def create_contact(payload: dict):
         raise HTTPException(400, "A contact needs a name")
     conn = get_connection()
     try:
+        clash = posts_queries.tag_conflict(conn, fields["name"], fields["alias"])
+        if clash:
+            raise HTTPException(409, clash)
         cid = posts_queries.add_contact(conn, **fields)
         return {"contact": posts_queries.get_contact(conn, cid)}
     finally:
@@ -122,12 +321,117 @@ def update_contact(contact_id: int, payload: dict):
     fields = {k: str(payload[k]) for k in _CONTACT_KEYS if k in payload}
     conn = get_connection()
     try:
-        if not posts_queries.get_contact(conn, contact_id):
+        current = posts_queries.get_contact(conn, contact_id)
+        if not current:
             raise HTTPException(404, "Contact not found")
+        if "name" in fields and not fields["name"].strip():
+            raise HTTPException(400, "A contact needs a name")
+        clash = posts_queries.tag_conflict(conn, fields.get("name", current["name"]),
+                                           fields.get("alias", current.get("alias") or ""),
+                                           exclude_id=contact_id)
+        if clash:
+            raise HTTPException(409, clash)
         posts_queries.update_contact(conn, contact_id, **fields)
         return {"contact": posts_queries.get_contact(conn, contact_id)}
     finally:
         conn.close()
+
+
+# ── Handle check (spec 018 T015, optional) ──────────────────────────
+# "✓ found" beside a handle the site itself confirms exists. Only Bluesky (handle
+# resolution on the public AppView) and Mastodon (WebFinger on the person's own
+# instance) can be asked without logging in; every other site stays blank.
+
+_HOST_RE = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+_BSKY_HANDLE_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
+_MAST_USER_RE = re.compile(r"^\w{1,64}$")
+
+
+def _public_host(host: str) -> str | None:
+    """`host` when it is a DNS name that resolves only to public addresses, else None.
+
+    The Mastodon check fetches from an instance the operator typed, so it must never be
+    pointed at this server's own network (localhost, the cloud metadata address, a LAN).
+    IP literals and bare names fail the name pattern before any lookup.
+    ponytail: the address is checked here and resolved again by the HTTP client, so a
+    host that re-points between the two (DNS rebinding) could slip past; an operator-only
+    endpoint behind the dashboard login makes that acceptable for now."""
+    h = (host or "").strip().lower().rstrip(".")
+    if not _HOST_RE.match(h):
+        return None
+    try:
+        infos = socket.getaddrinfo(h, 443, proto=socket.IPPROTO_TCP)
+    except (OSError, UnicodeError):
+        return None
+    try:
+        addrs = {ipaddress.ip_address(i[4][0].split("%")[0]) for i in infos}
+    except ValueError:
+        return None
+    return h if addrs and all(a.is_global for a in addrs) else None
+
+
+async def _check_bsky(handle: str) -> bool | None:
+    """True / False when Bluesky answered, None when it couldn't be asked."""
+    import httpx
+    if not _BSKY_HANDLE_RE.match(handle or ""):
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as http:
+            r = await http.get("https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle",
+                               params={"handle": handle})
+    except httpx.HTTPError:
+        return None
+    if r.status_code == 200:
+        try:
+            return bool((r.json() or {}).get("did"))
+        except ValueError:
+            return None
+    return False if r.status_code == 400 else None
+
+
+async def _check_mast(handle: str) -> bool | None:
+    import httpx
+    user, _, host = (handle or "").partition("@")
+    if not _MAST_USER_RE.match(user):
+        return False
+    host = await asyncio.to_thread(_public_host, host)
+    if not host:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as http:
+            r = await http.get(f"https://{host}/.well-known/webfinger",
+                               params={"resource": f"acct:{user}@{host}"})
+    except httpx.HTTPError:
+        return None
+    if r.status_code == 200:
+        return True
+    return False if r.status_code == 404 else None
+
+
+@posts_router.post("/contacts/{contact_id}/check")
+async def check_contact_handles(contact_id: int):
+    """Look up the contact's Bluesky and Mastodon handles and cache the answers."""
+    conn = get_connection()
+    try:
+        c = posts_queries.get_contact(conn, contact_id)
+    finally:
+        conn.close()
+    if not c:
+        raise HTTPException(404, "Contact not found")
+    checks = dict(c.get("checks") or {})
+    now = _now()
+    for plat, fn in (("bsky", _check_bsky), ("mast", _check_mast)):
+        handle = (c.get(f"handle_{plat}") or "").strip()
+        if not handle:
+            checks.pop(plat, None)
+            continue
+        checks[plat] = {"handle": handle, "found": await fn(handle), "at": now}
+    conn = get_connection()
+    try:
+        posts_queries.set_contact_checks(conn, contact_id, checks)
+    finally:
+        conn.close()
+    return {"checks": checks}
 
 
 @posts_router.delete("/contacts/{contact_id}")
@@ -162,6 +466,20 @@ def import_all_discovered_posts():
     except Exception as e:
         logger.error("Bulk post import failed: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))
+
+
+@posts_router.get("/import/count")
+def importable_post_count():
+    """How many of the operator's own microblog posts the poller found that aren't in
+    Posts yet — the feed's "bring them in" banner (spec 018 US3)."""
+    from posting import post_importer
+    from routes.submissions_api import get_discovered_unlinked
+    conn = get_connection()
+    try:
+        items = get_discovered_unlinked(conn)
+    finally:
+        conn.close()
+    return {"count": sum(1 for it in items if post_importer.is_importable_post(it))}
 
 
 @posts_router.post("/import/{platform}/{submission_id}")
@@ -229,25 +547,48 @@ def _resolve_post_publications(conn, pubs: list[dict]) -> list[dict]:
             p.get("platform"), sid, rows.get((p.get("platform"), sid)),
             url=p.get("external_url") or "", account_id=p.get("account_id"),
             source="post") if sid else None
-        row["stats"] = (loc or {}).get("stats") or {
-            "views": None, "favorites": None, "comments": None}
+        row["stats"] = dict((loc or {}).get("stats") or {
+            "views": None, "favorites": None, "comments": None})
+        row["stats"]["reposts"] = _reposts(p.get("platform"),
+                                           rows.get((p.get("platform"), sid)) if sid else None)
         row["thumbnail_url"] = (loc or {}).get("thumbnail_url") or ""
         row["title"] = (loc or {}).get("title") or ""
         out.append(row)
     return out
 
 
+def _reposts(platform: str, row: dict | None) -> int | None:
+    """Reposts / retweets from a site's stored row (spec 018); None when the site doesn't
+    count them or the post was never polled."""
+    from database import platform_metrics
+    spec = platform_metrics.get(platform)
+    if not row or not spec:
+        return None
+    for col in ("reposts", "retweets"):
+        if col in spec.extra:
+            return int(row.get(col) or 0)
+    return None
+
+
+_TOTAL_KEYS = ("views", "favorites", "comments", "reposts")
+
+
 def _post_totals(pubs: list[dict]) -> dict:
     """The headline row. Sums only what is known -- a None stays out of the sum
-    rather than counting as 0, so "not tracked" never reads as "zero engagement"."""
-    t = {"views": 0, "favorites": 0, "comments": 0, "sites": 0}
+    rather than counting as 0, so "not tracked" never reads as "zero engagement".
+    ``tracked`` says which numbers any site reported at all (spec 018: "views not
+    tracked on X" instead of a 0)."""
+    t = {"views": 0, "favorites": 0, "comments": 0, "reposts": 0, "sites": 0}
+    tracked = dict.fromkeys(_TOTAL_KEYS, False)
     for p in pubs:
         if p.get("status") == "posted":
             t["sites"] += 1
         s = p.get("stats") or {}
-        for k in ("views", "favorites", "comments"):
+        for k in _TOTAL_KEYS:
             if s.get(k) is not None:
                 t[k] += int(s[k] or 0)
+                tracked[k] = True
+    t["tracked"] = tracked
     return t
 
 
@@ -281,6 +622,7 @@ async def create_post(
     image_alt: str = Form(""),
     mentions: str = Form(""),   # JSON [{token, contact_id}] — @alias → contact bindings
     parts: str = Form(""),      # JSON [string] — thread parts 2+ (text-only, gap-wave-3 §4)
+    alts: str = Form(""),       # JSON [string] — ALT text per image, in order (spec 018)
     files: list[UploadFile] | None = File(None),
     file: UploadFile | None = File(None),   # legacy single-image field, still accepted
 ):
@@ -293,6 +635,12 @@ async def create_post(
     publisher can expand each alias into the right per-platform handle."""
     body = (body or "").strip()
     rating = rating if rating in _ALLOWED_RATINGS else "general"
+    try:
+        alt_list = [str(a)[:1500] for a in (json.loads(alts) if alts else [])]
+    except (ValueError, TypeError):
+        alt_list = []
+    if alt_list and not image_alt:
+        image_alt = alt_list[0]
     uploads = [f for f in ((files or []) + ([file] if file else [])) if f is not None]
     uploads = uploads[:_MAX_IMAGES]
     if not body and not uploads:
@@ -343,7 +691,7 @@ async def create_post(
         try:
             posts_queries.add_post_media(
                 conn, post_id=post_id, ordinal=idx, path=str(dest),
-                alt=image_alt if idx == 0 else "")
+                alt=alt_list[idx] if idx < len(alt_list) else (image_alt if idx == 0 else ""))
         finally:
             conn.close()
         if idx == 0:

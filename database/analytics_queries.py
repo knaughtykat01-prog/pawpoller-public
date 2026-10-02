@@ -918,6 +918,8 @@ def get_when_to_post(conn: sqlite3.Connection, *, zone_name: str | None = None,
     dated = sum(len(g) for g in weekday)
     too_few = timed < _MIN_TIMED
     windows = [] if too_few else _best_windows(grid)
+    for w in windows:          # spec 018: the composer offers the next one as a time
+        w["next_at"] = _next_at(zone, w["day"], w["h0"], now)
 
     gap = None
     habit = _habit_range([len(g) for g in hour])

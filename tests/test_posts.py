@@ -90,13 +90,13 @@ def test_publish_new_platforms_without_creds(db_conn):
         assert res["success"] is False and needle in res["error"], (plat, res)
 
 
-def test_text_only_platform_rejects_an_attached_image():
-    # Threads/Tumblr are text-only for now — an attached image is refused
-    # BEFORE any credential/network work. (X gained image posting in 2.58.0.)
+def test_text_only_platform_drops_an_attached_image():
+    # Threads/Tumblr are text-only: since spec 018 the images are left off and the
+    # text goes out (the composer says so first), instead of the post being refused.
     post = {"body": "hi", "rating": "general", "post_id": 1, "image_path": "/tmp/x.png"}
     for plat in ("thr", "tum"):
         res = asyncio.run(post_publisher._publish_one(post, plat, None, {}))
-        assert res["success"] is False and "text-only" in res["error"]
+        assert res["success"] is False and "text-only" not in res["error"]
 
 
 def test_x_accepts_an_image_now(db_conn):

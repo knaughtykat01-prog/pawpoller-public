@@ -1418,6 +1418,17 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
                 if "duplicate column" not in str(e).lower():
                     raise
 
+    # Migration (spec 018): a tag contact's own @alias and its cached handle checks.
+    # Additive; also in posts_schema.sql for fresh installs.
+    if "post_contacts" in tables:
+        for _col in ("alias TEXT NOT NULL DEFAULT ''",
+                     "handle_checks TEXT NOT NULL DEFAULT '{}'"):
+            try:
+                conn.execute(f"ALTER TABLE post_contacts ADD COLUMN {_col}")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
+
     # Migration: cross-platform follower/watcher counts. Account-level follower
     # counts are a single uniform integer per account, so they live in ONE shared
     # table keyed by the global account_id (not the per-platform submission

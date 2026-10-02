@@ -65,7 +65,10 @@ CREATE TABLE IF NOT EXISTS post_contacts (
     handle_mast TEXT NOT NULL DEFAULT '',    -- e.g. user@instance.social
     handle_thr  TEXT NOT NULL DEFAULT '',    -- e.g. threadsname
     handle_tum  TEXT NOT NULL DEFAULT '',    -- e.g. blogname
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    -- Spec 018 (existing installs gain these in db.py _run_migrations):
+    alias         TEXT NOT NULL DEFAULT '',  -- the short @tag typed, when not the name
+    handle_checks TEXT NOT NULL DEFAULT '{}' -- {"bsky": {"handle", "found", "at"}}, the cached lookups
 );
 
 -- One row per (post, alias token) → the contact it's bound to. The publisher

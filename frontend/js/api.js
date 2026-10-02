@@ -1320,7 +1320,16 @@ const API = {
     artworkSyncPush(data = {}) { return this.post('/api/artwork/sync/push', data); },
 
     /* ── Posts (microblog) module ─────────────────────────────── */
-    getPosts() { return this.get('/api/posts'); },
+    /* params: { status: 'scheduled'|'failed', persona_id, q, limit } (spec 018). */
+    getPosts(params = {}) { return this.get('/api/posts', params); },
+    /* Header strip + side column: this month vs last, likes by site, coming up (spec 018). */
+    getPostsSummary() { return this.get('/api/posts/summary'); },
+    /* Each site's character limit and media rules — the composer's one source. */
+    getPostRules() { return this.get('/api/posts/rules'); },
+    /* How a draft comes out on each site + every reason one would refuse or change it. */
+    previewPost(body) { return this.post('/api/posts/preview', body); },
+    /* Own microblog posts the poller found that aren't in Posts yet (the feed banner). */
+    getImportablePostCount() { return this.get('/api/posts/import/count'); },
     getPost(id) { return this.get(`/api/posts/${id}`); },
     /* Combined growth across every platform the post went to (4.34.4). */
     getPostSnapshots(id) { return this.get(`/api/posts/${id}/snapshots`); },
@@ -1344,7 +1353,12 @@ const API = {
 
     /* Handle-book (contacts) for @mentions — a person's per-platform handles. */
     getContacts() { return this.get('/api/posts/contacts'); },
-    createContact(body) { return this.post('/api/posts/contacts', body); },
+    /* 409 = the @tag already belongs to another contact; the form shows why. */
+    createContact(body) { return this.post('/api/posts/contacts', body, { quiet: [409] }); },
+    /* @names in your own posts that no contact answers to yet. */
+    suggestContacts() { return this.get('/api/posts/contacts/suggest'); },
+    /* Ask Bluesky / Mastodon whether a contact's handles exist; cached on the contact. */
+    checkContact(id) { return this.post(`/api/posts/contacts/${id}/check`, {}); },
     updateContact(id, body) {
         return fetch(`/api/posts/contacts/${id}`, {
             method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),

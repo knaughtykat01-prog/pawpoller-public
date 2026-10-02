@@ -203,7 +203,8 @@ class TestThePostDetailApi:
             {"platform": "bsky", "status": "posted", "external_id": "999",
              "external_url": "https://e.example/9", "account_id": 1}])
         assert len(rows) == 1
-        assert rows[0]["stats"] == {"views": None, "favorites": None, "comments": None}
+        assert rows[0]["stats"] == {"views": None, "favorites": None, "comments": None,
+                                    "reposts": None}
 
     def test_no_publications_means_no_snapshot_query(self):
         """A draft has nothing to chart, and an empty IN() is not a question worth

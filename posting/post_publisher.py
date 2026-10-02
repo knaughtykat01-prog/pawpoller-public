@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
@@ -33,6 +34,149 @@ _TEXT_ONLY = ("thr", "tum")
 # The inverse of _TEXT_ONLY: platforms that REQUIRE an image — Instagram has no
 # text-only feed post, so a caption alone can't be published.
 _IMAGE_REQUIRED = ("ig",)
+
+# ── Per-site rules (spec 018, FR-005) ──────────────────────────────
+# The ONE table of what each site takes; the composer is sent it (GET /api/posts/rules)
+# and asks `preview` how a draft will come out, so the browser holds no second copy.
+LABELS = {"bsky": "Bluesky", "tw": "X", "mast": "Mastodon", "thr": "Threads",
+          "tum": "Tumblr", "ig": "Instagram", "tg": "Telegram"}
+# Characters per post. Tumblr has no practical limit on a text post.
+TEXT_LIMITS = {"bsky": 300, "tw": 280, "mast": 500, "thr": 500, "ig": 2200, "tg": 4096,
+               "tum": None}
+TG_CAPTION_LIMIT = 1024          # a Telegram post with a picture: the text is its caption
+MAX_IMAGES = 4                   # X / Bluesky / Mastodon all cap a post at 4 images
+THREAD_PLATFORMS = ("bsky", "mast")             # parts 2+ chain as replies; the rest get part 1
+HANDLE_PLATFORMS = ("bsky", "tw", "mast", "thr", "tum")   # a contact can hold a handle there
+# The credentials `_publish_one` needs before it can try each site.
+_REQUIRED_CREDS = {
+    "bsky": ("bsky_identifier", "bsky_app_password"),
+    "mast": ("mast_instance_url", "mast_access_token"),
+    "thr": ("thr_access_token",),
+    "tw": ("tw_auth_token", "tw_ct0"),
+    "tum": ("tum_api_key", "tum_blog", "tum_consumer_secret", "tum_oauth_token",
+            "tum_oauth_token_secret"),
+    "ig": ("ig_access_token",),
+    "tg": ("tg_bot_token", "tg_channel"),
+}
+
+
+def text_limit(platform: str, image_count: int = 0) -> int | None:
+    if platform == "tg" and image_count:
+        return TG_CAPTION_LIMIT
+    return TEXT_LIMITS.get(platform)
+
+
+def text_length(text: str) -> int:
+    """Characters as a reader counts them: an emoji with a skin tone, a ZWJ family, a
+    flag or an accented letter is one. No dependency, so it approximates grapheme
+    clusters by folding the joiners and modifiers into the character before them.
+    ponytail: X weighs some characters double (CJK, emoji) and every link as 23; this
+    counts them as Bluesky does, so a post near X's limit may still be refused there."""
+    n, join, ri_open = 0, False, False
+    for ch in text or "":
+        cp = ord(ch)
+        if join:                       # the character after a zero-width joiner
+            join = False
+            continue
+        if cp == 0x200D:
+            join = True
+            continue
+        if (unicodedata.combining(ch) or 0xFE00 <= cp <= 0xFE0F or 0x1F3FB <= cp <= 0x1F3FF
+                or 0xE0020 <= cp <= 0xE007F):
+            continue
+        if 0x1F1E6 <= cp <= 0x1F1FF:   # regional indicators pair into one flag
+            if ri_open:
+                ri_open = False
+                continue
+            ri_open = True
+        else:
+            ri_open = False
+        n += 1
+    return n
+
+
+def rules() -> dict:
+    return {"labels": LABELS, "limits": TEXT_LIMITS, "tg_caption_limit": TG_CAPTION_LIMIT,
+            "max_images": MAX_IMAGES, "text_only": list(_TEXT_ONLY),
+            "image_required": list(_IMAGE_REQUIRED), "thread_platforms": list(THREAD_PLATFORMS),
+            "handle_platforms": list(HANDLE_PLATFORMS)}
+
+
+def _mentions_for(conn, bindings) -> list[dict]:
+    """Composer bindings [{token, contact_id}] → the mention dicts `_render_body` reads."""
+    out = []
+    for b in bindings or []:
+        try:
+            cid = int(b.get("contact_id") or 0)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        token = str(b.get("token") or "").strip().lstrip("@")
+        c = posts_queries.get_contact(conn, cid) if cid and token else None
+        if c:
+            out.append({"token": token, **{f"handle_{p}": c.get(f"handle_{p}", "")
+                                            for p in HANDLE_PLATFORMS}})
+    return out
+
+
+def preview(body: str, platforms: list[str], bindings=None, image_count: int = 0,
+            parts=None, account_ids: dict | None = None, settings: dict | None = None) -> dict:
+    """How a draft will come out on each chosen site, and every reason a site would refuse
+    or change it — before anything is sent (spec 018, FR-004 / SC-002).
+
+    Uses the publisher's own `_render_body`, the same table of limits and media rules, and
+    the same credential lookup `_publish_one` makes. Warning levels: "block" means the site
+    will refuse it as written; "warn" means it goes out, changed."""
+    account_ids = account_ids or {}
+    parts = [str(p) for p in (parts or []) if str(p).strip()]
+    conn = get_connection()
+    try:
+        mentions = _mentions_for(conn, bindings)
+    finally:
+        conn.close()
+    never = accounts_db.never_post_ids(settings)
+    out: dict[str, dict] = {}
+    for plat in platforms:
+        if plat not in SUPPORTED:
+            continue
+        label = LABELS.get(plat, plat)
+        text = _render_body(body or "", mentions, plat)
+        limit = text_limit(plat, image_count)
+        length = text_length(text)
+        warns: list[dict] = []
+
+        def w(level, msg):
+            warns.append({"level": level, "text": msg})
+
+        acct_id, creds = _resolve_creds(plat, account_ids.get(plat), settings)
+        connected = all(creds.get(k) for k in _REQUIRED_CREDS.get(plat, ()))
+        if not connected:
+            w("block", f"{label} isn't connected")
+        elif acct_id in never:
+            w("block", accounts_db.NEVER_POST_ERROR)
+        over = bool(limit) and length > limit
+        if over:
+            w("block", f"{length - limit} over {label}'s {limit}-character limit")
+        if plat in _TEXT_ONLY and image_count:
+            s = "" if image_count == 1 else "s"
+            w("warn", f"Text only: your {image_count} image{s} will be left off")
+        if plat in _IMAGE_REQUIRED and not image_count:
+            w("block", f"{label} needs a photo")
+        if parts:
+            if plat in THREAD_PLATFORMS:
+                for i, part in enumerate(parts):
+                    n = text_length(part)
+                    if limit and n > limit:
+                        w("block", f"Part {i + 2} is {n - limit} over the {limit}-character limit")
+            else:
+                w("warn", f"{label} gets part 1 only (no threads there)")
+        if plat in HANDLE_PLATFORMS:
+            for m in mentions:
+                if not (m.get(f"handle_{plat}") or "").strip():
+                    w("warn", f"@{m['token']} has no {label} handle saved, so it posts as plain text")
+        out[plat] = {"text": text, "length": length, "limit": limit, "over": over,
+                     "connected": connected, "warnings": warns}
+    return out
+
 
 # Rating → Bluesky self-labels. General adds none.
 _BSKY_LABELS = {"mature": ["sexual"], "adult": ["porn"]}
@@ -135,9 +279,9 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
     image_alts = [m.get("alt", "") for m in media if m.get("path")][:4]
 
     if platform in _TEXT_ONLY and image_paths:
-        result["error"] = (f"{platform} posting is text-only for now — drop the image, "
-                           f"or use Bluesky/Mastodon/X for image posts")
-        return result
+        # Spec 018: the text goes out and the images are left off — the composer says so
+        # on that site's row before posting ("Text only: your 2 images will be left off").
+        image_paths, image_alts = [], []
 
     if platform in _IMAGE_REQUIRED and not image_paths:
         result["error"] = ("Instagram requires a photo — attach an image "
@@ -431,6 +575,13 @@ async def publish_post(post_id: int, platforms: list[str],
     for platform in platforms:
         if activity.cancelled():       # "Cancel the rest": stop before the next site
             break
+        if platform not in SUPPORTED:
+            # 4.52.0 release review: an unknown name is refused WITHOUT a publication row,
+            # so a stray string never becomes a stored platform the feed renders.
+            results.append({"platform": platform, "account_id": 0, "success": False,
+                            "external_id": "", "external_url": "",
+                            "error": f"posting to {platform} isn't wired yet", "refused": True})
+            continue
         if persona_id is not None:
             # Persona-first: the same refusal manager._resolve_account_id makes,
             # and for the same reason — the platform default may be another
