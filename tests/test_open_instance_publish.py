@@ -24,6 +24,8 @@ PUBLISH = [
     ("post", "/api/podcasts"), ("patch", "/api/podcasts/2"), ("delete", "/api/podcasts/2"),
     ("post", "/api/podcasts/2/artwork"), ("patch", "/api/podcasts/episodes/5"),
     ("delete", "/api/podcasts/episodes/5"),
+    # 4.51.0: Retry in the activity tray re-runs a publish.
+    ("post", "/api/activity/abc123/retry/fa"),
 ]
 
 
@@ -61,6 +63,7 @@ def test_the_pattern_names_publishing_only(open_app):
     assert not open_app._PUBLISH_WHEN_OPEN.match("/api/artwork/images")
     assert not open_app._PUBLISH_WHEN_OPEN.match("/api/artwork/publisher-notes")
     assert not open_app._PUBLISH_WHEN_OPEN.match("/api/posts/12")
+    assert not open_app._PUBLISH_WHEN_OPEN.match("/api/activity/abc123/cancel")   # stopping isn't publishing
 
 
 def test_a_stranger_cannot_mint_a_key_and_walk_past_the_gate(monkeypatch):

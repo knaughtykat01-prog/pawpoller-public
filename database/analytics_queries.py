@@ -749,6 +749,8 @@ def _when_zone(zone_name, tz_offset_minutes):
             return ZoneInfo(zone_name), zone_name
         except Exception:
             pass
+    # Real offsets are within ±14 h; anything past a day made timezone() raise → a 500 (WTPCLAMP).
+    tz_offset_minutes = max(-1439, min(1439, int(tz_offset_minutes)))
     m = abs(tz_offset_minutes)
     label = f"UTC{'+' if tz_offset_minutes >= 0 else '-'}{m // 60:02d}:{m % 60:02d} (this browser)"
     return timezone(timedelta(minutes=tz_offset_minutes)), label
@@ -848,6 +850,7 @@ def get_when_to_post(conn: sqlite3.Connection, *, zone_name: str | None = None,
 
     zone, zone_label = _when_zone(zone_name, tz_offset_minutes)
     now = now or datetime.now(timezone.utc)
+    span_days = max(0, min(36500, int(span_days)))   # 100 years; a huge span overflowed the date (WTPCLAMP)
     since = now - timedelta(days=span_days) if span_days else None
 
     kinds: dict = {}

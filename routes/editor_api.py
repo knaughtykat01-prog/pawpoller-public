@@ -1793,6 +1793,7 @@ class PublishRequest(BaseModel):
     account_id: int | None = None  # which account to post AS (None = platform default)
     persona_id: int | None = None  # persona-first: account must be this persona's, else refused (4.2.0)
     description_override: str | None = None  # this post only — Publish Check's Telegram box (4.3.0)
+    background: bool = False      # spec 017: return {job_id} at once; the activity tray follows it
 
 
 @editor_router.post("/stories/{story_name:path}/publish")
@@ -1902,26 +1903,36 @@ async def publish(story_name: str, req: PublishRequest):
             }],
         }
 
-    if req.action == "post":
-        results = await manager.post_story(
-            canonical,
-            platforms=[req.platform],
-            chapters=[req.chapter],
-            extras=extras,
-            account_ids={req.platform: req.account_id} if req.account_id else None,
-            persona_id=req.persona_id,
-            description_overrides=(
-                {req.platform: req.description_override.strip()}
-                if req.description_override and req.description_override.strip() else None),
-        )
-    else:  # update / update_metadata — both route through update_story
-        results = await manager.update_story(
+    def _run():
+        if req.action == "post":
+            return manager.post_story(
+                canonical,
+                platforms=[req.platform],
+                chapters=[req.chapter],
+                extras=extras,
+                account_ids={req.platform: req.account_id} if req.account_id else None,
+                persona_id=req.persona_id,
+                description_overrides=(
+                    {req.platform: req.description_override.strip()}
+                    if req.description_override and req.description_override.strip() else None),
+            )
+        # update / update_metadata — both route through update_story
+        return manager.update_story(
             canonical,
             platforms=[req.platform],
             chapters=[req.chapter],
             extras=extras,
             account_filter=req.account_id,
         )
+
+    if req.background:
+        from posting import activity      # spec 017 — see posting_api.post_story
+        title = canonical.replace("_", " ") + (f" — ch {req.chapter}" if req.chapter else "")
+        jid = activity.launch("publish" if req.action == "post" else "update", title, [req.platform],
+                              _run, ref={"story": canonical}, retry=lambda _site: _run())
+        return {"ok": True, "action": req.action, "job_id": jid}
+
+    results = await _run()
 
     return {
         "ok": all(r.get("success") for r in results),

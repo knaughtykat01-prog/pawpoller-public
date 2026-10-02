@@ -1641,13 +1641,17 @@ window.Masterpieces = {
         if (msg) msg.textContent = 'Publishing…';
         try {
             await this._applyOverrides(name, overrides);
-            const res = await API.publishArtwork({
+            // spec 017: background job + live grid (null = minimised / left; the toast reports).
+            const send = (extra) => API.publishArtwork({
                 artwork_name: name, platforms, account_ids: accountIds,
                 persona_id: personaId,
                 description_overrides: window.Artwork ? window.Artwork._pubDescOverrides(conf) : undefined,
                 discord: window.Artwork ? window.Artwork._discordChoice() : undefined,   // spec 008
                 confirm_live: true,
+                ...extra,
             });
+            const res = window.Activity ? await Activity.run(send, msg) : await send({});
+            if (!res) return;
             const ok = res.successes || 0;
             const fail = Components.showPublishResults(msg, res.results);
             this._toast(fail ? 'error' : 'success',

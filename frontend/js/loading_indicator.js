@@ -1,15 +1,6 @@
 /* PawPoller loading + toast UI
  *
- * Two affordances:
- *
- *   1. A subtle dot-ring spinner that auto-appears in the top-right
- *      whenever any fetch() is in flight. Hooks window.fetch once so
- *      every existing API call gets the indicator for free. A small
- *      badge shows the in-flight count when more than one request is
- *      live. 250ms delay before showing so fast (<250ms) requests
- *      don't make the spinner flash on/off.
- *
- *   2. A toast stack in the bottom-right for success / error / info
+ * A toast stack in the bottom-right for success / error / info
  *      messages. Exposed as window.toast.{success,error,info,warn}.
  *      Auto-dismiss after 4s (success/info) or 6s (error/warn); click
  *      to dismiss earlier. Stacks vertically with newest on top.
@@ -23,67 +14,9 @@
     if (window.__pawpollerLoadingInstalled) return;
     window.__pawpollerLoadingInstalled = true;
 
-    // ─────────────────────────────────────────────────────────────
-    // Spinner
-    // ─────────────────────────────────────────────────────────────
-
-    let activeCount = 0;
-    let showTimer = null;
-    let spinnerEl = null;
-    let badgeEl = null;
-
-    function ensureSpinner() {
-        if (spinnerEl) return spinnerEl;
-        spinnerEl = document.createElement('div');
-        spinnerEl.className = 'pp-spinner-host';
-        spinnerEl.setAttribute('aria-hidden', 'true');
-        spinnerEl.innerHTML =
-            '<div class="pp-spinner-ring"></div>' +
-            '<span class="pp-spinner-badge" id="pp-spinner-badge"></span>';
-        document.body.appendChild(spinnerEl);
-        badgeEl = spinnerEl.querySelector('.pp-spinner-badge');
-        return spinnerEl;
-    }
-
-    function updateSpinner() {
-        ensureSpinner();
-        if (activeCount > 0) {
-            // Delay showing so trivially-fast requests don't flash.
-            if (!showTimer && !spinnerEl.classList.contains('is-visible')) {
-                showTimer = setTimeout(() => {
-                    spinnerEl.classList.add('is-visible');
-                    showTimer = null;
-                }, 250);
-            }
-            badgeEl.textContent = activeCount > 1 ? String(activeCount) : '';
-            badgeEl.style.display = activeCount > 1 ? '' : 'none';
-        } else {
-            if (showTimer) { clearTimeout(showTimer); showTimer = null; }
-            spinnerEl.classList.remove('is-visible');
-        }
-    }
-
-    function trackRequest(promise) {
-        activeCount++;
-        updateSpinner();
-        const done = () => { activeCount--; updateSpinner(); };
-        // Use Promise.prototype.finally style so both fulfill and reject
-        // tick the counter back down.
-        promise.then(done, done);
-        return promise;
-    }
-
-    // Wrap window.fetch
-    const originalFetch = window.fetch.bind(window);
-    window.fetch = function patchedFetch(input, init) {
-        // Skip SSE / streaming endpoints if explicitly marked by caller
-        // (init.__skipSpinner = true), so a 10-minute regen stream
-        // doesn't sit on the spinner the whole time. Detected per-call.
-        const skip = init && init.__skipSpinner;
-        const p = originalFetch(input, init);
-        if (skip) return p;
-        return trackRequest(p);
-    };
+    // The fetch-count ring that used to sit here (it spun for ANY request, so it could
+    // not say what was happening) was replaced in 4.51.0 (spec 017) by the activity pill
+    // for real work (activity.js) and page skeletons for loads (Utils.skeleton).
 
     // ─────────────────────────────────────────────────────────────
     // Toasts

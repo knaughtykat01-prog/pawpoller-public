@@ -352,6 +352,7 @@ async def _publish_thread_parts(parts: list[dict], platform: str,
     (bsky uri+cid via parent_res["_refs"], mast numeric id via external_id).
     One result dict per part; a failed part stops the chain (no orphaned tails).
     """
+    from posting import activity
     out: list[dict] = []
     account_id, creds = _resolve_creds(platform, account_id, settings)
     if platform == "bsky":
@@ -363,7 +364,8 @@ async def _publish_thread_parts(parts: list[dict], platform: str,
                             app_password=creds.get("bsky_app_password", ""))
         prev = dict(root)
         try:
-            for part in parts:
+            for k, part in enumerate(parts):
+                activity.step(platform, "Thread", f"Part {k + 2} of {len(parts) + 1}")
                 r = await client.create_post(part["body"], reply={
                     "root": {"uri": root["uri"], "cid": root["cid"]},
                     "parent": {"uri": prev["uri"], "cid": prev["cid"]},
@@ -387,7 +389,8 @@ async def _publish_thread_parts(parts: list[dict], platform: str,
         client = MastClient(instance_url=creds.get("mast_instance_url", ""),
                             access_token=creds.get("mast_access_token", ""))
         try:
-            for part in parts:
+            for k, part in enumerate(parts):
+                activity.step(platform, "Thread", f"Part {k + 2} of {len(parts) + 1}")
                 r = await client.create_status(
                     part["body"], in_reply_to_id=str(prev_id),
                     idempotency_key=f"pp-{part['post_id']}-mast")
@@ -423,8 +426,11 @@ async def publish_post(post_id: int, platforms: list[str],
     if not post:
         raise ValueError(f"post {post_id} not found")
 
+    from posting import activity   # spec 017: no-ops unless the caller bound a job
     results: list[dict[str, Any]] = []
     for platform in platforms:
+        if activity.cancelled():       # "Cancel the rest": stop before the next site
+            break
         if persona_id is not None:
             # Persona-first: the same refusal manager._resolve_account_id makes,
             # and for the same reason — the platform default may be another
@@ -441,6 +447,7 @@ async def publish_post(post_id: int, platforms: list[str],
                                 "success": False, "external_id": "", "external_url": "",
                                 "error": err, "refused": True})
                 continue
+        activity.step(platform, "Uploading")
         res = await _publish_one(post, platform, account_ids.get(platform), settings)
         results.append(res)
         conn = get_connection()
@@ -489,6 +496,11 @@ async def publish_post(post_id: int, platforms: list[str],
                     res["error"] = (res.get("error") or "") or "some thread parts failed"
             else:
                 res["thread_parts"] = f"first part only ({plat} threads unsupported)"
+
+    # Each site's activity line closes once its thread parts are done too.
+    for res in results:
+        activity.line_done(res["platform"], bool(res.get("success")), url=res.get("external_url") or "",
+                           error=res.get("error") or "" if not res.get("success") else "")
 
     # Discord announce (gap G4) — fire once per publish if any platform succeeded.
     # Best-effort; announce_publish self-gates on config + never raises.

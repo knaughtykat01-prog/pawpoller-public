@@ -543,6 +543,20 @@ async def publish_artwork(body: dict):
         raise HTTPException(
             400, detail="publish requires confirm_live=true (live-publish safety guard)")
 
+    if body.get("background"):
+        from posting import activity      # spec 017 — see posting_api.post_story
+
+        def _run(sites):
+            return manager.post_artwork(
+                artwork_name, sites, account_ids=account_ids, persona_id=persona_id,
+                description_overrides=description_overrides,
+                variant_overrides=variant_overrides, renders=renders,
+                announce_discord=announce_discord)
+        jid = activity.launch("publish", artwork_name.replace("_", " "), platforms,
+                              lambda: _run(platforms), ref={"artwork": artwork_name},
+                              retry=lambda site: _run([site]))
+        return {"status": "started", "job_id": jid}
+
     try:
         results = await manager.post_artwork(
             artwork_name, platforms, account_ids=account_ids, persona_id=persona_id,

@@ -374,6 +374,15 @@ async def publish_post(post_id: int, payload: dict):
     if not payload.get("confirm_live"):
         raise HTTPException(
             400, "publish requires confirm_live=true (live-publish safety guard)")
+    if payload.get("background"):
+        from posting import activity      # spec 017 — see posting_api.post_story
+
+        def _run(sites):
+            return post_publisher.publish_post(post_id, sites, account_ids,
+                                               persona_id=payload.get("persona_id"))
+        jid = activity.launch("post", "Post", platforms, lambda: _run(platforms),
+                              ref={"post": post_id}, retry=lambda site: _run([site]))
+        return {"status": "started", "job_id": jid}
     try:
         results = await post_publisher.publish_post(
             post_id, platforms, account_ids, persona_id=payload.get("persona_id"))

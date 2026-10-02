@@ -75,6 +75,8 @@ class InstagramPoster(PlatformPoster):
             # A Reel hosts the video AND its poster (the cover frame) — 4.20.1.
             to_host = [path] + ([package.thumbnail_path] if is_video and package.thumbnail_path
                                 and os.path.isfile(package.thumbnail_path) else [])
+            from posting import activity   # spec 017: Instagram's real stages (no-ops outside a job)
+            activity.step("ig", "Uploading", "Putting the file where Instagram can fetch it")
             try:
                 hosted = await ig_host.host_images(to_host, settings)
             except ig_host.NoPublicHost as e:
@@ -85,6 +87,7 @@ class InstagramPoster(PlatformPoster):
 
             caption = _build_caption(package)
             client = IgClient(access_token=token, user_id=creds.get("ig_user_id", ""))
+            activity.step("ig", "Publishing", "Instagram is processing the video" if is_video else None)
             try:
                 if is_video:
                     r = await client.create_video_post(caption, image_urls[0],

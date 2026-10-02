@@ -598,7 +598,9 @@ window.Artwork = {
         }
         msg.textContent = 'Publishing…';
         try {
-            const res = await API.publishArtwork({
+            // spec 017: a background job with the live grid under the message; null = the
+            // grid was minimised / the page left, and the activity toast reports instead.
+            const send = (extra) => API.publishArtwork({
                 artwork_name: name,
                 platforms: meta.platforms,
                 account_ids: accountIds,
@@ -609,7 +611,10 @@ window.Artwork = {
                 renders: conf.renders,
                 discord: this._discordChoice(),   // spec 008: this publish's Discord tick
                 confirm_live: true,
+                ...extra,
             });
+            const res = window.Activity ? await Activity.run(send, msg) : await send({});
+            if (!res) return;
             const ok = res.successes || 0;
             const fail = Components.showPublishResults(msg, res.results);
             this._toast(fail ? 'error' : 'success',

@@ -628,6 +628,19 @@ async def post_story(body: dict):
         raise HTTPException(
             400, detail="post requires confirm_live=true (live-publish safety guard)")
 
+    if body.get("background"):
+        # spec 017: answer at once; the work runs on as an activity job (the guard above
+        # still applied). Retry re-runs one site with the same choices.
+        from posting import activity
+
+        def _run(sites):
+            return manager.post_story(story_name, sites, chapters, account_ids=account_ids,
+                                      persona_id=persona_id, description_overrides=description_overrides)
+        title = story_name.replace("_", " ") + (f" — ch {', '.join(map(str, chapters))}" if chapters else "")
+        jid = activity.launch("publish", title, platforms, lambda: _run(platforms),
+                              ref={"story": story_name}, retry=lambda site: _run([site]))
+        return {"status": "started", "job_id": jid}
+
     try:
         results = await manager.post_story(story_name, platforms, chapters,
                                            account_ids=account_ids, persona_id=persona_id,
@@ -672,6 +685,16 @@ async def update_story(body: dict):
     if not body.get("confirm_live"):
         raise HTTPException(
             400, detail="update requires confirm_live=true (live-publish safety guard)")
+
+    if body.get("background"):
+        from posting import activity
+
+        def _run(sites):
+            return manager.update_story(story_name, sites, chapters, account_filter=account_filter)
+        jid = activity.launch("update", "Update " + story_name.replace("_", " "), platforms or [],
+                              lambda: _run(platforms), ref={"story": story_name},
+                              retry=lambda site: _run([site]))
+        return {"status": "started", "job_id": jid}
 
     try:
         results = await manager.update_story(story_name, platforms, chapters,

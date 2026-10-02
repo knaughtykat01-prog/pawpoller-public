@@ -86,7 +86,7 @@ window.Posts = {
                 </div>
             </div>
             <h2 class="posts-feed-heading">Recent posts</h2>
-            <div id="post-feed"><div class="loading-spinner">Loading…</div></div>`;
+            <div id="post-feed">${Utils.skeleton('rows', 6, 'your posts')}</div>`;
         await this._loadFeed();
     },
 
@@ -544,11 +544,12 @@ window.Posts = {
                 const sf = document.getElementById('post-schedule-form');
                 if (sf) sf.style.display = 'none';
             } else {
-                const res = await API.publishPost(post_id, {
+                // spec 017: background job + live grid (null = minimised / left; the toast reports).
+                const send = (extra) => API.publishPost(post_id, {
                     platforms, account_ids: this._accountIds(platforms),
-                    persona_id: this._personaId(),
-                    confirm_live: true,
-                });
+                    persona_id: this._personaId(), confirm_live: true, ...extra });
+                const res = window.Activity ? await Activity.run(send, msg) : await send({});
+                if (!res) return;
                 const ok = res.successes || 0; fail = res.failures || 0;
                 this._toast(fail ? 'error' : 'success', `Posted: ${ok} ok, ${fail} failed`);
                 if (fail) {

@@ -26,6 +26,20 @@ logger = logging.getLogger(__name__)
 DEFAULT_COLOR = "#6c8cff"
 
 
+def _zone_or_blank(z) -> str:
+    """A zone zoneinfo knows, else '' (= the operator's zone). A paired peer's manifest is
+    the one path into preferred_post_tz that skips the PATCH's check; an unknown zone there
+    made the publish screen's default time throw (PEERTZ, 4.50.1)."""
+    if not z:
+        return ""
+    try:
+        from zoneinfo import ZoneInfo
+        ZoneInfo(str(z))
+        return str(z)
+    except Exception:
+        return ""
+
+
 def ensure_personas_table(conn: sqlite3.Connection) -> None:
     """Create the personas table if absent. Idempotent."""
     conn.executescript(
@@ -247,7 +261,7 @@ def apply_manifest(conn: sqlite3.Connection, manifest) -> int:
              int(p.get("sort_order", 0)),
              # Absent on manifests from pre-wave-3 peers → keep sensible blanks.
              p.get("default_platforms", ""), p.get("default_rating", ""),
-             p.get("preferred_post_time", ""), p.get("preferred_post_tz", "")),
+             p.get("preferred_post_time", ""), _zone_or_blank(p.get("preferred_post_tz", ""))),
         )
         n += 1
     conn.commit()

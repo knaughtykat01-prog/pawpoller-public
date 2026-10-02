@@ -15,7 +15,7 @@ from typing import Any
 
 from database.db import get_connection
 from database import posting_queries
-from posting import story_reader
+from posting import activity, story_reader
 from posting.platforms.base import PlatformPoster
 
 logger = logging.getLogger(__name__)
@@ -123,6 +123,45 @@ def _schedule_retry(story_name: str, ch_idx: int, platform: str, action: str,
 # client/session — reusing one poster across accounts would leak account A's
 # logged-in session into account B's uploads.
 _posters: dict[tuple[str, int | None], PlatformPoster] = {}
+
+
+# ── Activity reporting (4.51.0, spec 017) ─────────────────────────────────────
+# Every call below is a no-op unless the caller bound an activity job (posting/activity.py),
+# so a plain API publish, the CLI and the tests behave exactly as before.
+def _act_settle(platform: str, results: list[dict[str, Any]]) -> None:
+    """Close `platform`'s activity line from its result rows."""
+    rows = [r for r in results if r.get("platform") == platform]
+    if not rows:
+        return
+    bad = [r for r in rows if not r.get("success") and not r.get("queued_desktop") and not r.get("skipped")]
+    url = next((r.get("external_url") for r in reversed(rows) if r.get("external_url")), "") or ""
+    if bad:
+        err = bad[0].get("error") or bad[0].get("reason") or "Failed"
+        auto = any(r.get("retry_queued") for r in rows)
+        # Retry in the tray re-runs the whole site, so it's offered only when that can't
+        # double-post: nothing on this line went live, no automatic retry is already queued,
+        # and the site doesn't say it already has the upload (release review, Medium).
+        safe = (not auto and not any(r.get("success") for r in rows)
+                and "already uploaded" not in str(err).lower())
+        activity.line_done(platform, False, url=url, retryable=safe,
+                           error=err + (" — PawPoller will try again by itself." if auto else ""))
+    elif all(r.get("skipped") for r in rows):
+        activity.line_done(platform, True, step="Skipped")
+    else:
+        activity.line_done(platform, True, url=url,
+                           step="Queued for desktop" if any(r.get("queued_desktop") for r in rows) else None)
+
+
+def _act_settle_all(results: list[dict[str, Any]]) -> None:
+    for plat in dict.fromkeys(r.get("platform") for r in results if r.get("platform")):
+        _act_settle(plat, results)
+
+
+def _ch_label(ch_idx: int, chapter_list: list[int]) -> str:
+    if not ch_idx:
+        return "Full story"
+    n = len(chapter_list)
+    return f"Ch {ch_idx}" + (f" ({chapter_list.index(ch_idx) + 1} of {n})" if n > 1 and ch_idx in chapter_list else "")
 
 
 def _get_poster(platform: str, account_id: int | None = None) -> PlatformPoster:
@@ -481,7 +520,15 @@ async def post_story(
     else:
         chapter_list = chapters
 
+    _act_prev = None
     for platform in _announcers_last(platforms):
+        if _act_prev:
+            _act_settle(_act_prev, results)
+        if activity.cancelled():          # "Cancel the rest": stop before the next site
+            _act_prev = None
+            break
+        _act_prev = platform
+        activity.step(platform, "Preparing")
         try:
             account_id = _resolve_account_id(platform, account_ids.get(platform), persona_id)
         except ValueError as e:
@@ -516,6 +563,7 @@ async def post_story(
                 continue
 
             # Post
+            activity.step(platform, "Uploading", _ch_label(ch_idx, chapter_list))
             result = await poster.post(package)
 
             # Compute file hash for change detection
@@ -597,6 +645,9 @@ async def post_story(
             # Rate limit between chapters on the same platform
             if ch_idx != chapter_list[-1]:
                 await poster._rate_limit()
+
+    if _act_prev:
+        _act_settle(_act_prev, results)
 
     # Discord announce for stories (4.41.0, spec 008 — stories never announced before).
     # Once per publish, only if a site succeeded.
@@ -708,7 +759,15 @@ async def post_artwork(
     results: list[dict[str, Any]] = []
 
     _wm_temps: list[str] = []   # watermark temp files, cleaned after the loop
+    _act_prev = None
     for platform in _announcers_last(platforms):
+        if _act_prev:
+            _act_settle(_act_prev, results)
+        if activity.cancelled():          # "Cancel the rest": stop before the next site
+            _act_prev = None
+            break
+        _act_prev = platform
+        activity.step(platform, "Preparing")
         try:
             account_id = _resolve_account_id(platform, account_ids.get(platform), persona_id)
         except ValueError as e:
@@ -838,6 +897,8 @@ async def post_artwork(
                 continue
 
             # Post
+            activity.step(platform, "Uploading",
+                          ((_variant or {}).get("label") or (_variant or {}).get("key") or "") if _multi else None)
             result = await poster.post(package)
 
             # Compute file hash for change detection (the image itself)
@@ -952,6 +1013,9 @@ async def post_artwork(
                 # Which render went to this site — "" for the primary (4.33.0).
                 "variant": (_variant or {}).get("label") or (_variant or {}).get("key") or "",
             })
+
+    if _act_prev:
+        _act_settle(_act_prev, results)
 
     # Clean up watermark temp files (gap-wave-5 §1) now every post + retry is done.
     for _t in _wm_temps:
@@ -1097,6 +1161,9 @@ async def update_story(
                 plat,
             )
 
+        if activity.cancelled():
+            break
+        activity.step(plat, "Updating", f"Ch {ch_idx}" if ch_idx else "Full story")
         if _queue_edit_for_desktop("story", story_name, ch_idx, plat, account_id, poster):
             results.append({"platform": plat, "chapter_index": ch_idx,
                             "success": False, "queued_desktop": True})
@@ -1215,6 +1282,7 @@ async def update_story(
 
         await poster._rate_limit()
 
+    _act_settle_all(results)
     return results
 
 
@@ -1356,6 +1424,9 @@ async def update_artwork(
                             "success": False, "queued_desktop": True})
             continue
 
+        if activity.cancelled():
+            break
+        activity.step(plat, "Updating")
         result = await poster.edit(ext_id, package)
 
         conn = get_connection()
@@ -1413,6 +1484,7 @@ async def update_artwork(
 
         await poster._rate_limit()
 
+    _act_settle_all(results)
     return results
 
 

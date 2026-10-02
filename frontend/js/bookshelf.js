@@ -115,7 +115,7 @@ window.Bookshelf = {
             </div>
             <div id="shelf-discovered"></div>
             <div id="shelf-controls"></div>
-            <div id="shelf-grid"><div class="loading-spinner">Loading your shelf…</div></div>`;
+            <div id="shelf-grid">${Utils.skeleton('cards', 12, 'the Library')}</div>`;
 
         // "▤ Shelf view" — switch to the Showcase AND remember it as the
         // Library's opening view (2.158.0; "✕ Classic view" remembers back).

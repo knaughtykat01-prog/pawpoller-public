@@ -346,6 +346,34 @@ def get_all_poll_progress():
     return progress
 
 
+# ── Activity (spec 017): what PawPoller is doing right now ───────────────────
+@router.get("/activity")
+def get_activity():
+    """The pill + tray's one read: running and recent jobs (posting/activity.py) and the
+    polls in progress (the same data as /poll/all-progress, active ones only)."""
+    from posting import activity
+    polls = {c: p for c, p in get_all_poll_progress().items() if p and p.get("active")}
+    return {"jobs": activity.snapshot(), "polls": polls}
+
+
+@router.post("/activity/{job_id}/cancel")
+def cancel_activity(job_id: str):
+    """"Cancel the rest": stops before the next site; one already uploading finishes."""
+    from posting import activity
+    if not activity.cancel(job_id):
+        raise HTTPException(404, "No running job with that id")
+    return {"ok": True}
+
+
+@router.post("/activity/{job_id}/retry/{key}")
+async def retry_activity(job_id: str, key: str):
+    """Re-run one failed line of a job, reporting into the same job."""
+    from posting import activity
+    if not await activity.retry(job_id, key):
+        raise HTTPException(404, "Nothing to retry there")
+    return {"ok": True}
+
+
 # Per-platform health endpoint config: (code, queries module, last-poll
 # fn, interval setting key, "is configured" predicate). Drives the
 # /api/platforms/health endpoint that powers sidebar status dots,

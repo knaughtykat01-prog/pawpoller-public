@@ -1118,12 +1118,12 @@ window.PublishCheck = (function () {
         }
 
         try {
-            const resp = await fetch(
+            const send = (extra) => fetch(
                 '/api/editor/stories/' + encodeURIComponent(storyName) + '/publish',
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
+                    body: JSON.stringify(Object.assign({
                         platform: platId,
                         chapter: chIdx,
                         action: action,
@@ -1141,10 +1141,19 @@ window.PublishCheck = (function () {
                             return h && h.dataset.personaId ? parseInt(h.dataset.personaId, 10) : null;
                         })(),
                         description_override: ((document.getElementById('publish-tg-desc') || {}).value || '').trim() || null,
-                    }),
+                    }, extra || {})),
                 }
-            );
-            const data = await resp.json();
+            ).then(r => r.json());
+            // spec 017: a live action runs as a background job with the progress grid; a dry
+            // run answers at once as before. null = the grid was minimised (the toast reports).
+            let data;
+            if (action !== 'dry_run' && window.Activity) {
+                const res = await Activity.run(send, resultBox);
+                if (!res) return;
+                data = res.job_id ? { ok: res.failures === 0, action, results: res.results } : res;
+            } else {
+                data = await send();
+            }
             _renderActionResult(data, action);
             _logAction(action, platName, chTitle, data);
             // Toast feedback for completed actions. Dry-run stays

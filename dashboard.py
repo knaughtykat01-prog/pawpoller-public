@@ -570,7 +570,9 @@ _PUBLISH_WHEN_OPEN = re.compile(
     # public /feed/ RSS.
     # 4.45.4 (PODLOCK): EVERY podcast write, not just a new episode — editing a feed or an
     # episode, its artwork, or deleting one changes what the public /feed/ RSS serves.
-    r"|masterpieces/.+/sync|podcasts)(/|$)")
+    # 4.51.0 (release review, High): Retry in the activity tray re-runs a publish — a
+    # stranger who read a job id off /api/activity could otherwise post another live copy.
+    r"|masterpieces/.+/sync|podcasts|activity/[^/]+/retry)(/|$)")
 
 
 def _sensitive_when_open(request: Request) -> bool:

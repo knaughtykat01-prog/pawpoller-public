@@ -126,7 +126,47 @@ async def _scheduler_loop() -> None:
             await asyncio.sleep(SCHEDULER_CHECK_INTERVAL)
 
 
+_slot_jobs: dict[str, str] = {}   # slot → activity job id (spec 017)
+
+
+def _slot_job(item) -> str:
+    """The activity job this row reports into. The rows of one slot — a piece scheduled to
+    five sites, one chapter of a drip — fire seconds apart and share one job, so the pill shows
+    one thing ("Sample Story — ch 3, 4 of 5 sites") rather than five flashes."""
+    from posting import activity
+    keys = item.keys()
+    ctype = item["content_type"] if "content_type" in keys else "story"
+    group = item["drip_group"] if "drip_group" in keys and item["drip_group"] else f"{ctype}:{item['story_name']}"
+    slot = f"{group}@{item['scheduled_at'] if 'scheduled_at' in keys else ''}"
+    jid = _slot_jobs.get(slot)
+    if jid and activity.reopen(jid):
+        return jid
+    name = str(item["story_name"])
+    if ctype == "post":
+        title = (item["title_override"] if "title_override" in keys and item["title_override"] else f"Post {name}")
+    else:
+        title = name.replace("_", " ")
+        if ctype == "story" and item["chapter_index"]:
+            title += f" — ch {item['chapter_index']}"
+    jid = activity.start("scheduled", f"{title} (scheduled)", [], ref={"queue": True})
+    _slot_jobs[slot] = jid
+    for old in list(_slot_jobs)[:-100]:     # bounded; old slots are long finished
+        _slot_jobs.pop(old, None)
+    return jid
+
+
 async def _process_queue_item(item: dict) -> None:
+    """Process one due queue row inside its slot's activity job (spec 017)."""
+    from posting import activity
+    jid = _slot_job(item)
+    with activity.bound(jid):
+        try:
+            await _process_queue_item_core(item)
+        finally:
+            activity.finish(jid)
+
+
+async def _process_queue_item_core(item: dict) -> None:
     """Process a single posting queue item."""
     queue_id = item["queue_id"]
     story_name = item["story_name"]
@@ -309,6 +349,8 @@ async def _process_queue_item(item: dict) -> None:
         finally:
             conn.close()
         logger.error("Queue item #%d exception: %s", queue_id, e, exc_info=True)
+        from posting import activity
+        activity.line_done(platform, False, error=str(e))
         await _notify_completion(notify_name, chapter_index, platform, action, False, str(e),
                                  content_type=content_type)
 

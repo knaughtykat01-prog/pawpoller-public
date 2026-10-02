@@ -174,6 +174,23 @@ def test_route_refuses_unknown_filters():
     assert r.status_code == 200 and len(r.json()["grid"]) == 7
 
 
+def test_absurd_span_or_offset_is_clamped_not_a_crash(monkeypatch):
+    """WTPCLAMP: span=1e6 overflowed the date and tz_offset past a day made timezone() raise —
+    both were 500s. Clamped to 100 years and ±23:59."""
+    import config
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from routes.api import router
+    monkeypatch.setattr(config, "get_settings", lambda: {})
+    app = FastAPI()
+    app.include_router(router)
+    c = TestClient(app)
+    r = c.get("/api/analytics/when-to-post?span=1000000000&tz_offset=99999")
+    assert r.status_code == 200 and r.json()["zone"].startswith("UTC+23:59")
+    assert r.json()["filters"]["span_days"] == 36500
+    assert c.get("/api/analytics/insights?tz_offset=-99999").status_code == 200
+
+
 def test_route_prefers_the_browser_zone_name_over_its_offset(monkeypatch):
     """With no zone saved, the browser's zone NAME is used (DST-correct); its fixed
     offset put a summer schedule link an hour out."""

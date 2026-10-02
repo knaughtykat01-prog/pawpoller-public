@@ -1712,9 +1712,10 @@ const App = {
         document.getElementById('app').innerHTML = html;
     },
 
-    /* _loading() — DOM helper: shows a spinner placeholder while async data loads. */
-    _loading() {
-        this._setContent('<div class="loading-spinner">Loading...</div>');
+    /* _loading(kind, page) — the page's skeleton while its data loads (spec 017; was a bare
+     * "Loading..." line). See Utils.skeleton for the kinds. */
+    _loading(kind = 'rows', page = '') {
+        this._setContent(Utils.skeleton(kind, kind === 'cards' ? 12 : 8, page));
     },
 
     /* _loadLogs() — Fetch and display application log file in the Logs settings tab. */
@@ -3587,7 +3588,7 @@ const App = {
      * Replaces the old modal popover; driven by window.PLATFORMS. */
     async renderPlatformsHub() {
         const _rt = this._routeToken();   // route race guard (see _stale)
-        this._loading();
+        this._loading('rows', 'Platforms');
         const plats = window.PLATFORMS || [];
         const fetchers = {
             ib: () => API.getSummary(), fa: () => API.getFASummary(), ws: () => API.getWSSummary(),
@@ -3670,7 +3671,7 @@ const App = {
 
     async renderOverview() {
         const token = this._routeToken();
-        this._loading();
+        this._loading('overview', 'the Overview');
         try {
             /* Fetch every platform's summary + aggregate in parallel, driven by
              * window.PLATFORMS; .catch() fallbacks prevent one failure blocking
@@ -20775,7 +20776,7 @@ const App = {
 
     async renderAnalytics() {
         const _rt = this._routeToken();   // route race guard (see _stale)
-        this._loading();
+        this._loading('chart', 'Analytics');
         try {
             const [data, insights, tagPerf] = await Promise.all([
                 API.getHistoricalAnalytics({ weeks: 12 }),

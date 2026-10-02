@@ -232,6 +232,26 @@ const Utils = {
         },
     },
 
+    /* ── skeleton (4.51.0, spec 017) ─────────────────────────────
+     * A page's first paint while its data loads: grey shapes in the page's real layout (so
+     * nothing jumps when content lands) instead of a bare "Loading...". While a skeleton is on
+     * screen a thin line sweeps the top (CSS: body:has(#app .skel)). After 8 s a line says what
+     * it's waiting for — a CSS delay, no timer to clean up.
+     *   kind: 'cards' (Library), 'rows' (lists — the default), 'chart' (Analytics),
+     *         'overview' (tiles + chart). */
+    skeleton(kind = 'rows', n = 8, page = '') {
+        const card = '<div class="skel-card"><div class="skel-img"></div><div class="skel-l"></div><div class="skel-l s"></div></div>';
+        const row = '<div class="skel-row"><div class="skel-l"></div><div class="skel-l s"></div></div>';
+        const tiles = '<div class="skel-tiles">' + '<div class="skel-tile"></div>'.repeat(4) + '</div>';
+        const body = kind === 'cards' ? `<div class="skel-grid">${card.repeat(n)}</div>`
+            : kind === 'chart' ? `${tiles.replace(/(<div class="skel-tile"><\/div>){4}/, '<div class="skel-tile"></div>'.repeat(3))}<div class="skel-chart"></div>${row.repeat(3)}`
+            : kind === 'overview' ? `<div class="skel-l s" style="max-width:40%"></div>${tiles}<div class="skel-chart"></div>`
+            : row.repeat(n);
+        const what = page ? `Still loading ${Utils.escapeHtml(page)}…` : 'Still loading…';
+        return `<div class="skel" aria-busy="true" aria-label="Loading">${body}
+            <p class="skel-slow" role="status">${what} The server is taking longer than usual.</p></div>`;
+    },
+
     /* Old names, kept for the ~80 callers: thin wrappers over Utils.time (4.49.0). */
     _parseDate(dateStr) { return Utils.time.parse(dateStr); },
     formatDate(dateStr) { return Utils.time.fmt.date(dateStr); },

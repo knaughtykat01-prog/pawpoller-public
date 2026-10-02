@@ -200,6 +200,10 @@ def test_a_persona_keeps_its_preferred_time_zone():
         man[-1]["preferred_post_tz"] = "Europe/London"
         personas.apply_manifest(conn, man)
         assert personas.get_persona(conn, pid)["preferred_post_tz"] == "Europe/London"
+        # PEERTZ: a peer's unknown zone is dropped to '' (the operator's zone), not stored.
+        man[-1]["preferred_post_tz"] = "Mars/Olympus"
+        personas.apply_manifest(conn, man)
+        assert personas.get_persona(conn, pid)["preferred_post_tz"] == ""
     finally:
         conn.close()
 
