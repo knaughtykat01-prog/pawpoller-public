@@ -12,22 +12,25 @@ CSS = open("frontend/css/layout.css", encoding="utf-8").read()
 
 
 class TestTheButton:
+    """Since 4.53.0 (spec 019) Sign out is the last item of the account menu, in words,
+    in red — the way most apps do it — rather than a button of its own in the bar."""
+
     def test_it_carries_the_words(self):
-        assert 'class="btn-logout-label">Sign out<' in HTML
-        assert 'aria-label="Sign out"' in HTML
+        item = HTML[HTML.index('data-acct="signout"'):][:400]
+        assert ">Sign out<" in item
 
     def test_it_no_longer_relies_on_a_bare_arrow(self):
         assert 'id="logout-btn" title="Sign out">&#x2190;</button>' not in HTML
 
-    def test_it_gets_its_own_row_but_shrinks_with_the_sidebar(self):
-        block = CSS[CSS.index(".btn-logout {"):]
-        assert "flex: 1 1 100%" in block[:400]
-        assert ".sidebar.collapsed .btn-logout-label { display: none; }" in CSS
+    def test_it_is_set_apart_and_red(self):
+        assert ".acct-menu .acct-signout" in CSS
+        rule = CSS[CSS.index(".acct-menu .acct-signout"):][:200]
+        assert "var(--danger)" in rule
 
 
 class TestTheDialog:
     def test_the_click_asks_before_it_acts(self):
-        handler = APP[APP.index("document.getElementById('logout-btn')"):]
+        handler = APP[APP.index("async _signOut() {"):]
         head = handler[:700]
         assert "await this._confirmSignOut(" in head
         assert head.index("_confirmSignOut") < head.index("dashboardLogout"), \

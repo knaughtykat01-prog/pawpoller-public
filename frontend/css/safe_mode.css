@@ -52,17 +52,33 @@ html[data-sfw="1"] .sfw-revealed {
     cursor: auto;
 }
 
-/* ── Sidebar-footer toggle button ──────────────────────────────────────────
-   Base 30×30 look comes from layout.css (.btn-sfw-toggle joins .btn-logout /
-   .btn-theme-toggle). When safe mode is ON the button lights up amber so the
-   active state — and the reason covers are blurred — is unmistakable. */
-html[data-sfw="1"] .btn-sfw-toggle {
-    color: #1c1300;
-    background: #ffce6b;
-    border-color: #e0a92e;
+/* ── The 18+ pill (spec 019) ────────────────────────────────────────────────
+   Base shape in layout.css. Shown: a red "18+" badge — adult content is on screen.
+   Safe: green, the badge crossed out. Colour plus the word, so the state reads without
+   hovering and without relying on colour alone. */
+.sfw-pill {
+    /* Each state's colour pulled toward the theme's text colour: darker on light themes,
+       lighter on dark ones, so the small 18+ text clears AA (4.5:1) on its tint everywhere. */
+    --sfw-shown: color-mix(in srgb, var(--danger) 70%, var(--text-primary));
+    --sfw-safe: color-mix(in srgb, var(--success) 62%, var(--text-primary));
 }
-html[data-sfw="1"] .btn-sfw-toggle:hover {
-    background: #ffd884;
-    border-color: #e0a92e;
-    color: #1c1300;
+.sfw-pill .sfw-badge {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: var(--sfw-shown);
+    border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+}
+.sfw-pill:hover { border-color: var(--accent); color: var(--text-primary); }
+html[data-sfw="1"] .sfw-pill {
+    color: var(--sfw-safe);
+    background: color-mix(in srgb, var(--success) 9%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--success) 45%, transparent);
+}
+html[data-sfw="1"] .sfw-pill .sfw-badge {
+    background: transparent;
+    color: var(--sfw-safe);
+    border-color: color-mix(in srgb, var(--success) 45%, transparent);
+}
+html[data-sfw="1"] .sfw-pill .sfw-badge::after {
+    content: ""; position: absolute; left: -2px; right: -2px; top: 50%; height: 2px;
+    background: var(--sfw-safe); transform: rotate(-30deg);
 }

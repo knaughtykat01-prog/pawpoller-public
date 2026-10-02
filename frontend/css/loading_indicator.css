@@ -399,6 +399,14 @@
     transition: background 150ms ease, transform 120ms ease;
 }
 .pp-notif-bell:hover { background: var(--bg-hover, #252031); transform: translateY(-1px); }
+/* Spec 019: in the bar's slot the bell is one of the bar's controls, not a floating corner. */
+.bell-slot .pp-notif-bell {
+    position: relative; top: auto; right: auto; width: 34px; height: 34px; flex: none;   /* not fixed; anchors its badge */
+    background: none; border-color: transparent; box-shadow: none; color: var(--text-secondary);
+}
+.bell-slot .pp-notif-bell:hover, .bell-slot .pp-notif-bell.is-open { background: var(--bg-hover); color: var(--text-primary); transform: none; }
+.bell-slot .pp-notif-bell.has-unread { border-color: transparent; }
+.pp-notif-bell .ico { width: 19px; height: 19px; }
 .pp-notif-bell.is-open { background: var(--bg-hover, #252031); }
 .pp-notif-bell.has-unread { border-color: #ff8a8a; }
 

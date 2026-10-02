@@ -130,7 +130,7 @@ window.Tour = (function () {
             { target: '.nav-link[data-page="analytics"]', title: 'Analytics', body: 'Views, favourites and comments over time — combined across every platform, or broken down site by site.' },
             { target: '#poll-status-mini', title: 'Polling', body: 'PawPoller checks your platforms on a schedule and refreshes these numbers on its own. This badge shows the current cycle at a glance.' },
             { target: '.nav-link[data-page="settings"]', title: 'Settings', body: 'Connect accounts, set how often each platform is polled, schedule posts, and secure the dashboard — it’s all in here.' },
-            { target: '#help-tour-btn', title: 'Tours live here', body: 'That’s the shell. Every page has its own tour too — tap this “?” any time to run through wherever you are.' },
+            { target: '#account-menu-btn', title: 'Tours live here', body: 'That’s the shell. Every page has its own tour too: open this menu and pick “Take the tour” any time to run through wherever you are.' },
             { target: null, title: 'You’re all set 🎉', body: 'The best first step is to connect a platform, then add your first story.<br><br><a href="#/platforms" class="pp-tour-link" data-tour-go>Connect a platform →</a>', cta: 'Finish' },
         ],
 

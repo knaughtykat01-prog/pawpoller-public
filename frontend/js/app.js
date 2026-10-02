@@ -469,50 +469,36 @@ const App = {
            more visually. Handler kept as a no-op stub in case anyone
            re-introduces the wrapper in the future. */
 
-        /* Logout button — clears dashboard session if dashboard auth is active,
-         * otherwise clears Inkbunny platform session */
-        document.getElementById('logout-btn')?.addEventListener('click', async () => {
-            // Ask first. One click used to end the session outright, and the button was
-            // an unlabelled arrow between two other glyphs — easy to hit by accident,
-            // and on a phone the "back" arrow is exactly what a thumb reaches for.
-            const dash = this._dashboardAuthRequired;
-            const ok = await this._confirmSignOut(dash);
-            if (!ok) return;
-            if (dash) {
-                try { await API.dashboardLogout(); } catch { /* ignore */ }
-                this.navigate('/dashboard-login');
-            } else {
-                try { await API.authLogout(); } catch { /* ignore */ }
-                this.navigate('/login');
-            }
-        });
+        /* Sign out, the theme picker, the tour, help, Accounts and Settings live in the
+           account menu (spec 019) — see _initAccountMenu. Theme is still applied pre-paint
+           in index.html, so there is no flash on load. */
+        this._initAccountMenu();
+        this._placeBarControls();
+        new MutationObserver(() => this._placeBarControls())
+            .observe(document.documentElement, { attributes: true, attributeFilter: ['data-mobile'] });
 
-        /* Theme — initial application happens inline in index.html before
-           CSS evaluates (so no flash on load). Sidebar button now opens
-           the Settings → Appearance picker since 8 themes don't fit a
-           binary toggle. */
-        document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
-            this.navigate('/settings/appearance');
-        });
-
-        /* Safe (SFW) mode — the 🔒 footer button blurs every adult (non-general)
-           cover across the app. `data-sfw` is already applied pre-paint in
-           index.html; here we just sync the button state on boot and flip it on
-           click, persisting to localStorage. A per-device viewing preference,
-           deliberately NOT a server setting — it's about who's looking at THIS
-           screen right now, not an account-wide policy. */
+        /* Safe (SFW) mode — the 18+ pill blurs every adult (non-general) cover across the
+           app. Red "18+ Shown" while adult content is visible, green crossed-out "18+ Safe"
+           while it is hidden (spec 019: the old padlock read as "security"). `data-sfw` is
+           applied pre-paint in index.html; here we sync the pill on boot and flip it on
+           click or Shift + S, persisting to localStorage. A per-device viewing preference,
+           deliberately NOT a server setting — it's about who's looking at THIS screen right
+           now, not an account-wide policy. */
         const _sfwBtn = document.getElementById('sfw-toggle-btn');
         const _syncSfwBtn = () => {
             if (!_sfwBtn) return;
             const on = document.documentElement.dataset.sfw === '1';
             _sfwBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-            _sfwBtn.innerHTML = on ? '&#128737;&#65039;' : '&#128274;';  // 🛡️ on / 🔒 off
-            _sfwBtn.title = on
-                ? 'Safe mode: on — adult content is blurred. Click to show all (NSFW).'
-                : 'Safe mode: off — adult content visible. Click to hide adult content (SFW).';
+            const word = _sfwBtn.querySelector('.sfw-word');
+            if (word) word.textContent = on ? 'Safe' : 'Shown';
+            const label = on
+                ? 'Safe mode is on: adult content is hidden. Show it (Shift + S)'
+                : 'Adult content is shown. Turn on safe mode (Shift + S)';
+            _sfwBtn.setAttribute('aria-label', label);
+            _sfwBtn.title = label;
         };
         _syncSfwBtn();
-        _sfwBtn?.addEventListener('click', () => {
+        const _toggleSfw = () => {
             const on = document.documentElement.dataset.sfw !== '1';
             if (on) {
                 document.documentElement.dataset.sfw = '1';
@@ -525,8 +511,19 @@ const App = {
             try { localStorage.setItem('pawpoller-sfw', on ? '1' : '0'); } catch (e) { /* ignore */ }
             _syncSfwBtn();
             window.toast?.info(on
-                ? 'Safe mode on — adult content hidden (click any blurred item to peek)'
-                : 'Safe mode off — showing all content');
+                ? 'Safe mode on: adult images are hidden (click one to peek). Shift + S to switch back.'
+                : 'Safe mode off: showing everything. Shift + S hides adult images again.');
+        };
+        _sfwBtn?.addEventListener('click', _toggleSfw);
+        /* Shift + S flips safe mode from anywhere — handy if someone walks past. Never
+           while typing (a capital S in a caption must stay a capital S), and never with
+           Ctrl / Cmd / Alt, which belong to the browser and the command palette. */
+        document.addEventListener('keydown', (e) => {
+            if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+            if (e.code !== 'KeyS' && (e.key || '').toLowerCase() !== 's') return;
+            if (this._isTypingTarget(e.target)) return;
+            e.preventDefault();
+            _toggleSfw();
         });
 
         /* Click-to-reveal "peek". One delegated capture-phase listener covers
@@ -556,14 +553,9 @@ const App = {
             el.classList.add('sfw-revealed');
         }, true);  // capture: intercept before the link/card navigation handlers
 
-        /* Guided tours — the sidebar "?" runs the tour for wherever you are:
-           the getting-started shell tour on the overview, or that page's own
-           tour elsewhere (Tour.startHere resolves it from the current hash).
-           Auto-firing (getting-started on first run, then each page once) is
-           handled by Tour.maybeAuto(), scheduled from route(). */
-        document.getElementById('help-tour-btn')?.addEventListener('click', () => {
-            window.Tour?.startHere({ auto: false });
-        });
+        /* Guided tours — the account menu's "Take the tour" runs the tour for wherever you
+           are (Tour.startHere resolves it from the current hash). Auto-firing (getting-started
+           on first run, then each page once) is handled by Tour.maybeAuto(), from route(). */
 
         /* Sidebar version + update check */
         this._initSidebarVersion();
@@ -1018,6 +1010,8 @@ const App = {
         if (sidebar) sidebar.style.display = isFullScreen ? 'none' : '';
         if (mainCol) mainCol.style.marginLeft = isFullScreen ? '0' : '';
         if (bottomNav) bottomNav.style.display = isFullScreen ? 'none' : '';
+        const mobileBar = document.getElementById('mobile-bar');
+        if (mobileBar) mobileBar.style.display = isFullScreen ? 'none' : '';
 
         /* A "platform route" is the Platforms hub or any platform code
            (#/{code}, #/{code}/submissions, …). On these the "Platforms" nav
@@ -4900,6 +4894,152 @@ const App = {
         return head.concat(zones.map(z => [z, pretty(z)]))
             .map(([val, label]) => `<option value="${esc(val)}"${val === current ? ' selected' : ''}>${label}</option>`)
             .join('');
+    },
+
+    /* ── Top bar (spec 019) ─────────────────────────────────── */
+
+    /* True when a key press belongs to whatever is being typed in (a field, a select,
+       an editable area) — keyboard shortcuts stand aside for it. */
+    _isTypingTarget(el) {
+        if (!el || !el.tagName) return false;
+        if (el.isContentEditable) return true;
+        const t = el.tagName;
+        if (t === 'TEXTAREA' || t === 'SELECT') return true;
+        if (t === 'INPUT') {
+            return !['button', 'checkbox', 'radio', 'submit', 'reset', 'range', 'color', 'file', 'image']
+                .includes((el.type || '').toLowerCase());
+        }
+        return false;
+    },
+
+    /* The safe-mode / bell / avatar cluster lives in the sidebar footer (top bar or side
+       rail) on desktop and in #mobile-bar on phones. One element is MOVED, so its listeners
+       come along; #mobile-bar sits outside the sidebar because the phone drawer is
+       transformed, and a transformed ancestor would break position: fixed. */
+    _placeBarControls() {
+        const cluster = document.getElementById('bar-controls');
+        const phone = document.getElementById('mobile-bar');
+        const foot = document.querySelector('.sidebar-footer');
+        if (!cluster || !phone || !foot) return;
+        const mobile = document.documentElement.dataset.mobile === '1';
+        const host = mobile ? phone : foot;
+        if (cluster.parentElement === host) return;
+        if (this._closeAccountMenu) this._closeAccountMenu(false);
+        if (mobile) phone.appendChild(cluster);
+        else foot.insertBefore(cluster, document.getElementById('sidebar-version'));
+    },
+
+    /* Five themes a click away in the account menu; the rest are in Settings → Appearance. */
+    _QUICK_THEMES: ['quill', 'quill_dark', 'dark', 'light', 'midnight_press'],
+
+    /* The account menu: a menu button (Enter / Space / ↓ opens on the first item, ↑ on the
+       last; arrows, Home, End move; Esc closes and returns focus; Tab leaves). */
+    _initAccountMenu() {
+        const btn = document.getElementById('account-menu-btn');
+        const menu = document.getElementById('account-menu');
+        if (!btn || !menu) return;
+        const items = () => [...menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"]')];
+        const open = (last) => {
+            this._paintAccountMenu();
+            menu.hidden = false;
+            btn.setAttribute('aria-expanded', 'true');
+            const list = items();
+            const target = last ? list[list.length - 1] : list[0];
+            if (target) target.focus();
+        };
+        const close = (refocus) => {
+            if (menu.hidden) return;
+            menu.hidden = true;
+            btn.setAttribute('aria-expanded', 'false');
+            if (refocus) btn.focus();
+        };
+        this._closeAccountMenu = close;
+        // Enter and Space reach here as a click (it is a <button>), so keydown takes the arrows only.
+        btn.addEventListener('click', (e) => { e.stopPropagation(); if (menu.hidden) open(false); else close(true); });
+        btn.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); open(false); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); open(true); }
+        });
+        menu.addEventListener('keydown', (e) => {
+            const list = items();
+            const i = list.indexOf(document.activeElement);
+            if (e.key === 'Escape') { e.preventDefault(); close(true); }
+            else if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length].focus(); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); list[(i - 1 + list.length) % list.length].focus(); }
+            else if (e.key === 'Home') { e.preventDefault(); list[0].focus(); }
+            else if (e.key === 'End') { e.preventDefault(); list[list.length - 1].focus(); }
+            else if (e.key === 'Tab') close(false);
+        });
+        document.addEventListener('click', (e) => {
+            if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) close(false);
+        });
+        menu.addEventListener('click', (e) => {
+            const sw = e.target.closest('[data-theme-id]');
+            if (sw) { this.applyTheme(sw.dataset.themeId); this._paintAccountMenu(); sw.focus(); return; }
+            const it = e.target.closest('[data-acct]');
+            if (!it) return;
+            const act = it.dataset.acct;
+            close(false);
+            if (act === 'theme') this.navigate('/settings/appearance');
+            else if (act === 'tour') window.Tour?.startHere({ auto: false });
+            else if (act === 'help') this.navigate('/getting-started');
+            else if (act === 'accounts') this.navigate('/accounts');
+            else if (act === 'settings') this.navigate('/settings');
+            else if (act === 'signout') this._signOut();
+        });
+        this._loadAccountName();
+    },
+
+    /* Who the avatar stands for. There are no user accounts (one dashboard password), so
+       it is the first persona's name — the identity the operator posts as — or the app's. */
+    async _loadAccountName() {
+        let name = '';
+        try {
+            const r = await API.getPersonas();
+            name = (((r && r.personas) || [])[0] || {}).name || '';
+        } catch (e) { /* signed out or offline: the fallback */ }
+        this._accountName = name || 'PawPoller';
+        this._paintAccountMenu();
+    },
+
+    _paintAccountMenu() {
+        const name = this._accountName || 'PawPoller';
+        const initial = name.trim().charAt(0).toUpperCase() || 'P';
+        document.querySelectorAll('#bar-controls .acct-av').forEach(el => { el.textContent = initial; });
+        const set = (sel, text) => { const el = document.querySelector(sel); if (el) el.textContent = text; };
+        set('#acct-name', name);
+        set('#account-menu .acct-who-name', name);
+        set('#account-menu .acct-who-sub', this._dashboardAuthRequired ? 'Signed in on this server' : 'On this device');
+        const cur = this.getCurrentTheme();
+        const theme = this.THEMES.find(t => t.id === cur);
+        set('#acct-theme-name', theme ? theme.name : '');
+        const box = document.getElementById('acct-swatches');
+        if (box) {
+            const esc = (s) => Utils.escapeHtml(String(s));
+            box.innerHTML = this._QUICK_THEMES.map(id => {
+                const t = this.THEMES.find(x => x.id === id);
+                if (!t) return '';
+                return `<button type="button" role="menuitemradio" class="acct-swatch" data-theme-id="${esc(id)}"
+                    aria-checked="${id === cur}" title="${esc(t.name)}"
+                    style="--sw-bg:${esc(t.swatch[0])};--sw-ac:${esc(t.swatch[2])}"><span class="sr-only">${esc(t.name)} theme</span></button>`;
+            }).join('');
+        }
+    },
+
+    /* Sign out: the menu's last item. Ask first — one click used to end the session
+       outright, and the old button was an unlabelled arrow, exactly what a thumb reaches
+       for when it means "back". */
+    async _signOut() {
+        const dash = this._dashboardAuthRequired;
+        const ok = await this._confirmSignOut(dash);
+        if (!ok) return;
+        if (dash) {
+            try { await API.dashboardLogout(); } catch { /* ignore */ }
+            this.navigate('/dashboard-login');
+        } else {
+            try { await API.authLogout(); } catch { /* ignore */ }
+            this.navigate('/login');
+        }
     },
 
     /* The sign-out confirmation (4.32.3). Resolves true when the person means it.

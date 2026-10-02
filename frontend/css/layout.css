@@ -188,50 +188,6 @@
     min-width: 0;
 }
 .sidebar.collapsed .poll-badge { display: none; }
-.btn-theme-toggle,
-.btn-sfw-toggle {
-    width: 30px;
-    height: 30px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: none;
-    border: 1px solid var(--card-border-inner);
-    border-radius: 9px;
-    color: var(--text-muted);
-    font-size: 14px;
-    cursor: pointer;
-    transition: all 0.15s;
-}
-.btn-theme-toggle:hover,
-.btn-sfw-toggle:hover { border-color: var(--accent); color: var(--accent); }
-/* Sign out says so (4.32.3). It used to be a 30x30 "back arrow" between two other
-   glyph buttons — nobody reads a tooltip, and the one control that ends your session
-   should not be a guess. Full width of the footer row, icon + word, and it only drops
-   back to an icon when the sidebar is collapsed. */
-.btn-logout {
-    flex: 1 1 100%;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    background: none;
-    border: 1px solid var(--card-border-inner);
-    border-radius: 9px;
-    color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s;
-}
-.btn-logout-icon { font-size: 14px; line-height: 1; }
-.btn-logout:hover { border-color: var(--danger); color: var(--danger); background: rgba(192, 57, 43, 0.07); }
-.sidebar.collapsed .btn-logout { flex: 0 0 auto; width: 30px; gap: 0; }
-.sidebar.collapsed .btn-logout-label { display: none; }
-/* The theme button is icon-only in the new footer. */
-.btn-theme-toggle .nav-label { display: none; }
 .sidebar.collapsed .sidebar-footer { flex-direction: column; gap: 6px; }
 
 .sidebar-version {
@@ -735,8 +691,8 @@ button.nav-group-label {
     bottom: auto;
     border-right: none;
     border-bottom: 1px solid var(--card-border-inner);
-    /* right padding reserves room for the fixed notification bell (top-right) */
-    padding: 0 66px 0 clamp(14px, 2.5vw, 26px);
+    /* the bell lives in the bar's own cluster now (spec 019), so no corner to reserve */
+    padding: 0 clamp(14px, 2.5vw, 26px);
     gap: 4px;
   }
 
@@ -804,3 +760,138 @@ button.nav-group-label {
   html[data-navmode="top"]:not([data-mobile="1"]) .main-col { margin-left: 0; margin-top: 58px; }
   html[data-navmode="top"]:not([data-mobile="1"]) .poll-progress-bar { left: 0; }
 }
+
+/* ── Top bar controls (spec 019) ─────────────────────────────────────────────
+   One outline icon set (index.html #pp-icons), and one cluster — 18+ pill, bell, avatar —
+   that sits in the top bar, at the foot of the side rail, or in the phone bar. */
+.ico { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8;
+       stroke-linecap: round; stroke-linejoin: round; }
+.sidebar-search .ico.nav-icon { width: 16px; height: 16px; }
+
+.bar-controls { display: flex; align-items: center; gap: 8px; }
+.bell-slot { position: relative; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.bell-label { display: none; font-size: 13px; color: var(--text-secondary); }
+
+/* The 18+ pill (colours per state in safe_mode.css) */
+.sfw-pill {
+    display: inline-flex; align-items: center; gap: 6px; height: 32px; flex: none;
+    padding: 0 11px 0 5px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary);
+    font: inherit; font-size: 12px; font-weight: 700;
+}
+.sfw-badge {
+    position: relative; width: 26px; height: 22px; border-radius: 6px;
+    display: grid; place-items: center; font-size: 10px; font-weight: 800; letter-spacing: -.02em;
+}
+.sfw-pill:focus-visible, .acct-btn:focus-visible, .acct-item:focus-visible, .acct-swatch:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
+/* The avatar and its menu */
+.acct-wrap { position: relative; }
+.acct-btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 3px; border-radius: 999px;
+    background: none; border: 1px solid transparent; color: var(--text-secondary); cursor: pointer; font: inherit;
+}
+.acct-btn:hover, .acct-btn[aria-expanded="true"] { background: var(--bg-hover); border-color: var(--border); }
+.acct-av {
+    width: 30px; height: 30px; border-radius: 50%; flex: none; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--accent-dim), var(--accent-warm, var(--accent)));
+    color: #fff; font-weight: 700; font-size: 13px;
+}
+.acct-av--lg { width: 36px; height: 36px; font-size: 15px; }
+.acct-name { display: none; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.acct-caret { width: 14px; height: 14px; color: var(--text-muted); }
+.acct-menu {
+    position: absolute; right: 0; top: calc(100% + 8px); width: 270px; z-index: 60;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--shadow-strong); padding: 6px; display: grid; gap: 1px;
+}
+.acct-menu[hidden] { display: none; }
+.acct-who { display: flex; gap: 10px; align-items: center; padding: 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.acct-who b { display: block; font-size: 14px; color: var(--text-primary); }
+.acct-who small { display: block; color: var(--text-muted); font-size: 12px; }
+.acct-item {
+    display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 8px;
+    background: none; border: 0; color: var(--text-primary); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.acct-item .ico { color: var(--text-secondary); }
+.acct-item:hover, .acct-item:focus { background: var(--bg-hover); outline: none; }
+.acct-hint { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+.acct-swatches { display: flex; gap: 8px; padding: 2px 10px 8px 38px; }
+.acct-swatch {
+    width: 20px; height: 20px; border-radius: 50%; cursor: pointer; padding: 0;
+    background: linear-gradient(135deg, var(--sw-bg) 50%, var(--sw-ac) 50%);
+    border: 1px solid var(--border);
+}
+.acct-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--accent); }
+.acct-sep { height: 1px; background: var(--border); margin: 4px 6px; }
+.acct-menu .acct-signout, .acct-menu .acct-signout .ico { color: var(--danger); }
+
+/* Side rail: the cluster stacks at the foot, labelled; icons only when collapsed. */
+html:not([data-navmode="top"]) .sidebar-footer .bar-controls,
+html[data-mobile="1"] .sidebar-footer .bar-controls { flex-direction: column; align-items: stretch; width: 100%; gap: 4px; }
+html:not([data-navmode="top"]) .sidebar-footer .sfw-pill { width: 100%; }
+html:not([data-navmode="top"]) .sidebar-footer .bell-slot { padding: 2px 6px 2px 0; border-radius: 9px; }
+html:not([data-navmode="top"]) .sidebar-footer .bell-slot:hover { background: var(--bg-hover); }
+html:not([data-navmode="top"]) .sidebar-footer .bell-label { display: inline; }
+html:not([data-navmode="top"]) .sidebar-footer .acct-btn { width: 100%; }
+html:not([data-navmode="top"]) .sidebar-footer .acct-name { display: inline; flex: 1; text-align: left;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:not([data-navmode="top"]) .sidebar-footer .acct-menu { top: auto; bottom: calc(100% + 8px); left: 0; right: auto; }
+.sidebar.collapsed .sidebar-footer .bar-controls { align-items: center; }
+.sidebar.collapsed .sidebar-footer .bell-slot { padding: 0; }
+.sidebar.collapsed .sidebar-footer .sfw-pill { width: auto; padding: 0 4px; }
+.sidebar.collapsed .sidebar-footer .sfw-word,
+.sidebar.collapsed .sidebar-footer .bell-label,
+.sidebar.collapsed .sidebar-footer .acct-name,
+.sidebar.collapsed .sidebar-footer .acct-caret { display: none; }
+.sidebar.collapsed .sidebar-footer .acct-btn { width: auto; padding: 3px; }
+.sidebar.collapsed .sidebar-footer .acct-menu { left: calc(100% + 10px); bottom: 0; }
+
+/* Top bar: a real search field once there is room (the nav links, clock and cluster need
+   ~1530px with it); an icon below that. */
+@media (min-width: 1600px) {
+  html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-search {
+    width: 210px; padding: 7px 10px; gap: 8px; justify-content: flex-start;
+  }
+  html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-search .search-text,
+  html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-search .kbd { display: inline; }
+  html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-search .kbd { margin-left: auto; }
+}
+
+/* ── Phone bar (spec 019) ─────────────────────────────────────────────────────
+   ☰ stays where it was (top-left); the cluster sits top-right as 44px round buttons: the
+   18+ badge alone, the bell, the avatar. The avatar menu opens as a sheet from the bottom. */
+.mobile-bar { display: none; }
+html[data-mobile="1"] .mobile-bar {
+    display: flex; position: fixed; z-index: 41;
+    top: calc(env(safe-area-inset-top, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 10px);
+}
+html[data-mobile="1"] .mobile-bar .bar-controls { gap: 8px; }
+html[data-mobile="1"] .mobile-bar .sfw-pill,
+html[data-mobile="1"] .mobile-bar .pp-notif-bell,
+html[data-mobile="1"] .mobile-bar .acct-btn {
+    width: 44px; height: 44px; min-width: 44px; padding: 0; justify-content: center; border-radius: 50%;
+    background: var(--bg-glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--card-border-inner); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+html[data-mobile="1"] .mobile-bar .sfw-word,
+html[data-mobile="1"] .mobile-bar .acct-caret,
+html[data-mobile="1"] .mobile-bar .acct-name,
+html[data-mobile="1"] .mobile-bar .bell-label { display: none; }
+html[data-mobile="1"] .mobile-bar .acct-btn .acct-av { width: 34px; height: 34px; }
+html[data-mobile="1"] .mobile-bar .acct-menu {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; z-index: 1500;
+    border-radius: 18px 18px 0 0; padding: 8px 10px calc(env(safe-area-inset-bottom, 0px) + 14px);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
+}
+html[data-mobile="1"] .mobile-bar .acct-menu::before {
+    content: ""; justify-self: center; width: 40px; height: 4px; border-radius: 2px;
+    background: var(--border); margin: 2px 0 6px;
+}
+html[data-mobile="1"] .mobile-bar .acct-item { min-height: 44px; font-size: 15px; }
+/* The page title sits left; keep it clear of the three buttons. */
+html[data-mobile="1"] .page-header { padding-right: 150px; }
+html[data-mobile="1"] .page-header > *:not(:first-child) { margin-right: -150px; }
+html[data-mobile="1"] .context-bar { padding-right: 160px; }

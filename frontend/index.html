@@ -96,6 +96,19 @@
     <script src="/js/vendor/qrcode.min.js"></script>
 </head>
 <body>
+    <!-- One outline icon set for the bar (spec 019): <svg class="ico"><use href="#i-…"/></svg>.
+         Stroke-only, 24-unit grid, currentColor — so each icon takes the colour of its button. -->
+    <svg id="pp-icons" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+        <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+        <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+        <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2a10 10 0 0 0 0 20c.9 0 1.6-.7 1.6-1.7 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.7 1.7-1.7h2A5.6 5.6 0 0 0 22 11c0-5-4.5-9-10-9z"/></symbol>
+        <symbol id="i-out" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
+        <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+        <symbol id="i-map" viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/></symbol>
+        <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+        <symbol id="i-caret" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    </svg>
     <!-- ============================================================
          SIDEBAR NAVIGATION — Icon Rail
          60px collapsed rail on desktop, expands to 220px on hover.
@@ -107,6 +120,9 @@
          off-screen with the collapsed sidebar.) Hidden via CSS
          on desktop; only shown ≤768px. -->
     <button class="hamburger-btn" id="hamburger-btn" aria-label="Toggle menu">&#9776;</button>
+    <!-- Phone bar (spec 019): the same #bar-controls cluster is MOVED here when data-mobile="1"
+         (App._placeBarControls). Outside .sidebar for the reason above: the drawer is transformed. -->
+    <div class="mobile-bar" id="mobile-bar"></div>
 
     <nav class="sidebar" id="sidebar">
         <div class="sidebar-header">
@@ -118,8 +134,8 @@
         <!-- Surfaced command palette (⌘/Ctrl+K). Visible affordance so the
              quick-jump isn't a hidden keyboard-only feature. -->
         <button class="sidebar-search" id="sidebar-search" type="button" aria-label="Search (Ctrl or Cmd + K)">
-            <span class="nav-icon">&#128269;</span>
-            <span class="search-text">Search&hellip;</span>
+            <svg class="ico nav-icon" aria-hidden="true"><use href="#i-search"/></svg>
+            <span class="search-text">Search</span>
             <span class="kbd">Ctrl K</span>
         </button>
 
@@ -242,11 +258,40 @@
         <div class="sidebar-footer">
             <div id="poll-status-mini" class="poll-badge">--</div>
             <button class="btn-clock" id="pp-clock" type="button" aria-expanded="false" aria-controls="pp-clock-pop"></button>
-            <button class="btn-sfw-toggle" id="sfw-toggle-btn" type="button" aria-pressed="false" title="Safe mode: off — adult content visible. Click to hide adult content (SFW).">&#128274;</button>
-            <button class="btn-help-tour" id="help-tour-btn" type="button" title="Getting-started tour" aria-label="Getting-started tour">?</button>
-            <button class="btn-theme-toggle" id="theme-toggle-btn" title="Choose theme (opens Settings → Appearance)">&#127912;</button>
-            <button class="btn-logout" id="logout-btn" type="button" title="Sign out of PawPoller"
-                    aria-label="Sign out"><span class="btn-logout-icon">&#128682;</span><span class="btn-logout-label">Sign out</span></button>
+            <!-- Safe mode, the bell, the avatar (spec 019). One cluster, moved into #mobile-bar on phones. -->
+            <div class="bar-controls" id="bar-controls">
+                <button class="sfw-pill" id="sfw-toggle-btn" type="button" aria-pressed="false"
+                        aria-label="Adult content is shown. Turn on safe mode (Shift + S)"><span class="sfw-badge" aria-hidden="true">18+</span><span class="sfw-word" aria-hidden="true">Shown</span></button>
+                <div class="bell-slot" id="bell-slot"><span class="bell-label" aria-hidden="true">Notifications</span></div>
+                <div class="acct-wrap">
+                    <button class="acct-btn" id="account-menu-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu">
+                        <span class="acct-av" id="acct-av" aria-hidden="true">P</span>
+                        <span class="acct-name" id="acct-name">Account</span>
+                        <svg class="ico acct-caret" aria-hidden="true"><use href="#i-caret"/></svg>
+                        <span class="sr-only">Account menu</span>
+                    </button>
+                    <div class="acct-menu" id="account-menu" role="menu" aria-labelledby="account-menu-btn" hidden>
+                        <div class="acct-who" role="presentation">
+                            <span class="acct-av acct-av--lg" aria-hidden="true"></span>
+                            <span><b class="acct-who-name"></b><small class="acct-who-sub">Signed in on this server</small></span>
+                        </div>
+                        <button type="button" role="menuitem" class="acct-item" data-acct="theme">
+                            <svg class="ico" aria-hidden="true"><use href="#i-palette"/></svg><span>Theme</span><span class="acct-hint" id="acct-theme-name"></span></button>
+                        <div class="acct-swatches" id="acct-swatches" role="group" aria-label="Quick themes"></div>
+                        <button type="button" role="menuitem" class="acct-item" data-acct="tour">
+                            <svg class="ico" aria-hidden="true"><use href="#i-map"/></svg><span>Take the tour</span></button>
+                        <button type="button" role="menuitem" class="acct-item" data-acct="help">
+                            <svg class="ico" aria-hidden="true"><use href="#i-help"/></svg><span>Help &amp; guides</span></button>
+                        <button type="button" role="menuitem" class="acct-item" data-acct="accounts">
+                            <svg class="ico" aria-hidden="true"><use href="#i-user"/></svg><span>Accounts</span></button>
+                        <button type="button" role="menuitem" class="acct-item" data-acct="settings">
+                            <svg class="ico" aria-hidden="true"><use href="#i-gear"/></svg><span>Settings</span></button>
+                        <div class="acct-sep" role="separator"></div>
+                        <button type="button" role="menuitem" class="acct-item acct-signout" data-acct="signout">
+                            <svg class="ico" aria-hidden="true"><use href="#i-out"/></svg><span>Sign out</span></button>
+                    </div><!-- /account-menu -->
+                </div>
+            </div><!-- /bar-controls -->
             <div id="sidebar-version" class="sidebar-version"></div>
         </div>
     </nav>

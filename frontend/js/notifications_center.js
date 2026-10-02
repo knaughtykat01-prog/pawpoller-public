@@ -57,7 +57,7 @@
         _bell.id = 'pp-notif-bell';
         _bell.className = 'pp-notif-bell';
         _bell.setAttribute('aria-label', 'Notifications');
-        _bell.innerHTML = '<span class="pp-notif-ico" aria-hidden="true">🔔</span>'
+        _bell.innerHTML = '<svg class="ico pp-notif-ico" aria-hidden="true"><use href="#i-bell"/></svg>'
             + '<span class="pp-notif-badge" hidden>0</span>';
         _badge = _bell.querySelector('.pp-notif-badge');
 
@@ -66,7 +66,16 @@
         _panel.className = 'pp-notif-panel';
         _panel.hidden = true;
 
-        document.body.appendChild(_bell);
+        // Spec 019: the bell sits in the bar's slot (top bar, side rail or phone bar);
+        // the old fixed corner is only the fallback for a page without one.
+        const slot = document.getElementById('bell-slot');
+        if (slot) {
+            slot.insertBefore(_bell, slot.firstChild);
+            // The side rail labels the slot "Notifications"; clicking the label opens it too.
+            slot.addEventListener('click', (e) => { if (!_bell.contains(e.target)) { e.stopPropagation(); toggle(); } });
+        } else {
+            document.body.appendChild(_bell);
+        }
         document.body.appendChild(_panel);
 
         _bell.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
@@ -197,7 +206,7 @@
         try { told = localStorage.getItem('pp-update-told') || ''; } catch (e) { /* storage blocked */ }
         if (told === it.summary) return;
         try { localStorage.setItem('pp-update-told', it.summary); } catch (e) { /* storage blocked */ }
-        window.toast.info(it.summary + ' — open the 🔔 or Settings → About to update.', 12000);
+        window.toast.info(it.summary + ' — open the bell or Settings → About to update.', 12000);
     }
 
     function maybeToast(items) {
@@ -251,6 +260,7 @@
         _open = true;
         _panel.hidden = false;
         _bell.classList.add('is-open');
+        placePanel();
         renderPanel();
         if (_unread > 0) {
             _unread = 0;                 // optimistic — clear the badge now
@@ -258,6 +268,27 @@
             try { await API.markNotificationsRead(); } catch (e) { /* ignore */ }
             _items.forEach((it) => { it.unread = false; });
             renderPanel();
+        }
+    }
+
+    /* Open the panel beside the bell wherever the bell is: under it in the top bar and
+       on phones, beside it at the foot of the side rail. Narrow screens keep the CSS
+       full-width placement and only take the top. */
+    function placePanel() {
+        if (!_bell || !_panel || !_bell.closest('.bell-slot')) return;
+        const r = _bell.getBoundingClientRect();
+        const s = _panel.style;
+        s.top = s.bottom = s.left = s.right = '';
+        if (r.top > window.innerHeight / 2) {           // side rail foot: open upwards, to the right
+            s.bottom = Math.max(8, window.innerHeight - r.bottom) + 'px';
+            s.left = Math.round(r.right + 10) + 'px';
+            s.top = 'auto';
+            s.right = 'auto';
+            return;
+        }
+        s.top = Math.round(r.bottom + 8) + 'px';
+        if (window.innerWidth > 560) {
+            s.right = Math.max(8, Math.round(window.innerWidth - r.right)) + 'px';
         }
     }
 

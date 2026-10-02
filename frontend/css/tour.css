@@ -122,26 +122,7 @@
 }
 .pp-tour-next:hover { background: var(--accent-dim); }
 
-/* Sidebar footer "?" — starts / replays the tour. Matches the sibling
- * theme-toggle + logout footer buttons (30px, layout.css). */
-.btn-help-tour {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--text-secondary);
-    font-size: 15px;
-    font-weight: 700;
-    width: 30px;
-    height: 30px;
-    border-radius: 8px;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-.btn-help-tour:hover { background: var(--bg-hover); color: var(--text-primary); }
-.sidebar.collapsed .btn-help-tour { margin: 0 auto; }
+/* The tour starts from the account menu's "Take the tour" (spec 019). */
 
 /* Keep the sidebar on-screen + expanded while the tour runs, whatever the
  * user's collapse/mobile state (tour.js also toggles the classes; this is
