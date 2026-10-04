@@ -20,7 +20,7 @@ cryptography~=50.0.1
 
 # gallery-dl powers the X/Twitter poll path. It is GPL-2.0 and is invoked ONLY
 # as a separate subprocess (never imported — see clients/tw/gallerydl.py), so it
-# stays at arm's length from PawPoller's MIT code (mere aggregation). Unlike the
+# stays at arm's length from PawPoller's AGPL-3.0 code (mere aggregation). Unlike the
 # other pins, gallery-dl gets a looser minor-range so it can keep tracking X's
 # frequently-changing internal API — that ability IS the reason we depend on it.
 # If gallery-dl is missing at runtime, X polling falls back to the built-in

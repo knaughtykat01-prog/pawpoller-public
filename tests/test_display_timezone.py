@@ -1,4 +1,4 @@
-"""Settings → Preferences → Display timezone (backlog TZPICK).
+"""Settings → General → Time zone (backlog TZPICK).
 
 Two gaps: the menu offered twenty hand-picked cities, so anyone living outside them had to
 settle for a neighbouring one, and a fresh install sits on the stored default of UTC — which
@@ -101,3 +101,15 @@ class TestTheMenu:
         opts = _options("UTC", tz="America/New_York")
         assert opts[0]["value"] == "America/New_York"
         assert [o["value"] for o in opts if o["selected"]] == ["UTC"]
+
+
+def test_the_time_zone_lives_at_the_top_of_general_not_in_poll_intervals():
+    """It sat as the last row of the collapsed Poll Intervals section, where nobody found it."""
+    general = APP.index('data-page="preferences"')
+    polling = APP.index('data-page="polling"')
+    row = APP.index('id="pref-timezone"')
+    assert general < row < polling
+    first = APP.index("settings-row", general)       # the FIRST row of General is the time zone
+    assert APP.index(">Time zone<", first) < APP.index("settings-row", first + 1)
+    assert "label: 'General'" in APP
+    assert 'href="#/settings/preferences" class="clock-pop-link"' in APP

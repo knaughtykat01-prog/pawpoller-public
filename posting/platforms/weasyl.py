@@ -6,9 +6,10 @@ The API key is sent on every request as X-Weasyl-API-Key header.
 Post flow:
   1. POST /submit/literary — multipart with file + metadata
 
-Edit flow:
-  1. GET /edit/submission/{id} — scrape form
-  2. POST /edit/submission/{id} — update fields
+Edit flow (4.54.4):
+  1. GET /edit/submission?submitid={id} — current values; POST /edit/submission
+  2. POST /submit/tags — tags are their own form
+  3. POST /reupload/submission — the file; /reupload/cover + /manage/thumbnail — the cover
 
 Rating mapping:
   General → 10, Mature → 30, Adult → 40
@@ -16,7 +17,11 @@ Rating mapping:
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
+import re
+import tempfile
 
 import config
 from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
@@ -30,7 +35,7 @@ class WeasylPoster(PlatformPoster):
     platform_id = "ws"
     platform_name = "Weasyl"
     supports_edit = True
-    supports_file_replace = False
+    supports_file_replace = True   # Weasyl's Reupload forms (4.54.4)
     min_post_interval = 5
     max_file_size = 10 * 1024 * 1024  # 10 MB for text
     # mp3 (MEDIATYPES phase 2, 4.19.3): Weasyl's multimedia submission, ≤ 15 MB, the
@@ -96,14 +101,15 @@ class WeasylPoster(PlatformPoster):
                     thumbnail_path=package.thumbnail_path,
                 )
             else:
-                result = await client.submit_literary(
-                    package.file_path,
-                    title=package.title,
-                    description=package.description,
-                    tags=tags_str,
-                    rating=rating,
-                    cover_path=package.thumbnail_path,
-                )
+                with _publishable(package.file_path) as story_file:
+                    result = await client.submit_literary(
+                        story_file,
+                        title=package.title,
+                        description=package.description,
+                        tags=tags_str,
+                        rating=rating,
+                        cover_path=package.thumbnail_path,
+                    )
 
             return PostResult(
                 success=True,
@@ -116,50 +122,45 @@ class WeasylPoster(PlatformPoster):
             return PostResult(success=False, error=str(e), duration_seconds=self._elapsed(_t))
 
     async def edit(self, external_id: str, package: StoryUploadPackage) -> PostResult:
-        """Edit metadata only — Weasyl's API does not support file replacement.
+        """Update a Weasyl submission: metadata, then the file, then the cover (4.54.4).
 
-        If the local file has drifted from what's on the platform, the user
-        must delete the Weasyl submission and re-post. The response's
-        ``error`` field carries a note when content may be stale so the UI
-        can surface it.
+        Weasyl CAN replace all three (its own Reupload links: ``/reupload/submission``,
+        ``/reupload/cover``, ``/manage/thumbnail``) — the "delete and re-post" note this
+        used to return was never true. A story goes up as Markdown with the markers
+        stripped, exactly like a new post; a story's / audio's cover also becomes the
+        gallery thumbnail. ``skip_content_refresh`` leaves the file alone.
         """
         _t = self._start_timer()
         try:
             client = await self._ensure_client()
-            rating = _rating_to_ws(package.rating)
-            tags_str = " ".join(package.tags)
-
             result = await client.edit_submission(
                 external_id,
                 title=package.title,
                 description=package.description,
-                tags=tags_str,
-                rating=rating,
+                tags=" ".join(package.tags),
+                rating=_rating_to_ws(package.rating),
             )
-
-            # Soft warning: content refresh not possible on WS
-            warning = None
-            if package.file_path:
-                logger.info(
-                    "WS edit: metadata updated for %s, but file content cannot "
-                    "be replaced via API. Delete + repost if content has drifted.",
-                    external_id,
-                )
-                warning = "Metadata updated. Weasyl cannot replace file content — delete + repost if drifted."
-
-            return PostResult(
-                success=True,
-                external_id=external_id,
-                external_url=result.get("url", ""),
-                error=warning,  # populated as a non-fatal note
-                duration_seconds=self._elapsed(_t),
-            )
+            if package.file_path and not package.extra.get("skip_content_refresh"):
+                with _publishable(package.file_path) as f:
+                    await client.reupload_file(external_id, f)
+            is_image = (package.file_type or "").lower() in ("png", "jpg", "jpeg", "gif", "webp")
+            if package.thumbnail_path and os.path.isfile(package.thumbnail_path) and not is_image:
+                await client.reupload_cover(external_id, package.thumbnail_path)
+            return PostResult(success=True, external_id=external_id, external_url=result.get("url", ""),
+                              duration_seconds=self._elapsed(_t))
         except Exception as e:
             logger.error("WS edit failed for %s: %s", external_id, e, exc_info=True)
-            return PostResult(success=False, error=str(e), duration_seconds=self._elapsed(_t))
+            return PostResult(success=False, external_id=external_id, error=str(e),
+                              duration_seconds=self._elapsed(_t))
 
     async def replace_file(self, external_id: str, file_path: str) -> PostResult:
-        return PostResult(success=False, error="Weasyl does not support file replacement")
+        try:
+            client = await self._ensure_client()
+            with _publishable(file_path) as f:
+                await client.reupload_file(external_id, f)
+            return PostResult(success=True, external_id=external_id)
+        except Exception as e:
+            return PostResult(success=False, external_id=external_id, error=str(e))
 
     def validate(self, package: StoryUploadPackage) -> list[str]:
         errors = super().validate(package)
@@ -171,6 +172,30 @@ class WeasylPoster(PlatformPoster):
                 mb = os.path.getsize(package.file_path) / (1024 * 1024)
                 errors.append(f"Audio is {mb:.1f} MB — Weasyl takes audio up to 15 MB")
         return errors
+
+
+_MARKER = re.compile(r"^\s*<!--.*?-->\s*$")
+
+
+def strip_markers(text: str) -> str:
+    """Drop the archive's whole-line ``<!-- @title -->``-style markers (they steer the
+    format converters, not readers) and the blank runs they leave."""
+    kept = [line for line in text.splitlines() if not _MARKER.match(line)]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip() + "\n"
+
+
+@contextlib.contextmanager
+def _publishable(path: str):
+    """A Markdown story goes up as a temp copy without the markers (same file name — Weasyl
+    goes by the extension); anything else as it is."""
+    if not path.lower().endswith(".md"):
+        yield path
+        return
+    with tempfile.TemporaryDirectory(prefix="pp_ws_") as tmp:
+        out = os.path.join(tmp, os.path.basename(path))
+        with open(path, encoding="utf-8") as f, open(out, "w", encoding="utf-8") as g:
+            g.write(strip_markers(f.read()))
+        yield out
 
 
 _WS_AUDIO_TYPES = ("mp3",)

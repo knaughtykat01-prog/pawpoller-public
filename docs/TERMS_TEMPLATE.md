@@ -1,8 +1,10 @@
 # Terms of Use — TEMPLATE
 
-> **This is a fill-in template for self-hosters, not legal advice.** PawPoller is MIT-licensed software you run
+> **This is a fill-in template for self-hosters, not legal advice.** PawPoller is AGPL-3.0 software you run
 > yourself. If you only run it for your own use, you likely need nothing here. If others use *your* instance, adapt
 > this and consider a lawyer for anything serious. Replace every **[bracketed]** field.
+> If you have **changed** PawPoller and other people use your instance, the AGPL-3.0 also asks you to offer them
+> your changed source code (its section 13) — a link in your instance's About page is enough.
 
 **Service:** [Your instance name] — a self-hosted PawPoller instance operated by **[you / your handle]**
 ("the Operator"). Effective **[date]**.

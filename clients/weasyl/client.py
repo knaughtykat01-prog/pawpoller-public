@@ -29,6 +29,44 @@ WEASYL_API_BASE = "https://www.weasyl.com/api"
 
 
 
+# Weasyl's own category codes (its submit forms, read 2026-10-02). It refuses anything else —
+# 0 included, which is what an unset category used to send.
+VISUAL_SUBTYPES = {1010, 1020, 1030, 1040, 1050, 1060, 1070, 1075, 1078, 1080, 1999}
+LITERARY_SUBTYPES = {2010, 2020, 2030, 2999}
+
+
+def _subtype(value, allowed: set, default: int) -> int:
+    try:
+        v = int(value or 0)
+    except (TypeError, ValueError):
+        return default
+    return v if v in allowed else default
+
+
+def _submitted_id(final_url: str, text: str) -> str:
+    """The new submission's id from where Weasyl sent us: the submission page (today
+    ``/~user/submissions/N/slug``, once ``/submission/N``), or the thumbnail step
+    (``/manage/thumbnail?submitid=N``), or a link in the page."""
+    m = (re.search(r'/submissions?/(\d+)', final_url) or re.search(r'[?&]submitid=(\d+)', final_url)
+         or re.search(r'/submissions?/(\d+)', text[:2000]))
+    return m.group(1) if m else ""
+
+
+def _submission_url(final_url: str, submission_id: str) -> str:
+    """Weasyl's own address when it landed on the submission page, else the short form."""
+    return final_url if re.search(r"/submissions?/\d+", final_url) else f"https://www.weasyl.com/submission/{submission_id}"
+
+
+def _refusal(text: str) -> str:
+    """Weasyl's own words when it refuses a submission (it re-renders a page with 200)."""
+    m = (re.search(r'<[^>]+(?:id|class)="[^"]*error[^"]*"[^>]*>(.*?)</(?:div|p|section)>', text, re.S | re.I)
+         or re.search(r'<title>(.*?)</title>', text, re.S | re.I))
+    if not m:
+        return ""
+    words = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m.group(1)))
+    return re.sub(r" ([.,!?;:])", r"\1", words).strip()[:200]
+
+
 def _image_mime(path: str) -> str:
     """MIME for a cover / thumbnail upload by extension (4.19.3)."""
     ext = os.path.splitext(path or "")[1].lower()
@@ -319,7 +357,7 @@ class WeasylClient:
             "rating": str(rating),
             "content": description,
             "tags": tags,
-            "subtype": str(subtype),
+            "subtype": str(_subtype(subtype, LITERARY_SUBTYPES, 2010)),   # unset -> Story
         }
         if csrf:
             form_data["token"] = csrf
@@ -328,8 +366,13 @@ class WeasylClient:
 
         files = {"submitfile": (filename, file_data)}
         if cover_path and os.path.isfile(cover_path):
+            # BOTH slots (4.54.3): Weasyl shows coverfile on the page but makes no gallery
+            # thumbnail from it — the first live story got the default placeholder.
             with open(cover_path, "rb") as cf:
-                files["coverfile"] = (os.path.basename(cover_path), cf.read(), "image/png")
+                cover = cf.read()
+            mime = _image_mime(cover_path)
+            files["coverfile"] = (os.path.basename(cover_path), cover, mime)
+            files["thumbfile"] = (os.path.basename(cover_path), cover, mime)
 
         # Use a client that follows redirects for this request
         resp = await self._http.post(
@@ -341,22 +384,17 @@ class WeasylClient:
         )
 
         final_url = str(resp.url)
-        # Check for success: redirected to submission page or got 200 on it
-        sid_match = re.search(r'/submission/(\d+)', final_url)
-        if sid_match:
-            submission_id = sid_match.group(1)
-            logger.info("WS: Submitted literary work — id=%s url=%s", submission_id, final_url)
-            return {"submission_id": submission_id, "url": final_url}
-
-        # Check response body for submission link (some flows don't redirect)
-        body_match = re.search(r'/submission/(\d+)', resp.text[:2000])
-        if body_match:
-            submission_id = body_match.group(1)
-            url = f"https://www.weasyl.com/submission/{submission_id}"
-            logger.info("WS: Submitted literary work (from body) — id=%s", submission_id)
-            return {"submission_id": submission_id, "url": url}
-
-        raise RuntimeError(f"Weasyl submission failed — status {resp.status_code}, url={final_url}")
+        submission_id = _submitted_id(final_url, resp.text)
+        if submission_id:
+            logger.info("WS: Submitted literary work — id=%s", submission_id)
+            if cover_path and os.path.isfile(cover_path):
+                try:
+                    await self.thumbnail_from_cover(submission_id)
+                except Exception as e:   # the post itself succeeded
+                    logger.warning("WS: thumbnail crop failed for %s: %s", submission_id, e)
+            return {"submission_id": submission_id, "url": _submission_url(final_url, submission_id)}
+        raise RuntimeError(f"Weasyl refused the story: {_refusal(resp.text) or 'no reason given'} "
+                           f"(status {resp.status_code})")
 
     async def submit_visual(
         self,
@@ -387,7 +425,7 @@ class WeasylClient:
             "rating": str(rating),
             "content": description,
             "tags": tags,
-            "subtype": str(subtype),
+            "subtype": str(_subtype(subtype, VISUAL_SUBTYPES, 1030)),     # unset -> Digital
         }
         if csrf:
             form_data["token"] = csrf
@@ -408,20 +446,12 @@ class WeasylClient:
         )
 
         final_url = str(resp.url)
-        sid_match = re.search(r'/submission/(\d+)', final_url)
-        if sid_match:
-            submission_id = sid_match.group(1)
-            logger.info("WS: Submitted visual work — id=%s url=%s", submission_id, final_url)
-            return {"submission_id": submission_id, "url": final_url}
-
-        body_match = re.search(r'/submission/(\d+)', resp.text[:2000])
-        if body_match:
-            submission_id = body_match.group(1)
-            url = f"https://www.weasyl.com/submission/{submission_id}"
-            logger.info("WS: Submitted visual work (from body) — id=%s", submission_id)
-            return {"submission_id": submission_id, "url": url}
-
-        raise RuntimeError(f"Weasyl visual submission failed — status {resp.status_code}, url={final_url}")
+        submission_id = _submitted_id(final_url, resp.text)
+        if submission_id:
+            logger.info("WS: Submitted visual work — id=%s", submission_id)
+            return {"submission_id": submission_id, "url": _submission_url(final_url, submission_id)}
+        raise RuntimeError(f"Weasyl refused the artwork: {_refusal(resp.text) or 'no reason given'} "
+                           f"(status {resp.status_code})")
 
     async def submit_multimedia(
         self,
@@ -480,20 +510,18 @@ class WeasylClient:
         )
 
         final_url = str(resp.url)
-        sid_match = re.search(r'/submission/(\d+)', final_url)
-        if sid_match:
-            submission_id = sid_match.group(1)
-            logger.info("WS: Submitted multimedia work — id=%s url=%s", submission_id, final_url)
-            return {"submission_id": submission_id, "url": final_url}
+        submission_id = _submitted_id(final_url, resp.text)
+        if submission_id:
+            logger.info("WS: Submitted multimedia work — id=%s", submission_id)
+            if cover_path and os.path.isfile(cover_path):
+                try:
+                    await self.thumbnail_from_cover(submission_id)
+                except Exception as e:   # the post itself succeeded
+                    logger.warning("WS: thumbnail crop failed for %s: %s", submission_id, e)
+            return {"submission_id": submission_id, "url": _submission_url(final_url, submission_id)}
 
-        body_match = re.search(r'/submission/(\d+)', resp.text[:2000])
-        if body_match:
-            submission_id = body_match.group(1)
-            url = f"https://www.weasyl.com/submission/{submission_id}"
-            logger.info("WS: Submitted multimedia work (from body) — id=%s", submission_id)
-            return {"submission_id": submission_id, "url": url}
-
-        raise RuntimeError(f"Weasyl multimedia submission failed — status {resp.status_code}, url={final_url}")
+        raise RuntimeError(f"Weasyl refused the audio: {_refusal(resp.text) or 'no reason given'} "
+                           f"(status {resp.status_code})")
 
     async def edit_submission(
         self,
@@ -504,41 +532,125 @@ class WeasylClient:
         tags: str = "",
         rating: int | None = None,
     ) -> dict:
-        """Edit an existing Weasyl submission's metadata.
+        """Edit an existing Weasyl submission's metadata (4.54.4).
 
-        Fetches the edit page to get CSRF token and current values, then
-        posts the updated fields back.
+        Weasyl's edit form lives at ``/edit/submission?submitid=N`` (the old
+        ``/edit/submission/N`` is a 404 — every edit failed) and needs its
+        current values posted back (category, folder, ticks), so they are read
+        off the form and only what changed is overlaid. Tags are a separate
+        form, ``/submit/tags``.
         """
-        edit_url = f"https://www.weasyl.com/edit/submission/{submission_id}"
-
-        # GET edit page for CSRF token
-        csrf = await self._get_csrf_token(edit_url)
-
-        form_data: dict[str, str] = {}
-        if csrf:
-            form_data["token"] = csrf
+        changes: dict[str, str] = {}
         if title:
-            form_data["title"] = title
+            changes["title"] = title
         if description:
-            form_data["content"] = description
-        if tags:
-            form_data["tags"] = tags
+            changes["content"] = description
         if rating is not None:
-            form_data["rating"] = str(rating)
-
-        resp = await self._http.post(
-            edit_url,
-            data=form_data,
-            timeout=30.0,
-            follow_redirects=True,
-        )
-
-        if resp.status_code >= 400:
-            raise RuntimeError(f"WS: Edit failed — status {resp.status_code}")
-
-        url = f"https://www.weasyl.com/submission/{submission_id}"
+            changes["rating"] = str(rating)
+        await self._post_form(f"/edit/submission?submitid={submission_id}", "/edit/submission", changes)
+        if tags:
+            await self._post_form(f"/submission/{submission_id}", "/submit/tags",
+                                  {"submitid": str(submission_id), "tags": tags})
         logger.info("WS: Edited submission %s — title=%r", submission_id, title[:40])
-        return {"submission_id": submission_id, "url": url}
+        return {"submission_id": submission_id, "url": f"https://www.weasyl.com/submission/{submission_id}"}
+
+    async def reupload_file(self, submission_id: str, file_path: str) -> None:
+        """Replace the submission's file (the story text, picture or audio)."""
+        await self._post_form(f"/reupload/submission?submitid={submission_id}", "/reupload/submission",
+                              {"targetid": str(submission_id)}, {"submitfile": _upload(file_path)},
+                              unchanged_ok=True)
+
+    async def reupload_cover(self, submission_id: str, image_path: str) -> None:
+        """Replace a story's / audio's cover, and make it the gallery thumbnail too (Weasyl
+        makes no thumbnail from a cover)."""
+        await self._post_form(f"/reupload/cover?submitid={submission_id}", "/reupload/cover",
+                              {"submitid": str(submission_id)}, {"coverfile": _upload(image_path)},
+                              unchanged_ok=True)
+        await self.thumbnail_from_cover(submission_id)
+
+    async def thumbnail_from_cover(self, submission_id: str) -> bool:
+        """Make the gallery thumbnail the whole cover (4.54.5).
+
+        ``/manage/thumbnail`` is a crop tool: hidden ``x1,y1,x2,y2`` over the image in
+        ``<img id="imageselect">``, in that image's own pixels. All-zero means "generate
+        one", which for a story is Weasyl's default picture — and an uploaded
+        ``thumbfile`` still waits for a crop. Proved in a signed-in browser 2026-10-03:
+        0,0 → 300,300 on a 300×300 cover set the thumbnail. -> True when sent."""
+        page_path = f"/manage/thumbnail?submitid={submission_id}"
+        r = await self._http.get("https://www.weasyl.com" + page_path, follow_redirects=True)
+        img = next((t for t in re.findall(r"<img\b[^>]*>", r.text) if 'id="imageselect"' in t), "")
+        src = re.search(r'src="([^"]+)"', img)
+        if r.status_code != 200 or not src:
+            logger.info("WS: no cover to crop a thumbnail from on %s", submission_id)
+            return False
+        url = src.group(1)
+        url = "https:" + url if url.startswith("//") else (url if url.startswith("http") else "https://www.weasyl.com" + url)
+        from io import BytesIO
+        from PIL import Image
+        w, h = Image.open(BytesIO((await self._http.get(url, follow_redirects=True)).content)).size
+        await self._post_form(page_path, "/manage/thumbnail",
+                              {"submitid": str(submission_id), "x1": "0", "y1": "0", "x2": str(w), "y2": str(h)})
+        return True
+
+    async def _post_form(self, page: str, action: str, changes: dict, files: dict | None = None,
+                         *, unchanged_ok: bool = False) -> None:
+        """GET ``page``, take the ``action`` form's current values, overlay ``changes``, POST it.
+        A refusal raises with Weasyl's own words; with ``unchanged_ok`` a "you already
+        uploaded this file" refusal counts as done (the file there is already this one)."""
+        r = await self._http.get("https://www.weasyl.com" + page, follow_redirects=True)
+        if r.status_code != 200:
+            raise RuntimeError(f"WS: couldn't open {page.split('?')[0]} — status {r.status_code}")
+        data = _form_values(r.text, action)
+        data.update(changes)
+        resp = await self._http.post("https://www.weasyl.com" + action, data=data, files=files or None,
+                                     timeout=120.0, follow_redirects=True)
+        if resp.status_code >= 400:
+            why = _refusal(resp.text) or "no reason given"
+            if unchanged_ok and "already" in why.lower():
+                logger.info("WS: %s — unchanged (%s)", action, why)
+                return
+            raise RuntimeError(f"Weasyl refused {action}: {why} (status {resp.status_code})")
+
+
+def _upload(path: str) -> tuple:
+    with open(path, "rb") as f:
+        data = f.read()
+    ext = os.path.splitext(path)[1].lower()
+    mime = {".md": "text/markdown", ".txt": "text/plain", ".pdf": "application/pdf",
+            ".mp3": "audio/mpeg"}.get(ext) or _image_mime(path)
+    return (os.path.basename(path), data, mime)
+
+
+def _form_values(page: str, action: str) -> dict[str, str]:
+    """The current values a browser would post for the form whose action is ``action``:
+    inputs (ticked boxes only), each select's chosen option, textareas. Files aren't read."""
+    import html as _html
+    m = re.search(rf'<form[^>]*action="{re.escape(action)}"[^>]*>(.*?)</form>', page, re.S)
+    if not m:
+        return {}
+    body, out = m.group(1), {}
+    for tag in re.findall(r"<input\b[^>]*>", body):
+        name = re.search(r'name="([^"]+)"', tag)
+        if not name:
+            continue
+        typ = (re.search(r'type="([^"]+)"', tag) or [None, "text"])[1].lower()
+        val = re.search(r'value="([^"]*)"', tag)
+        if typ in ("file", "submit", "button", "image"):
+            continue
+        if typ in ("checkbox", "radio"):
+            if re.search(r"\bchecked\b", tag):
+                out[name.group(1)] = _html.unescape(val.group(1)) if val else "on"
+            continue
+        out[name.group(1)] = _html.unescape(val.group(1)) if val else ""
+    for name, opts in re.findall(r'<select[^>]*name="([^"]+)"[^>]*>(.*?)</select>', body, re.S):
+        chosen = (re.search(r'<option\b[^>]*\bselected\b[^>]*>', opts)
+                  or re.search(r'<option\b[^>]*>', opts))     # none chosen → the browser sends the first
+        if chosen:
+            v = re.search(r'value="([^"]*)"', chosen.group(0))
+            out[name] = _html.unescape(v.group(1)) if v else ""
+    for name, text in re.findall(r'<textarea[^>]*name="([^"]+)"[^>]*>(.*?)</textarea>', body, re.S):
+        out[name] = _html.unescape(text)
+    return out
 
 
 def _safe_int(val: Any) -> int:

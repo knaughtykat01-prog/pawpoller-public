@@ -6,10 +6,10 @@
 
 <p align="center"><strong>Publish your art and fiction everywhere — then see how it did, and fix it in place.</strong></p>
 
-<p align="center">🌐 <a href="https://pawpoller.pages.dev"><strong>pawpoller.pages.dev</strong></a> &nbsp;·&nbsp; features, screenshots, download</p>
+<p align="center">🌐 <a href="https://pawpoller.com"><strong>pawpoller.com</strong></a> &nbsp;·&nbsp; features, screenshots, download</p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-3776AB.svg" alt="Python 3.11+"></a>
   <a href="#quick-start"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078D6.svg" alt="Platform: Windows and Linux"></a>
   <a href="#server--docker-deployment"><img src="https://img.shields.io/badge/Docker-supported-2496ED.svg" alt="Docker supported"></a>
@@ -119,7 +119,7 @@ correction made once in the app can be synced everywhere it was published.
 | Inkbunny | Username/password | Yes | Yes | Yes | Official API; chaptered stories + art; can also replace the file |
 | FurAffinity | Session cookies (a/b) | Yes | Yes | Yes | Scraping (no official API); posts fine from a server with valid cookies; can replace the file |
 | SoFurry | Personal Access Token | Yes | Yes | Yes | Official API v1 for writes; login-free JSON for stats (the API exposes none); chaptered |
-| Weasyl | API key | Yes | Yes | Yes | Official API; metadata only — Weasyl cannot replace a file |
+| Weasyl | API key | Yes | Yes | Yes | API key; edits replace the details, the file and the cover |
 | AO3 | Username/password | Yes | Yes | Yes | Rails CSRF login; work skins; chaptered |
 | SquidgeWorld | Username/password | Yes | Yes | Yes | Scraping; work skins; chaptered |
 | DeviantArt | OAuth2 (client id/secret) | Yes | Yes | Yes\* | \*Split across two endpoints — see below |
@@ -313,7 +313,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on development setup, addi
 
 ## License
 
-[MIT](LICENSE)
+Copyright (C) 2026 the PawPoller Project.
+
+PawPoller is free software: you can redistribute it and/or modify it under the terms of the
+[GNU Affero General Public License, version 3](LICENSE). If you run a modified copy for other people
+over a network, you must offer them its source code too (section 13).
+
+Versions released before 4.55.0 were licensed under MIT and remain available under it.
 
 ---
 

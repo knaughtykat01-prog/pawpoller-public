@@ -58,7 +58,7 @@ const Utils = {
 
     /* ── time (4.49.0, spec 016) ─────────────────────────────────
      * The ONE place a date string becomes a Date and a Date becomes text. Every time on
-     * screen is shown in the operator's zone (Settings → Preferences → display_timezone,
+     * screen is shown in the operator's zone (Settings → General → display_timezone,
      * set at boot by App._refreshPrefsFromServer), not whatever zone the browser is in.
      * Storage stays naive UTC; anything without a zone marker is read as UTC.
      *   parse(v)            → Date | null. Date-only values ("2026-09-26", AO3/SquidgeWorld)

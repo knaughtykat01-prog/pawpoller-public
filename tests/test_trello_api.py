@@ -507,7 +507,7 @@ class TestGettingTheTokenNeedsNoCallbackUrl:
         assert "not let you save" in g, \
             "the guide must say the field is mandatory, not optional"
         # And the escape hatch for an app already created the other way.
-        assert "pawpoller.pages.dev" in g
+        assert "pawpoller.com" in g
 
     def test_the_guide_says_no_callback_url_is_needed(self):
         assert "callback URL" in _guide_text()

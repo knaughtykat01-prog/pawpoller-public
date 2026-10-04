@@ -18,12 +18,12 @@ import config
 
 # Plain text + bare URL so it survives BBCode (IB/WS), HTML (SF/AO3/SQW) and
 # plain-text description fields alike.
-ATTRIBUTION_LINE = "🐾 Posted via PawPoller — pawpoller.pages.dev"
+ATTRIBUTION_LINE = "🐾 Posted via PawPoller — pawpoller.com"
 
 # DeviantArt strips off-site URLs out of a description AND removes the
 # paragraph they sat in, so the line above doesn't arrive shortened — it
 # doesn't arrive. Measured on a live post (2026-08-22, deviation 1371636392):
-# the paragraph carrying `pawpoller.pages.dev` was the only one DA dropped.
+# the paragraph carrying the site URL (then `pawpoller.pages.dev`) was the only one DA dropped.
 # DA therefore gets the credit without the domain, rather than losing the line
 # altogether. `_MARKER` matches both forms, so idempotency is unaffected.
 ATTRIBUTION_LINE_NO_URL = "🐾 Posted via PawPoller"

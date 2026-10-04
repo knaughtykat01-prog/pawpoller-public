@@ -112,13 +112,13 @@ def test_other_platforms_still_link_off_site():
 def test_the_attribution_line_drops_its_domain_on_da():
     out = attribution.maybe_append("blurb", "da", {})
     assert "Posted via PawPoller" in out
-    assert "pawpoller.pages.dev" not in out, \
+    assert "pawpoller.com" not in out, \
         "DA deletes the paragraph carrying this URL, so the whole line is lost"
 
 
 def test_the_attribution_line_keeps_its_domain_everywhere_else():
     for platform in ("fa", "ib", "ws", "sf", "ao3"):
-        assert "pawpoller.pages.dev" in attribution.maybe_append("blurb", platform, {})
+        assert "pawpoller.com" in attribution.maybe_append("blurb", platform, {})
 
 
 def test_the_da_line_is_still_idempotent():

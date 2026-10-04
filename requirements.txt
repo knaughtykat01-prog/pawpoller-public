@@ -26,7 +26,7 @@ cryptography>=50.0.0
 keyring>=25.0
 # gallery-dl powers the X/Twitter poll path, invoked ONLY as a separate
 # subprocess (never imported — see clients/tw/gallerydl.py), so its GPL-2.0
-# licence stays at arm's length from PawPoller's MIT code. Optional at runtime:
+# licence stays at arm's length from PawPoller's AGPL-3.0 code. Optional at runtime:
 # if absent, X polling falls back to the built-in GraphQL scrape. NOT bundled
 # into the frozen .exe (we never import it, so PyInstaller won't pull it in) —
 # source/dev installs get it here; packaged desktop users auto-detect a system

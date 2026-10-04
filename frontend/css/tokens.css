@@ -10,7 +10,7 @@
    Themes:
      dark            — default, charcoal + violet
      light           — bright, neutral
-     ink_copper      — matches pawpoller.pages.dev (slate + copper)
+     ink_copper      — matches pawpoller.com (slate + copper)
      parchment       — warm sepia paper, brown ink
      midnight_press  — pure black OLED with cool steel accents
      forest          — pine + sage + cream, low-stim
@@ -262,7 +262,7 @@
     --bg-glow-cool:   rgba(125, 154, 122, 0.03);
 }
 
-/* ── Ink & Copper (matches pawpoller.pages.dev) ──────────── */
+/* ── Ink & Copper (matches pawpoller.com) ──────────── */
 [data-theme="ink_copper"] {
     --bg-primary:    #13110e;
     --bg-secondary:  #1f1c17;

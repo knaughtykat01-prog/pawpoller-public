@@ -681,7 +681,10 @@ button.nav-group-label {
 .nav-caret { display: none; }   /* dropdown affordance — only shown in top mode */
 
 /* ── Top-nav mode (desktop only) ──────────────────────────────────────────── */
-@media (min-width: 769px) {
+/* From 900px. The bar needs ~890px at its most compact (see the steps after the 1600px block);
+   below that the links pushed the bell and the account menu off the right edge, so a narrow
+   window gets the side rail even when the top bar is picked (4.54.6). */
+@media (min-width: 900px) {
   html[data-navmode="top"]:not([data-mobile="1"]) .sidebar {
     flex-direction: row;
     align-items: center;
@@ -839,6 +842,18 @@ html:not([data-navmode="top"]) .sidebar-footer .acct-btn { width: 100%; }
 html:not([data-navmode="top"]) .sidebar-footer .acct-name { display: inline; flex: 1; text-align: left;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 html:not([data-navmode="top"]) .sidebar-footer .acct-menu { top: auto; bottom: calc(100% + 8px); left: 0; right: auto; }
+/* The same, for the top bar's side-rail fallback below 900px. */
+@media (max-width: 899px) {
+  html[data-navmode="top"] .sidebar-footer .bar-controls { flex-direction: column; align-items: stretch; width: 100%; gap: 4px; }
+  html[data-navmode="top"] .sidebar-footer .sfw-pill { width: 100%; }
+  html[data-navmode="top"] .sidebar-footer .bell-slot { padding: 2px 6px 2px 0; border-radius: 9px; }
+  html[data-navmode="top"] .sidebar-footer .bell-slot:hover { background: var(--bg-hover); }
+  html[data-navmode="top"] .sidebar-footer .bell-label { display: inline; }
+  html[data-navmode="top"] .sidebar-footer .acct-btn { width: 100%; }
+  html[data-navmode="top"] .sidebar-footer .acct-name { display: inline; flex: 1; text-align: left;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  html[data-navmode="top"] .sidebar-footer .acct-menu { top: auto; bottom: calc(100% + 8px); left: 0; right: auto; }
+}
 .sidebar.collapsed .sidebar-footer .bar-controls { align-items: center; }
 .sidebar.collapsed .sidebar-footer .bell-slot { padding: 0; }
 .sidebar.collapsed .sidebar-footer .sfw-pill { width: auto; padding: 0 4px; }
@@ -849,15 +864,31 @@ html:not([data-navmode="top"]) .sidebar-footer .acct-menu { top: auto; bottom: c
 .sidebar.collapsed .sidebar-footer .acct-btn { width: auto; padding: 3px; }
 .sidebar.collapsed .sidebar-footer .acct-menu { left: calc(100% + 10px); bottom: 0; }
 
-/* Top bar: a real search field once there is room (the nav links, clock and cluster need
-   ~1530px with it); an icon below that. */
-@media (min-width: 1600px) {
+/* Top bar: a real search field once there is room (every link, the clock and the cluster need
+   ~1710px with it — measured, 4.54.6); an icon below that. */
+@media (min-width: 1720px) {
   html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-search {
     width: 210px; padding: 7px 10px; gap: 8px; justify-content: flex-start;
   }
   html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-search .search-text,
   html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-search .kbd { display: inline; }
   html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-search .kbd { margin-left: auto; }
+}
+
+/* Top bar, narrower than that: the bell and the account menu must stay on screen (4.54.6 — at
+   1440px they sat past the right edge, out of reach). Step 1 drops the three links the account
+   menu already holds (Help & guides → Getting Started, Accounts, Settings) and tightens the rest;
+   step 2 keeps the paw without the name and the 18+ badge without its word. */
+@media (min-width: 900px) and (max-width: 1719px) {
+  html[data-navmode="top"]:not([data-mobile="1"]) .nav-links > li > .nav-link:is([href="#/getting-started"], [href="#/accounts"], [href="#/settings"]) {
+    display: none;
+  }
+  html[data-navmode="top"]:not([data-mobile="1"]) .nav-links > li > .nav-link,
+  html[data-navmode="top"]:not([data-mobile="1"]) button.nav-group-label { padding: 7px 8px; }
+}
+@media (min-width: 900px) and (max-width: 1199px) {
+  html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-header .brand-name,
+  html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-footer .sfw-word { display: none; }
 }
 
 /* ── Phone bar (spec 019) ─────────────────────────────────────────────────────

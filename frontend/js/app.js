@@ -341,6 +341,11 @@ const App = {
          * 2. Only auto-route to the loading screen on root nav. Deep links
          *    like #/settings/general should resolve straight there — the
          *    user is fixing their config, not waiting for a poll. */
+        // The saved time zone and "platforms I use" must land before the first page draws: a
+        // page drawn without them listed hidden platforms again and never redrew (4.54.6 — the
+        // Platforms page did it on about one load in three). Fetched alongside the auth check
+        // below, so the wait costs nothing extra.
+        const prefsReady = this._refreshPrefsFromServer({ zoneOnly: true });
         try {
             const auth = await API.getAuthStatus();
             const currentHash = (window.location.hash || '').replace(/^#\/?/, '');
@@ -353,6 +358,7 @@ const App = {
         }
 
         /* Render the initial page and kick off the status check ticker */
+        await prefsReady;
         this.route();
         this._updateStatusCheck();
         if (this._statusCheckInterval) clearInterval(this._statusCheckInterval);
@@ -565,9 +571,8 @@ const App = {
            forced on/off. */
         this._initMobileModeWatcher();
 
-        /* The saved time zone and platform choices, once at start (the focus
-           listener below keeps everything current after that). */
-        this._refreshPrefsFromServer({ zoneOnly: true });
+        /* The saved time zone and platform choices were loaded before the first
+           route (prefsReady, above); the focus listener below keeps them current. */
         this._initClock();
 
         /* Cross-device sync: when the tab regains focus (user comes back
@@ -2279,7 +2284,7 @@ const App = {
 
     SETTINGS_PAGES: [
         { key: 'connection', group: 'Account', label: 'Connection', blurb: 'This install, its server, and what syncs between them.' },
-        { key: 'preferences', group: 'Account', label: 'Preferences', blurb: '' },
+        { key: 'preferences', group: 'Account', label: 'General', blurb: 'Your time zone and how the app behaves.' },
         { key: 'appearance', group: 'Account', label: 'Appearance', blurb: '' },
         { key: 'platforms', group: 'Publishing', label: 'Platforms', blurb: 'Connect a site once; it then shows up in the publish pickers and polls on the Polling schedule.' },
         { key: 'publishing', group: 'Publishing', label: 'Publishing defaults', blurb: '' },
@@ -4675,7 +4680,7 @@ const App = {
         }
     },
 
-    /* Options for Settings → Preferences → Display timezone.
+    /* Options for Settings → General → Time zone.
      *
      * The list used to be twenty hand-picked cities, so anyone living outside them had
      * to settle for a neighbour — and the stored default is UTC, which reads as simply
@@ -4721,7 +4726,7 @@ const App = {
                 <dt>PawPoller's clock</dt><dd id="clock-pop-server">checking…</dd>
                 <dt>Next poll</dt><dd id="clock-pop-poll">checking…</dd>
             </dl>
-            <a href="#/settings/polling" class="clock-pop-link">Change time zone →</a>`;
+            <a href="#/settings/preferences" class="clock-pop-link">Change time zone →</a>`;
         document.body.appendChild(pop);
         const r = btn.getBoundingClientRect();
         pop.style.top = `${Math.round(r.bottom + 6)}px`;
@@ -13777,6 +13782,15 @@ const App = {
                 <details class="settings-accordion" data-page="preferences" open>
                     <summary>App Preferences</summary>
                     <div class="accordion-body">
+                    <div class="settings-row">
+                        <div>
+                            <span class="settings-label">Time zone</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Every time on screen, schedules, analytics, Telegram and the digest use it</div>
+                        </div>
+                        <select class="filter-select" id="pref-timezone" style="width:auto">
+                            ${App._timezoneOptions(prefs.display_timezone || 'UTC')}
+                        </select>
+                    </div>
                     ${_isServer ? '' : `
                     <div class="settings-row">
                         <div>
@@ -14140,15 +14154,6 @@ const App = {
                             <option value="480" ${prefs.e621_poll_interval_minutes === 480 ? 'selected' : ''}>8 hours</option>
                             <option value="600" ${prefs.e621_poll_interval_minutes === 600 ? 'selected' : ''}>10 hours</option>
                             <option value="720" ${prefs.e621_poll_interval_minutes === 720 ? 'selected' : ''}>12 hours</option>
-                        </select>
-                    </div>
-                    <div class="settings-row">
-                        <div>
-                            <span class="settings-label">Time zone</span>
-                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Every time on screen, schedules, analytics, Telegram and the digest use it</div>
-                        </div>
-                        <select class="filter-select" id="pref-timezone" style="width:auto">
-                            ${App._timezoneOptions(prefs.display_timezone || 'UTC')}
                         </select>
                     </div>
                     </div>
@@ -14583,7 +14588,18 @@ const App = {
                             <span class="settings-label">Marketing site &amp; project home</span>
                             <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Features, screenshots and download links.</div>
                         </div>
-                        <a class="btn btn-secondary" href="https://pawpoller.pages.dev" target="_blank" rel="noopener noreferrer" style="padding:4px 12px;font-size:12px">pawpoller.pages.dev &nearr;</a>
+                        <a class="btn btn-secondary" href="https://pawpoller.com" target="_blank" rel="noopener noreferrer" style="padding:4px 12px;font-size:12px">pawpoller.com &nearr;</a>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Licence &amp; source code</h3>
+                    <div class="settings-row">
+                        <div>
+                            <span class="settings-label">Free software under the GNU AGPL-3.0</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">You may use, study, change and share PawPoller. If you run a changed copy for other people, offer them its source code too.</div>
+                        </div>
+                        <a class="btn btn-secondary" href="https://github.com/knaughtykat01-prog/pawpoller-public" target="_blank" rel="noopener noreferrer" style="padding:4px 12px;font-size:12px">Source code &nearr;</a>
                     </div>
                 </div>
 

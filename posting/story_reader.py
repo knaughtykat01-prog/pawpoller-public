@@ -44,9 +44,10 @@ PLATFORM_FORMAT_MAP: dict[str, list[tuple[str, str, str]]] = {
         ("PDF", "*.pdf", "pdf"),
         ("Chapters/PDF", "*.pdf", "pdf"),
     ],
+    # Weasyl renders a literary .md file and shows BBCode as plain text (4.54.3) — the
+    # BBCode .txt it used to get posted with every italic and heading lost.
     "ws": [
-        ("Chapters/BBCode", "*.txt", "bbcode"),
-        ("BBCode", "*_bbcode.txt", "bbcode"),
+        ("Chapters/Markdown", "*.md", "markdown"),
         ("Markdown", "MASTER.md", "markdown"),
     ],
     "sf": [

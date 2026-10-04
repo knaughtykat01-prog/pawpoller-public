@@ -123,6 +123,7 @@ def _schedule_retry(story_name: str, ch_idx: int, platform: str, action: str,
 # client/session — reusing one poster across accounts would leak account A's
 # logged-in session into account B's uploads.
 _posters: dict[tuple[str, int | None], PlatformPoster] = {}
+_poster_gen: dict[tuple[str, int | None], int] = {}   # config.credentials_generation() each was built at
 
 
 # ── Activity reporting (4.51.0, spec 017) ─────────────────────────────────────
@@ -222,8 +223,11 @@ def _get_poster(platform: str, account_id: int | None = None) -> PlatformPoster:
                 conn.close()
         if aid in blocked:
             raise ValueError(accounts_db.NEVER_POST_ERROR)
+    import config
     key = (platform, account_id)
-    if key not in _posters:
+    gen = config.credentials_generation()
+    if key not in _posters or _poster_gen.setdefault(key, gen) != gen:   # new, or built with an older key
+        _poster_gen[key] = gen
         spec = _POSTER_CLASSES.get(platform)
         if spec is None:
             raise ValueError(f"Unknown platform: {platform}")

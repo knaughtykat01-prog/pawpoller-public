@@ -36,7 +36,7 @@ def which_file(v: str) -> str:
         "You can ignore the other files. `PawPoller-windows-x64.zip` is a portable Windows copy that needs no "
         "installing, the `PawPoller-Server-…` files are for running PawPoller on your own server, and the "
         "`.sha256` files are fingerprints the app uses to check its own updates.\n\n"
-        "Easiest of all: [pawpoller.pages.dev/download](https://pawpoller.pages.dev/download/) picks the "
+        "Easiest of all: [pawpoller.com/download](https://pawpoller.com/download/) picks the "
         "right one for you.\n\n---\n\n"
     )
 

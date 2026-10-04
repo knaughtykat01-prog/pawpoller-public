@@ -10,11 +10,12 @@ tracks X's changes for us, so we offload the READ (poll) path to it.
 
 Licence isolation (important)
 -----------------------------
-gallery-dl is **GPL-2.0**; PawPoller is MIT. We therefore invoke gallery-dl
-ONLY as a separate operating-system process (``subprocess`` / ``asyncio`` exec)
-and NEVER ``import`` it. Shelling out to a GPL program from a non-GPL program is
-mere aggregation, not a derivative work (see the GPL FAQ on exec/pipe), so our
-MIT licence is unaffected. Do not add ``import gallery_dl`` anywhere.
+gallery-dl is **GPL-2.0**; PawPoller is AGPL-3.0 (MIT before 4.55.0). The two
+licences can't be combined into one program, so we invoke gallery-dl ONLY as a
+separate operating-system process (``subprocess`` / ``asyncio`` exec) and NEVER
+``import`` it. Shelling out to another program is mere aggregation, not a
+derivative work (see the GPL FAQ on exec/pipe), so neither licence reaches the
+other. Do not add ``import gallery_dl`` anywhere.
 
 Scope
 -----

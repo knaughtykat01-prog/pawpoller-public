@@ -119,7 +119,7 @@ html[data-mode="brut"] .sidebar {
 }
 /* Top bar: the sidebar is restyled into a horizontal bar in top mode; give it
    a bottom ink edge instead (desktop only, matching the top-nav media gate). */
-@media (min-width: 769px) {
+@media (min-width: 900px) {
     html[data-mode="brut"][data-navmode="top"]:not([data-mobile="1"]) .sidebar {
         border-right: none;
         border-bottom: 2px solid var(--brut-line);

@@ -364,6 +364,16 @@ def _load_settings() -> dict:
     return settings
 
 
+_cred_generation = 0
+
+
+def credentials_generation() -> int:
+    """Bumped by save_settings whenever a credential changes (4.54.2, WSKEY). A poster built
+    under an older number holds a stale key: Weasyl kept posting as the OLD account after
+    its key was replaced, because the poster and its client lived until a restart."""
+    return _cred_generation
+
+
 def save_settings(data: dict) -> None:
     """Merge *data* into settings.json and write.
 
@@ -386,6 +396,11 @@ def save_settings(data: dict) -> None:
         # Proactive credential-age (W): stamp when a platform's credentials are
         # (re)connected, so the UI can warn before a finite-lifetime cookie/token
         # goes stale. credential_set_at is a plain (non-secret) dict → plaintext.
+        # Any credential value changed (any account) → cached posters holding the old one
+        # must be rebuilt (posting.manager._get_poster compares this counter).
+        global _cred_generation
+        if any(is_credential_key(k) and (data.get(k) or "") != (_before.get(k) or "") for k in data):
+            _cred_generation += 1
         _changed_creds = _platforms_with_changed_creds(_before, data)
         if _changed_creds:
             from datetime import datetime as _dt, timezone as _tz
@@ -1232,7 +1247,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.54.0"
+APP_VERSION = "4.55.1"
 
 
 def _app_commit() -> str:
@@ -1757,7 +1772,7 @@ def set_run_on_startup(enabled: bool) -> None:
 
 
 def display_zone():
-    """The operator's time zone (Settings → Preferences → display_timezone) as a tzinfo; UTC
+    """The operator's time zone (Settings → General → display_timezone) as a tzinfo; UTC
     when unset or unloadable. Server-side calendar maths — analytics months/weeks, drip slots —
     use it so a "day" is the operator's day, daylight saving included (4.50.0, spec 016)."""
     from datetime import timezone

@@ -43,6 +43,13 @@ posting). Imports look like `from clients.{xx}.client import {Class}`.
 4. Run `python -m pytest tests/` before submitting
 5. JS changes: verify with `node -c frontend/js/*.js`
 
+## Licence and contributor agreement
+
+PawPoller is licensed under the [GNU AGPL-3.0](LICENSE). Before your first pull request can be merged you'll
+be asked to agree to a short contributor licence agreement: you keep the copyright in your work, and you give
+the PawPoller Project the right to distribute it under the AGPL **and** under other licences. That second part
+is what lets the project offer PawPoller as a hosted service.
+
 ## Architecture Overview
 
 See [`docs/SETUP.md`](docs/SETUP.md) for the architecture overview; the source is heavily commented throughout.

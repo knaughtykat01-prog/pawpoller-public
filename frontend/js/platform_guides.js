@@ -716,7 +716,7 @@
         'of the way.',
         '<b>If you already made an app the other way</b>, you do not have to start again. Put any ' +
         'https address you own in the <b>Iframe connector URL</b> box — ' +
-        '<code>https://pawpoller.pages.dev/</code> will do. Trello only ever fetches that page if ' +
+        '<code>https://pawpoller.com/</code> will do. Trello only ever fetches that page if ' +
         'the app declares capabilities, and yours declares none, so it is never loaded. Making a ' +
         'fresh app with the right option chosen is tidier, but either works.',
         'A card only becomes a commission when you open it and press <b>Mark as commission</b> ' +

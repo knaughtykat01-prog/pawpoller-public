@@ -109,7 +109,7 @@ sent and what never is. Choose **Yes, send them** or **No thanks**. You can chan
 Now go to [Connecting your sites](#connecting-your-sites).
 
 **Keeping it running.** PawPoller only collects stats while it's open. Two settings help, both
-under **Settings → Preferences**:
+under **Settings → General**:
 
 - **Start with Windows**: opens PawPoller every time you log in.
 - **Minimize to system tray on close**: closing the window hides PawPoller next to the clock
@@ -138,7 +138,7 @@ Double-click the file.
 
 **Step 4 onwards.** Follow Steps 4 to 10 of [A1](#a1-windows) above. They are the same.
 
-To start PawPoller when you log in, turn on **Settings → Preferences → Start with Windows**. The
+To start PawPoller when you log in, turn on **Settings → General → Start with Windows**. The
 name says Windows, but it works on Linux too.
 
 ---
