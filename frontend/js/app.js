@@ -2288,6 +2288,7 @@ const App = {
         { key: 'appearance', group: 'Account', label: 'Appearance', blurb: '' },
         { key: 'platforms', group: 'Publishing', label: 'Platforms', blurb: 'Connect a site once; it then shows up in the publish pickers and polls on the Polling schedule.' },
         { key: 'publishing', group: 'Publishing', label: 'Publishing defaults', blurb: '' },
+        { key: 'comments', group: 'Publishing', label: 'Comment templates', blurb: 'A comment under your own post, from the same account \u2014 saved wording, and what each site gets by default.' },
         { key: 'trello', group: 'Publishing', label: 'Trello', blurb: 'Your Trello boards inside PawPoller, kept in step both ways.' },
         { key: 'polling', group: 'Monitoring', label: 'Polling', blurb: 'How often the numbers come in.' },
         { key: 'notifications', group: 'Monitoring', label: 'Notifications', blurb: 'Who gets told, and about what.' },
@@ -16046,6 +16047,7 @@ const App = {
                 }
                 if (page === 'polling') this._loadPollingTab();
                 if (page === 'privacy' && window.Privacy) window.Privacy.mount(document.querySelector('.settings-page[data-page="privacy"]'));
+                if (page === 'comments' && window.Comments) window.Comments.mountSettings(document.querySelector('.settings-page[data-page="comments"]'));
                 window.scrollTo({ top: 0 });
             };
             rail?.addEventListener('click', (e) => {
@@ -16070,6 +16072,7 @@ const App = {
             }
             if (_settingsPage === 'polling') this._loadPollingTab();
             if (_settingsPage === 'privacy' && window.Privacy) window.Privacy.mount(document.querySelector('.settings-page[data-page="privacy"]'));
+            if (_settingsPage === 'comments' && window.Comments) window.Comments.mountSettings(document.querySelector('.settings-page[data-page="comments"]'));
 
             // Platforms pane: sort the platform accordions A→Z + give each a logo
             // and a centred title. Runs regardless of the active tab (the pane is

@@ -240,7 +240,8 @@ scopes PawPoller can use, whatever the table says:
 | `instagram_business_basic` | Everything. |
 | `instagram_business_manage_insights` | Stats — views, reach, saves, shares |
 | `instagram_business_content_publish` | **Posting** from PawPoller |
-| `instagram_business_manage_comments`, `instagram_business_manage_messages` | Nothing PawPoller does; Meta bundles them into the same request |
+| `instagram_business_manage_comments` | The **comment under your post** (4.56.0) — PawPoller posts it as the first comment |
+| `instagram_business_manage_messages` | Nothing PawPoller does; Meta bundles it into the same request |
 
 The app this guide was written from has never had the insights or publishing scopes "added" in
 that table, and stats arrive every poll. Adding them costs nothing if you would rather see them

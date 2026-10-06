@@ -26,6 +26,8 @@ PUBLISH = [
     ("delete", "/api/podcasts/episodes/5"),
     # 4.51.0: Retry in the activity tray re-runs a publish.
     ("post", "/api/activity/abc123/retry/fa"),
+    # 4.56.0 (spec 021): Retry comment posts a live reply.
+    ("post", "/api/comments/7/retry"),
 ]
 
 

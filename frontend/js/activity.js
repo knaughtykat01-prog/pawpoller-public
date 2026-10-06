@@ -47,9 +47,13 @@
         return lbl || String(code || '').toUpperCase();
     }
     const lineLabel = ln => (ln.label && ln.label !== ln.key ? ln.label : label(ln.key));
+    // A line marked `aside` (a site's paired comment, spec 021) is listed but is not a site:
+    // it never counts toward "N of M sites" and never turns a post that went up into a failure.
+    const sites = j => { const m = j.lines.filter(l => !l.aside); return m.length ? m : j.lines; };
     const counts = j => {
-        const n = j.lines.length, d = j.lines.filter(l => ['done', 'failed', 'cancelled'].includes(l.state)).length;
-        return { n, d, bad: j.lines.filter(l => l.state === 'failed').length };
+        const ls = sites(j);
+        const n = ls.length, d = ls.filter(l => ['done', 'failed', 'cancelled'].includes(l.state)).length;
+        return { n, d, bad: ls.filter(l => l.state === 'failed').length };
     };
     const verb = j => ({ publish: 'Posting', update: 'Updating', post: 'Posting', scheduled: 'Posting' }[j.kind] || 'Working on');
     const lineText = ln => {
@@ -145,7 +149,7 @@
             const j = failed[0], c = counts(j);
             cls = 'fail'; frac = 1; n = '!';
             t1 = c.n > 1 ? `Posted to ${c.n - c.bad} of ${c.n} sites` : `"${j.title}" failed`;
-            const bad = j.lines.filter(l => l.state === 'failed').map(lineLabel);
+            const bad = sites(j).filter(l => l.state === 'failed').map(lineLabel);
             t2 = `${bad.join(', ')} failed · open to retry`;
         } else if (fresh.length) {
             const j = fresh[0], c = counts(j);
@@ -280,12 +284,12 @@
     function resultToast(j) {
         if (_open) { markSeen([j.id]); return; }   // the open tray already shows it
         const c = counts(j);
-        const okN = c.n - c.bad - j.lines.filter(l => l.state === 'cancelled').length;
+        const okN = c.n - c.bad - sites(j).filter(l => l.state === 'cancelled').length;
         const head = j.state === 'done' ? (c.n > 1 ? `"${j.title}" is live on ${c.n} sites` : `"${j.title}" is live`)
             : j.state === 'cancelled' ? `Stopped "${j.title}" after ${okN} of ${c.n} sites`
             : `Posted to ${okN} of ${c.n} sites`;
         const took = j.finished && j.started ? Math.round(j.finished - j.started) : 0;
-        const why = j.lines.filter(l => l.state === 'failed').map(l => `${lineLabel(l)}: ${l.error || 'failed'}`).join(' · ')
+        const why = sites(j).filter(l => l.state === 'failed').map(l => `${lineLabel(l)}: ${l.error || 'failed'}`).join(' · ')
             || j.error || '';
         const el = document.createElement('div');
         el.className = `act-toast ${j.state === 'done' ? '' : 'fail'}`;
@@ -391,11 +395,19 @@
             if (!document.body.contains(w.box)) { w.resolve(null); continue; }
             _toasted.add(jid);            // the screen shows the result itself
             w.box.remove();
-            const results = j.lines.map(l => ({
-                platform: l.key, success: l.state === 'done', external_url: l.url,
-                error: l.state === 'cancelled' ? 'Not sent (cancelled)' : (l.error || ''),
-                queued_desktop: l.step === 'Queued for desktop',
-            }));
+            // Sites only; a site's paired comment (an `aside` line, spec 021) rides on its row
+            // as `comment`, so it is shown under the site and never counted as a failed site.
+            const asides = new Map(j.lines.filter(l => l.aside).map(l => [String(l.key).split(':')[0], l]));
+            const results = sites(j).map(l => {
+                const c = asides.get(l.key);
+                return {
+                    platform: l.key, success: l.state === 'done', external_url: l.url,
+                    error: l.state === 'cancelled' ? 'Not sent (cancelled)' : (l.error || ''),
+                    queued_desktop: l.step === 'Queued for desktop',
+                    comment: c ? { status: c.state === 'done' ? 'posted' : c.state === 'cancelled' ? 'cancelled' : 'failed',
+                                   external_url: c.url || '', error: c.error || '' } : undefined,
+                };
+            });
             const ok = results.filter(x => x.success).length;
             w.resolve({ status: 'completed', job_id: jid, results, successes: ok, failures: results.length - ok,
                         total: results.length });

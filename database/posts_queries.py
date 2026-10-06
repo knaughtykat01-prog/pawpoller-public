@@ -31,8 +31,9 @@ def create_post(conn: sqlite3.Connection, *, body: str, rating: str = "general",
 
 
 def update_post(conn: sqlite3.Connection, post_id: int, *, now: str = "", **fields) -> None:
-    """Patch a post's editable columns (body/rating/image_path/image_alt)."""
-    allowed = {"body", "rating", "image_path", "image_alt"}
+    """Patch a post's editable columns (body/rating/image_path/image_alt; spec 021's
+    linked_kind/linked_ref — the piece its paired comment's placeholders fill from)."""
+    allowed = {"body", "rating", "image_path", "image_alt", "linked_kind", "linked_ref"}
     sets, vals = [], []
     for k, v in fields.items():
         if k in allowed:
@@ -195,6 +196,8 @@ def delete_post(conn: sqlite3.Connection, post_id: int) -> None:
     conn.execute("DELETE FROM post_publications WHERE post_id = ?", (post_id,))
     conn.execute("DELETE FROM post_media WHERE post_id = ?", (post_id,))
     conn.execute("DELETE FROM post_mentions WHERE post_id = ?", (post_id,))
+    # Spec 021: its paired comments go with it (pieces never delete; posts may).
+    conn.execute("DELETE FROM paired_comments WHERE owner_kind = 'post' AND owner_ref = ?", (str(post_id),))
     conn.execute("DELETE FROM posts WHERE post_id = ?", (post_id,))
     conn.commit()
 

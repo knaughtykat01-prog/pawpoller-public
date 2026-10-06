@@ -26,9 +26,10 @@ def _tab_map() -> dict[str, str]:
 
 def test_every_old_tab_and_every_tagged_block_lands_on_a_rail_page():
     pages = _pages()
-    # 14 since 4.44.0: Settings -> Privacy (spec 011); 13 since 4.36.0 (Trello). The count
-    # is asserted so a page added without a rail entry fails here rather than becoming unreachable.
-    assert len(pages) == 14 and len(set(pages)) == 14
+    # 15 since 4.56.0: Settings -> Comment templates (spec 021); 14 since 4.44.0 (Privacy);
+    # 13 since 4.36.0 (Trello). The count is asserted so a page added without a rail entry
+    # fails here rather than becoming unreachable.
+    assert len(pages) == 15 and len(set(pages)) == 15
     tab_map = _tab_map()
     old_tabs = set(re.findall(r'data-tab-content="(\w+)"', APP_JS))
     assert old_tabs, "the old panels are still what the template renders"

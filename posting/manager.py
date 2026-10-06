@@ -321,6 +321,16 @@ def _run_links(results: list[dict[str, Any]], chapter_index: int | None = None) 
     return out
 
 
+async def _comment_pass(kind: str, name: str, results: list[dict[str, Any]]) -> None:
+    """Paired comments (spec 021) once every site in this publish is done, so a comment's
+    {link} can point at a site that posted later in the run. Never fails the publish."""
+    try:
+        from posting import paired_comment
+        await paired_comment.comment_pass_pieces(kind, name, results)
+    except Exception:
+        logger.error("Paired comment pass failed for %s %s", kind, name, exc_info=True)
+
+
 def _refused(platform: str, err: Exception, **extra) -> dict[str, Any]:
     """A result row for a platform the persona guard refused — same shape as a
     poster failure so the results panel renders it beside the others."""
@@ -628,6 +638,7 @@ async def post_story(
                 "success": result.success,
                 "queued_desktop": queued_for_desktop,
                 "retry_queued": retry_queued,
+                "account_id": account_id,      # spec 021: the comment goes out as the same account
                 "external_id": result.external_id,
                 "external_url": result.external_url,
                 "error": result.error,
@@ -640,6 +651,8 @@ async def post_story(
 
     if _act_prev:
         _act_settle(_act_prev, results)
+
+    await _comment_pass("story", story_name, results)
 
     # Discord announce for stories (4.41.0, spec 008 — stories never announced before).
     # Once per publish, only if a site succeeded.
@@ -998,6 +1011,7 @@ async def post_artwork(
                 "success": result.success,
                 "queued_desktop": queued_for_desktop,
                 "retry_queued": retry_queued,
+                "account_id": account_id,      # spec 021: the comment goes out as the same account
                 "external_id": result.external_id,
                 "external_url": result.external_url,
                 "error": result.error,
@@ -1008,6 +1022,8 @@ async def post_artwork(
 
     if _act_prev:
         _act_settle(_act_prev, results)
+
+    await _comment_pass("artwork", artwork_name, results)
 
     # Clean up watermark temp files (gap-wave-5 §1) now every post + retry is done.
     for _t in _wm_temps:

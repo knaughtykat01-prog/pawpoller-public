@@ -597,6 +597,18 @@ def get_story_archive(story: str = Query(...)):
 
 # ── Post / Upload ─────────────────────────────────────────────
 
+def _store_story_comments(story_name: str, platforms, chapters, body: dict) -> None:
+    """Paired comments for a story publish (spec 021): `comments` is exactly what is stored,
+    absent → each reply site's default template. One row per chapter posted."""
+    from posting import paired_comment
+    try:
+        paired_comment.store_piece_comments(
+            "story", story_name, platforms, body["comments"] if "comments" in body else None,
+            chapters=chapters)
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+
+
 @posting_router.post("/post")
 async def post_story(body: dict):
     """Post a story to one or more platforms immediately.
@@ -627,6 +639,7 @@ async def post_story(body: dict):
     if not body.get("confirm_live"):
         raise HTTPException(
             400, detail="post requires confirm_live=true (live-publish safety guard)")
+    _store_story_comments(story_name, platforms, chapters, body)
 
     if body.get("background"):
         # spec 017: answer at once; the work runs on as an activity job (the guard above
@@ -865,6 +878,8 @@ def add_to_queue(body: dict):
         raise HTTPException(400, detail="story_name is required")
     if not platforms:
         raise HTTPException(400, detail="platforms list is required")
+    if action == "post":
+        _store_story_comments(story_name, platforms, chapters, body)
 
     conn = get_connection()
     try:

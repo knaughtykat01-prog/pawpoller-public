@@ -437,3 +437,38 @@ a.pp-chip:hover, button.pp-chip:hover { border-color: var(--accent); }
     .pp-rail { display: none; }
     .pp-drow { grid-template-columns: 22px minmax(0, 1fr) auto auto; padding: 9px 8px; gap: 8px; }
 }
+
+/* ── Paired comment (4.56.0, spec 021) ──────────────────────────── */
+.pp-comment { margin: 4px 0 8px; }
+.pp-cm-box { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; display: grid; gap: 8px; }
+.pp-cm-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.pp-cm-head label { font-weight: 600; }
+.pp-cm-head .pp-link { margin-left: auto; }
+.pp-cm-box .pp-ta { min-height: 52px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; font-size: 15px; }
+.pp-cm-box .pp-ta:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pp-cm-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 13px; }
+.pp-cm-sites { display: grid; gap: 6px; }
+.pp-cm-site { display: grid; grid-template-columns: minmax(110px, auto) 1fr; gap: 4px 10px; align-items: center; font-size: 13px; }
+.pp-cm-site .pp-ta, .pp-cm-site .pp-cm-why { grid-column: 1 / -1; }
+.pp-cm-name { display: inline-flex; gap: 6px; align-items: center; font-weight: 600; }
+.pp-cm-why { font-size: 12px; }
+.pp-pv--reply { margin: 6px 0 0 18px; border-left: 2px solid var(--border); padding-left: 10px; }
+.pp-cm-line { font-size: 13px; margin: 4px 0; display: grid; gap: 2px; }
+.pp-comment-state { font-size: 12.5px; display: inline-flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.pp-comment-state.is-block { display: flex; margin-top: 2px; }
+.pp-comment-state.is-fail { color: var(--danger); }
+.pp-comment-state.is-skip { color: var(--text-muted); }
+.pp-comment-state a { color: var(--accent); }
+.pub-confirm-comment textarea { min-height: 52px; }
+
+/* Settings → Comment templates */
+.pp-csteps { margin: 0 0 6px 18px; padding: 0; display: grid; gap: 4px; }
+.pp-ctpl { display: grid; grid-template-columns: minmax(140px, 220px) 1fr auto; gap: 8px; align-items: end; margin-bottom: 10px; }
+.pp-ctpl label { display: grid; gap: 3px; font-size: 12.5px; }
+.pp-ctpl input, .pp-ctpl textarea, .pp-cdef select { font: inherit; }
+.pp-cdefs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 14px; }
+.pp-cdef { display: grid; gap: 3px; font-size: 13px; }
+.pp-csave { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+@media (max-width: 640px) {
+    .pp-ctpl { grid-template-columns: 1fr; }
+}

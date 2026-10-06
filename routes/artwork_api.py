@@ -484,6 +484,17 @@ def import_artwork_from_platform(platform: str, submission_id: str):
 
 # ── Publish ───────────────────────────────────────────────────
 
+def _store_comments(name: str, platforms, body: dict) -> None:
+    """Paired comments for this piece (spec 021): `comments` in the body is exactly what is
+    stored (a cleared box = none); no `comments` key → each reply site's default template."""
+    from posting import paired_comment
+    try:
+        paired_comment.store_piece_comments(
+            "artwork", name, platforms, body["comments"] if "comments" in body else None)
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+
+
 @artwork_router.post("/publish")
 async def publish_artwork(body: dict):
     """Publish an artwork to one or more platforms immediately.
@@ -542,6 +553,8 @@ async def publish_artwork(body: dict):
     if not body.get("confirm_live"):
         raise HTTPException(
             400, detail="publish requires confirm_live=true (live-publish safety guard)")
+
+    _store_comments(artwork_name, platforms, body)
 
     if body.get("background"):
         from posting import activity      # spec 017 — see posting_api.post_story
@@ -624,6 +637,8 @@ def batch_queue(body: dict):
             "detail": "The plan changed since the preview — check it again before queuing.", "plan": p})
     if not p["totals"]["posts"]:
         raise HTTPException(400, detail="Nothing to post — every piece was skipped")
+    for name in sorted({str(x[0]) for x in expect}):
+        _store_comments(name, body.get("platforms") or [], body)
     return {**batch.queue(p), "plan": p}
 
 
@@ -701,6 +716,7 @@ async def schedule_artwork(body: dict):
         raise HTTPException(404, detail=f"Artwork not found: {e}")
 
     scheduled_str = _to_utc_sql(scheduled_at)
+    _store_comments(name, [platform], body)
 
     conn = get_connection()
     try:

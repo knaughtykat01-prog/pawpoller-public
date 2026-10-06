@@ -588,6 +588,7 @@ window.Artwork = {
             persona: this._personaLabel('#art-platforms'),
             targets: this._confirmTargets('#art-platforms', meta.platforms, accountIds),
             textBoxes: this._pubTextBoxes(meta.platforms),
+            commentBoxes: window.Comments ? await Comments.boxesFor(meta.platforms) : [],   // spec 021
             renders: this._pubRenders(meta),
             renderWait: this._pubRenderWait(meta.platforms),
         });
@@ -606,6 +607,7 @@ window.Artwork = {
                 account_ids: accountIds,
                 persona_id: this._personaId('#art-platforms'),
                 description_overrides: this._pubDescOverrides(conf),
+                comments: conf.comments,          // spec 021: absent = each site's default
                 // Each ticked version posts as its own submission (4.34.0). Absent
                 // when the piece has no renders, so the ordinary path is unchanged.
                 renders: conf.renders,
@@ -1394,6 +1396,7 @@ window.Artwork = {
         // schedule is reversible from the Queue page. This is the sharpest of
         // the six: the ticks came back from localStorage and may be unread,
         // so the dialog's button carries the count and the persona.
+        let qpComments;      // spec 021: the dialog's comment per site (undefined = defaults)
         let descOverrides;   // "this post only" text per announcer, from the dialog (4.3.0; all three since 4.3.7)
         if (!scheduledLocal) {
             const opt = (st.options || []).find(o => o.id === st.presetId) || {};
@@ -1401,6 +1404,7 @@ window.Artwork = {
                 title: (this._pendingFile && this._pendingFile.name) || (this._pendingPath || '').split(/[\\/]/).pop() || 'New artwork',
                 subtitle: 'Quick publish',
                 textBoxes: this._pubTextBoxes(platforms),
+                commentBoxes: window.Comments ? await Comments.boxesFor(platforms) : [],   // spec 021
                 persona: opt.id && opt.id !== 'all' ? opt.label : '',
                 targets: platforms.map(code => {
                     const p = (window.platformByCode && window.platformByCode(code)) || { label: code, emoji: '' };
@@ -1410,6 +1414,7 @@ window.Artwork = {
             });
             if (!ok) { msg.textContent = 'Not published.'; return; }
             descOverrides = this._pubDescOverrides(ok);
+            qpComments = ok.comments;
         }
 
         let scheduledIso = null;
@@ -1485,6 +1490,7 @@ window.Artwork = {
                 const res = await API.publishArtwork({ artwork_name: name, platforms, account_ids: accountIds,
                     persona_id: this._qpPersonaId(opt),
                     description_overrides: descOverrides,
+                    comments: qpComments,
                     discord: this._discordChoice(),
                     confirm_live: true });
                 const ok = res.successes || 0;

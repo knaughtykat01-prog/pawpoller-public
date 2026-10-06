@@ -48,6 +48,7 @@ from routes.tg_api import tg_router
 from routes.posting_api import posting_router
 from routes.artwork_api import artwork_router
 from routes.posts_api import posts_router
+from routes.comments_api import comments_router
 from routes.collections_api import collections_router
 from routes.commissions_api import commissions_router
 from routes.trello_api import trello_router
@@ -572,7 +573,8 @@ _PUBLISH_WHEN_OPEN = re.compile(
     # episode, its artwork, or deleting one changes what the public /feed/ RSS serves.
     # 4.51.0 (release review, High): Retry in the activity tray re-runs a publish — a
     # stranger who read a job id off /api/activity could otherwise post another live copy.
-    r"|masterpieces/.+/sync|podcasts|activity/[^/]+/retry)(/|$)")
+    # 4.56.0 (spec 021): Retry comment posts a live reply.
+    r"|masterpieces/.+/sync|podcasts|activity/[^/]+/retry|comments/[^/]+/retry)(/|$)")
 
 
 def _sensitive_when_open(request: Request) -> bool:
@@ -681,6 +683,7 @@ app.include_router(media_router) # Connected-desktop uploads into the inbox (/ap
 app.include_router(posting_router)  # Posting module routes (/api/posting/*)
 app.include_router(artwork_router)  # Artwork hub routes (/api/artwork/*)
 app.include_router(posts_router)    # Posts (microblog) module routes (/api/posts/*)
+app.include_router(comments_router) # Paired comments + templates (/api/comments/*), spec 021
 app.include_router(promos_router)   # Saved promo cards (/api/promos/*), Promo Maker v2 (4.16.0)
 app.include_router(podcast_router)  # Podcast feeds (/api/podcasts/*), MEDIAPLATS (4.21.1)
 app.include_router(feed_router)     # The public feed surface (/feed/*) — auth-exempt, see _AUTH_EXEMPT_PREFIXES

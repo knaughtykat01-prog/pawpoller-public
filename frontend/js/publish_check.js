@@ -719,6 +719,14 @@ window.PublishCheck = (function () {
                 '<span>Telegram text for this post <span class="muted">— optional, this post only</span></span>' +
                 '<textarea id="publish-tg-desc" rows="2" maxlength="900"></textarea></label>';
         }
+        if (window.Comments && Comments.canReply(platId)) {
+            // Spec 021: a comment under the post, from the same account. Filled from this
+            // site's default template once the templates load; cleared = no comment.
+            html += '<label class="pub-confirm-tgdesc pub-confirm-comment">' +
+                '<span>💬 Comment under the post <span class="muted">— optional; posted once the chapter is up. Clear it for no comment.</span></span>' +
+                '<textarea id="publish-comment" data-comment-site="' + _escape(platId) + '" rows="2" maxlength="2000" ' +
+                'aria-label="Comment under the post"></textarea></label>';
+        }
         html += '<div class="publish-action-live-banner" id="publish-live-banner" style="display:none">' +
             '<strong>&#9888; LIVE PUBLISH</strong> — This will be immediately visible to ' +
             'the public on ' + _escape(platName) +
@@ -824,6 +832,12 @@ window.PublishCheck = (function () {
         const detail = document.getElementById('publish-check-detail');
         if (!detail) return;
         _populateAccountSelector(platId);
+        const commentBox = document.getElementById('publish-comment');
+        if (commentBox && window.Comments) {
+            Comments.load().then(() => {
+                if (!commentBox.value) commentBox.value = Comments.defaultFor(platId).text;   // spec 021
+            });
+        }
         detail.querySelectorAll('[data-publish-action]').forEach(btn => {
             btn.addEventListener('click', () => {
                 const action = btn.dataset.publishAction;
@@ -1141,6 +1155,11 @@ window.PublishCheck = (function () {
                             return h && h.dataset.personaId ? parseInt(h.dataset.personaId, 10) : null;
                         })(),
                         description_override: ((document.getElementById('publish-tg-desc') || {}).value || '').trim() || null,
+                        // Spec 021: '' = no comment; null (no box) = the site's default template.
+                        comment: (function () {
+                            const c = document.getElementById('publish-comment');
+                            return c ? c.value.trim() : null;
+                        })(),
                     }, extra || {})),
                 }
             ).then(r => r.json());
@@ -1789,6 +1808,10 @@ window.PublishCheck = (function () {
                         action: action,
                         scheduled_at: isoStr,
                         draft: draft,
+                        comment: (function () {   // spec 021: '' = none; null = the site's default
+                            const c = document.getElementById('publish-comment');
+                            return c ? c.value.trim() : null;
+                        })(),
                         // The same "Post as" / persona choice Publish sends (4.43.1).
                         account_id: (function () {
                             const s = document.querySelector('.publish-account-select');

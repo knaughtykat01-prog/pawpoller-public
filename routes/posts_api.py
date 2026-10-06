@@ -94,15 +94,35 @@ def _attach_numbers(conn, posts: list[dict]) -> list[dict]:
     personas = {pp["persona_id"]: {"persona_id": pp["persona_id"], "name": pp["name"],
                                    "color": pp.get("color") or ""}
                 for pp in personas_db.list_personas(conn)}
+    from database import comment_queries
+    from posting import paired_comment
+    comments = comment_queries.rows_for_posts(conn, [p["post_id"] for p in posts])
     i = 0
     for p in posts:
         n = len(p.get("publications") or [])
         p["publications"] = resolved[i:i + n]
         i += n
+        _attach_comments(p, comments.get(int(p["post_id"])) or {}, paired_comment)
         p["totals"] = _post_totals(p["publications"])
         p["failed_sites"] = _failed_sites(p["publications"])
         p["persona"] = _persona_of(p, a2p, personas)
     return list(personas.values())
+
+
+def _attach_comments(post: dict, rows: dict, paired_comment) -> None:
+    """Each site's paired comment (spec 021 US5) on the post and on its publication:
+    posted / failed / skipped / cancelled, or ``waiting`` — pending while the post
+    itself isn't live on that site."""
+    posted = {pub["platform"] for pub in post.get("publications") or [] if pub.get("status") == "posted"}
+    out = {}
+    for plat, row in rows.items():
+        s = paired_comment.summary(row)
+        s["waiting"] = row["status"] == "pending" and plat not in posted
+        out[plat] = s
+    post["comments"] = out
+    for pub in post.get("publications") or []:
+        if pub.get("platform") in out:
+            pub["comment"] = out[pub["platform"]]
 
 
 def _failed_sites(pubs: list[dict]) -> list[str]:
@@ -249,8 +269,9 @@ def preview_post(payload: dict):
         image_count = max(0, min(int(payload.get("image_count") or 0), _MAX_IMAGES))
     except (TypeError, ValueError):
         image_count = 0
+    comments, linked = _parse_comment_fields(payload.get("comments"), payload.get("linked"))
     return {"sites": post_publisher.preview(body, platforms, mentions, image_count, parts,
-                                            account_ids)}
+                                            account_ids, comments=comments, linked=linked)}
 
 
 @posts_router.get("/image")
@@ -522,6 +543,10 @@ def get_post(post_id: int):
         # Thread parts 2+ are full post rows; the item page shows them with the
         # first so the Record section is the whole thing that went out.
         post["thread_parts"] = posts_queries.get_thread_parts(conn, post_id)
+        from database import comment_queries
+        from posting import paired_comment
+        _attach_comments(post, comment_queries.rows_for_posts(conn, [post_id]).get(post_id) or {},
+                         paired_comment)
         return post
     finally:
         conn.close()
@@ -623,6 +648,8 @@ async def create_post(
     mentions: str = Form(""),   # JSON [{token, contact_id}] — @alias → contact bindings
     parts: str = Form(""),      # JSON [string] — thread parts 2+ (text-only, gap-wave-3 §4)
     alts: str = Form(""),       # JSON [string] — ALT text per image, in order (spec 018)
+    comments: str = Form(""),   # JSON {site: text | {text, mentions, template}} — spec 021
+    linked: str = Form(""),     # JSON {kind: artwork|story, ref} — the piece placeholders fill from
     files: list[UploadFile] | None = File(None),
     file: UploadFile | None = File(None),   # legacy single-image field, still accepted
 ):
@@ -645,11 +672,15 @@ async def create_post(
     uploads = uploads[:_MAX_IMAGES]
     if not body and not uploads:
         raise HTTPException(400, "A post needs text or an image")
+    comment_map, linked_obj = _parse_comment_fields(comments, linked)
 
     conn = get_connection()
     try:
         post_id = posts_queries.create_post(
             conn, body=body, rating=rating, image_alt=image_alt, now=_now())
+        if linked_obj:
+            posts_queries.update_post(conn, post_id, linked_kind=linked_obj["kind"],
+                                      linked_ref=linked_obj["ref"], now=_now())
         # Thread parts (gap-wave-3 §4): each part is a child post row, text-only.
         if parts:
             try:
@@ -674,6 +705,14 @@ async def create_post(
             posts_queries.set_post_mentions(conn, post_id, bindings)
     finally:
         conn.close()
+
+    if comment_map:
+        from posting import paired_comment
+        try:
+            paired_comment.store_post_comments(post_id, comment_map, linked=linked_obj)
+        except ValueError as e:
+            _cleanup(post_id)
+            raise HTTPException(400, str(e))
 
     first_path = ""
     for idx, up in enumerate(uploads):
@@ -837,6 +876,31 @@ def delete_post(post_id: int):
         except OSError:
             pass
     return {"status": "deleted"}
+
+
+def _parse_comment_fields(comments, linked) -> tuple[dict | None, dict | None]:
+    """The composer's `comments` / `linked` (JSON strings or already-parsed) → checked
+    values. 400 on a shape that can't be read — a comment silently dropped would post a
+    bare link-less X post the operator thinks has its link underneath."""
+    def _load(v):
+        if isinstance(v, (dict, list)) or v is None:
+            return v
+        if not str(v).strip():
+            return None
+        try:
+            return json.loads(v)
+        except (ValueError, TypeError):
+            raise HTTPException(400, "comments / linked must be JSON")
+    c, ln = _load(comments), _load(linked)
+    if c is not None and not isinstance(c, dict):
+        raise HTTPException(400, "comments must be a mapping of site → text")
+    if c:
+        c = {str(k)[:8]: v for k, v in list(c.items())[:12]}
+    if ln is not None:
+        if not (isinstance(ln, dict) and ln.get("kind") in ("artwork", "story") and ln.get("ref")):
+            raise HTTPException(400, "linked must be {kind: artwork|story, ref}")
+        ln = {"kind": ln["kind"], "ref": str(ln["ref"])[:300]}
+    return c, ln
 
 
 def _cleanup(post_id: int) -> None:

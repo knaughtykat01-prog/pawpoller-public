@@ -1636,6 +1636,7 @@ window.Masterpieces = {
                 ? window.Artwork._confirmTargets('#mp-detail-platforms', platforms, accountIds)
                 : platforms.map(code => ({ code, label: code })),
             textBoxes: window.Artwork ? window.Artwork._pubTextBoxes(platforms) : [],
+            commentBoxes: window.Comments ? await Comments.boxesFor(platforms) : [],   // spec 021
         });
         if (!conf) { if (msg) msg.textContent = ''; return; }
         if (msg) msg.textContent = 'Publishing…';
@@ -1646,6 +1647,7 @@ window.Masterpieces = {
                 artwork_name: name, platforms, account_ids: accountIds,
                 persona_id: personaId,
                 description_overrides: window.Artwork ? window.Artwork._pubDescOverrides(conf) : undefined,
+                comments: conf.comments,          // spec 021: absent = each site's default
                 discord: window.Artwork ? window.Artwork._discordChoice() : undefined,   // spec 008
                 confirm_live: true,
                 ...extra,

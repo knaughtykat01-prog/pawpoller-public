@@ -509,6 +509,17 @@ class IgClient:
         await self._wait_container_ready(container, tries=self.REEL_READY_TRIES)
         return await self._publish_container(container)
 
+    async def create_comment(self, media_id: str, text: str) -> dict:
+        """Comment on a media object — the "first comment" under our own post (spec 021).
+        Needs instagram_business_manage_comments on the token. Returns {id}; raises
+        RuntimeError with Meta's own message on failure."""
+        if not await self.ensure_logged_in():
+            raise RuntimeError("Instagram auth failed — reconnect the account")
+        res = await self._post_json(f"{_API_BASE}/{media_id}/comments", {"message": text})
+        if not res or not res.get("id"):
+            raise RuntimeError("Instagram returned no comment id")
+        return {"id": str(res["id"])}
+
     async def create_post(self, caption: str, image_urls: list[str]) -> dict:
         """Publish a photo (or 2-10 photo carousel) with a caption. Returns
         {id, url}. Raises RuntimeError with a user-facing message on failure."""

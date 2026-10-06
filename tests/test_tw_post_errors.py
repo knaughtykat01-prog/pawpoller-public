@@ -204,7 +204,7 @@ class TestWiring:
         src = open("clients/tw/client.py", encoding="utf-8").read()
         assert "self.last_error" in src
         i = src.index("async def create_tweet")
-        block = src[i:i + 3000]
+        block = src[i:src.index("\n    async def ", i + 1)]   # the whole method, however long
         assert "self.last_error = _create_tweet_reason(" in block
         assert 'self.last_error = ""' in block, "cleared per call, so a stale reason can't leak"
 
@@ -213,7 +213,7 @@ class TestWiring:
         log alone."""
         src = open("clients/tw/client.py", encoding="utf-8").read()
         i = src.index("async def create_tweet")
-        block = src[i:i + 3000]
+        block = src[i:src.index("\n    async def ", i + 1)]
         assert "CreateTweet created nothing: %s" in block
         assert "str(data)[:300]" not in block
 

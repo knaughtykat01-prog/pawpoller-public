@@ -278,6 +278,8 @@ _TABLES = (
     # confidential — unpublished work
     T("posts", "Unpublished work", "Your posts, drafts included."),
     T("post_media", "Unpublished work", "Pictures attached to posts."),
+    T("paired_comments", "Unpublished work",
+      "The comments you post under your own posts, sent or not, and how each went."),
     T("promos", "Unpublished work", "Promo images you've made."),
     # internal — numbers
     T("snapshots", "Numbers over time", "Inkbunny numbers per poll."),
@@ -376,7 +378,7 @@ _SETTINGS = (
     )),
     # Preferences.
     *(S(k, _PREF) for k in (
-        "announce_defaults", "auto_backup_dir", "auto_backup_enabled", "auto_backup_interval_hours",
+        "announce_defaults", "comment_templates", "comment_defaults", "auto_backup_dir", "auto_backup_enabled", "auto_backup_interval_hours",
         "auto_backup_keep", "auto_sync_enabled", "auto_update", "credits", "credential_mode",
         "da_client_id", "sc_client_id", "yt_client_id", "dashboard_layout", "discord_announce_on_publish",
         "display_timezone", "email_digest_enabled", "email_digest_interval_days", "hidden_platforms",

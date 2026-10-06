@@ -96,10 +96,49 @@ def text_length(text: str) -> int:
 
 
 def rules() -> dict:
+    from posting import paired_comment
     return {"labels": LABELS, "limits": TEXT_LIMITS, "tg_caption_limit": TG_CAPTION_LIMIT,
             "max_images": MAX_IMAGES, "text_only": list(_TEXT_ONLY),
             "image_required": list(_IMAGE_REQUIRED), "thread_platforms": list(THREAD_PLATFORMS),
-            "handle_platforms": list(HANDLE_PLATFORMS)}
+            "handle_platforms": list(HANDLE_PLATFORMS),
+            # Spec 021: where a paired comment can go, and what a template may say.
+            "reply_platforms": list(paired_comment.REPLY_PLATFORMS),
+            "proven_reply_platforms": sorted(paired_comment.PROVEN),
+            "comment_placeholders": list(paired_comment.PLACEHOLDERS)}
+
+
+def comment_preview(plat: str, comment, mentions: list[dict], ctx: dict | None,
+                    settings: dict | None, *, blocked_account: bool = False,
+                    piece: bool = False) -> dict:
+    """One site's paired comment as it will go out, and every reason it won't (spec 021
+    FR-004). `piece`: a link made later in the same publish may still fill `{link}`, so
+    an empty token is a warning there, a block on a composed post."""
+    from posting import paired_comment as pc
+    text = comment.get("text") if isinstance(comment, dict) else comment
+    text = str(text or "")
+    label = LABELS.get(plat, plat)
+    warns: list[dict] = []
+    if plat not in pc.REPLY_PLATFORMS:
+        return {"text": "", "length": 0, "limit": None, "over": False,
+                "warnings": [{"level": "warn", "text": f"{label}: no replies there, the comment will be left off"}]}
+    bad = pc.unknown_tokens(text)
+    if bad:
+        warns.append({"level": "block", "text": f"{{{bad[0]}}} isn't a placeholder PawPoller knows"})
+    filled, empty = pc.fill(text, ctx, plat, settings)
+    for t in empty:
+        warns.append({"level": "warn", "text": f"{{{t}}} (filled from this publish, if that site posts first)"}
+                     if piece else {"level": "block", "text": f"{{{t}}} has nothing to fill it"})
+    rendered = _render_body(filled, mentions, plat)
+    limit = pc.comment_limit(plat)
+    length = text_length(rendered)
+    over = bool(limit) and length > limit
+    if over:
+        warns.append({"level": "block", "text": f"Comment is {length - limit} over {label}'s {limit}-character limit"})
+    if blocked_account:
+        warns.append({"level": "block", "text": accounts_db.NEVER_POST_ERROR})
+    if plat not in pc.PROVEN:
+        warns.append({"level": "warn", "text": f"Comments on {label} aren't proven live yet"})
+    return {"text": rendered, "length": length, "limit": limit, "over": over, "warnings": warns}
 
 
 def _mentions_for(conn, bindings) -> list[dict]:
@@ -119,7 +158,8 @@ def _mentions_for(conn, bindings) -> list[dict]:
 
 
 def preview(body: str, platforms: list[str], bindings=None, image_count: int = 0,
-            parts=None, account_ids: dict | None = None, settings: dict | None = None) -> dict:
+            parts=None, account_ids: dict | None = None, settings: dict | None = None,
+            comments: dict | None = None, linked: dict | None = None) -> dict:
     """How a draft will come out on each chosen site, and every reason a site would refuse
     or change it — before anything is sent (spec 018, FR-004 / SC-002).
 
@@ -175,7 +215,28 @@ def preview(body: str, platforms: list[str], bindings=None, image_count: int = 0
                     w("warn", f"@{m['token']} has no {label} handle saved, so it posts as plain text")
         out[plat] = {"text": text, "length": length, "limit": limit, "over": over,
                      "connected": connected, "warnings": warns}
+        c = (comments or {}).get(plat)
+        ctext = c.get("text") if isinstance(c, dict) else c
+        if ctext and str(ctext).strip():
+            cmentions = mentions
+            if isinstance(c, dict) and c.get("mentions"):
+                conn = get_connection()
+                try:
+                    cmentions = _mentions_for(conn, c.get("mentions"))
+                finally:
+                    conn.close()
+            out[plat]["comment"] = comment_preview(
+                plat, c, cmentions, _linked_ctx(linked, plat), settings,
+                blocked_account=connected and acct_id in never)
     return out
+
+
+def _linked_ctx(linked: dict | None, platform: str) -> dict | None:
+    """Placeholder context from the piece a composed post is about (spec 021)."""
+    if not isinstance(linked, dict) or linked.get("kind") not in ("artwork", "story") or not linked.get("ref"):
+        return None
+    from posting import paired_comment
+    return paired_comment.piece_context(linked["kind"], str(linked["ref"]), platform)
 
 
 # Rating → Bluesky self-labels. General adds none.
@@ -642,6 +703,10 @@ async def publish_post(post_id: int, platforms: list[str],
                 finally:
                     conn.close()
                 ok = sum(1 for pr in part_results if pr["success"])
+                # Spec 021: a paired comment goes under the thread's last part that landed.
+                last = next((pr for pr in reversed(part_results) if pr["success"]), None)
+                if last:
+                    res["_last_part"] = last.get("external_id", "")
                 res["thread_parts"] = f"{ok}/{len(parts)} parts posted"
                 if ok < len(parts):
                     res["error"] = (res.get("error") or "") or "some thread parts failed"
@@ -652,6 +717,14 @@ async def publish_post(post_id: int, platforms: list[str],
     for res in results:
         activity.line_done(res["platform"], bool(res.get("success")), url=res.get("external_url") or "",
                            error=res.get("error") or "" if not res.get("success") else "")
+
+    # Paired comments (spec 021): one pass once every site and thread part is done. A
+    # comment reports on its own line and row; it never edits the post's result (FR-006).
+    from posting import paired_comment
+    try:
+        await paired_comment.comment_pass_posts(post, results, settings)
+    except Exception:
+        logger.error("Paired comment pass failed for post %s", post_id, exc_info=True)
 
     # Discord announce (gap G4) — fire once per publish if any platform succeeded.
     # Best-effort; announce_publish self-gates on config + never raises.

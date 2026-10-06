@@ -102,6 +102,15 @@ async def _scheduler_loop() -> None:
                 await asyncio.sleep(SCHEDULER_CHECK_INTERVAL)
                 continue
 
+            # Paired comments whose automatic retry is due (spec 021, FR-017): at most a
+            # few per tick, each claimed first so a desktop and a server sharing the
+            # database never both send it. Never lets a comment stall the queue.
+            try:
+                from posting import paired_comment
+                await paired_comment.run_due(settings)
+            except Exception as e:
+                logger.error("Paired comment retries failed: %s", e, exc_info=True)
+
             # Get next pending item that's compatible with our runtime mode.
             # The runtime_mode filter is applied in SQL so incompatible
             # items (e.g. requires='desktop' on a server instance) don't

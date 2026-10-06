@@ -53,6 +53,7 @@
             if (App._stale(_rt)) return;   // the user moved on: don't paint or adopt this data
             this._data = d;
             this._paint(d);
+            if (window.Comments) Comments.wireRetry(document.getElementById('pb-detail'), () => this.render(id));
             this._renderDetailNav(id);
             this._loadChart(id);
         },
@@ -123,6 +124,11 @@
             });
         },
 
+        /* The paired comment under this site's post (spec 021), with Retry when it failed. */
+        _commentHtml(p) {
+            return p.comment && window.Comments ? `<div>${Comments.stateHtml(p.comment)}</div>` : '';
+        },
+
         /* ── 2. Published to ─────────────────────────────────────────────── */
         _publishedToHtml(d) {
             const rows = (d.publications || []).map(p => {
@@ -132,7 +138,8 @@
                     return `<div class="loc-row">
                         <span class="thumb-sq thumb-sq--emoji" aria-hidden="true">${plat.emoji || ''}</span>
                         <div class="loc-site"><span class="name">${esc(plat.label)}</span>
-                        <span class="muted" style="font-size:12px">${esc(p.error || p.status || 'not posted')}</span></div>
+                        <span class="muted" style="font-size:12px">${esc(p.error || p.status || 'not posted')}</span>
+                        ${this._commentHtml(p)}</div>
                     </div>`;
                 }
                 const link = p.external_url
@@ -143,6 +150,7 @@
                         <span class="muted" style="font-size:12px">
                             👁 ${num(s.views)} · ❤ ${num(s.favorites)} · 💬 ${num(s.comments)}
                         </span>
+                        ${this._commentHtml(p)}
                     </div>
                     ${link}
                 </div>`;

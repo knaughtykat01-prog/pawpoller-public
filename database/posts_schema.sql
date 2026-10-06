@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS posts (
     -- work unchanged. Older DBs gain these via _run_migrations.
     parent_post_id INTEGER NOT NULL DEFAULT 0,
     thread_ordinal INTEGER NOT NULL DEFAULT 0,
+    -- Spec 021: the piece this post is about (artwork | story + its folder name),
+    -- which fills a paired comment's {link}/{title}/{artist}. '' = none.
+    linked_kind  TEXT NOT NULL DEFAULT '',
+    linked_ref   TEXT NOT NULL DEFAULT '',
     created_at   TEXT NOT NULL DEFAULT '',
     updated_at   TEXT NOT NULL DEFAULT ''
 );
@@ -82,3 +86,31 @@ CREATE TABLE IF NOT EXISTS post_mentions (
     UNIQUE(post_id, token)
 );
 CREATE INDEX IF NOT EXISTS idx_post_mentions_post ON post_mentions(post_id);
+
+-- Paired comments (spec 021): a reply from the same account straight under a post
+-- or a piece's post — the link-in-the-reply habit. One row per (owner, site): the
+-- text as written AND how it went, so a scheduled / retried / desktop-handed-off
+-- post finds its comment without any queue row carrying it. owner_kind is
+-- post | artwork | story; owner_ref the post_id (as text) or the piece's folder.
+CREATE TABLE IF NOT EXISTS paired_comments (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_kind         TEXT NOT NULL,
+    owner_ref          TEXT NOT NULL,
+    chapter_index      INTEGER NOT NULL DEFAULT 0,
+    platform           TEXT NOT NULL,
+    text               TEXT NOT NULL DEFAULT '',
+    mentions           TEXT NOT NULL DEFAULT '[]',   -- [{token, contact_id}], as the composer binds them
+    template           TEXT NOT NULL DEFAULT '',     -- the template it came from, display only
+    status             TEXT NOT NULL DEFAULT 'pending', -- pending | posted | failed | skipped | cancelled
+    account_id         INTEGER NOT NULL DEFAULT 0,   -- the account it went out as (the post's own)
+    parent_external_id TEXT NOT NULL DEFAULT '',     -- what it replied under
+    external_id        TEXT NOT NULL DEFAULT '',
+    external_url       TEXT NOT NULL DEFAULT '',
+    error              TEXT NOT NULL DEFAULT '',
+    attempts           INTEGER NOT NULL DEFAULT 0,   -- automatic retries made (cap 3)
+    next_try_at        TEXT NOT NULL DEFAULT '',     -- UTC; '' = no automatic retry due
+    created_at         TEXT NOT NULL DEFAULT '',
+    updated_at         TEXT NOT NULL DEFAULT '',
+    UNIQUE(owner_kind, owner_ref, chapter_index, platform)
+);
+CREATE INDEX IF NOT EXISTS idx_paired_comments_owner ON paired_comments(owner_kind, owner_ref);

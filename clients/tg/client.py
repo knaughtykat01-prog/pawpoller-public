@@ -121,7 +121,7 @@ class TgClient:
                           spoiler: bool = False, *,
                           silent: bool = False, protect: bool = False,
                           as_document: bool = False, preview: bool = True,
-                          pin: bool = False) -> dict | None:
+                          pin: bool = False, reply_to: str | int = "") -> dict | None:
         """Post to the channel. Returns {"id": message_id, "url": ...} or None.
 
         - no images → sendMessage
@@ -153,6 +153,9 @@ class TgClient:
             common["disable_notification"] = "true"
         if protect:
             common["protect_content"] = "true"
+        if reply_to:
+            # Spec 021: a paired comment — shows in the channel quoting the post.
+            common["reply_parameters"] = json.dumps({"message_id": int(reply_to)})
         try:
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
                 if not image_paths:

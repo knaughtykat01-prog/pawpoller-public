@@ -293,6 +293,7 @@ window.Posts = {
             return;
         }
         feed.innerHTML = this._view === 'table' ? this._table(posts) : posts.map(p => this._postCard(p)).join('');
+        if (window.Comments) Comments.wireRetry(feed, () => this._loadFeed());   // spec 021
     },
 
     /* The number a site's chip shows: likes where the site counts them, else views. */
@@ -414,10 +415,22 @@ window.Posts = {
                     ${this._images(p)}
                     ${fails}
                     <div class="pp-where">${this._chips(p) || '<span class="muted">Not published anywhere yet.</span>'}</div>
+                    ${this._commentsLine(p)}
                     ${this._engagement(p)}
                     ${schedActions}
                 </div>
             </article>`;
+    },
+
+    /* Each site's paired comment (spec 021): only the ones worth a look — failed, waiting,
+     * skipped — plus a quiet "💬 on N sites" when they all went up. */
+    _commentsLine(p) {
+        const cs = p.comments || {};
+        const codes = Object.keys(cs);
+        if (!codes.length || !window.Comments) return '';
+        const odd = codes.filter(c => cs[c].status !== 'posted');
+        if (!odd.length) return `<div class="pp-cm-line muted">💬 Comment under it on ${codes.map(c => this.esc(this._label(c))).join(', ')}</div>`;
+        return `<div class="pp-cm-line">${odd.map(c => `<div><b>${this.esc(this._label(c))}:</b> ${Comments.stateHtml(cs[c])}</div>`).join('')}</div>`;
     },
 
     _table(posts) {
@@ -811,6 +824,7 @@ window.Posts = {
                         </div>
                         <div id="post-parts"></div>
                     </div>
+                    <div class="pp-comment" id="pp-comment"></div>
                     <div class="pp-edfoot">
                         <label class="pp-tool">🖼 Images
                             <input type="file" id="post-image" accept="image/png,image/jpeg,image/gif,image/webp" hidden multiple>
@@ -850,8 +864,130 @@ window.Posts = {
             </div>`;
 
         this._renderPlatformRows(document.getElementById('post-platforms'));
+        this._comment = { open: false, shared: '', sites: {}, touched: {}, linked: null };
+        this._paintComment();
         this._wireCompose();
         this._populateAccountSelectors();
+        if (window.Comments) Comments.load().then(() => { this._applyCommentDefaults(); this._paintComment(); });
+    },
+
+    /* ── Paired comment (4.56.0, spec 021) ─────────────────────────
+     * A comment under the post, from the same account, on every switched-on site that
+     * can take a reply. One shared text; a site can have its own (its default template
+     * fills it when the site is switched on, until you change it). An own text left empty
+     * means "no comment on that site". `{link}`-style fill-ins come from a linked piece. */
+
+    _replySites() {
+        const reply = window.Comments ? Comments.REPLY : [];
+        return this._selectedPlatforms().filter(c => reply.includes(c));
+    },
+
+    _applyCommentDefaults() {
+        if (!window.Comments || !this._comment) return;
+        const c = this._comment;
+        this._replySites().forEach(code => {
+            if (c.touched[code] || code in c.sites) return;
+            const d = Comments.defaultFor(code);
+            if (d.text) { c.sites[code] = d.text; c.open = true; }
+        });
+    },
+
+    /* {site: text} for the switched-on reply sites ('' = none there); undefined when no comment at all. */
+    _commentsPayload() {
+        const c = this._comment;
+        if (!c || !c.open) return undefined;
+        const out = {};
+        this._replySites().forEach(code => {
+            out[code] = (code in c.sites ? c.sites[code] : c.shared).trim();
+        });
+        return Object.values(out).some(Boolean) ? out : undefined;
+    },
+
+    _paintComment() {
+        const host = document.getElementById('pp-comment');
+        if (!host || !this._comment) return;
+        const c = this._comment;
+        if (!c.open) {
+            host.innerHTML = `<button type="button" class="pp-tool" data-cm="open">💬 Add a comment under it</button>`;
+            return;
+        }
+        const sites = this._replySites();
+        const tpl = window.Comments ? Comments.templateOptions('') : '';
+        const rows = sites.map(code => {
+            const own = code in c.sites;
+            return `<div class="pp-cm-site" data-cm-site="${code}">
+                <span class="pp-cm-name">${this._logo(code)}${this.esc(this._label(code))}</span>
+                ${own ? `<textarea class="pp-ta pp-ta--part" rows="2" maxlength="2000" data-cm-own="${code}"
+                            aria-label="${this.esc(this._label(code))} comment" placeholder="No comment on ${this.esc(this._label(code))}">${this.esc(c.sites[code])}</textarea>
+                        <button type="button" class="pp-link" data-cm="shared" data-code="${code}">Use the shared text</button>`
+                     : `<span class="muted">Shared text</span>
+                        <button type="button" class="pp-link" data-cm="own" data-code="${code}">Different text here</button>`}
+                <span class="pp-cm-why" id="pp-cm-why-${code}"></span>
+            </div>`;
+        }).join('');
+        const skipped = this._selectedPlatforms().filter(code => !sites.includes(code))
+            .map(code => this.esc(this._label(code)));
+        const linked = c.linked
+            ? `Fill-ins from <b>${this.esc(c.linked.title || c.linked.ref)}</b> <button type="button" class="pp-link" data-cm="unlink">Remove</button>`
+            : `<button type="button" class="pp-link" data-cm="link">Link a piece</button> <span class="muted">for {link}, {title}, {artist}</span>`;
+        host.innerHTML = `<div class="pp-cm-box">
+            <div class="pp-cm-head"><label for="pp-cm-text">💬 Comment under the post</label>
+                <span class="muted">Posted from the same account once the post is up.</span>
+                <button type="button" class="pp-link" data-cm="close">Remove comment</button></div>
+            <textarea id="pp-cm-text" class="pp-ta pp-ta--part" rows="2" maxlength="2000"
+                placeholder="Links, credits, “full story here”…">${this.esc(c.shared)}</textarea>
+            <div class="pp-cm-tools">
+                <select id="pp-cm-tpl" aria-label="Fill the shared text from a template">${tpl}</select>
+                <span class="pp-cm-linked">${linked}</span>
+            </div>
+            ${rows ? `<div class="pp-cm-sites">${rows}</div>` : '<p class="muted">Switch on a site that takes comments.</p>'}
+            ${skipped.length ? `<p class="muted">No comment on ${skipped.join(', ')} (no replies there).</p>` : ''}
+        </div>`;
+    },
+
+    _wireComment() {
+        const host = document.getElementById('pp-comment');
+        if (!host) return;
+        host.addEventListener('click', e => {
+            const b = e.target.closest('[data-cm]');
+            if (!b) return;
+            const c = this._comment, code = b.dataset.code;
+            if (b.dataset.cm === 'open') { c.open = true; this._applyCommentDefaults(); }
+            if (b.dataset.cm === 'close') { c.open = false; c.shared = ''; c.sites = {}; c.touched = {}; }
+            if (b.dataset.cm === 'own') { c.sites[code] = c.shared; c.touched[code] = true; }
+            if (b.dataset.cm === 'shared') { delete c.sites[code]; c.touched[code] = true; }
+            if (b.dataset.cm === 'unlink') c.linked = null;
+            if (b.dataset.cm === 'link' && window.WorkPicker) {
+                WorkPicker.open({
+                    title: 'Link a piece', confirmLabel: 'Link', multi: false,
+                    onConfirm: async (items) => {
+                        const it = (items || [])[0];
+                        const m = it && /^(artwork|story):(.+)$/.exec(it.member_ref || '');
+                        if (!m) { this._toast('error', 'Pick one of your artworks or stories'); return; }
+                        c.linked = { kind: m[1], ref: m[2], title: it.title || m[2] };
+                        this._paintComment(); this._changed();
+                    },
+                });
+                return;
+            }
+            this._paintComment();
+            this._changed();
+            const focus = b.dataset.cm === 'open' ? document.getElementById('pp-cm-text')
+                : b.dataset.cm === 'own' ? host.querySelector(`[data-cm-own="${code}"]`) : null;
+            if (focus) focus.focus();
+        });
+        host.addEventListener('input', e => {
+            const c = this._comment;
+            if (e.target.id === 'pp-cm-text') c.shared = e.target.value;
+            else if (e.target.dataset.cmOwn) { c.sites[e.target.dataset.cmOwn] = e.target.value; c.touched[e.target.dataset.cmOwn] = true; }
+            else return;
+            this._changed();
+        });
+        host.addEventListener('change', e => {
+            if (e.target.id !== 'pp-cm-tpl' || !e.target.value) return;
+            this._comment.shared = Comments.templateText(e.target.value);
+            this._paintComment(); this._changed();
+        });
     },
 
     _renderPlatformRows(el) {
@@ -939,8 +1075,10 @@ window.Posts = {
         });
         document.getElementById('post-rating').addEventListener('change', () => this._changed());
         document.getElementById('post-platforms').addEventListener('change', e => {
+            if (e.target.closest('.post-plat-check')) { this._applyCommentDefaults(); this._paintComment(); }
             if (e.target.closest('.post-plat-check, .post-acct-select')) this._changed();
         });
+        this._wireComment();
 
         // Mention panel: a <select> per @alias binds it to a handle-book contact.
         document.getElementById('post-mentions').addEventListener('change', e => {
@@ -1073,6 +1211,7 @@ window.Posts = {
             rating: document.getElementById('post-rating').value,
             platforms: this._selectedPlatforms(),
             bindings: this._mentionBindings,
+            comment: this._comment,
         };
     },
 
@@ -1100,6 +1239,10 @@ window.Posts = {
         (d.parts || []).forEach(t => this._addPart(t));
         if (d.bindings && typeof d.bindings === 'object') this._mentionBindings = { ...d.bindings };
         if (Array.isArray(d.platforms)) this._pendingDraftPlatforms = d.platforms;
+        if (d.comment && typeof d.comment === 'object' && d.comment.sites) {
+            this._comment = { touched: {}, linked: null, ...d.comment };
+            this._paintComment();
+        }
         this._syncMentions();
         const st = document.getElementById('pp-draft-state');
         if (st && !pre) {
@@ -1130,6 +1273,9 @@ window.Posts = {
             image_count: this._pendingFiles.length,
             parts: [...document.querySelectorAll('.post-part-text')].map(t => t.value.trim()).filter(Boolean),
             account_ids: this._accountIds(this._PLATFORMS),
+            comments: this._commentsPayload(),
+            linked: this._comment && this._comment.linked
+                ? { kind: this._comment.linked.kind, ref: this._comment.linked.ref } : undefined,
         };
         let r;
         try { r = await API.previewPost(req); } catch (e) { return null; }
@@ -1176,6 +1322,13 @@ window.Posts = {
             } else {
                 why.innerHTML = '';
             }
+            const cwhy = document.getElementById(`pp-cm-why-${code}`);
+            if (cwhy) {
+                const cm = site.comment;
+                const cw = cm && (cm.warnings || []).find(x => x.level === 'block') || (cm && (cm.warnings || [])[0]);
+                cwhy.innerHTML = cm ? `${cm.limit ? `<span class="${cm.over ? 'pp-bad' : 'muted'}">${cm.length}/${cm.limit}</span> ` : ''}`
+                    + (cw ? `<span class="${cw.level === 'block' ? 'pp-bad' : 'pp-warn'}">${this.esc(cw.text)}</span>` : '') : '';
+            }
         });
         const btn = document.getElementById('post-submit');
         if (btn) btn.textContent = n ? `Post now to ${n} site${n === 1 ? '' : 's'}` : 'Post now';
@@ -1201,6 +1354,9 @@ window.Posts = {
                 <div class="pp-pv-txt">${site.text ? this._bodyHtml(site.text) : '<span class="muted">Your text shows here.</span>'}</div>
                 ${imgs}
             </div>
+            ${site.comment && site.comment.text ? `<div class="pp-pv pp-pv--reply" aria-label="Comment under the post">
+                <div class="pp-pv-h">${this._avatar({ name: persona })}<b>${this.esc(persona)}</b><small>replying</small></div>
+                <div class="pp-pv-txt">${this._bodyHtml(site.comment.text)}</div></div>` : ''}
             ${notes ? `<ul class="pp-notes">${notes}</ul>` : ''}`;
     },
 
@@ -1553,7 +1709,8 @@ window.Posts = {
         const sites = (await this._refreshPreview()) || this._preview || {};
         const blocked = platforms.map(c => {
             const b = ((sites[c] || {}).warnings || []).find(w => w.level === 'block');
-            return b ? `${this._label(c)}: ${b.text}` : '';
+            const cb = (((sites[c] || {}).comment || {}).warnings || []).find(w => w.level === 'block');
+            return b ? `${this._label(c)}: ${b.text}` : cb ? `${this._label(c)} comment: ${cb.text}` : '';
         }).filter(Boolean);
         if (blocked.length) {
             msg.textContent = `Fix these or switch the site off first. ${blocked.join(' · ')}`;
@@ -1575,6 +1732,11 @@ window.Posts = {
             if (partTexts.length) fd.append('parts', JSON.stringify(partTexts));
             if (this._altTexts.some(a => (a || '').trim())) fd.append('alts', JSON.stringify(this._altTexts));
             this._pendingFiles.forEach(f => fd.append('files', f));
+            const comments = this._commentsPayload();
+            if (comments) fd.append('comments', JSON.stringify(comments));
+            if (comments && this._comment.linked) {
+                fd.append('linked', JSON.stringify({ kind: this._comment.linked.kind, ref: this._comment.linked.ref }));
+            }
             // Before createPost: that writes a post row, and a cancel after it
             // would leave a stray draft in the feed. Schedules skip the dialog.
             if (!scheduledIso && !(await Components.confirmPublish({
@@ -1623,6 +1785,9 @@ window.Posts = {
             const st = document.getElementById('pp-draft-state');
             if (st) st.textContent = '';
             this._mentionBindings = {};
+            this._comment = { open: false, shared: '', sites: {}, touched: {}, linked: null };
+            this._applyCommentDefaults();
+            this._paintComment();
             this._closeContactForm();
             this._syncMentions();
             this._clearFiles();

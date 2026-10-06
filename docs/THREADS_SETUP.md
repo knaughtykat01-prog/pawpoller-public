@@ -155,6 +155,15 @@ is not a disaster, but it is avoidable.
 > If nothing happens when you click generate, or the token never appears: **you are almost
 > certainly in Chrome.** See §0.
 
+> **Comments under your posts (4.56.0).** PawPoller can add a comment under your own Threads post.
+> That needs one more permission, called `threads_manage_replies`. If PawPoller ever says
+> *"Threads needs the manage-replies permission"*:
+>
+> 1. Go back to the **Permissions and features** tab (§2) and press **Add** next to
+>    `threads_manage_replies`.
+> 2. Come back here and generate a new token. Approve everything it asks for.
+> 3. Paste the new token into PawPoller (§5). Your posts and stats carry on as before.
+
 ---
 
 ## 5. Connect it in PawPoller

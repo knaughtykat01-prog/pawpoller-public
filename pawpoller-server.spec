@@ -8,6 +8,12 @@ Built on Linux x86_64, Linux arm64 and Windows x64 by .github/workflows/build.ym
 from pathlib import Path
 import glob
 import os
+# 4.56.1: the posters are loaded BY NAME (posting/manager.py::_POSTER_CLASSES ->
+# importlib), which PyInstaller's static scan cannot see. 4.54.0-4.56.0 frozen builds
+# shipped without any of them: every publish failed "No module named
+# 'posting.platforms.furaffinity'". Bundle the whole package explicitly.
+from PyInstaller.utils.hooks import collect_submodules
+_POSTERS = collect_submodules('posting.platforms')
 
 block_cipher = None
 
@@ -32,6 +38,7 @@ a = Analysis(
         *_CHANGELOG,
     ],
     hiddenimports=[
+        *_POSTERS,
         'uvicorn.logging',
         'uvicorn.loops',
         'uvicorn.loops.auto',

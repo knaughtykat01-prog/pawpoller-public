@@ -238,7 +238,7 @@ class ThrClient:
 
     # -- Posting --------------------------------------------------------------
 
-    async def create_thread(self, text: str) -> dict | None:
+    async def create_thread(self, text: str, reply_to: str = "") -> dict | None:
         """Publish a text thread (2-step create → publish). Returns {id, url}.
 
         Text-only: the Graph API pulls images from a PUBLIC ``image_url`` (no file
@@ -248,9 +248,11 @@ class ThrClient:
         """
         if not await self.ensure_logged_in():
             return None
-        create = await self._post_form(
-            f"{_API_BASE}/{self.user_id}/threads",
-            {"media_type": "TEXT", "text": text})
+        form = {"media_type": "TEXT", "text": text}
+        if reply_to:
+            # Spec 021: a reply under our own post. Needs threads_manage_replies on the token.
+            form["reply_to_id"] = str(reply_to)
+        create = await self._post_form(f"{_API_BASE}/{self.user_id}/threads", form)
         if not create or not create.get("id"):
             return None
         pub = await self._post_form(

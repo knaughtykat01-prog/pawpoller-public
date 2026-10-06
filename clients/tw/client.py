@@ -803,7 +803,8 @@ class TWClient:
 
     async def create_tweet(self, text: str, media_ids: list[str] | None = None,
                            *, sensitive: bool = False,
-                           tagged_user_ids: list[str] | None = None) -> dict | None:
+                           tagged_user_ids: list[str] | None = None,
+                           reply_to: str = "") -> dict | None:
         """Post a tweet via the internal CreateTweet GraphQL mutation.
 
         Same cookie auth as polling; attaches up to 4 uploaded ``media_ids``
@@ -827,6 +828,9 @@ class TWClient:
             "media": {"media_entities": media_entities, "possibly_sensitive": bool(sensitive)},
             "semantic_annotation_ids": [],
         }
+        if reply_to:
+            # Spec 021: a paired comment. The web client's own reply shape.
+            variables["reply"] = {"in_reply_to_tweet_id": str(reply_to), "exclude_reply_user_ids": []}
         self.last_error = ""
         data = await self._post_graphql(
             _GRAPHQL_CREATE_TWEET, "CreateTweet", variables, _CREATE_TWEET_FEATURES)

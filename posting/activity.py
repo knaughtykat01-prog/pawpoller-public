@@ -87,12 +87,19 @@ def _job(job_id: str | None) -> dict | None:
     return _jobs.get(job_id) if job_id else None
 
 
-def add_line(key: str, label: str | None = None, job_id: str | None = None) -> None:
-    """A line discovered late (a batch learns its sites as it plans)."""
+def add_line(key: str, label: str | None = None, job_id: str | None = None, *,
+             aside: bool = False) -> None:
+    """A line discovered late (a batch learns its sites as it plans).
+
+    ``aside`` (spec 021): a follow-up to a site's post — its paired comment. Shown in the
+    tray, but not a site: it never counts toward "N of M sites" or the job's state, so a
+    comment that didn't go up can't make a post that did look failed (FR-006)."""
     with _lock:
         job = _job(job_id or _current.get())
         if job and key not in job["lines"]:
             job["lines"][key] = _line(key, label or key, time.time())
+            if aside:
+                job["lines"][key]["aside"] = True
 
 
 def step(key: str, step: str, detail: str | None = None, pct: float | None = None) -> None:
@@ -175,7 +182,8 @@ def finish(job_id: str | None = None, *, error: str = "") -> None:
                 ln.update(state="cancelled", step="Not sent", at=now)
         if error:
             job["error"] = error[:400]
-        states = [ln["state"] for ln in job["lines"].values()]
+        states = [ln["state"] for ln in job["lines"].values() if not ln.get("aside")] or \
+            [ln["state"] for ln in job["lines"].values()]
         job["state"] = ("failed" if "failed" in states or error else "cancelled" if job["cancel"] or "cancelled" in states
                         else "done")
         job["finished"] = now

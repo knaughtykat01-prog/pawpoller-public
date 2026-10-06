@@ -1784,6 +1784,16 @@ async def probe_drafts(story_name: str):
     return summary
 
 
+def _store_comments(story: str, platforms, chapters, comments) -> None:
+    """Paired comments for a story publish (spec 021): explicit `comments` are stored as
+    given (empty text = none); None → each reply site's default template."""
+    from posting import paired_comment
+    try:
+        paired_comment.store_piece_comments("story", story, platforms, comments, chapters=chapters)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 class PublishRequest(BaseModel):
     platform: str                 # 'sf', 'ib', 'fa', etc.
     chapter: int                  # 0 = full story; 1+ = specific chapter
@@ -1794,6 +1804,7 @@ class PublishRequest(BaseModel):
     persona_id: int | None = None  # persona-first: account must be this persona's, else refused (4.2.0)
     description_override: str | None = None  # this post only — Publish Check's Telegram box (4.3.0)
     background: bool = False      # spec 017: return {job_id} at once; the activity tray follows it
+    comment: str | None = None    # spec 021: the paired comment for this site; None = its default template
 
 
 @editor_router.post("/stories/{story_name:path}/publish")
@@ -1903,6 +1914,10 @@ async def publish(story_name: str, req: PublishRequest):
             }],
         }
 
+    if req.action == "post":
+        _store_comments(canonical, [req.platform], [req.chapter],
+                        None if req.comment is None else {req.platform: req.comment})
+
     def _run():
         if req.action == "post":
             return manager.post_story(
@@ -1953,6 +1968,7 @@ class ScheduleRequest(BaseModel):
     draft: bool = True
     account_id: int | None = None  # which account to post AS (None = platform default)
     persona_id: int | None = None  # persona-first (4.43.1): checked now AND when the row fires
+    comment: str | None = None    # spec 021: the paired comment; None = the site's default template
 
 
 def _story_persona_check(platforms, account_ids: dict, persona_id) -> None:
@@ -2045,6 +2061,9 @@ async def schedule_publish(story_name: str, req: ScheduleRequest):
 
     # Determine runtime requirement from the poster
     requires = getattr(poster, "requires_mode", "any")
+    if req.action == "post":
+        _store_comments(canonical, [req.platform], [req.chapter],
+                        None if req.comment is None else {req.platform: req.comment})
 
     conn = get_connection()
     try:
@@ -2095,6 +2114,7 @@ class DripRequest(BaseModel):
     chapters: list[int] | None = None   # default: every chapter (1..N)
     account_ids: dict[str, int] | None = None   # {platform: account} (None = platform default)
     persona_id: int | None = None  # persona-first (4.43.1): checked now AND when each row fires
+    comments: dict[str, str] | None = None   # spec 021: {platform: comment}; None = site defaults
 
 
 @editor_router.post("/stories/{story_name:path}/drip")
@@ -2169,6 +2189,8 @@ async def drip_schedule(story_name: str, req: DripRequest):
                             detail="Drip aborted — fix these first: " + " | ".join(failures))
     account_ids = req.account_ids or {}
     _story_persona_check(req.platforms, account_ids, req.persona_id)
+    # After the check: a refused drip must not leave pending comments for a later publish.
+    _store_comments(canonical, req.platforms, chapters, req.comments)
 
     drip_group = uuid.uuid4().hex[:12]
     total = len(chapters)

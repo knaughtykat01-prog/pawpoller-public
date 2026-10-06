@@ -416,6 +416,12 @@ _RULES += [
         "Only resolvable on the box serving /share/{token}.",
     ),
     TableRule(
+        "paired_comments", LOC,
+        "Spec 021. A post's row is keyed by this box's own post_id, which differs between "
+        "installs, and its outcome belongs to the box that sent the reply — shipping it "
+        "would hang a comment under the wrong post.",
+    ),
+    TableRule(
         "pp_meta", LOC,
         "Migration guards. Syncing one either suppresses a backfill this install "
         "still needs or re-runs a destructive one it has already done.",

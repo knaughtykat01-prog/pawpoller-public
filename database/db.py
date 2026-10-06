@@ -1418,6 +1418,17 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
                 if "duplicate column" not in str(e).lower():
                     raise
 
+    # Migration (spec 021): the piece a post is about, for paired-comment placeholders.
+    # The paired_comments table itself is CREATE IF NOT EXISTS in posts_schema.sql.
+    if "posts" in tables:
+        for _col in ("linked_kind TEXT NOT NULL DEFAULT ''",
+                     "linked_ref TEXT NOT NULL DEFAULT ''"):
+            try:
+                conn.execute(f"ALTER TABLE posts ADD COLUMN {_col}")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
+
     # Migration (spec 018): a tag contact's own @alias and its cached handle checks.
     # Additive; also in posts_schema.sql for fresh installs.
     if "post_contacts" in tables:

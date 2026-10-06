@@ -1968,6 +1968,11 @@ const Components = {
                         <span>${esc(b.label || b.code)} text for this post <span class="muted">— optional, this post only. Blank uses the piece's saved ${esc(b.label || b.code)} text, then its description.</span></span>
                         <textarea data-pub-desc="${esc(b.code)}"${b.code === 'tg' ? ' data-pub-tgdesc' : ''} rows="2" maxlength="${b.cap || 900}">${esc(b.value || '')}</textarea>
                     </label>`).join('')}
+                    ${(o.commentBoxes || []).map(b => `<label class="pub-confirm-tgdesc pub-confirm-comment">
+                        <span>💬 ${esc(b.label || b.code)} comment under the post <span class="muted">— optional; posted from the same account once it's up.${b.template ? ` From your “${esc(b.template)}” template.` : ''} Clear it for no comment.</span></span>
+                        <textarea data-pub-comment="${esc(b.code)}" rows="2" maxlength="2000"
+                            aria-label="${esc(b.label || b.code)} comment under the post">${esc(b.value || '')}</textarea>
+                    </label>`).join('')}
                     <p class="pub-confirm-note muted">This goes out live. Taking it down afterwards means doing it on each site by hand.</p>
                     <div class="pub-confirm-actions">
                         <button type="button" class="btn btn-secondary" data-pub-cancel>Cancel</button>
@@ -2009,8 +2014,18 @@ const Components = {
                 });
                 const chosen = [...ov.querySelectorAll('[data-pub-render]')]
                     .filter(el => el.checked).map(el => el.dataset.pubRender);
+                // Spec 021: present only when the dialog offered comment boxes. A cleared box is
+                // sent as '' — "no comment here" — so the server doesn't fall back to the default.
+                let comments;
+                if ((o.commentBoxes || []).length) {
+                    comments = {};
+                    ov.querySelectorAll('[data-pub-comment]').forEach(el => {
+                        comments[el.dataset.pubComment] = (el.value || '').trim();
+                    });
+                }
                 done({
                     ok: true,
+                    comments,
                     descriptions,
                     tgDescription: descriptions.tg || '',   // the 4.3.0 name, kept for callers that read it
                     // Only when the piece HAS renders and more than the default is picked —
@@ -2051,10 +2066,12 @@ const Components = {
             // would carry a "primary" nobody asked about.
             const variant = r.variant
                 ? `<span class="pub-result-variant">${esc(r.variant)} render</span>` : '';
+            // Spec 021: the paired comment's own outcome, under its site — never folded into it.
+            const comment = (r.comment && window.Comments) ? Comments.stateHtml(r.comment, { block: true }) : '';
             return `<li class="pub-result ${ok ? 'is-ok' : skipped ? 'is-skip' : 'is-fail'}">
                 <span class="pub-result-mark">${ok ? '✓' : skipped ? '–' : '✗'}</span>
                 <span class="pub-result-plat">${esc(p.emoji || '')} ${esc(p.label)}</span>
-                <span class="pub-result-what">${what}${variant}</span>
+                <span class="pub-result-what">${what}${variant}${comment}</span>
             </li>`;
         }).join('');
         return `<ul class="pub-results">${rows}</ul>`;
@@ -2072,6 +2089,7 @@ const Components = {
         const prev = anchor.parentElement && anchor.parentElement.querySelector('.pub-results');
         if (prev) prev.remove();
         anchor.insertAdjacentHTML('afterend', this.publishResults(results, opts));
+        if (window.Comments && anchor.parentElement) Comments.wireRetry(anchor.parentElement);
         return fails;
     },
 

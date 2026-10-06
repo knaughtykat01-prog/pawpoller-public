@@ -13,6 +13,12 @@ from pathlib import Path
 import glob
 import os
 import sys
+# 4.56.1: the posters are loaded BY NAME (posting/manager.py::_POSTER_CLASSES ->
+# importlib), which PyInstaller's static scan cannot see. 4.54.0-4.56.0 frozen builds
+# shipped without any of them: every publish failed "No module named
+# 'posting.platforms.furaffinity'". Bundle the whole package explicitly.
+from PyInstaller.utils.hooks import collect_submodules
+_POSTERS = collect_submodules('posting.platforms')
 
 block_cipher = None
 
@@ -59,6 +65,7 @@ a = Analysis(
         *_CHANGELOG,
     ],
     hiddenimports=[
+        *_POSTERS,
         # Startup update splash (4.9.0) — imported inside a function, so the
         # static scan misses it; without these the packaged app updates silently.
         'tkinter',
