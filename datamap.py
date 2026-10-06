@@ -466,6 +466,10 @@ _PATHS = (
     P("data/promos/", "Unpublished work", "Promo images and their backgrounds.", backup="files"),
     P("data/ig_pending/", "Unpublished work", "Pictures waiting to go to Instagram.", backup="derivable"),
     P("data/thumbs/", "Unpublished work", "Small copies of covers, remade when needed.", backup="derivable"),
+    # 4.56.2: the one-off e621 retag (E6CAT, 2026-10-01) saved each post's tags first, one file per run.
+    P("data/e621_tag_backup_<unix>.json", "People you work with",
+      "Your e621 posts' tags from before a bulk retag; they name the artists and characters on each post.",
+      backup="files"),
     P("data/trello_covers/", "Your boards", "Card cover images, fetched again from Trello when needed.",
       backup="derivable"),
     P("data/commission_files/", "People you work with", "Files a commission client sent you.", backup="files"),
@@ -490,13 +494,15 @@ _ACCT = re.compile(r"^acct_\d+_(.+)$")
 
 
 _STAMP = r"\d{8}-\d{6}(?:-\d+)?"   # <stamp>: a UTC time stamp in a file name, 20260930-024500[-2]
+_UNIX = r"\d{9,11}"                 # <unix>: seconds since 1970 in a file name, 1790833248
 
 
 def _compile(entry: Entry) -> re.Pattern | None:
-    if "<P>" not in entry.name and "<stamp>" not in entry.name:
+    if "<P>" not in entry.name and "<stamp>" not in entry.name and "<unix>" not in entry.name:
         return None
     alts = "|".join(re.escape(p) for p in PLATFORM_PREFIXES)
-    pat = re.escape(entry.name).replace(re.escape("<P>"), f"(?:{alts})").replace(re.escape("<stamp>"), _STAMP)
+    pat = (re.escape(entry.name).replace(re.escape("<P>"), f"(?:{alts})")
+           .replace(re.escape("<stamp>"), _STAMP).replace(re.escape("<unix>"), _UNIX))
     return re.compile("^" + pat + "$")
 
 

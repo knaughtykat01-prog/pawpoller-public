@@ -308,7 +308,10 @@ def _resolve_creds(platform: str, account_id: int | None,
     """
     conn = get_connection()
     try:
-        if account_id is None:
+        # 0 is the legacy "unset" (old rows): resolve it like None, so the never-post check
+        # below sees the real default account's id rather than a 0 nothing matches
+        # (CMTNEVERPOST0, 4.56.2 — every caller of this, posts and comments, goes through here).
+        if not account_id:
             account_id = accounts_db.get_default_account_id(conn, platform, create=False)
         acct = accounts_db.get_account(conn, account_id) if account_id else None
     finally:

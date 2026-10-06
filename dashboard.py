@@ -573,8 +573,9 @@ _PUBLISH_WHEN_OPEN = re.compile(
     # episode, its artwork, or deleting one changes what the public /feed/ RSS serves.
     # 4.51.0 (release review, High): Retry in the activity tray re-runs a publish — a
     # stranger who read a job id off /api/activity could otherwise post another live copy.
-    # 4.56.0 (spec 021): Retry comment posts a live reply.
-    r"|masterpieces/.+/sync|podcasts|activity/[^/]+/retry|comments/[^/]+/retry)(/|$)")
+    # 4.56.0 (spec 021): Retry comment posts a live reply. 4.56.2 (CMTTPLOPEN): a site's
+    # default template rides every later publish that doesn't say otherwise, as a live reply.
+    r"|masterpieces/.+/sync|podcasts|activity/[^/]+/retry|comments/[^/]+/retry|comments/templates)(/|$)")
 
 
 def _sensitive_when_open(request: Request) -> bool:

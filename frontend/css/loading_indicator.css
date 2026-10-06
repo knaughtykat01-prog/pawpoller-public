@@ -826,7 +826,7 @@ a.pp-notif-reconnect { text-decoration: none; text-align: center; }   /* the upd
 .act-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
 
 @media (max-width: 768px) {
-  .act-pill { top: calc(env(safe-area-inset-top, 0px) + 58px); right: 10px; min-width: 0; min-height: 44px; }
+  .act-pill { top: calc(var(--mbar-h, 58px) + 6px); right: 10px; min-width: 0; min-height: 44px; }
   .act-pill .act-segs, .act-pill .act-t2 { display: none; }
   .act-tray { top: auto; bottom: 0; right: 0; left: 0; width: auto; max-width: none; max-height: 80vh;
     border-radius: 18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }

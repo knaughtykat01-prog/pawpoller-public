@@ -80,6 +80,8 @@
                 // The link comes from the site's API (a Mastodon instance can say anything): scheme-checked.
                 const safe = c.external_url && window.Utils && Utils.safeUrl ? Utils.safeUrl(c.external_url) : '';
                 what = safe ? `<a href="${esc(safe)}" target="_blank" rel="noopener">Comment posted ↗</a>` : 'Comment posted';
+            } else if (c.status === 'sending') {
+                what = 'Comment going up…';
             } else if (c.waiting) {
                 what = 'Comment waiting on the post';
             } else if (c.status === 'pending') {

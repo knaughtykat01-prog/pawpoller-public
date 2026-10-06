@@ -3850,7 +3850,7 @@ html[data-mobile="1"] .format-tabs {
 html[data-mobile="1"] .editor-toolbar {
     flex-wrap: wrap;
     gap: 6px;
-    padding: 8px 10px 8px calc(env(safe-area-inset-left, 0px) + 60px);
+    padding: 8px 10px;   /* the phone bar (4.56.2) keeps the hamburger off the toolbar */
 }
 
 html[data-mobile="1"] .editor-toolbar .btn {
@@ -4129,7 +4129,6 @@ html[data-mobile="1"] .stat-card .delta {
 html[data-mobile="1"] .page-header {
     margin-bottom: 12px;
     gap: 8px;
-    padding-left: calc(env(safe-area-inset-left, 0px) + 60px);
     /* 2.16.6: action-button rows (Settings has Save Settings, Poll Now,
      * Full Resync, Clear Session = 4 buttons) live in a sibling div with
      * inline display:flex. Without flex-wrap they force the document to

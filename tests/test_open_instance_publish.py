@@ -28,6 +28,8 @@ PUBLISH = [
     ("post", "/api/activity/abc123/retry/fa"),
     # 4.56.0 (spec 021): Retry comment posts a live reply.
     ("post", "/api/comments/7/retry"),
+    # 4.56.2 (CMTTPLOPEN): a default template becomes a live reply on a later publish.
+    ("put", "/api/comments/templates"),
 ]
 
 

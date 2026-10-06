@@ -38,8 +38,8 @@ def put_pending(conn: sqlite3.Connection, kind: str, ref, chapter: int, platform
         "SELECT id, status FROM paired_comments WHERE owner_kind=? AND owner_ref=? "
         "AND chapter_index=? AND platform=?", (kind, ref, int(chapter or 0), platform)).fetchone()
     m = json.dumps(mentions or [])
-    if cur and cur["status"] == "posted":
-        return None
+    if cur and cur["status"] in ("posted", "sending"):
+        return None                       # live, or going up right now: leave it be
     if cur:
         conn.execute(
             "UPDATE paired_comments SET text=?, mentions=?, template=?, status='pending', error='', "
@@ -108,12 +108,27 @@ def claim_due(conn: sqlite3.Connection, now: str, limit: int = 3) -> list[dict]:
         "AND next_try_at <= ? ORDER BY next_try_at LIMIT ?", (now, int(limit))).fetchall()
     out = []
     for r in rows:
-        n = conn.execute("UPDATE paired_comments SET next_try_at='' WHERE id=? AND next_try_at=?",
-                         (r["id"], r["next_try_at"])).rowcount
+        # updated_at = now: Retry reads "sending since" to tell a live send from a stuck one.
+        n = conn.execute("UPDATE paired_comments SET next_try_at='', status='sending', updated_at=? "
+                         "WHERE id=? AND next_try_at=? AND status='failed'",
+                         (now, r["id"], r["next_try_at"])).rowcount
         if n:
             out.append(r["id"])
     conn.commit()
     return [get(conn, i) for i in out]
+
+
+def claim(conn: sqlite3.Connection, comment_id: int, from_status: str, seen_updated_at: str,
+          now: str = "") -> bool:
+    """Take a row for sending (CMTRETRYCLAIM, 4.56.2): status -> 'sending' only if its status AND
+    updated_at are still what the sender read — a compare-and-swap. Two senders (two Retry presses,
+    the automatic retry, a publish's own pass) can't both win, including on a stuck 'sending' row
+    that Retry is allowed to take back after 10 minutes, so a comment never goes up twice."""
+    n = conn.execute("UPDATE paired_comments SET status='sending', updated_at=? "
+                     "WHERE id=? AND status=? AND updated_at=?",
+                     (now, int(comment_id), from_status, seen_updated_at or "")).rowcount
+    conn.commit()
+    return bool(n)
 
 
 def rows_for_owner(conn: sqlite3.Connection, kind: str, ref) -> list[dict]:

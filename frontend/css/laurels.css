@@ -260,9 +260,6 @@ html[data-mode="brut"] .wm { border-width: 2px; border-radius: 4px; }
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
-    /* Clear the fixed mobile hamburger (top-left) so "Your den" + "Laurels"
-       aren't hidden under it (env() adds the iOS status-bar inset). */
-    .lr-head { padding-top: calc(env(safe-area-inset-top, 0px) + 44px); }
     .lr-hero { grid-template-columns: 1fr; }
     /* Medals are a compact 2-up grid on phones. The desktop auto-fill
        (minmax 180px) + gap only fits one column at ~360px, which stacks all

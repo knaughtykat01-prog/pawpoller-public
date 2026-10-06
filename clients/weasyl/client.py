@@ -63,7 +63,8 @@ def _refusal(text: str) -> str:
          or re.search(r'<title>(.*?)</title>', text, re.S | re.I))
     if not m:
         return ""
-    words = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m.group(1)))
+    # `<[^>]*>?` also eats an unclosed tag at the end (WSREFUSAL, 4.56.2); any stray < > left go too.
+    words = re.sub(r"\s+", " ", re.sub(r"[<>]", " ", re.sub(r"<[^>]*>?", " ", m.group(1))))
     return re.sub(r" ([.,!?;:])", r"\1", words).strip()[:200]
 
 
@@ -587,7 +588,13 @@ class WeasylClient:
         url = "https:" + url if url.startswith("//") else (url if url.startswith("http") else "https://www.weasyl.com" + url)
         from io import BytesIO
         from PIL import Image
-        w, h = Image.open(BytesIO((await self._http.get(url, follow_redirects=True)).content)).size
+        # The image is fetched WITHOUT the keyed client (WSKEYHOST, 4.56.2): `src` comes from the
+        # page, and the keyed client sends X-Weasyl-API-Key to whatever host it names.
+        if not url.startswith("https://"):
+            logger.info("WS: cover image on %s isn't https — not fetched", submission_id)
+            return False
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as plain:
+            w, h = Image.open(BytesIO((await plain.get(url)).content)).size
         await self._post_form(page_path, "/manage/thumbnail",
                               {"submitid": str(submission_id), "x1": "0", "y1": "0", "x2": str(w), "y2": str(h)})
         return True

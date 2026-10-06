@@ -144,7 +144,97 @@ window.Bookshelf = {
         this._loadPartsState();
         this._renderControls();
         this._paint();
+        this._mountFab();
         this._loadDiscovered();   // discovered-art import banner (moved from Submissions)
+    },
+
+    /* ── Phone: the filters fold into a button (4.56.2, LIBFAB) ──────────────────
+     * On a phone the filter block sits at the top of the Library. Scrolled past, it folds
+     * into a "Filters" pill in the top bar ("Filters · Artwork · 2"); tapping the pill drops
+     * the same block down from the bar as a panel. It tucks away again on a tap outside,
+     * a scroll, Escape, or the pill. The block isn't moved — it turns into a fixed panel
+     * while open, with a placeholder holding its space so the page doesn't jump.
+     * Desktop keeps the sticky bar (4.45.1). */
+    _TYPE_LABEL: { all: 'All', story: 'Stories', artwork: 'Artwork', discovered: 'Discovered', unfiled: 'Unfiled' },
+
+    _mountFab() {
+        this._unmountFab();
+        const ctl = document.getElementById('shelf-controls');
+        if (!ctl || !window.IntersectionObserver) return;
+        const fab = document.createElement('button');
+        fab.type = 'button';
+        fab.id = 'shelf-fab';
+        fab.className = 'shelf-fab';
+        fab.setAttribute('aria-controls', 'shelf-controls');
+        fab.setAttribute('aria-expanded', 'false');
+        document.body.appendChild(fab);
+        this._fab = fab;
+        this._paintFab();
+        const root = document.documentElement;
+        // The bar's real height (--mbar-h is a calc() with the notch inset, so read the strip itself).
+        const barH = () => parseFloat(getComputedStyle(document.body, '::before').height) || 64;
+        this._fabObs = new IntersectionObserver(([e]) => {
+            if (root.classList.contains('shelf-open')) return;   // the open panel isn't "scrolled past"
+            root.classList.toggle('shelf-folded', !e.isIntersecting && e.boundingClientRect.top < barH());
+        }, { rootMargin: `-${Math.round(barH())}px 0px 0px 0px` });
+        this._fabObs.observe(ctl);
+        fab.addEventListener('click', (ev) => { ev.stopPropagation(); this._toggleFab(); });
+        this._fabOff = (ev) => {
+            if (!root.classList.contains('shelf-open')) return;
+            if (ev.type === 'keydown') { if (ev.key === 'Escape') this._toggleFab(false); return; }
+            if (ev.type === 'scroll') { if (Math.abs(window.scrollY - this._fabY) > 40) this._toggleFab(false); return; }
+            if (!ctl.contains(ev.target) && ev.target !== fab && !fab.contains(ev.target)) this._toggleFab(false);
+        };
+        document.addEventListener('click', this._fabOff, true);
+        document.addEventListener('keydown', this._fabOff);
+        window.addEventListener('scroll', this._fabOff, { passive: true });
+        this._fabLeave = () => this._unmountFab();
+        window.addEventListener('hashchange', this._fabLeave, { once: true });
+    },
+
+    _unmountFab() {
+        const root = document.documentElement;
+        root.classList.remove('shelf-folded', 'shelf-open');
+        if (this._fabObs) { this._fabObs.disconnect(); this._fabObs = null; }
+        if (this._fabOff) {
+            document.removeEventListener('click', this._fabOff, true);
+            document.removeEventListener('keydown', this._fabOff);
+            window.removeEventListener('scroll', this._fabOff);
+            this._fabOff = null;
+        }
+        if (this._fabLeave) { window.removeEventListener('hashchange', this._fabLeave); this._fabLeave = null; }
+        const old = document.getElementById('shelf-fab');
+        if (old) old.remove();
+        const sp = document.getElementById('shelf-controls-spacer');
+        if (sp) sp.remove();
+        this._fab = null;
+    },
+
+    _toggleFab(open) {
+        const root = document.documentElement;
+        const ctl = document.getElementById('shelf-controls');
+        if (!ctl || !this._fab) return;
+        const want = open === undefined ? !root.classList.contains('shelf-open') : open;
+        if (want) {
+            let sp = document.getElementById('shelf-controls-spacer');
+            if (!sp) { sp = document.createElement('div'); sp.id = 'shelf-controls-spacer'; ctl.before(sp); }
+            sp.style.height = ctl.offsetHeight + 'px';
+            this._fabY = window.scrollY;
+            root.classList.add('shelf-open');
+        } else {
+            root.classList.remove('shelf-open');
+            const sp = document.getElementById('shelf-controls-spacer');
+            if (sp) sp.remove();
+        }
+        this._fab.setAttribute('aria-expanded', String(want));
+    },
+
+    _paintFab() {
+        if (!this._fab) return;
+        const n = [this._persona, (this._search || '').trim(), this._status && this._status !== 'all',
+                   this._platform].filter(Boolean).length;
+        this._fab.innerHTML = `<svg class="ico" aria-hidden="true" width="16" height="16"><use href="#i-filter"/></svg> Filters · ${this.esc(this._TYPE_LABEL[this._type] || 'All')}`
+            + (n ? ` <span class="shelf-fab-n" aria-label="${n} more filter${n === 1 ? '' : 's'} on">${n}</span>` : '');
     },
 
     /* Discovered-art import banner — ported from the retired Submissions hub.
@@ -441,6 +531,7 @@ window.Bookshelf = {
             Masterpieces._selMode = false; Masterpieces._sel.clear();
         }
         if (window.Masterpieces && Masterpieces._paintSelBar) Masterpieces._paintSelBar();
+        this._paintFab();
         // Discovered — the polled-but-unlinked review queue, folded in from the
         // retired Artwork hub (2.155.0). Submissions owns the rows AND their
         // actions (link · import · ★ Master · 🚫 Ignore · per-platform bulk);

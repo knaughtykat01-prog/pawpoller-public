@@ -922,7 +922,16 @@ html[data-mobile="1"] .mobile-bar .acct-menu::before {
     background: var(--border); margin: 2px 0 6px;
 }
 html[data-mobile="1"] .mobile-bar .acct-item { min-height: 44px; font-size: 15px; }
-/* The page title sits left; keep it clear of the three buttons. */
-html[data-mobile="1"] .page-header { padding-right: 150px; }
-html[data-mobile="1"] .page-header > *:not(:first-child) { margin-right: -150px; }
-html[data-mobile="1"] .context-bar { padding-right: 160px; }
+/* 4.56.2 (PHONEBAR): a solid bar behind ☰ and the cluster. Before it the buttons floated over
+   the page, so titles, chips and pictures scrolled underneath them and every page carried its own
+   padding to dodge them. The strip sits under the hamburger (z 12) and the cluster (z 41), above
+   the page; the drawer (40) and its overlay (35) still cover it. The page starts below it, so
+   those per-page dodges are gone (bookshelf, laurels, editor, context bar). */
+html[data-mobile="1"] { --mbar-h: calc(env(safe-area-inset-top, 0px) + 64px); }
+html[data-mobile="1"] body::before {
+    content: ""; position: fixed; top: 0; left: 0; right: 0; height: var(--mbar-h); z-index: 11;
+    background: var(--bg-primary); border-bottom: 1px solid var(--border);
+}
+html[data-mobile="1"] .main-col { padding-top: var(--mbar-h); }
+html[data-mobile="1"] .context-bar { padding-left: 16px; padding-right: 16px; }
+html[data-mobile="1"] .settings-rail { top: calc(var(--mbar-h) + 8px); }

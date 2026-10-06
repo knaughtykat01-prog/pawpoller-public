@@ -85,11 +85,32 @@ def test_edit_posts_the_current_values_with_only_the_changes_then_tags():
                                                                    "tags": "a b"})
 
 
-def test_cover_replaces_cover_then_crops_the_thumbnail(tmp_path):
+def test_cover_replaces_cover_then_crops_the_thumbnail(tmp_path, monkeypatch):
     img = tmp_path / "c.png"
     img.write_bytes(b"\x89PNG")
     c, calls = _client()
+    # WSKEYHOST (4.56.2): the cover image is fetched by a PLAIN client, never the keyed one.
+    plain = []
+
+    class _Plain:
+        def __init__(self, **kw): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+
+        async def get(self, url):
+            plain.append(url)
+            import io
+            from PIL import Image
+            buf = io.BytesIO()
+            Image.new("RGB", (300, 240)).save(buf, "PNG")
+            r = _Resp()
+            r.content = buf.getvalue()
+            return r
+    import clients.weasyl.client as wsmod
+    monkeypatch.setattr(wsmod.httpx, "AsyncClient", _Plain)
     asyncio.run(c.reupload_cover("5", str(img)))
+    assert plain == ["https://cdn.weasyl.com/static/media/cover.png"]
+    assert not any(x[0] == "GET" and x[1].endswith("cover.png") for x in calls), "the keyed client fetched the image"
     posts = [x for x in calls if x[0] == "POST"]
     assert [(p[1], p[3]) for p in posts] == [("https://www.weasyl.com/reupload/cover", ["coverfile"]),
                                             ("https://www.weasyl.com/manage/thumbnail", [])]

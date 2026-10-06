@@ -4805,23 +4805,58 @@ const App = {
         document.body.appendChild(box);
     },
 
+    /* The time zone <option>s (Settings, persona preferred time). 4.56.2 (TZPICK): it was ~420 raw
+       names in one alphabetical run ("Asia/Novosibirsk…"), so finding your own meant scrolling
+       through Asia. Now: this computer, UTC, the zones most installs want, then every zone grouped
+       by region as "City · UTC+11:00". Values are unchanged — saved settings keep working. */
+    _TZ_COMMON: ['Australia/Sydney', 'Australia/Melbourne', 'Australia/Brisbane', 'Australia/Adelaide',
+        'Australia/Perth', 'Australia/Darwin', 'Australia/Hobart', 'Pacific/Auckland', 'Asia/Tokyo',
+        'Asia/Singapore', 'Europe/London', 'Europe/Berlin', 'America/New_York', 'America/Chicago',
+        'America/Denver', 'America/Los_Angeles'],
+
+    _tzOffset(z) {
+        this._tzOffCache = this._tzOffCache || {};
+        if (z in this._tzOffCache) return this._tzOffCache[z];
+        let off = '';
+        try {
+            const part = new Intl.DateTimeFormat('en-US', { timeZone: z, timeZoneName: 'longOffset' })
+                .formatToParts(new Date()).find(x => x.type === 'timeZoneName');
+            off = part ? (part.value === 'GMT' ? 'UTC+00:00' : part.value.replace('GMT', 'UTC')) : '';
+        } catch (e) { off = ''; }
+        return (this._tzOffCache[z] = off);
+    },
+
     _timezoneOptions(current) {
         const esc = (s) => (window.Utils && Utils.escapeHtml ? Utils.escapeHtml(s) : s);
-        const pretty = (z) => esc(String(z).replace(/_/g, ' '));
+        const pretty = (z) => String(z).replace(/_/g, ' ');
         let zones = [];
         try { zones = (Intl.supportedValuesOf && Intl.supportedValuesOf('timeZone')) || []; } catch (e) { zones = []; }
         let here = '';
         try { here = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { here = ''; }
-        zones = zones.filter(z => z !== here && z !== 'UTC');
+        const withOff = (z, label) => { const o = this._tzOffset(z); return o ? `${label} · ${o}` : label; };
+        const opt = (val, label) => `<option value="${esc(val)}"${val === current ? ' selected' : ''}>${esc(label)}</option>`;
+        const used = new Set();
         const head = [];
-        if (here) head.push([here, `This computer — ${pretty(here)}`]);
+        if (here) { head.push(opt(here, withOff(here, `This computer — ${pretty(here)}`))); used.add(here); }
         // A machine set to UTC is its own "this computer" row — offering UTC again would
         // list it twice and select both (CI runs on exactly such a machine).
-        if (here !== 'UTC') head.push(['UTC', 'UTC']);
-        if (current && current !== here && current !== 'UTC' && !zones.includes(current)) head.push([current, pretty(current)]);
-        return head.concat(zones.map(z => [z, pretty(z)]))
-            .map(([val, label]) => `<option value="${esc(val)}"${val === current ? ' selected' : ''}>${label}</option>`)
-            .join('');
+        if (!used.has('UTC')) { head.push(opt('UTC', 'UTC')); used.add('UTC'); }
+        if (current && !used.has(current) && !zones.includes(current)) { head.push(opt(current, pretty(current))); used.add(current); }
+        const known = new Set(zones);
+        const common = this._TZ_COMMON.filter(z => known.has(z) && !used.has(z));
+        common.forEach(z => used.add(z));
+        const groups = {};
+        zones.filter(z => !used.has(z)).forEach(z => {
+            const i = z.indexOf('/');
+            const region = i > 0 ? z.slice(0, i) : 'Other';
+            (groups[region] = groups[region] || []).push(z);
+        });
+        const city = (z) => pretty(z.indexOf('/') > 0 ? z.slice(z.indexOf('/') + 1) : z).replace(/\//g, ' – ');
+        const group = (label, list, name) => list.length
+            ? `<optgroup label="${esc(label)}">${list.map(z => opt(z, withOff(z, name(z)))).join('')}</optgroup>` : '';
+        return head.join('')
+            + group('Common', common, pretty)
+            + Object.keys(groups).sort().map(r => group(r, groups[r], city)).join('');
     },
 
     /* ── Top bar (spec 019) ─────────────────────────────────── */

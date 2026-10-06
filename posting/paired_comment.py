@@ -381,6 +381,19 @@ async def _send_row(row: dict, parent: dict, text: str, *, rating: str, account_
                     automatic: bool = False) -> dict:
     """Send one stored comment and record the outcome on its own activity line."""
     from posting import activity
+    # Every send claims, on what this sender read (status + updated_at). claim_due's own claim
+    # stamped the row it handed over, so the automatic retry re-claims its own row and wins;
+    # anyone who read it earlier — a second Retry press, a second tab — loses and sends nothing.
+    now = _now()
+    conn = get_connection()
+    try:
+        won = cq.claim(conn, row["id"], row["status"], row.get("updated_at") or "", now=now)
+        current = cq.get(conn, row["id"])
+    finally:
+        conn.close()
+    if not won:                               # someone else is sending it, or already did
+        return current or row
+    row = {**row, "status": "sending", "updated_at": now}
     key = f"{row['platform']}:comment"
     activity.add_line(key, f"{label(row['platform'])} — comment", aside=True)
     activity.step(key, "Comment")
@@ -524,6 +537,23 @@ async def comment_pass_pieces(kind: str, name: str, results: list[dict],
 
 # ── Writing piece comments (routes) ───────────────────────────────────────────
 
+def _clean_mentions(raw) -> list[dict]:
+    """Only [{token: str, contact_id: int}] is stored (CMTMENTIONS, 4.56.2): anything else used to
+    reach the sender and fail there with a 500 on Retry. Malformed entries are dropped."""
+    out = []
+    for m in raw if isinstance(raw, list) else []:
+        if not isinstance(m, dict):
+            continue
+        token = str(m.get("token") or "").strip().lstrip("@")[:60]
+        try:
+            cid = int(m.get("contact_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if token and cid > 0:
+            out.append({"token": token, "contact_id": cid})
+    return out[:50]
+
+
 def store_piece_comments(kind: str, name: str, platforms, comments, *, chapters=(0,),
                          settings: dict | None = None) -> None:
     """The rule every piece route follows (tasks D2): ``comments`` present (even ``{}``)
@@ -559,7 +589,7 @@ def store_piece_comments(kind: str, name: str, platforms, comments, *, chapters=
                 else:
                     c = comments.get(p)
                     if isinstance(c, dict):
-                        text, mentions, tname = str(c.get("text") or ""), c.get("mentions") or [], str(c.get("template") or "")
+                        text, mentions, tname = str(c.get("text") or ""), _clean_mentions(c.get("mentions")), str(c.get("template") or "")[:60]
                     else:
                         text, mentions, tname = str(c or ""), [], ""
                     if not text.strip():
@@ -593,7 +623,7 @@ def store_post_comments(post_id: int, comments, *, linked: dict | None = None,
             if p not in REPLY_PLATFORMS:
                 continue
             if isinstance(c, dict):
-                text, mentions, tname = str(c.get("text") or ""), c.get("mentions") or [], str(c.get("template") or "")
+                text, mentions, tname = str(c.get("text") or ""), _clean_mentions(c.get("mentions")), str(c.get("template") or "")[:60]
             else:
                 text, mentions, tname = str(c or ""), [], ""
             if not text.strip():
@@ -616,6 +646,14 @@ def store_post_comments(post_id: int, comments, *, linked: dict | None = None,
 
 
 # ── Manual + automatic retry ──────────────────────────────────────────────────
+
+def _stale(row: dict, minutes: int = 10) -> bool:
+    try:
+        t = datetime.strptime(row.get("updated_at") or "", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return True
+    return datetime.now(timezone.utc) - t > timedelta(minutes=minutes)
+
 
 def _live_parent(row: dict) -> tuple[dict | None, int | None, str]:
     """(parent, account_id, rating) of the live post this comment belongs under, or
@@ -663,6 +701,11 @@ async def resend(comment_id: int, settings: dict | None = None, *, automatic: bo
         raise LookupError("no such comment")
     if row["status"] == "posted":
         return summary(row)
+    if not automatic and row["status"] in ("pending", "sending") and not _stale(row):
+        # Pending = it goes up with its post's own pass; sending = it is going up now. Either
+        # way a manual press here is the second sender. After 10 minutes, assume it got stuck.
+        raise RuntimeError("that comment is already on its way up" if row["status"] == "sending"
+                           else "that comment goes up with its post — no need to retry it")
     parent, account_id, rating = _live_parent(row)
     if parent is None:
         raise RuntimeError(rating)

@@ -372,3 +372,88 @@ class TestActivity:
         job = next(j for j in activity.snapshot() if j["id"] == jid)
         assert job["state"] == "done"
         assert any(l.get("aside") for l in job["lines"])
+
+# ── 4.56.2: the six release-review follow-ups ─────────────────────────────────
+
+class TestReviewFollowUps:
+    def _live_failed(self, conn):
+        pid = _post(conn)
+        q.upsert_post_publication(conn, post_id=pid, platform="bsky", account_id=7, status="posted",
+                                  external_id=f"bsky-{pid}", now="t")
+        rid = cq.put_pending(conn, "post", pid, 0, "bsky", "x", now="t")
+        cq.mark(conn, rid, "failed", now="t", error="timeout")
+        return rid
+
+    def test_a_claimed_comment_cannot_be_sent_twice(self, conn, replies):
+        """CMTRETRYCLAIM: the automatic retry took it; a Retry press now must not send it again."""
+        calls, _ = replies
+        rid = self._live_failed(conn)
+        cq.mark(conn, rid, "failed", now="t", next_try_at="2000-01-01 00:00:00")
+        claimed = cq.claim_due(conn, _now())
+        assert claimed and claimed[0]["status"] == "sending"
+        with pytest.raises(RuntimeError, match="already on its way"):
+            asyncio.run(pc.resend(rid))
+        assert calls == []
+        asyncio.run(pc.resend(rid, automatic=True))           # the claimer itself goes ahead
+        assert len(calls) == 1 and cq.get(conn, rid)["status"] == "posted"
+
+    def test_a_lost_claim_sends_nothing(self, conn, replies):
+        calls, _ = replies
+        rid = self._live_failed(conn)
+        row = cq.get(conn, rid)
+        assert cq.claim(conn, rid, "failed", row["updated_at"])   # someone else got there first
+        asyncio.run(pc._send_row(row, {"id": "p"}, "x", rating="general", account_id=7, settings={}))
+        assert calls == []
+
+    def test_a_stuck_send_can_be_retried_after_ten_minutes(self, conn, replies):
+        calls, _ = replies
+        rid = self._live_failed(conn)
+        conn.execute("UPDATE paired_comments SET status='sending', updated_at='2000-01-01 00:00:00' WHERE id=?", (rid,))
+        conn.commit()
+        assert asyncio.run(pc.resend(rid))["status"] == "posted" and len(calls) == 1
+
+    def test_two_retries_on_a_stuck_send_post_once(self, conn, replies):
+        """The 4.56.2 release review's Medium: Retry may take back a 'sending' row after 10 minutes —
+        two presses (two tabs, a double tap) must still send it once."""
+        calls, _ = replies
+        rid = self._live_failed(conn)
+        conn.execute("UPDATE paired_comments SET status='sending', updated_at='2000-01-01 00:00:00' WHERE id=?", (rid,))
+        conn.commit()
+        stale = cq.get(conn, rid)                            # both presses read the same stuck row
+        assert asyncio.run(pc._send_row(stale, {"id": "p"}, "x", rating="general", account_id=7, settings={}))["status"] == "posted"
+        asyncio.run(pc._send_row(stale, {"id": "p"}, "x", rating="general", account_id=7, settings={}))
+        assert len(calls) == 1
+
+    def test_malformed_mentions_are_dropped_on_store(self, conn):
+        """CMTMENTIONS."""
+        pid = _post(conn)
+        pc.store_post_comments(pid, {"bsky": {"text": "hi", "mentions": 5}})
+        pc.store_post_comments(pid, {"mast": {"text": "hi", "mentions": [
+            {"token": "@luna", "contact_id": "3"}, {"token": "", "contact_id": 1}, "junk", {"token": "x", "contact_id": "no"}]}})
+        rows = {r["platform"]: r for r in cq.rows_for_owner(conn, "post", pid)}
+        assert "bsky" not in rows or rows["bsky"]["mentions"] == []
+        assert rows["mast"]["mentions"] == [{"token": "luna", "contact_id": 3}]
+
+    def test_account_zero_resolves_to_the_default_account(self, monkeypatch):
+        """CMTNEVERPOST0: a legacy 0 must reach the never-post check as the default account's id."""
+        from database import accounts as accounts_db
+        monkeypatch.setattr(accounts_db, "get_default_account_id", lambda conn, p, create=False: 42)
+        monkeypatch.setattr(accounts_db, "get_account", lambda conn, a: {"is_default": 1})
+        monkeypatch.setattr(config, "resolve_account_credentials", lambda *a, **k: {})
+        assert post_publisher._resolve_creds("tw", 0, {})[0] == 42
+        monkeypatch.setattr(accounts_db, "never_post_ids", lambda s=None: {42})
+        out = asyncio.run(pc.send_reply("tw", 0, {"id": "1"}, "hi"))
+        assert not out["success"] and out["error"] == accounts_db.NEVER_POST_ERROR
+
+    def test_weasyl_refusal_text_carries_no_markup(self):
+        """WSREFUSAL: an unclosed tag at the end of Weasyl's error used to survive."""
+        from clients.weasyl.client import _refusal
+        out = _refusal('<div class="error">Nope <b>bad</b> <script src=x</div>')
+        assert "<" not in out and ">" not in out and "Nope" in out
+
+    def test_weasyl_cover_fetch_never_uses_the_keyed_client(self):
+        """WSKEYHOST: the cover image comes from a page-supplied URL; the keyed client must not fetch it."""
+        src = open("clients/weasyl/client.py", encoding="utf-8").read()
+        block = src[src.index("async def thumbnail_from_cover"):src.index("async def _post_form")]
+        assert "httpx.AsyncClient(" in block and "await plain.get(url)" in block
+        assert "self._http.get(url" not in block

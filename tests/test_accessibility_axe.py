@@ -234,9 +234,12 @@ def test_the_app_key_screens_work_at_200_percent_zoom(browser, app_url):
 
 
 def test_the_library_filter_bar_floats(browser, app_url):
-    """4.45.1: the Library's filters stay on screen while the shelf scrolls — desktop and phone.
-    On phones it once scrolled away because the main area's `overflow-x: hidden` made it a scroll
-    container (sticky then sticks to it, not the window); `overflow-x: clip` doesn't."""
+    """4.45.1: the Library's filters stay on screen while the shelf scrolls — on desktop. (It once
+    scrolled away because the main area's `overflow-x: hidden` made it a scroll container; `clip`
+    doesn't.) 4.56.2 (LIBROW): on a phone the bar is deliberately NOT floating any more — the operator
+    found the floating bar "odd and out of whack" there: three-plus rows hanging under the top
+    buttons with the shelf showing around it. On a phone it scrolls away with the page and folds
+    into a "Filters" pill in the top bar, which drops the block down as a panel (LIBFAB)."""
     from database.db import get_connection
     conn = get_connection()
     try:
@@ -247,7 +250,7 @@ def test_the_library_filter_bar_floats(browser, app_url):
         conn.commit()
     finally:
         conn.close()
-    for vp, expect_top in (({"width": 1400, "height": 800}, 0), ({"width": 390, "height": 800}, 50)):
+    for vp, expect_top in (({"width": 1400, "height": 800}, 0), ({"width": 390, "height": 800}, None)):
         page = browser.new_page(viewport=vp)
         try:
             page.goto(app_url + "/#/library", wait_until="networkidle")
@@ -256,6 +259,21 @@ def test_the_library_filter_bar_floats(browser, app_url):
             page.wait_for_timeout(400)
             assert page.evaluate("scrollY") > 500, "the shelf didn't scroll — not enough works to test with"
             top = page.evaluate("document.getElementById('shelf-controls').getBoundingClientRect().top")
-            assert abs(top - expect_top) <= 2, f"{vp['width']}px wide: the filter bar scrolled away (top={top})"
+            if expect_top is None:
+                # 4.56.2 (LIBFAB): on a phone the block scrolls away and folds into the "Filters"
+                # pill in the top bar; the pill drops the same block down as a panel.
+                assert top < 0, f"{vp['width']}px wide: the filter block should scroll away on a phone (top={top})"
+                page.wait_for_function("document.documentElement.classList.contains('shelf-folded')")
+                assert page.evaluate("getComputedStyle(document.getElementById('shelf-fab')).opacity") == "1"
+                page.click("#shelf-fab")
+                page.wait_for_timeout(300)
+                bar = page.evaluate("parseFloat(getComputedStyle(document.body, '::before').height)")   # the bar strip
+                panel = page.evaluate("document.getElementById('shelf-controls').getBoundingClientRect().top")
+                assert abs(panel - bar) <= 2, f"the panel should drop from under the top bar (top={panel}, bar={bar})"
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(200)
+                assert not page.evaluate("document.documentElement.classList.contains('shelf-open')")
+            else:
+                assert abs(top - expect_top) <= 2, f"{vp['width']}px wide: the filter bar scrolled away (top={top})"
         finally:
             page.close()
