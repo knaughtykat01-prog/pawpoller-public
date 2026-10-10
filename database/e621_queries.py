@@ -21,10 +21,12 @@ from typing import Any
 
 # -- E621 Submissions --------------------------------------------------------
 
-def upsert_e621_submission(conn: sqlite3.Connection, sub: dict, account_id: int) -> None:
+def upsert_e621_submission(conn: sqlite3.Connection, sub: dict, account_id: int,
+                         table: str = "e621_submissions") -> None:
+    # table: "e621_found" for posts kept out of the totals (spec 028).
     keywords_json = json.dumps(sub.get("keywords", []))
     conn.execute(
-        """INSERT INTO e621_submissions
+        f"""INSERT INTO {table}
            (submission_id, account_id, title, full_text, username, posted_at, content_type,
             rating, description, keywords, link, thumbnail_url, file_url,
             score, up_score, down_score, favorites_count, comments_count, has_media,
@@ -44,7 +46,7 @@ def upsert_e621_submission(conn: sqlite3.Connection, sub: dict, account_id: int)
             -- failed answers the stub, and losing attribution is worse than a stale
             -- value that at least disagrees visibly.
             uploader_id=CASE WHEN excluded.uploader_id != '' THEN excluded.uploader_id
-                             ELSE e621_submissions.uploader_id END,
+                             ELSE {table}.uploader_id END,
             updated_at=datetime('now')
         """,
         (
@@ -83,10 +85,11 @@ def get_all_e621_submissions(conn: sqlite3.Connection, sort_by: str = "score", o
 def insert_e621_snapshot(conn: sqlite3.Connection, account_id: int, submission_id: str,
                          score: int, favorites_count: int, comments_count: int,
                          polled_at: str | None = None,
-                         up_score: int = 0, down_score: int = 0) -> None:
+                         up_score: int = 0, down_score: int = 0,
+                         table: str = "e621_snapshots") -> None:
     ts = polled_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
-        "INSERT INTO e621_snapshots (account_id, submission_id, polled_at, score, "
+        f"INSERT INTO {table} (account_id, submission_id, polled_at, score, "
         "up_score, down_score, favorites_count, comments_count) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (account_id, submission_id, ts, score, up_score, down_score,
@@ -361,7 +364,8 @@ def audit_uploader_disagreements(conn: sqlite3.Connection) -> list[dict]:
     """
     rows = conn.execute(
         "SELECT submission_id, account_id, uploader_id, title, link, posted_at "
-        "FROM e621_submissions WHERE COALESCE(uploader_id, '') != ''").fetchall()
+        # Spec 028: posts found by artist tag or character are someone else's upload on purpose.
+        "FROM e621_submissions WHERE COALESCE(uploader_id, '') != '' AND uploaded_by_me = 1").fetchall()
     per_account: dict[int, dict[str, int]] = {}
     for r in rows:
         per_account.setdefault(r["account_id"], {})

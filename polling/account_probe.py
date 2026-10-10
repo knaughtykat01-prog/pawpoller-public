@@ -25,7 +25,7 @@ from polling.cf_proxy import proxy_kwargs
 logger = logging.getLogger(__name__)
 
 _LABELS = {
-    "ao3": "AO3", "sqw": "SquidgeWorld", "sf": "SoFurry", "e621": "e621", "fbr": "Furbooru",
+    "ao3": "AO3", "sqw": "SquidgeWorld", "sf": "SoFurry", "e621": "e621", "fbr": "Furbooru", "r34": "Rule34.xxx",
     "mast": "Mastodon", "tum": "Tumblr", "bsky": "Bluesky", "pix": "Pixiv", "yt": "YouTube", "pic": "Picarto",
     "ig": "Instagram", "thr": "Threads", "ng": "Newgrounds", "sc": "SoundCloud", "fn": "FurryNetwork",
     "ik": "Itaku", "wp": "Wattpad", "ws": "Weasyl", "ib": "Inkbunny", "fb": "Facebook",
@@ -98,6 +98,11 @@ def _b_e621(c, pk):
 def _b_fbr(c, pk):
     from clients.fbr.client import FurbooruClient
     return FurbooruClient(username=c.get("fbr_username", ""), api_key=c.get("fbr_api_key", ""))
+
+
+def _b_r34(c, pk):
+    from clients.r34.client import Rule34Client
+    return Rule34Client(c.get("r34_username", ""), c.get("r34_api_key", ""), c.get("r34_user_id", ""))
 
 
 def _b_mast(c, pk):
@@ -212,6 +217,7 @@ PROBES = {
     "sf":   (lambda c: bool(c.get("sf_api_token")), _b_sf, "session_str", False),
     "e621": (lambda c: bool(c.get("e621_username") and c.get("e621_api_key")), _b_e621, "session_str", False),
     "fbr":  (lambda c: bool(c.get("fbr_username")), _b_fbr, "session_str", False),
+    "r34":  (lambda c: bool(c.get("r34_api_key") and c.get("r34_user_id")), _b_r34, "session_str", False),
     "mast": (lambda c: bool(c.get("mast_instance_url") and c.get("mast_access_token")), _b_mast, "session_str", False),
     "tum":  (lambda c: bool(c.get("tum_api_key") and c.get("tum_blog")), _b_tum, "session_str", False),
     "bsky": (lambda c: bool(c.get("bsky_identifier") and c.get("bsky_app_password")), _b_bsky, "session_str", False),

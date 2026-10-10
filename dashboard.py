@@ -45,6 +45,7 @@ from routes.yt_api import yt_router
 from routes.pic_api import pic_router
 from routes.fb_api import fb_router
 from routes.fbr_api import fbr_router
+from routes.r34_api import r34_router
 from routes.tg_api import tg_router
 from routes.posting_api import posting_router
 from routes.artwork_api import artwork_router
@@ -68,6 +69,8 @@ from routes.backup_api import backup_router
 from routes.mirror_api import mirror_router
 from routes.discord_api import discord_router
 from routes.inbox_api import inbox_router
+from routes.overnight_api import overnight_router
+from routes.board_track_api import board_track_router
 from routes.report_api import report_router
 from routes.submissions_api import works_router
 from routes.editor_api import editor_router
@@ -680,6 +683,7 @@ app.include_router(yt_router)    # YouTube routes (/api/yt/*), MEDIAPLATS (4.24.
 app.include_router(pic_router)   # Picarto routes (/api/pic/*), spec 013 (4.46.0)
 app.include_router(fb_router)    # Facebook Page connect (/api/fb/*), spec 022 (4.57.0)
 app.include_router(fbr_router)   # Furbooru routes (/api/fbr/*)
+app.include_router(r34_router)   # Rule34.xxx routes (/api/r34/*), tracking only (spec 028 US6)
 app.include_router(tg_router)    # Telegram channel analytics (/api/tg/*)
 app.include_router(tech_router)  # Tech Centre consent/status/reports (/api/tech/*)
 app.include_router(media_router) # Connected-desktop uploads into the inbox (/api/media/*)
@@ -705,6 +709,8 @@ app.include_router(backup_router)    # Backup & restore (/api/backup/*)
 app.include_router(mirror_router)    # Server → desktop mirroring (/api/mirror/*)
 app.include_router(discord_router)   # Discord announce webhook (/api/discord/*)
 app.include_router(inbox_router)     # Unified comment inbox (/api/inbox/*)
+app.include_router(overnight_router)  # Overnight sheet (/api/overnight*), spec 026
+app.include_router(board_track_router)  # Artist/character tracking settings (/api/board-track/*), spec 028
 app.include_router(report_router)    # Error-report → Telegram forwarder (/api/report-error)
 app.include_router(editor_router)   # Story editor routes (/api/editor/*)
 app.include_router(settings_router)  # Settings sync routes (/api/settings/*)

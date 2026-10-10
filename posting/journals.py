@@ -255,6 +255,9 @@ async def edit_journal(post: dict, pub: dict, settings: dict | None = None) -> d
         why = f"Update it on {label(platform)} yourself — its journal form needs a CAPTCHA"
         result.update(skipped=True, error=why, reason=why)
         return result
+    if (pub.get("account_id") or 0) in accounts_db.never_post_ids(settings):   # FRIENDGUARD, as publish
+        result["error"] = accounts_db.NEVER_POST_ERROR
+        return result
     problem = title_problem(platform, post.get("title") or "")
     if problem:
         result["error"] = problem
@@ -275,6 +278,9 @@ async def remove_journal(pub: dict, settings: dict | None = None) -> dict:
     if platform not in REMOVABLE:
         why = f"Remove it on {label(platform)} — PawPoller can't remove journals there yet"
         result.update(skipped=True, error=why, reason=why)
+        return result
+    if (pub.get("account_id") or 0) in accounts_db.never_post_ids(settings):   # FRIENDGUARD, as publish
+        result["error"] = accounts_db.NEVER_POST_ERROR
         return result
     try:
         cli = await _ws(pub.get("account_id") or None)

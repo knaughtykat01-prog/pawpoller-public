@@ -28,6 +28,7 @@
         { code: 'e621', label: 'e621',         emoji: '\u{1F43E}', color: 'var(--platform-e621)' },
         { code: 'fn',   label: 'FurryNetwork', emoji: '\u{1F310}', color: '#3b8ed0' },
         { code: 'fbr',  label: 'Furbooru',     emoji: '\u{1F5BC}', color: '#3d7b3d' },
+        { code: 'r34',  label: 'Rule34.xxx',   emoji: '\u{1F51E}', color: '#aae5a3' },
         // Reactions and subscriber counts make Telegram pollable as of 4.0.10,
         // so it is no longer postOnly and DOES appear in analytics. It has no
         // view counter and never will (not in the Bot API at all), which the
@@ -121,6 +122,7 @@
                 'views', 'views', { faves: 'Likes' }),
         e621: M('score', null, 'total_favorites', 'total_comments', 'score', 'score'),
         fbr:  M('score', null, 'total_favorites', 'total_comments', 'score', 'score'),
+        r34:  M('score', null, null, 'total_comments', 'score', 'score'),
         // Reactions are the engagement metric; there is no view counter and
         // never will be, so views stays null the way it does for Bluesky and
         // Tumblr. Without an entry here tg fell through to the 'views' default
@@ -152,7 +154,7 @@
     const _svgLogos = ['ik', 'ws', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'tg', 'fb'];
     // Platforms with no bundled logo asset fall back to their emoji (the tile
     // renderer treats a null logo that way). Keeps a broken <img> off the hub.
-    const _noLogo = ['fn', 'fbr', 'pod', 'sc', 'ng', 'yt', 'pic'];
+    const _noLogo = ['fn', 'fbr', 'r34', 'pod', 'sc', 'ng', 'yt', 'pic'];
     PLATFORMS.forEach(p => {
         p.logo = _noLogo.includes(p.code)
             ? null

@@ -269,6 +269,12 @@ _REGISTRY: tuple[PlatformMetrics, ...] = (
         family="score", score="score", faves="favorites_count", comments="comments_count",
         extra=("up_score", "down_score"),
     ),
+    # Rule34.xxx (4.65.0, spec 028 US6): score and comments only. Rule34 shares no favourite count, so
+    # faves is None (never 0, which would read as "nobody favourited it").
+    PlatformMetrics(
+        code="r34", label="Rule34.xxx", table="r34_submissions", snapshots="r34_snapshots",
+        family="score", score="score", faves=None, comments="comments_count",
+    ),
     # Telegram is "engagement" for the same reason as Bluesky and Tumblr: there
     # is no view counter to fold anything into. Views stay None PERMANENTLY —
     # a channel's view count is not in the Bot API at all (client-API only), so

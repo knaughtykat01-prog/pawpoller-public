@@ -218,8 +218,14 @@ class E621Client:
 
     # -- Post discovery -------------------------------------------------------
 
-    async def get_all_post_uris(self) -> list[dict]:
+    async def get_all_post_uris(self, queries: list[str] | None = None,
+                                known: set[str] | None = None) -> list[dict]:
         """Page through the connected user's own uploads (tags=user:<username>).
+
+        ``queries`` (spec 028) replaces the search with one or more tag searches (the artist-tag and
+        character OR searches, split under e621's tag limit), merged by post id. With ``known``,
+        paging stops at the first page whose posts are all already stored: the light check that
+        runs between daily full reads. Neither given → exactly the search PawPoller always ran.
 
         e621 returns posts newest-first; deep pagination uses the `page=b<id>`
         (before-id) cursor rather than page numbers (which cap at 750). Each
@@ -235,11 +241,17 @@ class E621Client:
             return []
         items: list[dict] = []
         seen: set[int] = set()
-        before_id: int | None = None
+        for q in (queries or [f"user:{self.username}"]):
+            await self._page_search(q, items, seen, known)
+        logger.info("e621: found %d posts for user %s", len(items), self.username)
+        return items
 
+    async def _page_search(self, tags: str, items: list[dict], seen: set[int],
+                           known: set[str] | None) -> None:
+        before_id: int | None = None
         for _page_safety in range(500):  # 500 * 320 = 160k posts hard ceiling
             params: dict[str, Any] = {
-                "tags": f"user:{self.username}", "limit": 320,
+                "tags": tags, "limit": 320,
                 "v2": "true", "mode": "extended",
             }
             if before_id is not None:
@@ -265,10 +277,40 @@ class E621Client:
             before_id = min(page_ids) if page_ids else None
             if len(page_posts) < 320 or before_id is None:
                 break
+            if known is not None and all(str(i) in known for i in page_ids):
+                break
             await asyncio.sleep(config.E621_REQUEST_DELAY_SECONDS)
 
-        logger.info("e621: found %d posts for user %s", len(items), self.username)
-        return items
+    # -- Tracking helpers (spec 028) --------------------------------------------
+
+    async def get_user_id(self) -> str:
+        """The connected account's numeric user id ('' when e621 doesn't say)."""
+        data = await self._get_json("/users.json", {"search[name_matches]": self.username, "limit": 1})
+        for u in data if isinstance(data, list) else []:
+            if str(u.get("name", "")).lower() == self.username.lower():
+                return str(u.get("id") or "")
+        return ""
+
+    async def linked_artist(self, user_id: str) -> str:
+        """The artist tag e621 staff linked to this account when the artist verified, or ''.
+
+        The answer is checked against the user id, so a search parameter e621 ignored (and its
+        unfiltered list of artists) can never pass for a verified link."""
+        if not user_id:
+            return ""
+        data = await self._get_json("/artists.json", {"search[linked_user_id]": user_id, "limit": 5})
+        for a in data if isinstance(data, list) else []:
+            if str(a.get("linked_user_id") or "") == str(user_id) and a.get("name"):
+                return str(a["name"])
+        return ""
+
+    async def tag_count(self, tag: str) -> int | None:
+        """How many posts carry a tag (None when e621 has no such tag)."""
+        data = await self._get_json("/tags.json", {"search[name]": tag, "limit": 1})
+        for t in data if isinstance(data, list) else []:
+            if t.get("name") == tag:
+                return _safe_int(t.get("post_count"))
+        return None
 
     async def get_post_details_batch(self, items: list[dict]) -> list[dict]:
         """Parse the raw posts gathered in discovery — no extra API calls."""
@@ -359,6 +401,7 @@ class E621Client:
             # display continuity; uploader_id below is the fact (4.34.2, PLATAUDIT).
             "username": self.username,
             "uploader_id": str(p.get("uploader_id") or ""),
+            "uploader_name": str(p.get("uploader_name") or ""),
             "posted_at": p.get("created_at", "") or "",
             "content_type": content_type,
             "rating": _RATING_MAP.get((p.get("rating") or "").lower(), ""),

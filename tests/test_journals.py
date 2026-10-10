@@ -369,3 +369,30 @@ def test_a_journal_posted_through_the_fa_window_is_recorded():
         conn.close()
     assert [(p["platform"], p["status"], p["external_id"]) for p in pubs] == [("fa", "posted", "77")]
     assert c.post("/api/posts/journal-copy", json={"site": "fa", "title": "T", "body": "b", "rating": "explicit"}).json()["rating"] == "1"
+
+
+def test_fa_window_only_acts_on_fa_itself():
+    """SECLOW4622: the host is checked, not a substring anywhere in the address."""
+    from auth import fa_journal_window as w
+    assert w.posted_journal("https://evil.example/?u=https://www.furaffinity.net/journal/99/") == ""
+    assert w.posted_journal("https://furaffinity.net.evil.example/journal/99/") == ""
+    assert w.posted_journal("https://www.furaffinity.net/journal/99/") == "99"
+    assert w.on_fa("https://www.furaffinity.net/controls/journal/") and not w.on_fa("https://evil.example/controls/journal/")
+
+
+def test_journal_edit_and_remove_respect_never_post(monkeypatch):
+    """SECLOW4622: edit and remove refuse a never-post account, as publish does."""
+    import asyncio
+    from database import accounts as accounts_db
+    monkeypatch.setattr(accounts_db, "never_post_ids", lambda settings=None: {10})
+    pub = {"platform": "ws", "account_id": 10, "external_id": "1"}
+    post = {"title": "Sample", "body": "x", "rating": "general"}
+    assert asyncio.run(journals.edit_journal(post, pub))["error"] == accounts_db.NEVER_POST_ERROR
+    assert asyncio.run(journals.remove_journal(pub))["error"] == accounts_db.NEVER_POST_ERROR
+
+
+def test_result_links_are_scheme_checked():
+    """SECLOW4622: a result link only becomes a link when it is http(s)."""
+    src = open("frontend/js/components.js", encoding="utf-8").read()
+    block = src[src.index("publishResults(results, opts) {"):][:2500]
+    assert "Utils.safeUrl(r.external_url || r.url || '')" in block

@@ -151,9 +151,12 @@ async def run_e621_poll_cycle(account_id: int | None = None, force_full: bool = 
         if not name:
             raise ValueError("e621 auth failed -- check the username + API key")
 
-        # Step 2: Discover uploads
+        # Step 2: Discover uploads, plus the artist tag and characters when tracked (spec 028)
+        from polling import board_track
+        track = await board_track.prepare(conn, "e621", client, account_id, name, settings)
         _update_e621_progress("searching", message="Fetching upload list...")
-        post_items = await client.get_all_post_uris()
+        post_items = (await client.get_all_post_uris(track["queries"], known=track["known"])
+                      if track["extras"] else await client.get_all_post_uris())
         stats["submissions_found"] = len(post_items)
         logger.info("e621: found %d posts", len(post_items))
 
@@ -172,6 +175,8 @@ async def run_e621_poll_cycle(account_id: int | None = None, force_full: bool = 
 
         # Step 4: Upsert + snapshot
         new_activity_details: list[dict] = []
+        found_new: list[dict] = []
+        inbox_details: list[dict] = []
         poll_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
         for idx, detail in enumerate(details, 1):
@@ -190,17 +195,22 @@ async def run_e621_poll_cycle(account_id: int | None = None, force_full: bool = 
                              or comments > prev.get("comments_count", 0)):
                     new_activity_details.append({"title": detail.get("title", "")})
 
-                e621_queries.upsert_e621_submission(conn, detail, account_id)
-                e621_queries.insert_e621_snapshot(conn, account_id, uri, score, faves,
-                                                  comments, polled_at=poll_timestamp,
-                                                  up_score=up_score, down_score=down_score)
-                stats["snapshots_inserted"] += 1
+                res = board_track.store(conn, "e621", detail, account_id, track, name,
+                                        track["my_id"], poll_timestamp, track["quiet"])
+                if not res["shared"]:
+                    stats["snapshots_inserted"] += 1
+                if res.get("found_at"):
+                    found_new.append({"reasons": res["reasons"],
+                                      "uploader": detail.get("uploader_name") or ""})
+                if board_track.inbox_wanted(res):
+                    inbox_details.append(detail)
 
             except Exception as e:
                 logger.warning("Error processing e621 post %s: %s",
                                detail.get("post_uri", "")[:50], e, exc_info=True)
 
         conn.commit()
+        board_track.finish(account_id, track)
 
         # ── Inbox capture (gap G3 Stage A1) ───────────────────
         # /comments.json per behind-looking post (post_uri IS the numeric id).
@@ -215,7 +225,7 @@ async def run_e621_poll_cycle(account_id: int | None = None, force_full: bool = 
                 conn, "e621",
                 [{"submission_id": d.get("post_uri", ""),
                   "fresh_count": d.get("comments_count", 0) or 0,
-                  "title": d.get("title", "")} for d in details],
+                  "title": d.get("title", "")} for d in inbox_details],
                 _fetch_comments, account_id=account_id,
                 own_author=getattr(client, "username", "") or "")
         except Exception as ce:  # noqa: BLE001 — capture never fails the poll
@@ -234,6 +244,10 @@ async def run_e621_poll_cycle(account_id: int | None = None, force_full: bool = 
                 await _send_e621_telegram(new_activity_details)
             except Exception as te:
                 logger.warning("Failed to send e621 Telegram notification: %s", te, exc_info=True)
+            try:
+                await board_track.notify("e621", found_new)
+            except Exception as fe:
+                logger.warning("Failed to send e621 found-post notification: %s", fe, exc_info=True)
 
         duration = time.time() - start_time
         _update_e621_progress("complete", current=len(details), total=len(details),

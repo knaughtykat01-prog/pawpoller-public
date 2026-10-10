@@ -804,6 +804,8 @@ PLATFORM_CREDENTIAL_FIELDS = {
            "yt_token_expires_at", "yt_username", "yt_long_uploads"],
     # Furbooru (Philomena booru; poll-only). Username + optional API key.
     "fbr": ["fbr_username", "fbr_api_key"],
+    # Rule34.xxx (4.65.0, spec 028 US6; tracking only). The API key + user id from Rule34's account options.
+    "r34": ["r34_username", "r34_api_key", "r34_user_id"],
     # Picarto (4.46.0, spec 013; poll-only). The public channel name — an identity, not a secret.
     "pic": ["pic_channel"],
 }
@@ -1266,7 +1268,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.62.2"
+APP_VERSION = "4.66.0"
 
 
 def _app_commit() -> str:

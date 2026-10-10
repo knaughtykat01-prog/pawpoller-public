@@ -147,8 +147,11 @@ async def run_fbr_poll_cycle(account_id: int | None = None, force_full: bool = F
             raise ValueError("fbr auth failed -- check the username + API key")
 
         # Step 2: Discover uploads
+        from polling import board_track
+        track = await board_track.prepare(conn, "fbr", client, account_id, name, settings)
         _update_fbr_progress("searching", message="Fetching upload list...")
-        post_items = await client.get_all_post_uris()
+        post_items = (await client.get_all_post_uris(track["queries"], known=track["known"])
+                      if track["extras"] else await client.get_all_post_uris())
         stats["submissions_found"] = len(post_items)
         logger.info("fbr: found %d posts", len(post_items))
 
@@ -167,6 +170,7 @@ async def run_fbr_poll_cycle(account_id: int | None = None, force_full: bool = F
 
         # Step 4: Upsert + snapshot
         new_activity_details: list[dict] = []
+        found_new: list[dict] = []
         poll_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
         for idx, detail in enumerate(details, 1):
@@ -185,17 +189,20 @@ async def run_fbr_poll_cycle(account_id: int | None = None, force_full: bool = F
                              or comments > prev.get("comments_count", 0)):
                     new_activity_details.append({"title": detail.get("title", "")})
 
-                fbr_queries.upsert_fbr_submission(conn, detail, account_id)
-                fbr_queries.insert_fbr_snapshot(conn, account_id, uri, score, faves,
-                                                  comments, polled_at=poll_timestamp,
-                                                  up_score=up_score, down_score=down_score)
-                stats["snapshots_inserted"] += 1
+                res = board_track.store(conn, "fbr", detail, account_id, track, name,
+                                        "", poll_timestamp, track["quiet"])
+                if not res["shared"]:
+                    stats["snapshots_inserted"] += 1
+                if res.get("found_at"):
+                    found_new.append({"reasons": res["reasons"],
+                                      "uploader": detail.get("uploader_name") or ""})
 
             except Exception as e:
                 logger.warning("Error processing fbr post %s: %s",
                                detail.get("post_uri", "")[:50], e, exc_info=True)
 
         conn.commit()
+        board_track.finish(account_id, track)
         # (No inbox capture — the Philomena read API has no per-image comments
         # fetch wired here; Furbooru is poll-only for engagement counts.)
 
@@ -212,6 +219,10 @@ async def run_fbr_poll_cycle(account_id: int | None = None, force_full: bool = F
                 await _send_fbr_telegram(new_activity_details)
             except Exception as te:
                 logger.warning("Failed to send fbr Telegram notification: %s", te, exc_info=True)
+            try:
+                await board_track.notify("fbr", found_new)
+            except Exception as fe:
+                logger.warning("Failed to send fbr found-post notification: %s", fe, exc_info=True)
 
         duration = time.time() - start_time
         _update_fbr_progress("complete", current=len(details), total=len(details),

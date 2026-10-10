@@ -338,7 +338,8 @@ class TestTheUploaderAuditReportsDisagreementNotOwnership:
         c.row_factory = sqlite3.Row
         c.execute("""CREATE TABLE e621_submissions (
             submission_id TEXT PRIMARY KEY, account_id INTEGER, uploader_id TEXT DEFAULT '',
-            title TEXT DEFAULT '', link TEXT DEFAULT '', posted_at TEXT)""")
+            title TEXT DEFAULT '', link TEXT DEFAULT '', posted_at TEXT,
+            uploaded_by_me INTEGER NOT NULL DEFAULT 1)""")   # 4.64.0 (spec 028)
         return c
 
     def _add(self, c, sid, aid, uploader):

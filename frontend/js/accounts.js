@@ -286,6 +286,7 @@ window.Accounts = {
                 catch (err) { cb.checked = !cb.checked; window.toast && toast.error('Could not save: ' + err.message); }
             }));
         this._wireDaAuthorise(el);
+        this._wireTrack(el);
         el.querySelectorAll('[data-creds]').forEach(btn =>
             btn.addEventListener('click', () => this._editCredentials(
                 btn.dataset.creds, btn.dataset.platform, btn)));
@@ -389,6 +390,12 @@ window.Accounts = {
                  Authorise posting</button>
                <span class="acct-da-status" data-da-status="${a.account_id}"></span>`
             : '';
+        // Spec 028: what an image-board account follows besides its own uploads.
+        const track = ['e621', 'fbr', 'r34'].includes(a.platform)
+            ? `<button class="btn btn-sm" data-track="${a.account_id}" data-platform="${a.platform}"
+                       title="Follow your artist tag and your characters, not just your uploads">Track</button>
+               <span class="acct-track-new" data-track-new="${a.account_id}" hidden>New: follow your artist tag and characters</span>`
+            : '';
         return `<div class="acct-card${a.enabled ? '' : ' disabled'}" style="--pc:${color || 'var(--accent)'}">
             <div class="acct-id">
                 <span class="acct-name">${this.esc(a.label || '(unnamed)')} ${badge}</span>
@@ -403,6 +410,7 @@ window.Accounts = {
                 ${creds}
                 ${test}
                 ${daAuth}
+                ${track}
                 ${del}
             </span>
         </div>`;
@@ -570,6 +578,112 @@ window.Accounts = {
         flash.style.cssText = 'color:var(--success);font-size:12px;margin-left:8px';
         (row.querySelector('.acct-name') || row).append(flash);
         setTimeout(() => flash.remove(), 6000);
+    },
+
+    /* ── Track (spec 028) ──
+     * On e621 and Furbooru most of an artist's work is uploaded by other people with the artist's
+     * tag, and art of a writer's characters carries the character's tag. This panel picks what the
+     * account follows and whether other people's uploads count in its totals. Rows not yet set up
+     * show a "New" nudge until saved. */
+    _wireTrack(el) {
+        el.querySelectorAll('[data-track]').forEach(async btn => {
+            btn.addEventListener('click', () => this._openTrack(btn.dataset.track, btn.dataset.platform, btn));
+            try {
+                const t = await API.getBoardTrack(btn.dataset.track);
+                const nudge = el.querySelector(`[data-track-new="${btn.dataset.track}"]`);
+                if (nudge) nudge.hidden = !!t.saved;
+            } catch (e) { /* the button still works */ }
+        });
+    },
+
+    async _openTrack(accountId, platform, btn) {
+        const row = btn.closest('.acct-card');
+        if (!row) return;
+        const existing = row.nextElementSibling;
+        if (existing && existing.classList.contains('acct-track-editor')) { existing.remove(); return; }
+        document.querySelectorAll('.acct-track-editor').forEach(e => e.remove());
+        const site = { e621: 'e621', fbr: 'Furbooru', r34: 'Rule34' }[platform] || platform;
+        const panel = document.createElement('div');
+        panel.className = 'acct-track-editor acct-form';
+        panel.innerHTML = '<p class="muted">Loading…</p>';
+        row.after(panel);
+        let t;
+        try { t = await API.getBoardTrack(accountId); }
+        catch (err) { panel.innerHTML = `<p class="muted">Couldn't load: ${this.esc(err.message || err)}</p>`; return; }
+        const st = t.settings || {};
+        let tags = (st.artist_tags || []).slice();
+        let verified = !!st.artist_verified;
+        let source = '';
+        // First time: suggest the tag (e621's verified link, else the People page) and tick it (FR-009).
+        if (!t.saved && !tags.length) {
+            try {
+                const sug = await API.suggestBoardTag(accountId);
+                if (sug.tag) { tags = [sug.tag]; verified = !!sug.verified; source = sug.source; }
+            } catch (e) { /* typed instead */ }
+        }
+        const chars = t.characters || [], untagged = t.characters_untagged || [];
+        const tagNote = verified ? 'verified by ' + site : (source === 'people' ? 'from your People page' : '');
+        const radio = `tr-count-${accountId}`;
+        panel.innerHTML = `
+            <p class="acct-track-q"><strong>What should PawPoller follow on ${site}?</strong></p>
+            <label class="acct-track-opt"><input type="checkbox" checked disabled> Posts I upload</label>
+            <label class="acct-track-opt"><input type="checkbox" data-tr-artist ${tags.length ? 'checked' : ''}>
+                Posts with my artist tag</label>
+            <div class="acct-track-sub">
+                <input type="text" class="search-input" data-tr-tags value="${this.esc(tags.join(', '))}"
+                       placeholder="${platform === 'e621' ? 'your_artist_tag' : 'artist:your name'}" autocomplete="off"
+                       aria-label="Artist tags, separated by commas">
+                <span class="muted" data-tr-tagnote>${this.esc(tagNote)}</span>
+            </div>
+            <label class="acct-track-opt"><input type="checkbox" data-tr-chars ${st.characters ? 'checked' : ''}
+                ${chars.length ? '' : 'disabled'}> Posts of my characters (${chars.length})</label>
+            ${chars.length ? `<p class="muted acct-track-sub">${chars.map(c => this.esc(c.name)).join(', ')}</p>` : ''}
+            ${untagged.length ? `<p class="muted acct-track-sub">No ${site} tag yet: ${untagged.map(c => this.esc(c.name)).join(', ')}
+                · <a href="#/characters">set one on the Characters page</a></p>` : ''}
+            ${!chars.length && !untagged.length ? `<p class="muted acct-track-sub">Mark characters as yours on the
+                <a href="#/characters">Characters page</a> to follow art of them.</p>` : ''}
+            <p class="acct-track-q"><strong>Count posts other people upload in my totals?</strong></p>
+            <label class="acct-track-opt"><input type="radio" name="${radio}" value="1" ${st.count_others !== false ? 'checked' : ''}>
+                Yes, they're my art</label>
+            <label class="acct-track-opt"><input type="radio" name="${radio}" value="0" ${st.count_others === false ? 'checked' : ''}>
+                No, show them separately</label>
+            <div class="acct-track-actions">
+                <button class="btn btn-sm btn-primary" data-tr-save>Save</button>
+                <button class="btn btn-sm" data-tr-cancel>Cancel</button>
+                <span class="muted" data-tr-status role="status"></span>
+            </div>`;
+        const $ = sel => panel.querySelector(sel);
+        $('[data-tr-tags]').addEventListener('input', () => { verified = false; $('[data-tr-tagnote]').textContent = ''; });
+        $('[data-tr-cancel]').addEventListener('click', () => panel.remove());
+        $('[data-tr-save]').addEventListener('click', async () => {
+            const status = $('[data-tr-status]');
+            const list = $('[data-tr-artist]').checked
+                ? $('[data-tr-tags]').value.split(',').map(x => x.trim()).filter(Boolean) : [];
+            // A typed tag is checked first: one the site doesn't know is refused, and one on far more
+            // posts than one artist's work (a common word) asks before pulling all of those in.
+            if (!verified) {
+                for (const tag of list) {
+                    status.textContent = 'Checking ' + tag + '…';
+                    try {
+                        const c = await API.boardTagCount(accountId, tag);
+                        if (c.count == null) { status.textContent = `${site} has no tag "${tag}"`; return; }
+                        if (c.count > 5000 && !confirm(`"${tag}" is on ${c.count.toLocaleString()} posts on ${site}. Follow all of them?`)) {
+                            status.textContent = ''; return;
+                        }
+                    } catch (err) { status.textContent = err.message || String(err); return; }
+                }
+            }
+            status.textContent = 'Saving…';
+            try {
+                const r = await API.saveBoardTrack(accountId, {
+                    artist_tags: list, artist_verified: verified, characters: $('[data-tr-chars]').checked,
+                    count_others: panel.querySelector(`input[name="${radio}"]:checked`).value === '1',
+                });
+                const nudge = document.querySelector(`[data-track-new="${accountId}"]`);
+                if (nudge) nudge.hidden = true;
+                status.textContent = 'Saved. The next check finds them' + (r.moved ? ` (${r.moved} posts moved)` : '') + '.';
+            } catch (err) { status.textContent = err.message || String(err); }
+        });
     },
 
     async _testLogin(accountId) {

@@ -233,7 +233,7 @@ def P(name, group, why="", backup="", obsolete=False):
 # uses the bare names. A test checks this matches what init_db actually creates.
 PLATFORM_PREFIXES = (
     "ao3", "bsky", "da", "e621", "fa", "fb", "fbr", "fn", "ig", "ik", "mast", "ng", "pix",
-    "pic", "sc", "sf", "sqw", "tg", "thr", "tum", "tw", "wp", "ws", "yt",
+    "pic", "r34", "sc", "sf", "sqw", "tg", "thr", "tum", "tw", "wp", "ws", "yt",
 )
 
 # ── Tables ────────────────────────────────────────────────────────────────────
@@ -284,6 +284,7 @@ _TABLES = (
     # internal — numbers
     T("snapshots", "Numbers over time", "Inkbunny numbers per poll."),
     T("<P>_snapshots", "Numbers over time", "That site's numbers per poll."),
+    T("<P>_found_snapshots", "Numbers over time", "Numbers per poll for posts other people uploaded."),
     T("fa_profile_stats", "Numbers over time", "FurAffinity profile views per poll."),
     T("pic_channel_snapshots", "Numbers over time", "Picarto channel views, followers and subscribers per poll."),
     T("account_follower_snapshots", "Numbers over time", "Follower counts per poll."),
@@ -316,6 +317,7 @@ _TABLES = (
     # public
     T("submissions", "Your published works", "Your Inkbunny submissions."),
     T("<P>_submissions", "Your published works", "Your submissions on that site."),
+    T("<P>_found", "Your published works", "Posts other people uploaded with your artist tag or characters, kept out of your totals."),
     T("podcast_feeds", "Your podcast", "Your podcast feeds."),
     T("podcast_episodes", "Your podcast", "Your podcast episodes."),
 )
@@ -345,7 +347,7 @@ _SETTINGS = (
         "sf_session_cookies", "sqw_password", "sqw_author_password", "ao3_password", "ao3_session_cookie",
         "ao3_remember_token",   # AO3's Remember me cookie (AO3REMEMBER)
         "da_client_secret", "da_cookie", "da_refresh_token", "e621_api_key",
-        "fbr_api_key", "fn_access_token", "fn_password", "fn_refresh_token", "ik_auth_token",
+        "fbr_api_key", "r34_api_key", "fn_access_token", "fn_password", "fn_refresh_token", "ik_auth_token",
         "bsky_app_password", "tw_api_bearer_token", "tw_auth_token", "tw_ct0", "mast_access_token",
         "tum_api_key", "tum_consumer_secret", "tum_oauth_token", "tum_oauth_token_secret",
         "tum_oauth2_access_token", "tum_oauth2_refresh_token",   # the Connect sign-in (4.60.0, spec 024)
@@ -371,7 +373,7 @@ _SETTINGS = (
     )),
     # Your handles, in the settings file.
     *(S(k, _HANDLE, identity=True) for k in (
-        "fa_username", "ws_username", "e621_username", "fbr_username", "fn_username", "ng_username",
+        "fa_username", "ws_username", "e621_username", "fbr_username", "r34_username", "r34_user_id", "fn_username", "ng_username",
         "sc_username", "yt_username", "pic_channel", "ig_username", "thr_username", "sf_display_name", "mast_handle",
         "mast_instance_url", "tum_blog", "tum_oauth2_user", "ig_user_id", "fb_page_id", "fb_page_name", "pix_user_id", "thr_user_id", "tg_channel",
         "ao3_target_user", "da_target_user", "ik_target_user", "sqw_target_user", "tw_target_user",
@@ -381,9 +383,9 @@ _SETTINGS = (
     # Preferences.
     *(S(k, _PREF) for k in (
         "announce_defaults", "comment_templates", "comment_defaults", "journal_templates", "auto_backup_dir", "auto_backup_enabled", "auto_backup_interval_hours",
-        "auto_backup_keep", "auto_sync_enabled", "auto_update", "credits", "credential_mode",
+        "auto_backup_keep", "auto_sync_enabled", "auto_update", "board_track", "credits", "credential_mode",
         "da_client_id", "sc_client_id", "yt_client_id", "dashboard_layout", "discord_announce_on_publish",
-        "display_timezone", "email_digest_enabled", "email_digest_interval_days", "hidden_platforms",
+        "display_timezone", "email_digest_enabled", "overnight_show_after", "email_digest_interval_days", "hidden_platforms",
         "logs_panel_enabled", "minimize_to_tray", "mirror_auto_check", "mirror_check_interval_minutes",
         "mobile_mode", "muted_session_codes", "never_post_account_ids", "notification_comments_only", "notification_min_faves_delta",
         "notification_min_views_delta", "notifications_enabled", "pawpoller_attribution",
@@ -415,7 +417,7 @@ _SETTINGS = (
         "credential_set_at", "last_auto_backup_at", "last_digest_sent_at", "last_email_digest_sent_at", "last_email_digest_error", "last_email_digest_error_at",
         "last_poll_completed_at", "last_session_check_at", "last_snapshot_prune_at",
         "last_tg_channel_digest_sent_at", "last_weekly_digest_sent_at", "mirror_last_sync",
-        "mirror_seeded_at", "notifications_cleared_at", "notifications_last_read_at", "setup_complete",
+        "mirror_seeded_at", "notifications_cleared_at", "notifications_last_read_at", "overnight_last_seen_at", "setup_complete",
         "sc_token_expires_at", "yt_token_expires_at", "tum_oauth2_expires_at",
     )),
 )

@@ -53,6 +53,7 @@ _YT_SCHEMA_PATH = config.resource_path("database/yt_schema.sql")      # YouTube 
 _PIC_SCHEMA_PATH = config.resource_path("database/pic_schema.sql")    # Picarto tables (4.46.0, spec 013)
 _FB_SCHEMA_PATH = config.resource_path("database/fb_schema.sql")      # Facebook stats (4.59.0, spec 029)
 _FBR_SCHEMA_PATH = config.resource_path("database/fbr_schema.sql")    # Furbooru tables
+_R34_SCHEMA_PATH = config.resource_path("database/r34_schema.sql")    # Rule34.xxx tables (spec 028 US6)
 _TG_SCHEMA_PATH = config.resource_path("database/tg_schema.sql")      # Telegram tables
 _POSTING_SCHEMA_PATH = config.resource_path("database/posting_schema.sql")  # Posting module tables
 _POSTS_SCHEMA_PATH = config.resource_path("database/posts_schema.sql")      # Posts (microblog) module tables
@@ -174,6 +175,7 @@ def init_db() -> None:
         conn.executescript(_FB_SCHEMA_PATH.read_text(encoding="utf-8"))
         fbr_schema_sql = _FBR_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(fbr_schema_sql)
+        conn.executescript(_R34_SCHEMA_PATH.read_text(encoding="utf-8"))
         tg_schema_sql = _TG_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(tg_schema_sql)
         posting_schema_sql = _POSTING_SCHEMA_PATH.read_text(encoding="utf-8")
@@ -1752,6 +1754,10 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     except Exception as e:  # a data repair must never block startup
         logger.warning("DA id re-key skipped: %s", e)
 
+    # ARTISTTRACK (4.64.0, spec 028): board posts record why they were found and whose upload
+    # they are, and posts other people uploaded can be kept out of the account's totals.
+    _board_track_columns(conn)
+
     # Migration (3.8.0): the shared-table delete outbox — mirroring Stage 3.
     # The upward sync is a natural-key upsert, which is additive by nature and
     # therefore cannot express "this row is gone". For four tables a delete IS
@@ -1769,6 +1775,49 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         logger.warning("Mirror tombstone outbox ensure skipped: %s", e)
 
     conn.commit()
+
+
+#: Boards whose posts can be tracked by artist tag and character (spec 028).
+BOARD_CODES = ("e621", "fbr", "r34")
+
+_BOARD_COLUMNS = (("match_reasons", "TEXT NOT NULL DEFAULT '[]'"),
+                  ("uploaded_by_me", "INTEGER NOT NULL DEFAULT 1"),
+                  ("uploader_name", "TEXT NOT NULL DEFAULT ''"),
+                  ("found_at", "TEXT NOT NULL DEFAULT ''"))
+
+
+def _board_track_columns(conn: sqlite3.Connection) -> None:
+    """New columns on each board's posts, and the `{code}_found` mirrors (spec 028).
+
+    Posts someone else uploaded go to `{code}_found` / `{code}_found_snapshots` when the account
+    keeps them apart from its totals. Those mirror the main tables column for column, built from
+    the main tables' own CREATE SQL so a column added later follows: around forty readers total
+    `{code}_submissions` directly, and a filter column would need every one of them changed.
+    Every existing row is the account's own upload, hence `uploaded_by_me` defaults to 1.
+    """
+    for code in BOARD_CODES:
+        main, snaps = f"{code}_submissions", f"{code}_snapshots"
+        if not (_table_exists(conn, main) and _table_exists(conn, snaps)):
+            continue
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({main})").fetchall()}
+        for col, decl in _BOARD_COLUMNS:
+            if col not in have:
+                conn.execute(f"ALTER TABLE {main} ADD COLUMN {col} {decl}")
+        names = {main: f"{code}_found", snaps: f"{code}_found_snapshots"}
+        pattern = re.compile(r"\b(" + "|".join(map(re.escape, names)) + r")\b")
+        for src, dst in names.items():
+            if not _table_exists(conn, dst):
+                sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                                   (src,)).fetchone()[0]
+                conn.execute(pattern.sub(lambda m: names[m.group(1)], sql))
+            got = {r[1] for r in conn.execute(f"PRAGMA table_info({dst})").fetchall()}
+            for r in conn.execute(f"PRAGMA table_info({src})").fetchall():
+                if r[1] not in got:   # (cid, name, type, notnull, default, pk)
+                    default = f" DEFAULT {r[4]}" if r[4] is not None else ""
+                    notnull = " NOT NULL" if r[3] and r[4] is not None else ""
+                    conn.execute(f"ALTER TABLE {dst} ADD COLUMN {r[1]} {r[2]}{notnull}{default}")
+        conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{code}_found_snapshots_sub "
+                     f"ON {code}_found_snapshots(submission_id, polled_at)")
 
 
 _DA_URL_ID_RE = re.compile(r"-(\d+)(?:[/?#].*)?$")

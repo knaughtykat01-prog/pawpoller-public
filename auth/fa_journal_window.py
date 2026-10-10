@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +44,17 @@ def fill_script(title: str, message: str, rating: str) -> str:
     return _FILL_JS % json.dumps({"t": (title or "")[:60], "m": message or "", "r": str(rating or "0")})
 
 
+def on_fa(url: str) -> bool:
+    """The page is FA's own (checked on the host, not anywhere in the address)."""
+    host = (urlparse(url or "").hostname or "").lower()
+    return host == "furaffinity.net" or host.endswith(".furaffinity.net")
+
+
 def posted_journal(url: str) -> str:
     """The new journal's id when FA has landed on it, else ''."""
-    m = re.search(r"furaffinity\.net/journal/(\d+)", url or "")
+    if not on_fa(url):
+        return ""
+    m = re.match(r"/journal/(\d+)", urlparse(url).path or "")
     return m.group(1) if m else ""
 
 
@@ -72,7 +81,9 @@ def open_fa_journal(title: str, message: str, rating: str, on_posted=None) -> di
                 return
             if state["filled"]:
                 return
-            if "/controls/journal" in url:
+            if not on_fa(url):
+                return                              # never fill or follow anything off FA
+            if urlparse(url).path.startswith("/controls/journal"):
                 state["filled"] = win.evaluate_js(script) == "filled"
             elif win.evaluate_js(_SIGNED_IN_JS):
                 win.load_url(JOURNAL_PAGE)          # signed in now (e.g. after FA's login page): go to the form

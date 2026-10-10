@@ -1514,6 +1514,8 @@ a.stat-card:hover {
 
 .setup-step-line {
     width: 36px;
+    flex: 0 1 36px;     /* 13 steps since 4.66.0: the lines give way before the dots spill out */
+    min-width: 2px;
     height: 2px;
     background: var(--border);
     transition: background var(--transition);
@@ -1646,6 +1648,12 @@ a.stat-card:hover {
     margin-bottom: 4px;
 }
 
+/* Setup's tick-box rows and the inline site picker (4.66.0, spec 032). */
+.setup-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.setup-choice { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--border);
+    border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--text-primary); }
+.setup-site-picker { text-align: left; max-height: 50vh; overflow: auto; }
+
 .setup-mode-card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
@@ -1690,6 +1698,7 @@ a.stat-card:hover {
     .setup-wizard { padding: 24px 16px; max-width: 100%; }
     .setup-platforms { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
     .setup-step-line { width: 20px; }
+    .setup-step-dot { width: 20px; height: 20px; font-size: 10px; flex-shrink: 0; }
     .setup-mode-card { padding: 12px; }
 }
 
@@ -2956,3 +2965,8 @@ html[data-mobile="1"] .tgopt input[type="checkbox"] { width: 20px; height: 20px;
 .pub-confirm-journal summary { cursor: pointer; font-weight: 600; }
 .pub-confirm-jsites { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0; }
 .pub-confirm-journal input[type="text"] { width: 100%; }
+
+/* Whose upload a board post is, and why it's tracked (spec 028). */
+.board-origin { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; font-size: 11px; }
+.board-who { color: var(--text-secondary); }
+.board-why { padding: 1px 6px; border-radius: 999px; background: var(--bg-tertiary, rgba(127,127,127,.15)); color: var(--text-primary); }

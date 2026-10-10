@@ -512,3 +512,14 @@ html[data-mobile="1"] #shelf-view-btn { display: none; }
 .bp-vers input[type="checkbox"] { width: auto; min-height: 0; margin: 0; }
 .bp-table .mp-plat { display: inline-flex; align-items: center; gap: .2rem; margin-right: .35rem; }
 .bp-vlabel { font-size: .72rem; color: var(--text-muted); }
+
+/* Rule34 by hand (4.66.0, spec 028 US7) */
+.mp-r34-row { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap;
+    padding: .5rem 0; border-top: 1px solid var(--border); margin-top: .5rem; font-size: 14px; }
+.r34-kit { display: flex; flex-direction: column; gap: 8px; }
+.r34-kit textarea { width: 100%; font-family: var(--font-mono, monospace); font-size: 12px; resize: vertical; }
+.r34-kit button { align-self: flex-start; }
+.r34-kit-steps { margin: 4px 0 6px; padding-left: 18px; line-height: 1.6; font-size: 13px; }
+.r34-kit-label { font-weight: 600; font-size: 13px; margin-top: 6px; }
+.r34-kit-note { font-size: 12px; }
+.r34-kit a { color: var(--accent); text-decoration: underline; }

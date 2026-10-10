@@ -200,3 +200,13 @@ button.acct-stat { font: inherit; line-height: inherit; }
 .acct-da-status.ok    { color: var(--success); }
 .acct-da-status.warn  { color: var(--warning, #d29922); }
 .acct-da-status.muted { color: var(--text-muted); }
+
+/* Track panel (spec 028): what an e621/Furbooru account follows. */
+.acct-track-new { font-size: 12px; color: var(--accent); }
+.acct-track-editor { display: block; margin: 6px 0 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.acct-track-q { margin: 8px 0 4px; font-size: 13px; }
+.acct-track-opt { display: flex; gap: 8px; align-items: center; font-size: 13px; margin: 4px 0; }
+.acct-track-sub { margin: 2px 0 6px 26px; font-size: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.acct-track-sub .search-input { max-width: 320px; flex: 1 1 200px; }
+.acct-track-actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+p.acct-track-sub { display: block; }

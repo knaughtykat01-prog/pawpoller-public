@@ -52,6 +52,7 @@ SITE_AGES: dict[str, dict] = {
     "sf":   {"min": 18, "adult_only": False, "checked": False, "note": "Check SoFurry's terms"},
     "ik":   {"min": 13, "adult_only": False, "checked": False, "note": "Check Itaku's terms"},
     "fbr":  {"min": 18, "adult_only": False, "checked": False, "note": "Check Furbooru's terms"},
+    "r34":  {"min": 18, "adult_only": True, "checked": False, "note": "An adults-only site"},
     "fn":   {"min": 18, "adult_only": False, "checked": False, "note": "Check FurryNetwork's terms"},
     "sqw":  {"min": 13, "adult_only": False, "checked": False, "note": "Check SquidgeWorld's terms"},
     "pic":  {"min": 18, "adult_only": False, "checked": False,

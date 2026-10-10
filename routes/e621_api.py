@@ -155,6 +155,10 @@ def get_e621_summary(account_id: int | None = Query(None)):
     try:
         summary = e621_queries.get_e621_summary(conn, account_id=account_id)
         summary["growth_rates"] = e621_queries.get_e621_growth_rates(conn)
+        from polling import board_track
+        found = board_track.found_summary(conn, "e621", account_id)
+        if found["posts"]:
+            summary["found"] = found      # others' uploads kept out of the totals (spec 028)
         return summary
     except Exception as e:
         logger.error("Error in /api/e621/summary: %s", e, exc_info=True)
@@ -169,10 +173,21 @@ def get_e621_submissions(
     order: str = Query("desc", description="Sort order"),
     search: str = Query("", description="Search title/keywords"),
     account_id: int | None = Query(None),
+    uploaded_by: str = Query("", description="me | others | found (spec 028)"),
 ):
     conn = get_connection()
     try:
-        subs = e621_queries.get_all_e621_submissions(conn, sort_by=sort_by, order=order, account_id=account_id)
+        if uploaded_by == "found":
+            sql, args = "SELECT * FROM e621_found", []
+            if account_id:
+                sql, args = sql + " WHERE account_id = ?", [account_id]
+            subs = [dict(r) for r in conn.execute(sql + " ORDER BY submission_id DESC", args)]
+        else:
+            subs = e621_queries.get_all_e621_submissions(conn, sort_by=sort_by, order=order, account_id=account_id)
+        if uploaded_by in ("me", "others"):
+            subs = [s for s in subs if bool(s.get("uploaded_by_me", 1)) == (uploaded_by == "me")]
+        from polling import board_track
+        board_track.add_labels(conn, subs)
         deltas = e621_queries.get_e621_submission_deltas(conn)
 
         if search:

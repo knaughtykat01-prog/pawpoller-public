@@ -22,7 +22,7 @@ def _under18():
 
 def test_every_platform_has_its_own_minimum_age():
     assert set(age_gate.SITE_AGES) == set(PLATFORM_NAMES)
-    assert {c for c, v in age_gate.SITE_AGES.items() if v["adult_only"]} == {"fa", "ib", "e621"}
+    assert {c for c, v in age_gate.SITE_AGES.items() if v["adult_only"]} == {"fa", "ib", "e621", "r34"}
 
 
 def test_adults_and_unanswered_installs_are_not_locked():

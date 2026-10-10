@@ -47,7 +47,9 @@ def test_class_counts_match_the_spec(conn):
     # originate one. See the registry entries for the full reasoning.
     # +4 in 4.46.0: Picarto — its trio via PLATFORM_PREFIXES, plus pic_channel_snapshots (poll output).
     # +3 in 4.59.0: Facebook's trio via PLATFORM_PREFIXES (spec 029).
-    assert counts["SRV"] == 86
+    # +4 in 4.64.0: e621/Furbooru found + found_snapshots (spec 028).
+    # +5 in 4.65.0: Rule34's trio via PLATFORM_PREFIXES + r34_found / r34_found_snapshots (spec 028 US6).
+    assert counts["SRV"] == 95
     # The spec's §1 says 25 but enumerates 26; two of those (posting_queue,
     # posting_log) are reclassified HANDOFF here for the reasons in the module
     # docstring, leaving 24 that actually travel as shared rows.

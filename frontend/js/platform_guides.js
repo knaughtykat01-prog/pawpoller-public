@@ -482,6 +482,25 @@
       ],
     },
 
+    // ── Rule34.xxx (4.65.0, spec 028 US6) ────────────────────
+    r34: {
+      kind: 'Analytics only', difficulty: 'Easy',
+      summary: 'Follow score and comments on your Rule34 uploads, and (with Track) posts other people upload with your artist tag or your characters. PawPoller never posts to Rule34.',
+      need: ['A Rule34.xxx account', 'Your API key and user id (Rule34 now asks for both, even to read)'],
+      steps: [
+        { t: 'Find your API key', b: 'Log in to Rule34.xxx and open <b>My Account &rarr; Options</b>. Under <b>API Access Credentials</b> you will see an API key and a user id (a number). Copy both.',
+          link: { label: 'rule34.xxx', url: 'https://rule34.xxx' } },
+        { t: 'Connect in PawPoller', b: 'In Settings &rarr; Platforms &rarr; Rule34.xxx, enter your Rule34 <b>username</b>, paste the <b>API key</b> and the <b>user id</b>, then press <b>Connect</b>.' },
+        { t: 'Choose what to follow', b: 'In Settings &rarr; Accounts, press <b>Track</b> on the Rule34 account to add your artist tag and your characters. Posts by other people land under <b>Found on Rule34</b>, apart from your own uploads.' },
+      ],
+      paste: 'Settings → Platforms → Rule34.xxx → Username + API key + user id',
+      renew: { when: 'API keys don\'t expire', how: 'Only if you make a new key on Rule34 — paste it back in.' },
+      notes: [
+        'Rule34 shares a <b>score</b> and a <b>comment count</b> for each post. It does not share views or favourites, so those stay blank rather than reading as zero.',
+        'Posting to Rule34 is done by hand on the site; PawPoller only reads it.',
+      ],
+    },
+
     // ── Podcast feed (4.28.1) ────────────────────────────────
     pod: {
       kind: 'Posting', difficulty: 'Medium',

@@ -71,3 +71,14 @@ def test_remember_token_is_a_vaulted_account_field():
     assert "ao3_remember_token" in config.PLATFORM_CREDENTIAL_FIELDS["ao3"]
     assert config.is_credential_key("ao3_remember_token")
     assert config.is_credential_key("acct_7_ao3_remember_token")
+
+
+def test_a_dot_domain_cookie_never_follows_the_client_to_the_next_account():
+    """SECLOW4622: AO3 setting its cookies with a leading-dot domain must not let one account's sign-in
+    survive the shared poller client's switch to another account."""
+    cli = AO3Client("", "", "kat", session_cookie="a-sess", remember_token="a-rem")
+    cli._http.cookies.set(SESSION_COOKIE, "a-dot", domain=".archiveofourown.org", path="/")
+    cli._http.cookies.set(REMEMBER_COOKIE, "a-rem-dot", domain=".archiveofourown.org", path="/")
+    cli.update_credentials("", "", "other", session_cookie="b-sess", remember_token="b-rem")
+    assert _jar(cli, SESSION_COOKIE) == ["b-sess"] and _jar(cli, REMEMBER_COOKIE) == ["b-rem"]
+    assert cli.fresh_cookies() == {}

@@ -126,19 +126,24 @@ window.Tour = (function () {
             // and data-page="posting" (retired 2.155.0) — both nav entries are gone,
             // so both steps were silently targeting nothing.
             { target: '.nav-link[data-page="library"]', title: 'Library', body: 'Every work you track — stories and artwork alike — lives here, with views, faves and comments pulled in from each platform. Filter by type, or review what polling has discovered.' },
+            { target: '.nav-link[data-page="inbox"]', title: 'Inbox', body: 'Comments from every site in one list. Reply from here where the site allows it, or tick them off as handled.' },
+            { target: '.nav-link[data-page="posts"]', title: 'Posts', body: 'Short posts and journals: write once, send to Bluesky, X, Mastodon, Threads, Tumblr and more, now or at a time you pick.' },
             { target: '.nav-link[data-page="editor"]', title: 'Story Editor', body: 'Write or import a story, tag it per platform, then run a Publish Check to catch problems <em>before</em> anything goes live.' },
             { target: '.nav-link[data-page="analytics"]', title: 'Analytics', body: 'Views, favourites and comments over time — combined across every platform, or broken down site by site.' },
             { target: '#poll-status-mini', title: 'Polling', body: 'PawPoller checks your platforms on a schedule and refreshes these numbers on its own. This badge shows the current cycle at a glance.' },
-            { target: '.nav-link[data-page="settings"]', title: 'Settings', body: 'Connect accounts, set how often each platform is polled, schedule posts, and secure the dashboard — it’s all in here.' },
+            { target: '#pp-notif-bell', title: 'The bell', body: 'What PawPoller did and found: posts that went out or failed, new comments, sign-ins that need redoing. Coming back after a while? An <em>Overnight</em> summary opens on its own.' },
+            { target: '.nav-link[data-page="settings"]', title: 'Settings', body: 'Your time zone, how often each site is checked, notifications, security and backups — it’s all in here.' },
             { target: '#account-menu-btn', title: 'Tours live here', body: 'That’s the shell. Every page has its own tour too: open this menu and pick “Take the tour” any time to run through wherever you are.' },
             { target: null, title: 'You’re all set 🎉', body: 'The best first step is to connect a platform, then add your first story.<br><br><a href="#/platforms" class="pp-tour-link" data-tour-go>Connect a platform →</a>', cta: 'Finish' },
         ],
 
         'platforms': [
-            { target: null, title: 'Welcome to Platforms', body: 'This is your Platforms hub — a tile for every service PawPoller can track, all gathered in one spot.' },
-            { target: '.page-header', title: 'Your platforms hub', body: 'Every platform PawPoller supports lives here, from Inkbunny to Bluesky — your launchpad into each one.' },
-            { target: '#platform-grid', title: 'Platform tiles', body: 'Each tile shows a platform’s live views, favourites and works. Click one to open its own dashboard.' },
-            { target: '.pp-health-dot', title: 'Live health dot', body: 'This dot shows whether a platform is polling happily — green for healthy, amber or red if it needs a look.' },
+            { target: null, title: 'Welcome to Platforms', body: 'Every site you’ve connected, with its numbers, in one place. Open one for its own dashboard.' },
+            { target: '#ph-att-h', title: 'Needs attention', body: 'Only shows when something’s wrong — a sign-in that ran out, or a site that stopped answering — with the button to fix it.' },
+            { target: '#ph-mine-h', title: 'Your platforms', body: 'One tile per connected site with its audience and works. Click a tile to open that site’s dashboard; ⋯ checks it now or opens its setup guide.' },
+            { target: '.ph-tools', title: 'Tiles or a list', body: 'Switch between tiles and a list, and sort by biggest audience, A–Z or your own order.' },
+            { target: '[data-act="choose"]', title: 'Choose platforms', body: 'Pick which sites PawPoller shows. Sites you don’t use stay out of every page and menu.' },
+            { target: '#ph-unset-h', title: 'Not set up yet', body: 'Sites you could add. <em>Set up</em> walks you through it step by step; ✕ hides one you’ll never use.' },
             { target: '.logo-disclaimer', title: 'A quick disclaimer', body: 'PawPoller is independent. Platform names and logos belong to their owners and just help you spot each service.' },
         ],
 
@@ -153,13 +158,13 @@ window.Tour = (function () {
             { target: '#shelf-search', title: 'Search the shelf', body: 'Type a title to narrow the shelf instantly — handy once you’re tracking a lot of pieces.' },
             { target: '.shelf-sort', title: 'Sort', body: 'Newest, A–Z, most platforms — or by pooled views, favourites and comments to see what’s actually landing.' },
             { target: '#shelf-grid', title: 'Your works', body: 'Each cover tells the truth: a gilt ribbon means it’s live, and it says on how many platforms. Click one for its full per-platform detail.' },
-            { target: '.empty-state', title: 'Get works in', body: 'Nothing here yet? Run <em>pawsync</em> to pull your story archive in, or upload art via <strong>Create → New Artwork</strong>.' },
+            { target: '.empty-state', title: 'Get works in', body: 'Nothing here yet? Add art with <strong>New Artwork</strong> or a story with <strong>New Story</strong> in the menu — or connect a site and PawPoller finds what you’ve already posted.' },
         ],
 
         'queue': [
             { target: null, title: 'The posting queue', body: 'The Queue holds every upload and update that’s pending, scheduled or being processed right now.' },
             { target: '.page-header', title: 'Posting Queue', body: 'Your work-in-progress list — items sit here until the scheduler runs them, then move on to History.' },
-            { target: '.empty-state', title: 'Nothing queued', body: 'The Queue starts empty. Upload or update a story from the Stories hub and its jobs appear here.' },
+            { target: '.empty-state', title: 'Nothing queued', body: 'The Queue starts empty. Publish or schedule a story or a piece of art and its jobs appear here.' },
             { target: '.data-table', title: 'Queued items', body: 'Each row shows the story, platform, action and status. Pending items get a <em>Cancel</em> button before they run.' },
             { target: '.nav-link[data-page="posting-log"]', title: 'History', body: 'Once a queued item finishes, its outcome is recorded over in History.' },
         ],
@@ -182,15 +187,18 @@ window.Tour = (function () {
         ],
 
         'posts': [
-            { target: null, title: 'Welcome to Posts', body: 'This is your catalogue of short-form posts across your microblog accounts. To write a new one, head to <strong>Create → New post</strong>.' },
-            { target: '#post-feed', title: 'Recent posts', body: 'Everything you publish lands here, with a per-platform status so you can see what went out where.' },
+            { target: null, title: 'Welcome to Posts', body: 'Your short posts and journals, across every account they went to.' },
+            { target: '.pp-new-btn', title: 'Write something', body: '<em>New post</em> for a short update with pictures; <em>New journal</em> for a titled journal on Weasyl, DeviantArt and FurAffinity.' },
+            { target: '#pp-status', title: 'Filter', body: 'Everything, only what’s scheduled, only what failed (with the reason and a retry), or only journals.' },
+            { target: '#post-feed', title: 'Your posts', body: 'Each post shows where it went and how it did. ⋯ posts it again, copies the text or adds it to a collection.' },
         ],
         'posts-new': [
-            { target: null, title: 'New post', body: 'Compose a short update once and publish it to all your microblog accounts in one go.' },
-            { target: '#post-body', title: 'Write your post', body: 'Type your update here. Bluesky caps posts at 300 characters, so keep an eye on the counter.' },
-            { target: '.post-compose-row', title: 'Image & rating', body: 'Attach a picture, set the content rating, and watch your live character count — all in this row.' },
-            { target: '#post-platforms', title: 'Pick platforms', body: 'Tick which accounts to post to. Bluesky and Mastodon are live; the rest are <em>text-only</em> for now.' },
-            { target: '#post-submit', title: 'Publish it', body: 'Happy with your post? Hit Post to send it to every ticked platform at once. You’ll jump to the feed to see it land.' },
+            { target: null, title: 'New post', body: 'Write a short update once and send it to all your accounts in one go.' },
+            { target: '#post-body', title: 'Write your post', body: 'Type it here. Each site’s ring fills as you near its length limit (Bluesky’s is 300 characters).' },
+            { target: 'label.pp-tool:has(#post-image)', title: 'Pictures', body: 'Add up to four pictures with alt text. Several pictures go up together where the site allows it.' },
+            { target: '#post-rating', title: 'Rating', body: 'General, Mature or Adult. Sites that don’t allow a rating grey themselves out and say why.' },
+            { target: '#post-platforms', title: 'Where it goes', body: 'Switch on the accounts to post to. A site that can’t take this post tells you why instead.' },
+            { target: '#post-submit', title: 'Post or schedule', body: '<em>Post now</em> sends it to every switched-on site; <em>Schedule…</em> picks a time, with your best time to post suggested.' },
         ],
 
         'analytics': [
@@ -221,13 +229,14 @@ window.Tour = (function () {
             { target: '#personas-card', title: 'Personas', body: 'Bundle accounts across platforms into one <em>persona</em> for scoped views and per-persona digests.' },
             { target: '#accounts-add', title: 'Add an account', body: 'Pick a platform, label the account and enter its credentials. The first on a platform becomes its default.' },
             { target: '#accounts-list', title: 'Accounts by platform', body: 'Your accounts live here, grouped by platform — toggle, rename, delete or assign each to a persona.' },
-            { target: '#fa-polling-card', title: 'FurAffinity polling', body: 'Flip this to scrape FurAffinity directly with your cookies when FAExport is blocked — <em>desktop app only</em>.' },
+            { target: '#fa-polling-card', title: 'FurAffinity polling', body: 'Choose how PawPoller checks FurAffinity for new favourites, comments and watchers.' },
         ],
 
         'settings': [
             { target: null, title: 'Welcome to Settings', body: 'This is where PawPoller is configured — connect platforms, tune polling, secure your dashboard and more.' },
-            { target: '#settings-rail', title: 'Settings pages', body: 'Everything is grouped into four sections down this rail — Account, Publishing, Monitoring, System. Search at the top finds a setting on any page.' },
-            { target: '[data-spage="platforms"]', title: 'Platforms', body: 'Start here — connect each site you post to (FurAffinity, Inkbunny, Bluesky and the rest).' },
+            { target: '#settings-rail', title: 'Settings pages', body: 'Every settings page is down this rail. Search at the top finds a setting on any page.' },
+            { target: '[data-spage="preferences"]', title: 'General', body: 'Your time zone lives here. Every time on screen, every schedule and every chart uses it.' },
+            { target: '[data-spage="platforms"]', title: 'Platforms', body: 'Connect each site you post to (FurAffinity, Inkbunny, Bluesky and the rest), each with a step-by-step guide.' },
             { target: '[data-spage="notifications"]', title: 'Notifications', body: 'Every site\'s desktop-alert switch in one table, then Telegram, Discord and the weekly email. Everything in Settings saves the moment you change it.' },
             { target: '[data-spage="polling"]', title: 'Polling', body: 'Set how often each platform is checked for new favourites and comments, and pause or resume polling.' },
             { target: '[data-spage="security"]', title: 'Security', body: 'Lock down your dashboard — change your password, turn on two-factor login and manage API keys.' },
@@ -509,5 +518,12 @@ window.Tour = (function () {
         } catch (e) { /* never let onboarding break navigation */ }
     }
 
-    return { start, startHere, maybeAuto, end, isDone, hydrate, tourForHash };
+    /* Mark a tour seen without running it (setup's "Go to the dashboard", spec 032). */
+    function skip(name) {
+        markLocal(name);
+        if (_serverSeen) _serverSeen.add(name);
+        postSeen(name);
+    }
+
+    return { start, startHere, maybeAuto, end, isDone, hydrate, tourForHash, skip };
 })();

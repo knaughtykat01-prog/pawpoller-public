@@ -43,6 +43,8 @@ logger = logging.getLogger(__name__)
 # tests/test_poll_registry.py now asserts this list against the poll-cycle map.
 PLATFORMS = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky",
              "tw", "mast", "tum", "pix", "thr", "ig", "e621", "fn", "fbr", "tg",
+             # 4.65.0 (spec 028 US6): Rule34.xxx — tracking only, never posts.
+             "r34",
              # 4.21.1 (MEDIAPLATS): a podcast feed PawPoller serves itself — one account per feed.
              "pod",
              # 4.22.0 (MEDIAPLATS): SoundCloud — poll + post, OAuth 2.1 user token.
@@ -79,7 +81,7 @@ PLATFORM_NAMES = {
     "sqw": "SquidgeWorld", "ao3": "AO3", "da": "DeviantArt", "wp": "Wattpad",
     "ik": "Itaku", "bsky": "Bluesky", "tw": "X/Twitter", "mast": "Mastodon",
     "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads", "ig": "Instagram",
-    "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "tg": "Telegram",
+    "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "tg": "Telegram", "r34": "Rule34.xxx",
     "pod": "Podcast feed",
     "sc": "SoundCloud",
     "ng": "Newgrounds",
@@ -120,6 +122,7 @@ DEFAULT_CRED_CHECKS = {
     # pasted by hand is the only live path — that token IS the credential.
     "fn": lambda s: bool(s.get("fn_refresh_token") or s.get("fn_access_token")),
     "fbr": lambda s: bool(s.get("fbr_username") and s.get("fbr_api_key")),
+    "r34": lambda s: bool(s.get("r34_api_key") and s.get("r34_user_id")),
     # 4.8.0: channel posting has its own bot; the notification bot is never
     # borrowed. The channel has no fallback either: without one there is
     # nowhere to post.
@@ -165,6 +168,7 @@ _HANDLE_KEYS = {
     "e621": ["e621_username"],
     "fn": ["fn_username"],
     "fbr": ["fbr_username"],
+    "r34": ["r34_username", "r34_user_id"],
     # The channel IS the identity: "@name" for a public channel, "-100…" for a
     # private one. Load-bearing for mirroring — see the migration in db.py that
     # backfills it onto rows auto-created before Telegram was a real platform.

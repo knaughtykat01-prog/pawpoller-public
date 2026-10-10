@@ -379,6 +379,7 @@ const API = {
     getMasterpieces() { return this.get('/api/masterpieces'); },
     getMasterpiece(name) { return this.get(`/api/masterpieces/${encodeURIComponent(name)}`); },
     /* What each platform actually receives as tags, and what it loses (3.12.0). */
+    getRule34Kit(name) { return this.get(`/api/masterpieces/${encodeURIComponent(name)}/rule34-kit`); },
     getMasterpieceTagPreview(name) {
         return this.get(`/api/masterpieces/${encodeURIComponent(name)}/tag-preview`);
     },
@@ -548,6 +549,11 @@ const API = {
     // Mute/unmute a platform's session-health alert (auto-clears on recovery).
     muteSessionAlert(code, muted) { return this.post('/api/platforms/sessions/mute', { code, muted }); },
     getNotifications(limit) { return this.get('/api/notifications', limit ? { limit } : {}); },
+    // What an e621/Furbooru account follows besides its uploads (spec 028).
+    getBoardTrack(id) { return this.get(`/api/board-track/${encodeURIComponent(id)}`); },
+    saveBoardTrack(id, body) { return this.put(`/api/board-track/${encodeURIComponent(id)}`, body); },
+    suggestBoardTag(id) { return this.get(`/api/board-track/${encodeURIComponent(id)}/suggest`); },
+    boardTagCount(id, tag) { return this.get(`/api/board-track/${encodeURIComponent(id)}/tag-count`, { tag }); },
     markNotificationsRead() { return this.post('/api/notifications/mark-read', {}); },
     clearNotifications() { return this.post('/api/notifications/clear', {}); },
     // Unified system-event feed (poll_log + posting_log merged) for
@@ -953,6 +959,21 @@ const API = {
     triggerFBRPoll() { return this.post('/api/fbr/poll/trigger'); },
     fullFBRResync() { return this.post('/api/fbr/poll/full-resync'); },
     getFBRPollProgress() { return this.get('/api/fbr/poll/progress'); },
+    // Rule34.xxx (4.65.0, spec 028 US6): tracking only.
+    getR34AuthStatus() { return this.get('/api/r34/auth/status'); },
+    r34Connect(data) { return this.post('/api/r34/auth/connect', data); },
+    r34Disconnect() { return this.post('/api/r34/auth/disconnect'); },
+    getR34Status() { return this.get('/api/r34/status'); },
+    getR34Summary(params) { return this.get('/api/r34/summary', params); },
+    getR34Submissions(params) { return this.get('/api/r34/submissions', params); },
+    getR34Submission(id) { return this.get(`/api/r34/submissions/${encodeURIComponent(id)}`); },
+    getR34Snapshots(id, params) { return this.get(`/api/r34/submissions/${encodeURIComponent(id)}/snapshots`, params); },
+    getR34Aggregate(params) { return this.get('/api/r34/aggregate', params); },
+    getR34Comparison(ids, params) { return this.get('/api/r34/comparison', { ids: ids.join(','), ...params }); },
+    getR34PollLog(limit) { return this.get('/api/r34/poll_log', { limit }); },
+    triggerR34Poll() { return this.post('/api/r34/poll/trigger'); },
+    fullR34Resync() { return this.post('/api/r34/poll/full-resync'); },
+    getR34PollProgress() { return this.get('/api/r34/poll/progress'); },
     /* ── Telegram convenience methods ─────────────────────────────
      * Channel analytics. There are deliberately no auth methods here — the
      * bot token and channel are set through /api/settings/telegram/*, which

@@ -15,7 +15,7 @@
   <a href="#server--docker-deployment"><img src="https://img.shields.io/badge/Docker-supported-2496ED.svg" alt="Docker supported"></a>
 </p>
 
-PawPoller is a desktop app and self-hosted server for publishing fiction and artwork across furry platforms. Write in Markdown, convert to every format (BBCode, HTML, Styled HTML, PDF), publish to **22 platforms** with per-chapter tags and descriptions, and track views, favourites and comments across **23** from one dashboard. Corrections are made once and pushed back out: PawPoller can **edit an existing post in place on 9 platforms**. Most multi-platform tools stop at the upload. [PostyBirb](https://www.postybirb.com/) reaches more sites than PawPoller does (37 to 20) and is excellent at getting a piece out the door -- but it has no analytics and no way to edit a post once it is live. PawPoller is built around the half that comes after: every view, favourite and comment in one place, and the ability to go back and change what you published.
+PawPoller is a desktop app and self-hosted server for publishing fiction and artwork across furry platforms. Write in Markdown, convert to every format (BBCode, HTML, Styled HTML, PDF), publish to **22 platforms** with per-chapter tags and descriptions, and track views, favourites and comments across **24** from one dashboard. Corrections are made once and pushed back out: PawPoller can **edit an existing post in place on 9 platforms**. Most multi-platform tools stop at the upload. [PostyBirb](https://www.postybirb.com/) reaches more sites than PawPoller does (37 to 20) and is excellent at getting a piece out the door -- but it has no analytics and no way to edit a post once it is live. PawPoller is built around the half that comes after: every view, favourite and comment in one place, and the ability to go back and change what you published.
 
 ---
 
@@ -107,7 +107,7 @@ The dashboard binds to `127.0.0.1:8420` by default (loopback only), reachable at
 
 ## Supported Platforms
 
-**25 platforms — 23 polled, 22 posted to, 13 editable in place.**
+**26 platforms — 24 polled, 22 posted to, 13 editable in place.**
 
 "Edit" means PawPoller can push metadata changes to an *existing* post, so a
 correction made once in the app can be synced everywhere it was published.
@@ -128,6 +128,7 @@ correction made once in the app can be synced everywhere it was published.
 | Furbooru | Username + API key | Yes | Yes | -- | Philomena JSON API; uploads are checked against the site's Do-Not-Post list first; tags are communal (edit on-site) |
 | FurryNetwork | Refresh token | Yes | Yes | -- | The OAuth password grant is behind reCAPTCHA; paste a refresh token |
 | Instagram | Meta access token | Yes | Yes | -- | Official Graph API; Business/Creator account |
+| Rule34.xxx | Username + API key + user id | Yes | -- | -- | Tracking only (4.65.0): your uploads, plus your artist tag and characters with Track; score + comments (no views or favourites) |
 | Pixiv | Refresh token | Yes | -- | -- | App API; illustrations + novels |
 | Wattpad | Public (read-only) | Yes | -- | -- | Public stats only |
 
@@ -289,7 +290,7 @@ python -m pytest tests/ -v
 
 ## Security
 
-PawPoller holds your login credentials for up to 25 platforms, so credential handling is
+PawPoller holds your login credentials for up to 26 platforms, so credential handling is
 treated as the core of the app: secrets are **always** stored in an encrypted vault
 (AES-128 + HMAC via Fernet), never in plaintext, with the key held in your OS keystore or an
 out-of-band env var on a server ([SETUP: the credential vault](docs/SETUP.md#the-credential-vault)).

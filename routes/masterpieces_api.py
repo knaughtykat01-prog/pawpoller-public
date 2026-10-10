@@ -1604,6 +1604,51 @@ def tag_preview(name: str):
     return {"name": name, "canonical": canonical, "core_count": core_len,
             "platforms": rows}
 
+# ── Rule34 by hand (4.66.0, spec 028 US7) ─────────────────────────────────────
+# Rule34.xxx gives apps no way to upload, and its site has bot checks, so PawPoller never
+# fills in or sends its form (constitution VII). It hands over what to paste instead.
+R34_UPLOAD_URL = "https://rule34.xxx/index.php?page=post&s=add"
+_R34_RATING = ("safe", "questionable", "explicit")
+
+
+def r34_tags(tags) -> list[str]:
+    """Tags in Rule34's form: lower case, underscores, no category prefix, each once, order kept."""
+    out, seen = [], set()
+    for t in tags or []:
+        t = str(t).strip().lower()
+        for prefix in ("artist:", "character:", "species:", "copyright:", "general:", "meta:"):
+            if t.startswith(prefix):
+                t = t[len(prefix):]
+        t = "_".join(t.split())
+        if t and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+@masterpieces_router.get("/{name}/rule34-kit")
+def rule34_kit(name: str):
+    """What to paste into Rule34's upload page for this piece: tags, rating, sources."""
+    import age_gate
+    from posting.platforms.base import rating_rank
+    if age_gate.is_under_18():
+        raise HTTPException(403, detail="Rule34 is for adults only.")
+    try:
+        art = artwork_reader.load_artwork(name)
+    except FileNotFoundError:
+        raise HTTPException(404, detail="Masterpiece not found")
+    pkg = artwork_reader.build_artwork_package(art, "r34")
+    conn = get_connection()
+    try:
+        members = mq.rollup_members(conn, name)["members"]
+    finally:
+        conn.close()
+    sources = [m["url"] for m in members if m.get("url") and m.get("platform") != "r34"]
+    return {"name": name, "tags": r34_tags(pkg.tags), "rating": _R34_RATING[rating_rank(pkg.rating)],
+            "sources": sources, "upload_url": R34_UPLOAD_URL,
+            "on_rule34": any(m.get("platform") == "r34" for m in members)}
+
+
 @masterpieces_router.post("/{name}/sync")
 async def sync_masterpiece(name: str, body: dict | None = None):
     """Push the canonical record to every **editable** member (metadata only —

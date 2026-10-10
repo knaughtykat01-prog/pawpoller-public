@@ -104,6 +104,9 @@ const App = {
     _fbrSortState: { field: 'score', order: 'desc' },
     _fbrCompareIds: new Set(),
     _fbrCompareMetric: 'score',
+    _r34SortState: { field: 'score', order: 'desc' },
+    _r34CompareIds: new Set(),
+    _r34CompareMetric: 'score',
     // Telegram has a single metric, so there is no _tgCompareMetric — its
     // compare page charts reactions and offers no picker.
     _tgSortState: { field: 'posted_at', order: 'desc' },
@@ -371,6 +374,8 @@ const App = {
         if (this._statusCheckInterval) clearInterval(this._statusCheckInterval);
         this._statusCheckInterval = setInterval(() => this._updateStatusCheck(), 60000);
         this._initProgressCheckBar();
+        // Spec 026: the Overnight sheet, once per absence (the server decides; never over sign-in/setup).
+        if (window.Overnight && !/^#\/(login|loading|setup|dashboard-)/.test(location.hash)) Overnight.auto();
 
         /* Guided tours auto-fire from route() (see the Tour.maybeAuto hook
            there): getting-started once on the overview first-run, then each
@@ -1356,6 +1361,14 @@ const App = {
             this.renderFBRDetail(parts[2]);
         } else if (parts[0] === 'fbr' && parts[1] === 'compare') {
             this.renderFBRCompare();
+        } else if (parts[0] === 'r34' && (!parts[1] || parts[1] === '')) {
+            this.renderR34Dashboard();
+        } else if (parts[0] === 'r34' && parts[1] === 'submissions' && !parts[2]) {
+            this.renderR34Submissions();
+        } else if (parts[0] === 'r34' && parts[1] === 'submission' && parts[2]) {
+            this.renderR34Detail(parts[2]);
+        } else if (parts[0] === 'r34' && parts[1] === 'compare') {
+            this.renderR34Compare();
         } else if (parts[0] === 'tg' && (!parts[1] || parts[1] === '')) {
             this.renderTGDashboard();
         } else if (parts[0] === 'tg' && parts[1] === 'submissions' && !parts[2]) {
@@ -1871,6 +1884,7 @@ const App = {
                 { key: 'pic', auth: auth.picAuth?.has_credentials, name: 'Picarto', statusFn: 'getPICStatus', logFn: 'getPICPollLog', tableFn: 'picPollLogTable' },
                 { key: 'fb', auth: auth.fbAuth?.has_credentials, name: 'Facebook', statusFn: 'getFBStatus', logFn: 'getFBPollLog', tableFn: 'ytPollLogTable' },
                 { key: 'fbr', auth: auth.fbrAuth?.has_credentials, name: 'Furbooru', statusFn: 'getFBRStatus', logFn: 'getFBRPollLog', tableFn: 'fbrPollLogTable' },
+                { key: 'r34', auth: auth.r34Auth?.has_credentials, name: 'Rule34.xxx', statusFn: 'getR34Status', logFn: 'getR34PollLog', tableFn: 'r34PollLogTable' },
                 // Telegram's auth lives in the channel settings, not an
                 // /auth/status route, so its gate reads the health endpoint's
                 // `configured` flag via PlatformHealth instead of _pollingAuth.
@@ -2040,7 +2054,7 @@ const App = {
     _platformLabels: {
         ib: 'Inkbunny', fa: 'FurAffinity', ws: 'Weasyl', sf: 'SoFurry',
         sqw: 'SquidgeWorld', ao3: 'AO3', da: 'DeviantArt', wp: 'Wattpad',
-        ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon', tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram', e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru', sc: 'SoundCloud', ng: 'Newgrounds', yt: 'YouTube', pic: 'Picarto',
+        ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon', tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram', e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru', r34: 'Rule34.xxx', sc: 'SoundCloud', ng: 'Newgrounds', yt: 'YouTube', pic: 'Picarto',
         tg: 'Telegram',
     },
 
@@ -2052,7 +2066,7 @@ const App = {
         // Mirrors polling/session_check.py::CHECKABLE. Telegram's bot token
         // does not expire, but the bot can be removed from the channel — the
         // check catches that, which is otherwise invisible until a post fails.
-        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt', 'pic', 'fb'];
+        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'r34', 'tg', 'sc', 'ng', 'yt', 'pic', 'fb'];
         const LABELS = (window.PlatformHealth && window.PlatformHealth.LABELS) || {};
         const DOT = { valid: 'connected', expired: 'disconnected', error: 'warn', unconfigured: 'muted' };
         const WORD = { valid: 'Valid', expired: 'Expired', error: 'Unverified', unconfigured: 'Not configured' };
@@ -2152,7 +2166,7 @@ const App = {
      * Falls back to the cached snapshot only if the health fetch fails/empty. */
     async _configuredPollCodes() {
         const ALL = ['ib', 'fa', 'ws', 'sf', 'sqw', 'ao3', 'da', 'wp', 'ik',
-            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt', 'pic', 'fb'];
+            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'r34', 'tg', 'sc', 'ng', 'yt', 'pic', 'fb'];
         try {
             const health = await API.getPlatformsHealth();
             if (health && typeof health === 'object') {
@@ -2167,7 +2181,7 @@ const App = {
             bsky: a.bskyAuth?.has_credentials, tw: a.twAuth?.has_credentials, mast: a.mastAuth?.has_credentials,
             tum: a.tumAuth?.has_credentials, pix: a.pixAuth?.has_credentials, thr: a.thrAuth?.has_credentials,
             ig: a.igAuth?.has_credentials, e621: a.e621Auth?.has_credentials,
-            fn: a.fnAuth?.has_credentials, fbr: a.fbrAuth?.has_credentials, sc: a.scAuth?.has_credentials, ng: a.ngAuth?.has_credentials, yt: a.ytAuth?.has_credentials, pic: a.picAuth?.has_credentials, fb: a.fbAuth?.has_credentials,
+            fn: a.fnAuth?.has_credentials, fbr: a.fbrAuth?.has_credentials, r34: a.r34Auth?.has_credentials, sc: a.scAuth?.has_credentials, ng: a.ngAuth?.has_credentials, yt: a.ytAuth?.has_credentials, pic: a.picAuth?.has_credentials, fb: a.fbAuth?.has_credentials,
             // No tgAuth snapshot exists — Telegram is configured through the
             // channel settings rather than an /auth route — so this fallback
             // asks PlatformHealth, which reads the same server-side gate.
@@ -2265,7 +2279,7 @@ const App = {
         if (!confirm(`Full resync re-fetches every ${label} submission from scratch. This can take several minutes and will hit ${label}'s rate limits hard. Continue?`)) return;
         btn.disabled = true;
         btn.textContent = 'Syncing...';
-        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync', fb: 'fullFBResync' };
+        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', r34: 'fullR34Resync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync', fb: 'fullFBResync' };
         try {
             await API[fns[platform]]();
             btn.textContent = 'Done!';
@@ -2930,7 +2944,22 @@ const App = {
             { key: 'ng', name: 'Newgrounds', emoji: '&#127916;', color: '#f5a623', url: 'https://www.newgrounds.com/login' },
             { key: 'yt', name: 'YouTube', emoji: '&#128250;', color: '#ff0000', url: 'https://console.cloud.google.com/apis/library/youtube.googleapis.com' },
             { key: 'pic', name: 'Picarto', emoji: '&#127909;', color: '#2c9dd8', url: 'https://picarto.tv/' },
+            { key: 'fb', name: 'Facebook', emoji: '&#128101;', color: '#1877f2', url: 'https://www.facebook.com/' },
+            { key: 'r34', name: 'Rule34.xxx', emoji: '&#128286;', color: '#aae5a3', url: 'https://rule34.xxx/' },
         ];
+        /* What-you-make → the sites ticked on the sites step (4.66.0, spec 032). Social sites and
+           Telegram suit everyone; gallery sites that also take writing count for stories. */
+        const MAKE_SITES = {
+            art: ['fa', 'ib', 'da', 'e621', 'ws', 'fbr', 'r34', 'fn', 'pix', 'ik'],
+            stories: ['ao3', 'sf', 'sqw', 'wp', 'fa', 'ib', 'da', 'ws'],
+            media: ['yt', 'sc', 'ng', 'pic', 'pod'],
+        };
+        const EVERYONE = ['bsky', 'tw', 'mast', 'thr', 'tum', 'ig', 'fb', 'tg'];
+        const TRACK_ONLY = ['pix', 'wp', 'r34', 'pic'];   // PawPoller reads these, never posts there
+        let prefs = {};
+        let postingDefaults = {};
+        try { [prefs, postingDefaults] = await Promise.all([API.getPreferences(), API.getPostingSettings()]); }
+        catch { /* the new steps fall back to their defaults */ }
 
         /* Detect runtime and pre-load existing state so the wizard can
          * pre-populate fields and show "already connected" badges. */
@@ -3002,11 +3031,17 @@ const App = {
         let _wizSaved = {};
         try { _wizSaved = JSON.parse(sessionStorage.getItem(_WIZ_KEY) || '{}') || {}; } catch (e) { _wizSaved = {}; }
         const _wizSave = () => {
-            try { sessionStorage.setItem(_WIZ_KEY, JSON.stringify({ step: currentStep, mode: selectedMode })); }
+            try { sessionStorage.setItem(_WIZ_KEY, JSON.stringify({ step: currentStep, mode: selectedMode, answers })); }
             catch (e) { /* storage unavailable — the wizard still works, it just forgets */ }
         };
 
         let currentStep = 'welcome';
+        // The 4.66.0 answers (spec 032). makes: [] = not answered (treated as all three).
+        const answers = Object.assign({ makes: [], sitesApplied: null, interval: null, posts: null,
+            rating: postingDefaults.posting_default_rating || '', postSites: postingDefaults.posting_default_platforms || [],
+            hear: 'bell', look: '' }, _wizSaved.answers || {});
+        const makesAll = () => answers.makes.length ? answers.makes : ['art', 'stories', 'media'];
+        const ageLocked = () => document.documentElement.dataset.ageLocked === '1';
         // Server runtime skips mode + pairing entirely — it's always 'server'.
         let selectedMode = runtimeMode === 'server' ? 'server' : null;
         // Mode has to come back BEFORE stepOrder() is consulted — it decides
@@ -3024,16 +3059,18 @@ const App = {
 
         /* Step ordering — recomputed each render so paired_desktop's
          * "skip archive + platforms" branch falls out naturally. */
+        // The story folder is only asked of people who write (4.66.0, spec 032 FR-001).
+        const keep = (s) => s !== 'archive' || makesAll().includes('stories');
         const stepOrder = () => {
             if (runtimeMode === 'server') {
-                return ['welcome', 'timezone', 'age', 'archive', 'platforms', 'persona', 'tech', 'done'];
+                return ['welcome', 'timezone', 'age', 'make', 'archive', 'sites', 'platforms', 'interval', 'posting', 'hear', 'persona', 'tech', 'done'].filter(keep);
             }
             if (selectedMode === 'paired_desktop' || selectedMode === 'connected') {
-                // Paired installs read the server's data — personas live there.
-                return ['welcome', 'timezone', 'age', 'mode', 'pairing', 'tech', 'done'];
+                // Paired installs read the server's data — personas, sites, intervals and defaults live there.
+                return ['welcome', 'timezone', 'age', 'mode', 'pairing', 'hear', 'tech', 'done'];
             }
             // standalone (or undecided) — full flow
-            return ['welcome', 'timezone', 'age', 'mode', 'archive', 'platforms', 'persona', 'tech', 'done'];
+            return ['welcome', 'timezone', 'age', 'mode', 'make', 'archive', 'sites', 'platforms', 'interval', 'posting', 'hear', 'persona', 'tech', 'done'].filter(keep);
         };
 
         // Validate against the CURRENT path rather than trusting what was stored:
@@ -3164,7 +3201,11 @@ const App = {
                     </div>`;
             } else if (currentStep === 'platforms') {
                 /* ── Platform connections ─────────────────────────── */
-                const platformCards = platforms.map(p => {
+                const hidden = new Set(window.HIDDEN_PLATFORMS || []);
+                const fits = new Set(makesAll().flatMap(m => MAKE_SITES[m]));
+                const chosen = platforms.filter(p => !hidden.has(p.key))
+                    .sort((a, b) => (fits.has(b.key) ? 1 : 0) - (fits.has(a.key) ? 1 : 0));
+                const platformCards = chosen.map(p => {
                     const connected = authStatus[p.key];
                     return `
                         <div class="setup-platform-card ${connected ? 'connected' : ''}">
@@ -3178,13 +3219,79 @@ const App = {
 
                 body = `
                     <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">Connect Your Platforms</h2>
-                    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">Connect the platforms you publish on. You can skip any and add them later in Settings.</p>
+                    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">Connect the sites you chose. You can skip any and connect it later in Settings &rarr; Platforms.</p>
                     <div class="setup-platforms">${platformCards}</div>
                     <div style="display:flex;gap:8px;margin-top:16px">
                         <button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
                         <button class="btn btn-primary login-btn" id="setup-next" style="flex:1">Next</button>
                         <button class="btn" id="setup-skip" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Skip for now</button>
                     </div>`;
+            } else if (currentStep === 'make') {
+                /* ── What do you make? (4.66.0, spec 032 US1) ── */
+                const box = (k, label) => `<label class="setup-choice"><input type="checkbox" class="setup-make" value="${k}" ${answers.makes.includes(k) ? 'checked' : ''}> ${label}</label>`;
+                body = `
+                    <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">What do you make?</h2>
+                    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">Tick all that fit. Setup then only asks what matters for it, and shows the sites that take your work first.</p>
+                    <div class="setup-choices">${box('art', 'Art')}${box('stories', 'Stories')}${box('media', 'Music, audio or video')}</div>
+                    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
+                        <button class="btn btn-primary login-btn" id="setup-next" style="flex:1">Next</button></div>`;
+            } else if (currentStep === 'sites') {
+                /* ── Which sites do you use? The Choose platforms picker itself (US2). ── */
+                body = `
+                    <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">Which sites do you use?</h2>
+                    <p style="color:var(--text-secondary);margin-bottom:12px;font-size:13px">We've ticked the ones that take what you make. Unticked sites are hidden from menus and pages; you can bring any back in Settings &rarr; Platforms.</p>
+                    <div id="setup-site-picker" class="setup-site-picker"></div>
+                    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
+                        <button class="btn btn-primary login-btn" id="setup-next" style="flex:1">Next</button></div>`;
+            } else if (currentStep === 'interval') {
+                /* ── How often to check (US3). The allowed set Settings → Polling validates. ── */
+                const opt = (m, label, note) => `<button class="setup-mode-card setup-interval ${answers.interval === m ? 'selected' : ''}" data-minutes="${m}">
+                    <div class="setup-mode-title">${label}</div><div class="setup-mode-desc">${note}</div></button>`;
+                body = `
+                    <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">How often should PawPoller check your sites?</h2>
+                    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">More often means fresher numbers, and more requests to each site. Settings &rarr; Polling can set each site on its own later.</p>
+                    <div class="setup-mode-cards">${opt(60, 'Every hour', 'Freshest numbers')}${opt(240, 'Every 4 hours', 'Recommended')}${opt(720, 'Twice a day', 'Lightest on each site')}</div>
+                    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
+                        <button class="btn btn-primary login-btn" id="setup-next" style="flex:1" ${answers.interval ? '' : 'disabled'}>Next</button><button class="btn" id="setup-skip" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Skip</button></div>`;
+            } else if (currentStep === 'posting') {
+                /* ── Post and track, or only track (US4). ── */
+                const hidden = new Set(window.HIDDEN_PLATFORMS || []);
+                const postable = platforms.filter(p => !hidden.has(p.key) && !TRACK_ONLY.includes(p.key));
+                const ratings = ageLocked() ? ['general'] : ['general', 'mature', 'adult'];
+                const rating = ratings.includes(answers.rating) ? answers.rating : ratings[0];
+                const card = (v, title, desc) => `<button class="setup-mode-card setup-posts ${answers.posts === v ? 'selected' : ''}" data-posts="${v}">
+                    <div class="setup-mode-title">${title}</div><div class="setup-mode-desc">${desc}</div></button>`;
+                body = `
+                    <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">Will you post from PawPoller?</h2>
+                    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">Or only follow your numbers. Either way you can change it later in Settings &rarr; Publishing defaults.</p>
+                    <div class="setup-mode-cards">${card('post', 'Post and track', 'Publish from PawPoller, then follow how it does')}${card('track', 'Only track', 'I post on the sites myself')}</div>
+                    ${answers.posts === 'post' ? `
+                    <div class="login-field" style="margin-top:16px">
+                        <label for="setup-rating">Usual rating</label>
+                        <select id="setup-rating" class="search-input" style="width:100%">${ratings.map(r => `<option value="${r}" ${r === rating ? 'selected' : ''}>${r[0].toUpperCase() + r.slice(1)}</option>`).join('')}</select>
+                    </div>
+                    <div class="login-field"><label>Usual sites to post to</label>
+                        <div class="setup-choices">${postable.map(p => `<label class="setup-choice"><input type="checkbox" class="setup-post-site" value="${p.key}" ${answers.postSites.includes(p.key) ? 'checked' : ''}> ${Utils.escapeHtml(p.name)}</label>`).join('') || '<span style="color:var(--text-muted);font-size:13px">None of your sites take posts from PawPoller.</span>'}</div>
+                    </div>` : ''}
+                    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
+                        <button class="btn btn-primary login-btn" id="setup-next" style="flex:1" ${answers.posts ? '' : 'disabled'}>Next</button><button class="btn" id="setup-skip" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Skip</button></div>`;
+            } else if (currentStep === 'hear') {
+                /* ── How you hear about things, and the look (US5). No keys are typed here. ── */
+                const hear = (v, title, desc) => `<button class="setup-mode-card setup-hear ${answers.hear === v ? 'selected' : ''}" data-hear="${v}">
+                    <div class="setup-mode-title">${title}</div><div class="setup-mode-desc">${desc}</div></button>`;
+                const look = App.getCurrentTheme();
+                body = `
+                    <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">How should PawPoller tell you things?</h2>
+                    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">New comments, milestones and problems. The bell in the app always works; the others are set up after this.</p>
+                    <div class="setup-mode-cards">${hear('bell', 'Just the bell', 'In the app')}${hear('telegram', 'Telegram', 'Messages from your own bot')}${hear('email', 'A weekly email', 'One summary a week')}</div>
+                    <h3 style="font-size:15px;font-weight:600;color:var(--text-primary);margin:18px 0 8px">Look</h3>
+                    <div class="setup-choices" role="group" aria-label="Look">
+                        <button class="btn ${look === 'quill' ? 'btn-primary' : ''} setup-look" data-look="quill" aria-pressed="${look === 'quill'}">Light</button>
+                        <button class="btn ${look === 'quill_dark' ? 'btn-primary' : ''} setup-look" data-look="quill_dark" aria-pressed="${look === 'quill_dark'}">Dark</button>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:12px;margin-top:6px">More looks in Settings &rarr; Appearance.</p>
+                    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
+                        <button class="btn btn-primary login-btn" id="setup-next" style="flex:1">Next</button></div>`;
             } else if (currentStep === 'persona') {
                 /* ── Your persona (gap G2) — name the creative identity that
                    groups your accounts + analytics. Skippable; more can be
@@ -3242,6 +3349,23 @@ const App = {
                         <button class="btn" id="setup-tech-no" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">No thanks</button>
                     </div>`;
             } else if (currentStep === 'done') {
+                /* One line per choice made (spec 032 US6); Telegram / email link to their page, opened
+                   after setup is marked complete (data-finish-to). */
+                const summaryLines = () => {
+                    const out = [];
+                    const every = { 60: 'every hour', 240: 'every 4 hours', 720: 'twice a day' };
+                    if (answers.interval) out.push(`Checks your sites <strong style="color:var(--text-primary)">${every[answers.interval]}</strong>`);
+                    if (answers.posts === 'post') {
+                        const n = answers.postSites.length;
+                        out.push(`Posts as <strong style="color:var(--text-primary)">${Utils.escapeHtml((r => r[0].toUpperCase() + r.slice(1))(answers.rating || 'general'))}</strong>${n ? ` to ${n} site${n === 1 ? '' : 's'} by default` : ''}`);
+                    } else if (answers.posts === 'track') {
+                        out.push('Only tracks your numbers');
+                    }
+                    if (answers.hear === 'telegram') out.push('<a href="#/settings/telegram" data-finish-to="#/settings/telegram">Set up Telegram next</a>');
+                    if (answers.hear === 'email') out.push('<a href="#/settings/notifications" data-finish-to="#/settings/notifications">Set up the weekly email next</a>');
+                    out.push('Change any of this in <strong style="color:var(--text-primary)">Settings</strong>');
+                    return out;
+                };
                 const summaryByMode = {
                     'standalone': 'PawPoller is set up to run locally. It\'ll poll and post from this machine.',
                     'paired_desktop': 'Paired with your server. Settings will sync automatically; the server handles polling.',
@@ -3266,17 +3390,16 @@ const App = {
                 body = `
                     <h2 style="font-size:20px;font-weight:700;color:var(--accent);margin-bottom:8px">You're all set!</h2>
                     <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">${Utils.escapeHtml(summaryByMode[selectedMode] || 'PawPoller is ready.')}</p>
-                    <ul style="text-align:left;color:var(--text-secondary);font-size:13px;line-height:1.8;margin-bottom:24px;list-style:none;padding:0">
-                        <li style="padding:6px 0;border-bottom:1px solid var(--border)">Create a new story in the <strong style="color:var(--text-primary)">Editor</strong></li>
-                        <li style="padding:6px 0;border-bottom:1px solid var(--border)">Check your <strong style="color:var(--text-primary)">analytics</strong> on the dashboard</li>
-                        <li style="padding:6px 0">Configure more platforms in <strong style="color:var(--text-primary)">Settings</strong></li>
+                    <ul class="setup-summary" style="text-align:left;color:var(--text-secondary);font-size:13px;line-height:1.8;margin-bottom:24px;list-style:none;padding:0">
+                        ${summaryLines().map(l => `<li style="padding:6px 0;border-bottom:1px solid var(--border)">${l}</li>`).join('')}
                     </ul>
                     ${firstPoll}
                     ${syncOffer}
                     ${selectedMode === 'connected' ? `
                     <button class="btn btn-primary login-btn" id="setup-restart-connected">Restart PawPoller now</button>
                     <div id="setup-restart-msg" style="font-size:12px;color:var(--text-muted);margin-top:8px"></div>` : `
-                    <button class="btn btn-primary login-btn" id="setup-finish">Go to Dashboard</button>`}`;
+                    <button class="btn btn-primary login-btn" id="setup-finish-tour" style="margin-bottom:8px">Take the tour</button>
+                    <button class="btn login-btn" id="setup-finish" style="background:transparent;color:var(--text-secondary);border:1px solid var(--border)">Go to the dashboard</button>`}`;
             }
 
             if (this._stale(_rt)) return;
@@ -3350,6 +3473,28 @@ const App = {
                     Utils.time.setZone(z);
                     try { localStorage.setItem('pp-display-tz', z); } catch (e) { /* ignore */ }
                 }
+                if (currentStep === 'make') {
+                    answers.makes = [...document.querySelectorAll('.setup-make:checked')].map(i => i.value);
+                    // Tick the sites that fit — only on a fresh install, or over our own earlier pick.
+                    const key = answers.makes.join(',');
+                    if (answers.sitesApplied !== key && (answers.sitesApplied !== null || !(window.HIDDEN_PLATFORMS || []).length)) {
+                        const wanted = new Set([...EVERYONE, ...makesAll().flatMap(m => MAKE_SITES[m])]);
+                        const next = answers.makes.length ? (window.PLATFORMS || []).map(p => p.code).filter(c => !wanted.has(c)) : [];
+                        try { await API.savePreferences({ hidden_platforms: next }); window.HIDDEN_PLATFORMS = next; answers.sitesApplied = key; }
+                        catch (err) { console.warn('[Setup] site pick failed:', err); }
+                    }
+                }
+                if (currentStep === 'interval' && answers.interval) {
+                    const update = {};
+                    Object.keys(prefs).filter(k => k.endsWith('poll_interval_minutes')).forEach(k => { update[k] = answers.interval; });
+                    try { await API.savePreferences(update); } catch (err) { console.warn('[Setup] interval save failed:', err); }
+                }
+                if (currentStep === 'posting' && answers.posts === 'post') {
+                    try {
+                        await API.savePostingSettings({ posting_default_rating: answers.rating || 'general',
+                            posting_default_platforms: answers.postSites });
+                    } catch (err) { console.warn('[Setup] posting defaults save failed:', err); }
+                }
                 if (currentStep === 'archive') {
                     const path = document.getElementById('setup-archive-path')?.value.trim();
                     if (path) {
@@ -3364,7 +3509,42 @@ const App = {
                 goNext();
             });
 
-            document.getElementById('setup-skip')?.addEventListener('click', goNext);
+            document.getElementById('setup-skip')?.addEventListener('click', () => {
+                // A skipped step changes nothing and says nothing on the finish screen (SC-003).
+                if (currentStep === 'interval') answers.interval = null;
+                if (currentStep === 'posting') answers.posts = null;
+                goNext();
+            });
+
+            /* The 4.66.0 steps' choices (spec 032): kept in `answers` as they change, so a re-render
+               (or a round trip to Settings) never loses them. */
+            if (currentStep === 'sites') {
+                const host = document.getElementById('setup-site-picker');
+                if (host && window.PlatformPicker) PlatformPicker.mount(host, { compact: true });
+            }
+            document.querySelectorAll('.setup-interval').forEach(c => c.addEventListener('click', () => {
+                answers.interval = Number(c.dataset.minutes); renderStep();
+            }));
+            document.querySelectorAll('.setup-posts').forEach(c => c.addEventListener('click', () => {
+                answers.posts = c.dataset.posts; renderStep();
+            }));
+            if (currentStep === 'posting' && answers.posts === 'post') answers.rating = document.getElementById('setup-rating')?.value || answers.rating;
+            document.getElementById('setup-rating')?.addEventListener('change', (e) => { answers.rating = e.target.value; });
+            document.querySelectorAll('.setup-post-site').forEach(i => i.addEventListener('change', () => {
+                answers.postSites = [...document.querySelectorAll('.setup-post-site:checked')].map(x => x.value);
+            }));
+            document.querySelectorAll('.setup-hear').forEach(c => c.addEventListener('click', () => {
+                answers.hear = c.dataset.hear; renderStep();
+            }));
+            document.querySelectorAll('.setup-look').forEach(b => b.addEventListener('click', () => {
+                // Not applyTheme(): that re-routes, which would restart the wizard.
+                const id = b.dataset.look;
+                document.documentElement.dataset.theme = id;
+                try { localStorage.setItem('pawpoller-theme', id); } catch (e) { /* ignore */ }
+                API.savePreferences({ theme: id }).catch(() => {});
+                answers.look = id;
+                renderStep();
+            }));
 
             /* Persona step (gap G2) — create via the real personas API, then
              * advance. Skip is the plain setup-skip button above. */
@@ -3503,8 +3683,7 @@ const App = {
                 }
             });
 
-            document.getElementById('setup-finish')?.addEventListener('click', async () => {
-                const btn = document.getElementById('setup-finish');
+            const finish = async (btn, { tour = false, to = '' } = {}) => {
                 btn.disabled = true;
                 btn.textContent = 'Saving...';
                 // The time zone was ASKED for on its own step (4.49.0) — it used to be
@@ -3520,10 +3699,19 @@ const App = {
                  * platform, land them on Settings → Platforms instead of
                  * the empty Inkbunny dashboard (BUG-005 in 2.14.6). The
                  * page reload re-runs init() and the normal gates. */
+                // The getting-started tour fires by itself on the first overview; "Go to the dashboard"
+                // marks it seen instead (it stays in Help).
+                if (!tour) window.Tour?.skip('getting-started');
                 const hasAnyPlatform = Object.values(authStatus).some(v => !!v);
-                window.location.hash = hasAnyPlatform ? '#/' : '#/settings/platforms';
+                window.location.hash = to || (tour || hasAnyPlatform ? '#/' : '#/settings/platforms');
                 window.location.reload();
-            });
+            };
+            document.getElementById('setup-finish')?.addEventListener('click', (e) => finish(e.currentTarget));
+            document.getElementById('setup-finish-tour')?.addEventListener('click', (e) => finish(e.currentTarget, { tour: true }));
+            document.querySelectorAll('[data-finish-to]').forEach(a => a.addEventListener('click', (e) => {
+                e.preventDefault();
+                finish(document.getElementById('setup-finish') || a, { to: a.dataset.finishTo });
+            }));
         };
 
         renderStep();
@@ -5482,6 +5670,7 @@ const App = {
         this._dashWidgetMeta().forEach(m => { metaById[m.id] = m; });
 
         const tools = `<div class="dash-tools">${Components.dateRangeBar(this._dateRange)}`
+            + `<button class="btn btn-secondary" id="dash-overnight" title="What happened while you were away">Overnight</button>`
             + `<button class="btn ${edit ? 'btn-primary' : 'btn-secondary'}" id="dash-customize">${edit ? '✓ Done' : '⚙ Customize'}</button></div>`;
         const hint = edit ? '<div class="dash-edit-hint">Drag to reorder · ⤢ resize · \u{1F43E} platforms · × remove · or add a widget below.</div>' : '';
 
@@ -5522,6 +5711,7 @@ const App = {
             this._renderDashboard();
         }));
 
+        document.getElementById('dash-overnight')?.addEventListener('click', () => window.Overnight && Overnight.manual());
         document.getElementById('dash-customize')?.addEventListener('click', () => {
             this._dashEdit = !this._dashEdit;
             this._renderDashboard();
@@ -11414,6 +11604,7 @@ const App = {
 
                 <div class="stats-grid">
                     ${Components.statCard('Total Posts', summary.total_submissions, null, '#/e621/submissions')}
+                    ${summary.found ? Components.statCard('Found on e621', summary.found.posts, null, '#/e621/submissions') : ''}
                     ${Components.statCard('Total Score', summary.total_score || 0)}
                     ${Components.statCard('Total Favorites', summary.total_favorites || 0)}
                     ${Components.statCard('Total Comments', summary.total_comments || 0)}
@@ -11473,6 +11664,7 @@ const App = {
                 sort_by: this._e621SortState.field,
                 order: this._e621SortState.order,
                 account_id: this._acctId('e621'),
+                uploaded_by: (this._boardWho || {})['e621'] || '',
             });
 
             const _vm = localStorage.getItem('pp-view-mode') || 'grid';
@@ -11482,7 +11674,7 @@ const App = {
                 {
                     idKey: 'submission_id', titleKey: 'title', thumbKey: 'thumbnail_url', proxyThumb: false,
                     typeKey: 'content_type', typeLabels: Components.E621_TYPE_LABELS,
-                    detailRoute: '/e621/submission', dateKey: 'posted_at',
+                    detailRoute: '/e621/submission', dateKey: 'posted_at', extraFn: s => Components.boardOrigin(s),
                     stats: [
                         { key: 'score', deltaKey: 'score_delta', label: 'score' },
                         { key: 'favorites_count', deltaKey: 'favorites_delta', label: 'favorites' },
@@ -11496,6 +11688,10 @@ const App = {
                 <div class="page-header"><h1>e621 Posts</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search posts...">
+                    <select class="search-input board-who-filter" id="board-who" data-code="e621" aria-label="Uploaded by" style="max-width:220px">
+                        ${[['', 'Uploaded by anyone'], ['me', 'Uploaded by you'], ['others', 'Uploaded by others'], ['found', 'Kept apart from totals']]
+                            .map(([v, l]) => `<option value="${v}" ${((this._boardWho || {})['e621'] || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
+                    </select>
                     <div class="view-toggle">
                         <button class="view-toggle-btn ${_vm === 'grid' ? 'active' : ''}" data-view="grid" title="Grid view">&#9638;</button>
                         <button class="view-toggle-btn ${_vm === 'list' ? 'active' : ''}" data-view="list" title="List view">&#9776;</button>
@@ -11509,6 +11705,10 @@ const App = {
 
             if (this._stale(_rt)) return;
             this._setContent(html);
+            document.getElementById('board-who')?.addEventListener('change', e => {
+                (this._boardWho ||= {})['e621'] = e.target.value;
+                this.renderE621Submissions();
+            });
             this._bindViewToggle();
             this._bindE621TableSort();
             this._bindE621Search(data.submissions, e621GridRenderer);
@@ -11752,6 +11952,7 @@ const App = {
 
                 <div class="stats-grid">
                     ${Components.statCard('Total Posts', summary.total_submissions, null, '#/fbr/submissions')}
+                    ${summary.found ? Components.statCard('Found on Furbooru', summary.found.posts, null, '#/fbr/submissions') : ''}
                     ${Components.statCard('Total Score', summary.total_score || 0)}
                     ${Components.statCard('Total Favorites', summary.total_favorites || 0)}
                     ${Components.statCard('Total Comments', summary.total_comments || 0)}
@@ -11811,6 +12012,7 @@ const App = {
                 sort_by: this._fbrSortState.field,
                 order: this._fbrSortState.order,
                 account_id: this._acctId('fbr'),
+                uploaded_by: (this._boardWho || {})['fbr'] || '',
             });
 
             const _vm = localStorage.getItem('pp-view-mode') || 'grid';
@@ -11820,7 +12022,7 @@ const App = {
                 {
                     idKey: 'submission_id', titleKey: 'title', thumbKey: 'thumbnail_url', proxyThumb: false,
                     typeKey: 'content_type', typeLabels: Components.E621_TYPE_LABELS,
-                    detailRoute: '/fbr/submission', dateKey: 'posted_at',
+                    detailRoute: '/fbr/submission', dateKey: 'posted_at', extraFn: s => Components.boardOrigin(s),
                     stats: [
                         { key: 'score', deltaKey: 'score_delta', label: 'score' },
                         { key: 'favorites_count', deltaKey: 'favorites_delta', label: 'favorites' },
@@ -11834,6 +12036,10 @@ const App = {
                 <div class="page-header"><h1>Furbooru Posts</h1></div>
                 <div class="toolbar">
                     <input type="text" class="search-input" id="search-input" placeholder="Search posts...">
+                    <select class="search-input board-who-filter" id="board-who" data-code="fbr" aria-label="Uploaded by" style="max-width:220px">
+                        ${[['', 'Uploaded by anyone'], ['me', 'Uploaded by you'], ['others', 'Uploaded by others'], ['found', 'Kept apart from totals']]
+                            .map(([v, l]) => `<option value="${v}" ${((this._boardWho || {})['fbr'] || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
+                    </select>
                     <div class="view-toggle">
                         <button class="view-toggle-btn ${_vm === 'grid' ? 'active' : ''}" data-view="grid" title="Grid view">&#9638;</button>
                         <button class="view-toggle-btn ${_vm === 'list' ? 'active' : ''}" data-view="list" title="List view">&#9776;</button>
@@ -11847,6 +12053,10 @@ const App = {
 
             if (this._stale(_rt)) return;
             this._setContent(html);
+            document.getElementById('board-who')?.addEventListener('change', e => {
+                (this._boardWho ||= {})['fbr'] = e.target.value;
+                this.renderFBRSubmissions();
+            });
             this._bindViewToggle();
             this._bindFBRTableSort();
             this._bindFBRSearch(data.submissions, fbrGridRenderer);
@@ -12045,6 +12255,349 @@ const App = {
             if (grid && gridRenderer) grid.innerHTML = gridRenderer(filtered);
             document.getElementById('table-container').innerHTML = Components.fbrSubmissionsTable(filtered);
             this._bindFBRTableSort();
+        };
+        input?.addEventListener('input', doFilter);
+    },
+
+    async renderR34Dashboard() {
+        const token = this._routeToken();
+        this._loading();
+        try {
+            const [summary, agg, pins, goals] = await Promise.all([
+                API.getR34Summary({ account_id: this._acctId('r34') }),
+                API.getR34Aggregate({ ...Utils.getDateRange(this._dateRange), account_id: this._acctId('r34') }),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getGoals().catch(() => ({ goals: [] })),
+            ]);
+            const r34Pins = (pins.pins || []).filter(p => p.platform === 'r34');
+            const r34Goals = (goals.goals || []).filter(g => g.platform === 'r34' || g.platform === 'all');
+
+            const r34Health = window.PlatformHealth && window.PlatformHealth.get('r34');
+            const isUnconfigured = r34Health && r34Health.configured === false;
+            if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;   // moved on while we fetched
+                this._setContent(`
+                    ${this._refreshIndicatorHtml()}
+                    <div class="page-header"><h1>Rule34.xxx Dashboard</h1></div>
+                    ${Components.platformEmptyState('r34', isUnconfigured ? {} : { reason: 'Rule34.xxx is configured but no posts have been polled yet. The first poll may still be running.' })}
+                `);
+                return;
+            }
+
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h1>Rule34.xxx Dashboard</h1>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" data-poll="r34">Poll Now</button>
+                        <button class="btn btn-secondary" data-resync="r34">Full Resync</button>
+                        <button class="btn btn-secondary" data-export="r34">Export CSV</button>
+                    </div>
+                </div>
+
+                ${r34Pins.length ? Components.pinnedSubmissions(r34Pins, 'r34') : ''}
+                ${r34Goals.length ? `<div class="goals-section"><h3>Goals</h3>${Components.goalProgressCards(r34Goals)}</div>` : ''}
+
+                <div class="stats-grid">
+                    ${Components.statCard('Total Posts', summary.total_submissions, null, '#/r34/submissions')}
+                    ${summary.found ? Components.statCard('Found on Rule34.xxx', summary.found.posts, null, '#/r34/submissions') : ''}
+                    ${Components.statCard('Total Score', summary.total_score || 0)}
+                    <div class="stat-card"><div class="stat-label">Favourites</div><div class="stat-value" style="font-size:13px;color:var(--text-muted)">Rule34 doesn't share views or favourites</div></div>
+                    ${Components.statCard('Total Comments', summary.total_comments || 0)}
+                </div>
+
+                ${summary.growth_rates ? Components.growthRateCards(summary.growth_rates, { views: 'score/day', faves: 'faves/day', comments: 'comments/day' }) : ''}
+
+                ${Components.dateRangeBar(this._dateRange)}
+
+                <div class="chart-container">
+                    <h3>Score Over Time (Aggregate)</h3>
+                    <div class="chart-wrap"><canvas id="chart-agg-views"></canvas></div>
+                </div>
+
+                <div class="chart-row">
+                    <div class="chart-container">
+                        <h3>Top Scored</h3>
+                        ${Components.r34TopList(summary.top_scored, 'score', 'title', 'submission_id')}
+                    </div>
+                </div>
+
+                <div class="chart-row">
+                    <div class="chart-container">
+                        <h3>Fastest Growing (24h)</h3>
+                        ${Components.r34TopList(summary.fastest_growing, 'score_gained', 'title', 'submission_id')}
+                    </div>
+                </div>
+            `;
+
+            if (this._stale(token)) return;   // moved on while we fetched
+            this._setContent(html);
+
+            if (agg.snapshots && agg.snapshots.length > 0) {
+                Charts.aggregateLine('chart-agg-views', agg.snapshots, ['score']);
+            }
+
+            this._bindDateRange(() => this.renderR34Dashboard());
+            this._bindPinAndGoalActions(() => this.renderR34Dashboard());
+            this._startAutoRefresh(() => this.renderR34Dashboard());
+        } catch (err) {
+            if (this._stale(token)) return;   // moved on while we fetched
+            this._setContent(`<div class="empty-state"><h3>Error loading Rule34.xxx dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    // ── Rule34.xxx Submissions ────────────────────────────────────────
+
+    async renderR34Submissions() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
+        this._loading();
+        try {
+            const data = await API.getR34Submissions({
+                sort_by: this._r34SortState.field,
+                order: this._r34SortState.order,
+                account_id: this._acctId('r34'),
+                uploaded_by: (this._boardWho || {})['r34'] || '',
+            });
+
+            const _vm = localStorage.getItem('pp-view-mode') || 'grid';
+            // Rule34.xxx (Philomena) CDN images are hotlinkable — use the thumb URL directly.
+            const r34GridRenderer = (subs) => Components.submissionCardGrid(
+                subs,
+                {
+                    idKey: 'submission_id', titleKey: 'title', thumbKey: 'thumbnail_url', proxyThumb: false,
+                    typeKey: 'content_type', typeLabels: Components.E621_TYPE_LABELS,
+                    detailRoute: '/r34/submission', dateKey: 'posted_at', extraFn: s => Components.boardOrigin(s),
+                    stats: [
+                        { key: 'score', deltaKey: 'score_delta', label: 'score' },
+                        
+                        { key: 'comments_count', deltaKey: 'comments_delta', label: 'comments' },
+                    ],
+                }
+            );
+            const gridHtml = r34GridRenderer(data.submissions);
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header"><h1>Rule34.xxx Posts</h1></div>
+                <div class="toolbar">
+                    <input type="text" class="search-input" id="search-input" placeholder="Search posts...">
+                    <select class="search-input board-who-filter" id="board-who" data-code="r34" aria-label="Uploaded by" style="max-width:220px">
+                        ${[['', 'Uploaded by anyone'], ['me', 'Uploaded by you'], ['others', 'Uploaded by others'], ['found', 'Kept apart from totals']]
+                            .map(([v, l]) => `<option value="${v}" ${((this._boardWho || {})['r34'] || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
+                    </select>
+                    <div class="view-toggle">
+                        <button class="view-toggle-btn ${_vm === 'grid' ? 'active' : ''}" data-view="grid" title="Grid view">&#9638;</button>
+                        <button class="view-toggle-btn ${_vm === 'list' ? 'active' : ''}" data-view="list" title="List view">&#9776;</button>
+                    </div>
+                </div>
+                <div id="grid-container" style="${_vm !== 'grid' ? 'display:none' : ''}">${gridHtml}</div>
+                <div id="table-container" class="table-scroll" style="${_vm !== 'list' ? 'display:none' : ''}">
+                    ${Components.r34SubmissionsTable(data.submissions)}
+                </div>
+            `;
+
+            if (this._stale(_rt)) return;
+            this._setContent(html);
+            document.getElementById('board-who')?.addEventListener('change', e => {
+                (this._boardWho ||= {})['r34'] = e.target.value;
+                this.renderR34Submissions();
+            });
+            this._bindViewToggle();
+            this._bindR34TableSort();
+            this._bindR34Search(data.submissions, r34GridRenderer);
+            this._startAutoRefresh(() => this.renderR34Submissions());
+        } catch (err) {
+            if (this._stale(_rt)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading Rule34.xxx posts</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    // ── Rule34.xxx Submission Detail ──────────────────────────────────
+
+    async renderR34Detail(postId) {
+        const _rt = this._routeToken();   // route race guard (see _stale)
+        this._loading();
+        try {
+            const [data, pins, allTags] = await Promise.all([
+                API.getR34Submission(postId),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getTags().catch(() => ({ tags: [] })),
+            ]);
+            const sub = data.submission;
+            const fullId = sub.submission_id;
+            const isPinned = (pins.pins || []).some(p => p.platform === 'r34' && String(p.submission_id) === String(fullId));
+            const currentTags = sub.tags || [];
+
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <a href="#/r34/submissions" class="back-link">&larr; Back to Rule34.xxx Posts</a>
+                <div class="detail-header">
+                    ${sub.thumbnail_url ? `<img class="detail-thumb" src="${Utils.escapeHtml(Utils.safeUrl(sub.thumbnail_url) || '')}" alt="" style="max-width:160px;border-radius:8px;margin-right:16px">` : ''}
+                    <div class="detail-info">
+                        <h2>${Utils.escapeHtml(sub.title)}</h2>
+                        <div class="detail-meta">by ${Utils.escapeHtml(sub.username)} &middot; ${Utils.formatDate(sub.posted_at)} &middot; ${Utils.escapeHtml(Components.E621_TYPE_LABELS[sub.content_type] || sub.content_type || 'Image')}${sub.rating ? ' &middot; ' + Utils.escapeHtml(sub.rating) : ''}</div>
+                        <div class="detail-meta"><a href="${Utils.escapeHtml(Utils.safeUrl(sub.link) || '#')}" target="_blank">View on Rule34.xxx</a></div>
+                        <div class="detail-stats">
+                            <div class="detail-stat">${Utils.formatNumber(sub.score || 0)} <span class="lbl">score</span></div>
+                            <div class="detail-stat">${Utils.formatNumber(sub.favorites_count || 0)} <span class="lbl">favorites</span></div>
+                            <div class="detail-stat">${Utils.formatNumber(sub.comments_count || 0)} <span class="lbl">comments</span></div>
+                        </div>
+                        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <button class="btn ${isPinned ? 'btn-danger' : 'btn-secondary'} btn-pin" data-platform="r34" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">${isPinned ? 'Unpin' : 'Pin'}</button>
+                            ${currentTags.map(t => Components.tagBadge(t)).join('')}
+                            <button class="btn btn-secondary btn-add-tag" data-platform="r34" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">+ Tag</button>
+                        </div>
+                        <div style="margin-top:8px">${Components.keywords(sub.keywords)}</div>
+                    </div>
+                </div>
+
+                ${Components.growthRateCards(data.growth_rates, { views: 'score/day', faves: 'faves/day', comments: 'comments/day' })}
+
+                ${Components.dateRangeBar(this._dateRange)}
+
+                <div class="chart-container">
+                    <h3>Stats Over Time</h3>
+                    <div class="chart-wrap"><canvas id="chart-detail"></canvas></div>
+                </div>
+            `;
+
+            if (this._stale(_rt)) return;
+            this._setContent(html);
+
+            if (data.snapshots && data.snapshots.length > 0) {
+                Charts.submissionLine('chart-detail', data.snapshots, ['score', 'favorites_count', 'comments_count']);
+            }
+
+            this._bindDateRange(async () => {
+                const range = Utils.getDateRange(this._dateRange);
+                const snaps = await API.getR34Snapshots(postId, range);
+                Charts.submissionLine('chart-detail', snaps.snapshots, ['score', 'favorites_count', 'comments_count']);
+            });
+
+            this._bindDetailPinTag('r34', fullId, allTags.tags || [], () => this.renderR34Detail(postId));
+            this._startAutoRefresh(() => this.renderR34Detail(postId));
+        } catch (err) {
+            if (this._stale(_rt)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading Rule34.xxx post</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    // ── Rule34.xxx Compare ────────────────────────────────────────────
+
+    async renderR34Compare() {
+        const _rt = this._routeToken();   // route race guard (see _stale)
+        this._loading();
+        try {
+            const data = await API.getR34Submissions({ sort_by: 'score', order: 'desc', account_id: this._acctId('r34') });
+            const subs = data.submissions;
+
+            const chips = subs.map(s => `
+                <label class="compare-chip ${this._r34CompareIds.has(String(s.submission_id)) ? 'selected' : ''}" data-id="${Utils.escapeHtml(String(s.submission_id))}">
+                    <input type="checkbox" ${this._r34CompareIds.has(String(s.submission_id)) ? 'checked' : ''}>
+                    ${Utils.escapeHtml(Utils.truncate(s.title, 25))}
+                </label>
+            `).join('');
+
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h1>Compare Rule34.xxx Posts</h1>
+                    <div>
+                        <select class="filter-select" id="compare-metric">
+                            <option value="score" ${this._r34CompareMetric === 'score' ? 'selected' : ''}>Score</option>
+                            <option value="comments_count" ${this._r34CompareMetric === 'comments_count' ? 'selected' : ''}>Comments</option>
+                        </select>
+                    </div>
+                </div>
+                <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Select 2-5 Rule34.xxx posts to compare their trends over time.</p>
+                <div class="compare-select">${chips}</div>
+
+                ${Components.dateRangeBar(this._dateRange)}
+
+                <div class="chart-container" id="compare-chart-container" style="${this._r34CompareIds.size < 2 ? 'display:none' : ''}">
+                    <h3>Comparison</h3>
+                    <div class="chart-wrap"><canvas id="chart-compare"></canvas></div>
+                </div>
+                ${this._r34CompareIds.size < 2 ? '<div class="empty-state"><p>Select at least 2 posts above to see their trends compared.</p></div>' : ''}
+            `;
+
+            if (this._stale(_rt)) return;
+            this._setContent(html);
+
+            document.querySelectorAll('.compare-chip').forEach(chip => {
+                chip.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const id = chip.dataset.id;
+                    if (this._r34CompareIds.has(id)) {
+                        this._r34CompareIds.delete(id);
+                    } else if (this._r34CompareIds.size < 5) {
+                        this._r34CompareIds.add(id);
+                    }
+                    this.renderR34Compare();
+                });
+            });
+
+            const metricSelect = document.getElementById('compare-metric');
+            if (metricSelect) {
+                metricSelect.addEventListener('change', () => {
+                    this._r34CompareMetric = metricSelect.value;
+                    this._loadR34ComparisonChart();
+                });
+            }
+
+            this._bindDateRange(() => this._loadR34ComparisonChart());
+
+            if (this._r34CompareIds.size >= 2) {
+                await this._loadR34ComparisonChart();
+            }
+
+            this._startAutoRefresh(() => this.renderR34Compare());
+        } catch (err) {
+            if (this._stale(_rt)) return;
+            this._setContent(`<div class="empty-state"><h3>Error</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async _loadR34ComparisonChart() {
+        try {
+            if (this._r34CompareIds.size < 2) return;
+            const range = Utils.getDateRange(this._dateRange);
+            const data = await API.getR34Comparison([...this._r34CompareIds], range);
+            const container = document.getElementById('compare-chart-container');
+            if (container) container.style.display = '';
+            Charts.comparisonLine('chart-compare', data.series, data.titles, this._r34CompareMetric);
+        } catch (e) {
+            console.error('Failed to load Rule34.xxx comparison chart:', e);
+        }
+    },
+
+    _bindR34TableSort() {
+        document.querySelectorAll('#r34-submissions-table th[data-sort]').forEach(th => {
+            th.addEventListener('click', () => {
+                const field = th.dataset.sort;
+                if (this._r34SortState.field === field) {
+                    this._r34SortState.order = this._r34SortState.order === 'desc' ? 'asc' : 'desc';
+                } else {
+                    this._r34SortState.field = field;
+                    this._r34SortState.order = 'desc';
+                }
+                this.renderR34Submissions();
+            });
+        });
+    },
+
+    // Rule34.xxx variant of _bindSearch(). Filters by text (title only).
+    _bindR34Search(allSubmissions, gridRenderer) {
+        const input = document.getElementById('search-input');
+        const doFilter = () => {
+            const q = (input?.value || '').toLowerCase();
+            let filtered = allSubmissions;
+            if (q) {
+                filtered = filtered.filter(s => (s.title || '').toLowerCase().includes(q));
+            }
+            const grid = document.getElementById('grid-container');
+            if (grid && gridRenderer) grid.innerHTML = gridRenderer(filtered);
+            document.getElementById('table-container').innerHTML = Components.r34SubmissionsTable(filtered);
+            this._bindR34TableSort();
         };
         input?.addEventListener('input', doFilter);
     },
@@ -13939,7 +14492,7 @@ const App = {
         try {
             // Core settings: only fetch what General/Platforms/Telegram/Data/About tabs need.
             // Polling tab data is loaded lazily when the user clicks into it.
-            const [creds, prefs, telegram, tgFeatures, pollPausedState, faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, updateInfo, postingSettings, browserLoginInfo, setupStatus, digest, tgChannel, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth, serverUpdate, fbAuth] = await Promise.all([
+            const [creds, prefs, telegram, tgFeatures, pollPausedState, faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, updateInfo, postingSettings, browserLoginInfo, setupStatus, digest, tgChannel, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth, serverUpdate, fbAuth, r34Auth] = await Promise.all([
                 API.getCredentials(),
                 API.getPreferences(),
                 API.getTelegram(),
@@ -13975,6 +14528,7 @@ const App = {
                 API.getPICChannelStatus().catch(() => ({ has_credentials: false, channel: '', has_data: false })),
                 API.getServerUpdateStatus().catch(() => ({ applicable: false, host_agent_installed: false, available: false, in_progress: false })),
                 API.getFBAuthStatus().catch(() => ({ has_credentials: false, username: '' })),
+                API.getR34AuthStatus().catch(() => ({ has_credentials: false, username: '' })),
             ]);
 
             // Resolve effective mode for hide/show logic. Falls back to inferred
@@ -13991,7 +14545,7 @@ const App = {
             const _pollingOwner = setupStatus.polling_owner || (_isServer ? 'local' : (_isPaired ? 'server' : 'local'));
 
             // Store auth state for lazy-loaded polling tab
-            this._pollingAuth = { faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth, fbAuth };
+            this._pollingAuth = { faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, r34Auth, scAuth, ngAuth, ytAuth, picAuth, fbAuth };
 
             // Store browser login availability for platform connect forms
             const _browserLoginAvailable = browserLoginInfo.available;
@@ -14016,7 +14570,7 @@ const App = {
                     </div>
                     ${App._settingsRailHtml(_settingsPage, {
                         connection: _isServer ? 'server' : (_isPaired ? 'paired' : (_isConnectedPending ? 'restart' : (_setupMode === 'connected' ? 'connected' : 'standalone'))),
-                        platforms: `${[faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth, fbAuth].filter(a => a && (a.has_credentials || a.has_cookies || a.has_key)).length + (creds.username ? 1 : 0)} connected`,
+                        platforms: `${[faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, r34Auth, scAuth, ngAuth, ytAuth, picAuth, fbAuth].filter(a => a && (a.has_credentials || a.has_cookies || a.has_key)).length + (creds.username ? 1 : 0)} connected`,
                         polling: pollPausedState.polling_paused ? 'paused' : (_pollingOwner === 'local' ? (_isServer ? 'this server' : 'this computer') : 'server'),
                         about: updateInfo && updateInfo.current && updateInfo.current !== '?' ? updateInfo.current : '',
                         telegram: telegram.connected ? 'connected' : '',
@@ -16438,6 +16992,51 @@ const App = {
                     </div>
                 </details>
 
+                <details class="settings-accordion" data-platform="r34">
+                    <summary><span class="status-dot ${r34Auth.has_credentials ? this._credStatus('r34', r34Auth.username).cls : 'disconnected'}"></span>Rule34.xxx${r34Auth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(r34Auth.username || '')}</span>` : ''}</summary>
+                    <div class="accordion-body">
+                    ${r34Auth.has_credentials ? `
+                    <div class="settings-row">
+                        <div><span class="settings-label">Status</span></div>
+                        ${this._credStatus('r34', r34Auth.username).html}
+                    </div>
+                    <div class="settings-row" style="margin-top:8px">
+                        <div>
+                            <span class="settings-label">Rule34 notifications</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Toast + Telegram alerts for Rule34 activity</div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="pref-r34-notifications" ${prefs.r34_notifications_enabled ? 'checked' : ''}>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <p style="color:var(--text-muted);font-size:12px;margin-top:8px">Choose what it follows (your artist tag, your characters) with <strong>Track</strong> on the account in Settings → Accounts.</p>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="r34-poll-btn">Rule34 Poll Now</button>
+                        <button class="btn btn-secondary" id="r34-resync-btn">Full Resync</button>
+                        <button class="btn btn-danger" id="r34-disconnect-btn">Disconnect</button>
+                        <span id="r34-msg" style="font-size:13px"></span>
+                    </div>
+                    ` : `
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Follow your work on <strong>Rule34.xxx</strong>: your uploads, plus (with <strong>Track</strong>) posts other people upload with your artist tag or your characters. PawPoller only reads Rule34; it never posts there. Rule34 shares a <strong>score</strong> and <strong>comments</strong> for each post, not views or favourites.</p>
+                    <ol style="color:var(--text-muted);font-size:13px;margin:0 0 12px;padding-left:18px;line-height:1.6">
+                        <li>On Rule34.xxx, sign in and open <em>My Account → Options</em>.</li>
+                        <li>Under <em>API Access Credentials</em>, copy the <strong>API key</strong> and the <strong>user id</strong> (a number).</li>
+                        <li>Paste them below with your Rule34 username, then press Connect.</li>
+                    </ol>
+                    <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
+                        <input type="text" id="r34-username" class="search-input" placeholder="Rule34 username" autocomplete="username" aria-label="Rule34 username">
+                        <input type="password" id="r34-api-key" class="search-input" placeholder="API key" autocomplete="off" aria-label="Rule34 API key">
+                        <input type="text" id="r34-user-id" class="search-input" placeholder="User id (a number)" inputmode="numeric" autocomplete="off" aria-label="Rule34 user id">
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
+                        <button class="btn btn-primary" id="r34-connect-btn">Connect</button>
+                        <span id="r34-msg" role="status" style="font-size:13px"></span>
+                    </div>
+                    `}
+                    </div>
+                </details>
+
                 </div><!-- /tab:platforms -->
 
                 <!-- ═══ TAB: Polling ═══ -->
@@ -16686,7 +17285,7 @@ const App = {
                         wp: 'triggerWPPoll', ik: 'triggerIKPoll', bsky: 'triggerBSKYPoll', tw: 'triggerTWPoll',
                         mast: 'triggerMASTPoll', tum: 'triggerTUMPoll', pix: 'triggerPIXPoll',
                         thr: 'triggerTHRPoll', ig: 'triggerIGPoll', e621: 'triggerE621Poll',
-                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', tg: 'triggerTGPoll', sc: 'triggerSCPoll', ng: 'triggerNGPoll', yt: 'triggerYTPoll', pic: 'triggerPICPoll', fb: 'triggerFBPoll' };
+                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', r34: 'triggerR34Poll', tg: 'triggerTGPoll', sc: 'triggerSCPoll', ng: 'triggerNGPoll', yt: 'triggerYTPoll', pic: 'triggerPICPoll', fb: 'triggerFBPoll' };
                     const codes = await this._configuredPollCodes();
                     const triggers = codes.map(c => API[TRIGGERS[c]]());
                     const results = await Promise.allSettled(triggers);
@@ -16723,7 +17322,7 @@ const App = {
                         wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync',
                         mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync',
                         thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync',
-                        fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync', fb: 'fullFBResync' };
+                        fn: 'fullFNResync', fbr: 'fullFBRResync', r34: 'fullR34Resync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync', fb: 'fullFBResync' };
                     const codes = await this._configuredPollCodes();
                     const resyncs = codes.map(c => API[RESYNCS[c]]());
                     const results = await Promise.allSettled(resyncs);
@@ -19004,6 +19603,60 @@ const App = {
             if (fbrResyncBtn) {
                 fbrResyncBtn.addEventListener('click', () => this._pollingTabResync({
                     btn: fbrResyncBtn, msgId: 'fbr-msg', platform: 'fbr', apiMethod: 'fullFBRResync',
+                }));
+            }
+            const r34ConnectBtn = document.getElementById('r34-connect-btn');
+            if (r34ConnectBtn) {
+                r34ConnectBtn.addEventListener('click', async () => {
+                    const msg = document.getElementById('r34-msg');
+                    const username = document.getElementById('r34-username').value.trim();
+                    const api_key = document.getElementById('r34-api-key').value.trim();
+                    const user_id = document.getElementById('r34-user-id').value.trim();
+                    if (!username || !api_key || !user_id) {
+                        msg.textContent = 'Rule34 needs your username, API key and user id';
+                        msg.style.color = 'var(--danger)';
+                        return;
+                    }
+                    r34ConnectBtn.disabled = true;
+                    r34ConnectBtn.textContent = 'Connecting...';
+                    msg.textContent = '';
+                    try {
+                        await API.r34Connect({ username, api_key, user_id });
+                        msg.textContent = 'Connected!';
+                        msg.style.color = 'var(--success)';
+                        setTimeout(() => this.renderSettings(), 1000);
+                    } catch (err) {
+                        let detail = err.message.replace(/^API \d+:\s*/, '');
+                        try { detail = JSON.parse(detail).detail || detail; } catch {}
+                        msg.textContent = detail;
+                        msg.style.color = 'var(--danger)';
+                        r34ConnectBtn.textContent = 'Connect';
+                        r34ConnectBtn.disabled = false;
+                    }
+                });
+            }
+            const r34DisconnectBtn = document.getElementById('r34-disconnect-btn');
+            if (r34DisconnectBtn) {
+                r34DisconnectBtn.addEventListener('click', async () => {
+                    if (!confirm('Disconnect Rule34? This clears your credentials.')) return;
+                    try {
+                        await API.r34Disconnect();
+                        this.renderSettings();
+                    } catch (err) {
+                        alert('Failed: ' + err.message);
+                    }
+                });
+            }
+            const r34PollBtn = document.getElementById('r34-poll-btn');
+            if (r34PollBtn) {
+                r34PollBtn.addEventListener('click', () => this._pollingTabPoll({
+                    btn: r34PollBtn, msgId: 'r34-msg', platform: 'r34', apiMethod: 'triggerR34Poll',
+                }));
+            }
+            const r34ResyncBtn = document.getElementById('r34-resync-btn');
+            if (r34ResyncBtn) {
+                r34ResyncBtn.addEventListener('click', () => this._pollingTabResync({
+                    btn: r34ResyncBtn, msgId: 'r34-msg', platform: 'r34', apiMethod: 'fullR34Resync',
                 }));
             }
             // ── Facebook (spec 022): token → Pages → pick → connect. The Page tokens never reach the browser. ──

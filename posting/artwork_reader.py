@@ -70,13 +70,13 @@ _TAG_BUDGET = tag_budget.BUDGETS
 # every platform: on a gallery site like FA or Weasyl the credit belongs in the
 # description (where the native user link also notifies the artist), and an
 # extra name tag there is noise rather than discovery.
-_ARTIST_TAG_PLATFORMS = frozenset({"e621", "fbr", "ib"})
+_ARTIST_TAG_PLATFORMS = frozenset({"e621", "fbr", "ib", "r34"})   # r34: the by-hand helper (4.66.0)
 
 # Where a character's booru tag is worth carrying (4.33.0, spec 003). The same sites
 # that index on artist index on character: `scripts/reorder_tags.py` puts CHARACTER at
 # tier 3, right behind artist and species. Inkbunny is deliberately absent — it takes
 # keywords, not a booru vocabulary, so a `name_(owner)` tag there is noise.
-_CHARACTER_TAG_PLATFORMS = frozenset({"e621", "fbr"})
+_CHARACTER_TAG_PLATFORMS = frozenset({"e621", "fbr", "r34"})
 
 # Sites with a title field, for the render suffix (4.34.0, VARSPLIT). Posting two
 # renders of one piece to a gallery would otherwise show two submissions with an

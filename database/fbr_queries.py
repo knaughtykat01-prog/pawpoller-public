@@ -21,10 +21,12 @@ from typing import Any
 
 # -- Furbooru Submissions --------------------------------------------------------
 
-def upsert_fbr_submission(conn: sqlite3.Connection, sub: dict, account_id: int) -> None:
+def upsert_fbr_submission(conn: sqlite3.Connection, sub: dict, account_id: int,
+                         table: str = "fbr_submissions") -> None:
+    # table: "fbr_found" for posts kept out of the totals (spec 028).
     keywords_json = json.dumps(sub.get("keywords", []))
     conn.execute(
-        """INSERT INTO fbr_submissions
+        f"""INSERT INTO {table}
            (submission_id, account_id, title, full_text, username, posted_at, content_type,
             rating, description, keywords, link, thumbnail_url, file_url,
             score, up_score, down_score, favorites_count, comments_count, has_media, updated_at)
@@ -77,10 +79,11 @@ def get_all_fbr_submissions(conn: sqlite3.Connection, sort_by: str = "score", or
 def insert_fbr_snapshot(conn: sqlite3.Connection, account_id: int, submission_id: str,
                          score: int, favorites_count: int, comments_count: int,
                          polled_at: str | None = None,
-                         up_score: int = 0, down_score: int = 0) -> None:
+                         up_score: int = 0, down_score: int = 0,
+                         table: str = "fbr_snapshots") -> None:
     ts = polled_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
-        "INSERT INTO fbr_snapshots (account_id, submission_id, polled_at, score, "
+        f"INSERT INTO {table} (account_id, submission_id, polled_at, score, "
         "up_score, down_score, favorites_count, comments_count) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (account_id, submission_id, ts, score, up_score, down_score,

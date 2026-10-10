@@ -117,6 +117,18 @@ const Components = {
      *   dateKey: object key for date (e.g. 'create_datetime')
      *   proxyThumb: whether to run thumb through Utils.thumbUrl (default true)
      */
+    /* Whose upload a board post is and why it's tracked (spec 028). Empty for a plain own upload,
+     * so an account that tracks only its uploads looks exactly as before. */
+    boardOrigin(s) {
+        const labels = s.match_labels || [];
+        const mine = s.uploaded_by_me === undefined || !!s.uploaded_by_me;
+        if (mine && !labels.some(l => l !== 'your upload')) return '';
+        const who = mine ? 'Uploaded by you'
+            : (s.uploader_name ? 'Uploaded by ' + Utils.escapeHtml(s.uploader_name) : 'Uploaded by someone else');
+        return `<div class="board-origin"><span class="board-who">${who}</span>${labels
+            .filter(l => l !== 'your upload').map(l => `<span class="board-why">${Utils.escapeHtml(l)}</span>`).join('')}</div>`;
+    },
+
     submissionCardGrid(submissions, opts) {
         if (!submissions || submissions.length === 0) {
             return '<div class="empty-state"><p>No submissions yet.</p></div>';
@@ -144,6 +156,7 @@ const Components = {
                     <div class="submission-card-body">
                         ${typeBadge}
                         <div class="submission-card-title">${Utils.escapeHtml(title)}</div>
+                        ${opts.extraFn ? opts.extraFn(s) : ''}
                         <div class="submission-card-stats">${statsHtml}</div>
                         ${date ? `<div class="submission-card-date">${date}</div>` : ''}
                     </div>
@@ -2090,7 +2103,7 @@ const Components = {
             const skipped = !ok && !!r.skipped;   // sync: post-only sites (4.2.0)
             // 4.60.0 (spec 024): on the site but waiting for the owner (Tumblr kept a Mature post as a draft).
             const attention = ok && r.attention ? String(r.attention) : '';
-            const url = r.external_url || r.url || '';
+            const url = Utils.safeUrl(r.external_url || r.url || '');   // http(s) only (SECLOW4622)
             const what = attention
                 ? esc(attention) + (url ? ` <a href="${esc(url)}" target="_blank" rel="noopener">Open it ↗</a>` : '')
                 : ok
@@ -2351,6 +2364,77 @@ const Components = {
     fbrPollLogTable(polls) {
         if (!polls || polls.length === 0) {
             return '<p style="color:var(--text-muted)">No Furbooru polls recorded yet.</p>';
+        }
+        const rows = polls.map(p => `
+            <tr>
+                <td>${Utils.formatDateTime(p.started_at)}</td>
+                <td><span style="color:${p.status === 'success' ? 'var(--success)' : p.status === 'error' ? 'var(--danger)' : 'var(--warning)'}">${p.status}</span></td>
+                <td>${p.submissions_found || 0}</td>
+                <td>${p.snapshots_inserted || 0}</td>
+                <td>${p.duration_seconds ? p.duration_seconds.toFixed(1) + 's' : '--'}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(p.error_message || '')}</td>
+            </tr>
+        `).join('');
+
+        return `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Time</th><th>Status</th><th>Subs</th><th>Snaps</th><th>Duration</th><th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    },
+
+    // ── Rule34.xxx (4.65.0, spec 028 US6) ──
+    r34TopList(items, valueKey, labelKey = 'title', idKey = 'submission_id') {
+        if (!items || items.length === 0) {
+            return '<p style="color:var(--text-muted);font-size:13px">No data yet</p>';
+        }
+        const lis = items.map(item => `
+            <li>
+                <span class="top-title" data-nav="/r34/submission/${encodeURIComponent(item[idKey])}">${Utils.escapeHtml(Utils.truncate(item[labelKey], 30))}</span>
+                <span class="top-value">${Utils.formatCompact(item[valueKey])}</span>
+            </li>
+        `).join('');
+        return `<ul class="top-list">${lis}</ul>`;
+    },
+
+    r34SubmissionsTable(submissions) {
+        if (!submissions || submissions.length === 0) {
+            return `<div class="empty-state"><h3>No posts</h3><p>Connect your Rule34.xxx account and run a poll to fetch data.</p></div>`;
+        }
+        const rows = submissions.map(s => `
+            <tr>
+                <td data-label="Title"><a href="#/r34/submission/${encodeURIComponent(s.submission_id)}">${Utils.escapeHtml(Utils.truncate(s.title, 45))}</a></td>
+                <td data-label="Type">${Utils.escapeHtml(Components.E621_TYPE_LABELS[s.content_type] || s.content_type || 'Image')}</td>
+                <td data-label="Score">${Utils.formatNumber(s.score || 0)} ${Utils.formatDelta(s.score_delta)}</td>
+                <td data-label="Comments">${Utils.formatNumber(s.comments_count || 0)} ${Utils.formatDelta(s.comments_delta)}</td>
+                <td data-label="Posted">${Utils.formatDate(s.posted_at)}</td>
+            </tr>
+        `).join('');
+
+        return `
+            <table class="data-table" id="r34-submissions-table" data-mobile-cards>
+                <thead>
+                    <tr>
+                        <th data-sort="title">Title</th>
+                        <th data-sort="content_type">Type</th>
+                        <th data-sort="score">Score</th>
+                        <th data-sort="comments_count">Comments</th>
+                        <th data-sort="posted_at">Posted</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    },
+
+    r34PollLogTable(polls) {
+        if (!polls || polls.length === 0) {
+            return '<p style="color:var(--text-muted)">No Rule34.xxx polls recorded yet.</p>';
         }
         const rows = polls.map(p => `
             <tr>

@@ -39,7 +39,7 @@ from database.db import get_connection, init_db
 from database import (
     queries, fa_queries, ws_queries, sf_queries, sqw_queries, ao3_queries,
     da_queries, wp_queries, ik_queries, bsky_queries, tw_queries, mast_queries, tum_queries, pix_queries, thr_queries, ig_queries,
-    e621_queries, fn_queries, fbr_queries, tg_queries, sc_queries, ng_queries, yt_queries, pic_queries, fb_queries,
+    e621_queries, fn_queries, fbr_queries, r34_queries, tg_queries, sc_queries, ng_queries, yt_queries, pic_queries, fb_queries,
     group_queries, analytics_queries, platform_metrics,
     accounts as accounts_db,
 )
@@ -415,6 +415,7 @@ _PLATFORM_HEALTH_CONFIG = [
     # files. A new platform should not add a fourth place to keep in sync.
     ("fn",  fn_queries,  "get_fn_last_poll",  "fn_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["fn"]),
     ("fbr", fbr_queries, "get_fbr_last_poll", "fbr_poll_interval_minutes", accounts_db.DEFAULT_CRED_CHECKS["fbr"]),
+    ("r34", r34_queries, "get_r34_last_poll", "r34_poll_interval_minutes", accounts_db.DEFAULT_CRED_CHECKS["r34"]),
     ("tg",  tg_queries,  "get_tg_last_poll",  "tg_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["tg"]),
     ("sc",  sc_queries,  "get_sc_last_poll",  "sc_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["sc"]),
     ("ng",  ng_queries,  "get_ng_last_poll",  "ng_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["ng"]),
@@ -1182,6 +1183,24 @@ def get_notifications(limit: int = 40):
     except Exception as e:
         logger.debug("notifications: consent reminders skipped: %s", e)
 
+    # Posts other people uploaded with your artist tag or your characters (spec 028): rows stamped
+    # `found_at` once tracking settled, so the first check's backlog never floods the bell.
+    try:
+        from datetime import datetime, timedelta, timezone
+        from polling import board_track
+        _fconn = get_connection()
+        try:
+            _since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+            _names = {r[0]: r[1] for r in _fconn.execute("SELECT character_key, name FROM characters")}
+            for f in board_track.recent_found(_fconn, _since):
+                items.append({"timestamp": f["found_at"], "platform": f["platform"], "kind": "found",
+                              "status": "info", "summary": board_track.describe(f, _names),
+                              "detail": None, "url": f["url"]})
+        finally:
+            _fconn.close()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("notifications: found posts skipped: %s", e)
+
     # The weekly email failed (DIGESTFAIL): until then this only reached the log.
     _s = config.get_settings()
     if _s.get("email_digest_enabled") and _s.get("last_email_digest_error"):
@@ -1903,7 +1922,7 @@ def save_preferences(body: dict):
     # belt-and-braces against rogue clients.
     if "theme" in body:
         theme_val = str(body["theme"])
-        if theme_val in {"dark", "light", "ink_copper", "parchment",
+        if theme_val in {"quill", "quill_dark", "dark", "light", "ink_copper", "parchment",
                          "midnight_press", "forest", "velvet", "high_contrast",
                          "retro_2005"}:
             update["theme"] = theme_val

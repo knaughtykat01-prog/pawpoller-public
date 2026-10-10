@@ -134,7 +134,7 @@ def test_the_wizard_remembers_its_step_across_the_round_trip(app_js: str):
         "a restored step must exclude 'done'; returning straight to the final "
         "screen would skip the setup it claims to have finished"
     )
-    assert "removeItem" in app_js[start:start + 60000], (
+    assert "removeItem" in app_js[start:app_js.index("renderLogin() {", start)], (
         "the saved progress is never cleared on completion"
     )
 

@@ -108,16 +108,21 @@ class FurbooruClient:
     async def ensure_logged_in(self) -> bool:
         return self._logged_in or bool(await self.validate_session())
 
-    async def get_all_post_uris(self) -> list[dict]:
+    async def get_all_post_uris(self, queries: list[str] | None = None,
+                                known: set[str] | None = None) -> list[dict]:
         """Page the user's own uploads (newest first). Each listing carries full
-        stats, so the raw image is stashed for get_post_details_batch()."""
+        stats, so the raw image is stashed for get_post_details_batch().
+
+        ``queries`` (spec 028) replaces the search with the uploads/artist/character OR search;
+        ``known`` stops paging at the first page whose images are all stored already."""
         if not self.username:
             return []
+        q = (queries or [f"uploaded_by:{self.username}"])[0]
         items: list[dict] = []
         seen: set[str] = set()
         for page in range(1, 400):          # 400*50 = 20k image ceiling
             data = await self._get_json("/api/v1/json/search/images", {
-                "q": f"uploaded_by:{self.username}", "sf": "id", "sd": "desc",
+                "q": q, "sf": "id", "sd": "desc",
                 "per_page": PER_PAGE, "page": page})
             images = (data or {}).get("images") or []
             if not images:
@@ -129,6 +134,8 @@ class FurbooruClient:
                 seen.add(iid)
                 items.append({"post_uri": iid, "raw": img})
             if len(images) < PER_PAGE:
+                break
+            if known is not None and all(str(_safe_int(i.get("id"))) in known for i in images):
                 break
             await asyncio.sleep(REQUEST_DELAY)
         logger.info("furbooru: found %d images for user %s", len(items), self.username)
@@ -157,6 +164,8 @@ class FurbooruClient:
             "title": (first_line[:80] if first_line else f"#{iid}"),
             "full_text": description,
             "username": self.username,
+            # Who uploaded it: None when the upload was anonymous (spec 028).
+            "uploader_name": str(img.get("uploader") or ""),
             "posted_at": img.get("created_at", "") or "",
             "content_type": _ANIM_FORMATS.get(fmt, "image"),
             "rating": rating,
@@ -181,6 +190,15 @@ class FurbooruClient:
     # without a key rather than 404. The controller runs the same ScraperPlug as
     # the web form, so the file travels as multipart `image[image]` and the rest
     # as the form's own field names. VERIFY-LIVE on the first real upload.
+
+    async def tag_count(self, tag: str) -> int | None:
+        """How many images carry a tag (None when Furbooru has no such tag; spec 028)."""
+        tag = (tag or "").strip().lower()
+        data = await self._get_json("/api/v1/json/search/tags", {"q": tag}) if tag else None
+        for t in (data or {}).get("tags") or []:
+            if str(t.get("name", "")).lower() == tag:
+                return _safe_int(t.get("images"))
+        return None
 
     async def dnp_entries(self, artist_tag: str) -> list[dict]:
         """The Do-Not-Post entries claimed on an `artist:` tag (public, no key).

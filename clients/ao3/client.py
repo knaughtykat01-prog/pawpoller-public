@@ -244,16 +244,23 @@ class AO3Client:
                 out[field] = val
         return out
 
+    def _drop(self, name: str) -> None:
+        """Remove every copy of an AO3 cookie, whatever domain form AO3 set it with ("archiveofourown.org" or
+        ".archiveofourown.org"), so a switch of account never leaves the last one's behind (SECLOW4622)."""
+        jar = self._http.cookies.jar
+        for c in [c for c in jar if c.name == name and c.domain.lstrip(".") == "archiveofourown.org"]:
+            try:
+                jar.clear(c.domain, c.path, c.name)
+            except KeyError:
+                pass
+
     def update_credentials(self, username: str, password: str, target_user: str,
                            session_cookie: str = "", remember_token: str = "") -> None:
         cookie = (session_cookie or "").strip()
         remember = (remember_token or "").strip()
         if remember != self._remember_token:       # the shared poller client moves between accounts:
             self._remember_token = remember         # never carry one account's token into another's
-            try:
-                self._http.cookies.delete(REMEMBER_COOKIE, domain="archiveofourown.org", path="/")
-            except Exception:
-                pass
+            self._drop(REMEMBER_COOKIE)
             if remember:
                 self._http.cookies.set(REMEMBER_COOKIE, remember, domain="archiveofourown.org", path="/")
                 self._logged_in = True
@@ -268,6 +275,7 @@ class AO3Client:
 
         if cookie and cookie != self._session_cookie:
             self._session_cookie = cookie
+            self._drop("_otwarchive_session")
             self._http.cookies.set(
                 "_otwarchive_session",
                 cookie,
@@ -279,12 +287,7 @@ class AO3Client:
         elif not cookie and self._session_cookie:
             # Cookie cleared from settings — drop it and fall back to login.
             self._session_cookie = ""
-            try:
-                self._http.cookies.delete(
-                    "_otwarchive_session", domain="archiveofourown.org", path="/"
-                )
-            except Exception:
-                pass
+            self._drop("_otwarchive_session")
             self._logged_in = bool(remember)
 
     async def close(self) -> None:

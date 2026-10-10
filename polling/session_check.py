@@ -37,14 +37,14 @@ _lock = threading.Lock()
 
 # Platforms with a real validate_session() network check. Order = check order.
 CHECKABLE: tuple[str, ...] = ("ao3", "sf", "sqw", "bsky", "mast", "tum", "pix",
-                              "thr", "ig", "e621", "fn", "fbr", "tg", "sc", "ng", "yt",
+                              "thr", "ig", "e621", "fn", "fbr", "r34", "tg", "sc", "ng", "yt",
                               "pic", "tw", "fb")
 
 # Human labels for log/UI fallback (the frontend has its own map too).
 LABELS = {
     "ao3": "AO3", "sf": "SoFurry", "sqw": "SquidgeWorld", "bsky": "Bluesky",
     "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads",
-    "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "sc": "SoundCloud",
+    "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "r34": "Rule34.xxx", "sc": "SoundCloud",
     "ng": "Newgrounds", "yt": "YouTube", "pic": "Picarto",
     "tg": "Telegram", "tw": "X/Twitter", "fb": "Facebook",
 }
@@ -107,6 +107,8 @@ def _configured(code: str, s: dict) -> bool:
                     or (official_api.is_enabled(s) and s.get("tw_api_bearer_token")))
     if code == "fbr":
         return bool(s.get("fbr_username"))   # public read API — username is enough
+    if code == "r34":
+        return bool(s.get("r34_api_key") and s.get("r34_user_id"))
     if code == "pic":
         return bool(s.get("pic_channel"))    # public read API — the channel name is enough (4.46.0)
     if code == "tg":
@@ -208,6 +210,9 @@ async def _validate(code: str, s: dict):
     elif code == "fbr":
         from polling.fbr_poller import _get_or_create_client
         c = _get_or_create_client(s, s.get("fbr_username", ""), s.get("fbr_api_key", ""))
+    elif code == "r34":
+        from polling.r34_poller import _get_or_create_client
+        c = _get_or_create_client(s, s.get("r34_username", ""), s.get("r34_api_key", ""), s.get("r34_user_id", ""))
     elif code == "sc":
         from polling.sc_poller import _get_or_create_client
         c = _get_or_create_client({k: s.get(k, "") for k in (

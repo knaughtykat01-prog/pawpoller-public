@@ -29,6 +29,8 @@ def test_registry_has_all_platforms():
         "pic",
         # Facebook Pages (4.59.0, spec 029): post views / reactions / comments / shares + Page followers.
         "fb",
+        # Rule34.xxx (4.65.0, spec 028 US6): score + comments, tracking only.
+        "r34",
     }
 
 

@@ -1098,6 +1098,7 @@ window.Masterpieces = {
                     </span></div>
                 <p class="sec-note">Sites this piece isn't on yet.</p>
                 <div id="mp-detail-platforms"></div>
+                ${this._r34RowHtml(m)}
                 <div class="mp-edit-actions"><span class="mp-edit-msg muted" id="mp-pub-msg"></span></div>
                 <div class="schedule-form" id="mp-schedule-form" style="display:none">
                     <div class="schedule-form-inner">
@@ -1111,6 +1112,60 @@ window.Masterpieces = {
                 </div>
                 <div class="schedule-pending" id="mp-scheduled-list"></div>
             </section>`;
+    },
+
+    /* Rule34 by hand (4.66.0, spec 028 US7): Rule34 takes no uploads from apps, so this
+       row prepares what to paste and links to its upload page; PawPoller never sends it. */
+    _r34RowHtml(m) {
+        if (document.documentElement.dataset.ageLocked === '1') return '';
+        if ((m && m.media_kind) === 'audio') return '';   // Rule34 takes pictures and video only
+        if ((window.HIDDEN_PLATFORMS || []).includes('r34')) return '';
+        return `<div class="mp-r34-row">
+                <span>&#128286; <strong>Rule34</strong> <span class="muted">(by hand)</span></span>
+                <button class="btn btn-sm" data-mp-r34 type="button"
+                    title="Get this piece's tags, rating and sources ready to paste into Rule34's upload page">Prepare&hellip;</button>
+            </div>`;
+    },
+
+    async _openRule34Kit() {
+        let k;
+        try { k = await API.getRule34Kit(this._current); }
+        catch (err) { window.toast?.error('Could not prepare it: ' + (err.message || err)); return; }
+        const esc = (s) => this.esc(s);
+        let ov = document.getElementById('r34-kit-ov');
+        if (!ov) { ov = document.createElement('div'); ov.id = 'r34-kit-ov'; ov.className = 'wn-ov'; document.body.appendChild(ov); }
+        const tags = k.tags.join(' ');
+        const sources = k.sources.join('\n');
+        ov.innerHTML = `
+            <div class="wn-modal" role="dialog" aria-modal="true" aria-labelledby="r34-kit-title">
+                <div class="wn-top"><h2 id="r34-kit-title">&#128286; Post to Rule34 by hand</h2>
+                    <button class="wn-x" type="button" aria-label="Close">&times;</button></div>
+                <div class="wn-scroll r34-kit">
+                    ${k.on_rule34 ? '<p class="r34-kit-note">This piece is already on Rule34.</p>' : ''}
+                    <ol class="r34-kit-steps">
+                        <li>Open <a href="${esc(k.upload_url)}" target="_blank" rel="noopener">Rule34's upload page</a> (sign in there) and choose the picture.</li>
+                        <li>Copy the tags below into <em>Tags</em>. Your artist tag and characters come first.</li>
+                        <li>Set the rating to <strong>${esc(k.rating[0].toUpperCase() + k.rating.slice(1))}</strong>.</li>
+                        <li>${k.sources.length ? 'Copy a source link into <em>Source</em>.' : 'This piece isn\'t posted anywhere else yet, so there\'s no source link.'}</li>
+                    </ol>
+                    <label class="r34-kit-label" for="r34-kit-tags">Tags (${k.tags.length})</label>
+                    <textarea id="r34-kit-tags" class="search-input" rows="4" readonly>${esc(tags)}</textarea>
+                    <button class="btn btn-sm btn-primary" type="button" data-r34-copy="r34-kit-tags">Copy tags</button>
+                    ${k.sources.length ? `
+                    <label class="r34-kit-label" for="r34-kit-src">Sources</label>
+                    <textarea id="r34-kit-src" class="search-input" rows="${Math.min(4, k.sources.length)}" readonly>${esc(sources)}</textarea>
+                    <button class="btn btn-sm" type="button" data-r34-copy="r34-kit-src">Copy sources</button>` : ''}
+                    <p class="muted r34-kit-note">Once it's up, the next Rule34 check finds it (it's your upload) and joins it to this piece.</p>
+                </div>
+            </div>`;
+        ov.classList.add('open');
+        ov.querySelector('.wn-x').addEventListener('click', () => ov.classList.remove('open'));
+        ov.querySelectorAll('[data-r34-copy]').forEach(b => b.addEventListener('click', async () => {
+            const box = document.getElementById(b.dataset.r34Copy);
+            try { await navigator.clipboard.writeText(box.value); }
+            catch (e) { box.select(); document.execCommand('copy'); }
+            b.textContent = 'Copied ✓';
+        }));
     },
 
     _linkHtml() {
@@ -1819,6 +1874,7 @@ window.Masterpieces = {
             // Publish / schedule / delete — ported from the Artwork detail (2.193.0).
             const pub = e.target.closest('[data-mp-publish]');
             if (pub) { e.preventDefault(); this._publishNow(this._current); return; }
+            if (e.target.closest('[data-mp-r34]')) { e.preventDefault(); this._openRule34Kit(); return; }
             const schedT = e.target.closest('[data-mp-schedule-toggle]');
             if (schedT) {
                 e.preventDefault();
