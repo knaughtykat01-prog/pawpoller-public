@@ -52,7 +52,9 @@ PLATFORMS = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky",
              # 4.24.0 (MEDIAPLATS): YouTube — poll + post, Google OAuth user token.
              "yt",
              # 4.46.0 (spec 013): Picarto — poll only, public API, the channel name is the credential.
-             "pic"]
+             "pic",
+             # 4.57.0 (spec 022): Facebook Pages — post only for now (stats are phase 2).
+             "fb"]
 
 # Platforms that publish but have nothing to poll: no stats table, so anything
 # aggregating stats must skip them rather than query a table that does not
@@ -69,7 +71,8 @@ PLATFORMS = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky",
 # 4.0.10 — a different gap with the same effect, fixed above.)
 # 4.21.1: the podcast feed is the next member — RSS has no listener counts, so there
 # is nothing to poll; the account exists so a feed can be a publish target.
-POST_ONLY_PLATFORMS: set[str] = {"pod"}
+# 4.57.0: Facebook joins until its Page stats are polled (spec 022 phase 2).
+POST_ONLY_PLATFORMS: set[str] = {"pod"}   # fb is polled since 4.59.0 (spec 029)
 
 PLATFORM_NAMES = {
     "ib": "Inkbunny", "fa": "FurAffinity", "ws": "Weasyl", "sf": "SoFurry",
@@ -82,6 +85,7 @@ PLATFORM_NAMES = {
     "ng": "Newgrounds",
     "yt": "YouTube",
     "pic": "Picarto",
+    "fb": "Facebook",
 }
 
 # Predicate per platform: does settings hold credentials for a default account?
@@ -129,6 +133,8 @@ DEFAULT_CRED_CHECKS = {
     "yt": lambda s: bool(s.get("yt_refresh_token")),
     # Picarto: the channel name is all it needs — the public API reads it with no login (4.46.0).
     "pic": lambda s: bool(s.get("pic_channel")),
+    # Facebook: the Page token + which Page (4.57.0).
+    "fb": lambda s: bool(s.get("fb_page_token") and s.get("fb_page_id")),
 }
 
 # The flat settings key whose value names the default account (for display).
@@ -169,6 +175,7 @@ _HANDLE_KEYS = {
     "ng": ["ng_username"],
     "yt": ["yt_username"],
     "pic": ["pic_channel"],
+    "fb": ["fb_page_name", "fb_page_id"],
 }
 
 

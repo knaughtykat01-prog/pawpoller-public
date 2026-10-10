@@ -83,7 +83,7 @@ def test_publish_new_platforms_without_creds(db_conn):
     cases = [
         ("thr", "Threads account isn't connected"),
         ("tw", "X/Twitter account isn't connected"),
-        ("tum", "Tumblr posting needs OAuth1 tokens"),
+        ("tum", "Tumblr isn't set up"),             # 4.60.0: the blog first, then Connect
     ]
     for plat, needle in cases:
         res = asyncio.run(post_publisher._publish_one(post, plat, None, {}))
@@ -91,7 +91,7 @@ def test_publish_new_platforms_without_creds(db_conn):
 
 
 def test_text_only_platform_drops_an_attached_image():
-    # Threads/Tumblr are text-only: since spec 018 the images are left off and the
+    # Threads is text-only (Tumblr took images in 4.60.0, spec 024): since spec 018 the images are left off and the
     # text goes out (the composer says so first), instead of the post being refused.
     post = {"body": "hi", "rating": "general", "post_id": 1, "image_path": "/tmp/x.png"}
     for plat in ("thr", "tum"):

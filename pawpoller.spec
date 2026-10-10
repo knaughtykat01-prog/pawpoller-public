@@ -66,6 +66,9 @@ a = Analysis(
     ],
     hiddenimports=[
         *_POSTERS,
+        # GIF → MP4 for Threads (spec 030): imported lazily, so name it; the contrib hook
+        # (hook-imageio_ffmpeg) then bundles its ffmpeg binary.
+        'imageio_ffmpeg',
         # Startup update splash (4.9.0) — imported inside a function, so the
         # static scan misses it; without these the packaged app updates silently.
         'tkinter',

@@ -43,6 +43,7 @@ from routes.sc_api import sc_router
 from routes.ng_api import ng_router
 from routes.yt_api import yt_router
 from routes.pic_api import pic_router
+from routes.fb_api import fb_router
 from routes.fbr_api import fbr_router
 from routes.tg_api import tg_router
 from routes.posting_api import posting_router
@@ -677,6 +678,7 @@ app.include_router(sc_router)    # SoundCloud routes (/api/sc/*), MEDIAPLATS (4.
 app.include_router(ng_router)    # Newgrounds routes (/api/ng/*), MEDIAPLATS (4.23.0)
 app.include_router(yt_router)    # YouTube routes (/api/yt/*), MEDIAPLATS (4.24.0)
 app.include_router(pic_router)   # Picarto routes (/api/pic/*), spec 013 (4.46.0)
+app.include_router(fb_router)    # Facebook Page connect (/api/fb/*), spec 022 (4.57.0)
 app.include_router(fbr_router)   # Furbooru routes (/api/fbr/*)
 app.include_router(tg_router)    # Telegram channel analytics (/api/tg/*)
 app.include_router(tech_router)  # Tech Centre consent/status/reports (/api/tech/*)

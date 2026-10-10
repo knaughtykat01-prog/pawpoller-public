@@ -50,6 +50,9 @@ class InstagramPoster(PlatformPoster):
     max_video_seconds = 15 * 60
     accepted_file_types = ["jpg", "jpeg", "png", "webp", "mp4", "mov"]
     requires_mode = "any"     # works everywhere: the image-host ladder (4.7.0) finds Meta a URL
+    # Instagram's Community Guidelines forbid nudity and sexual content (spec 031, 4.61.1): general only, like
+    # Facebook and Threads. It had no cap before, so a mature piece could be sent.
+    max_rating = "general"
 
     async def post(self, package: StoryUploadPackage) -> PostResult:
         """Publish one image to Instagram."""

@@ -66,16 +66,25 @@
         },
         /* Does site `code` take this kind + extension at this rating? {ok, reason} (reason = the site's own sentence).
          * `kind` may be null (no file picked yet): only the rating is checked then. */
-        acceptance(support, code, kind, ext, rating) {
+        acceptance(support, code, kind, ext, rating, bytes) {
             const p = support && support.platforms && support.platforms[code];
             if (!p) return { ok: true, reason: '' };
             const byCode = (typeof window !== 'undefined' && window.platformByCode) ? window.platformByCode : null;
             const label = (byCode && byCode(code) || {}).label || code;
+            // Closed to this copy entirely (an adults-only site for an under-18; LEGALPAGES 4.58.0).
+            if (p.blocked) return { ok: false, reason: p.blocked };
             if (kind) {
                 const list = (p.accepts && p.accepts[kind]) || [];
                 if (!list.map(x => String(x).toLowerCase()).includes(String(ext || '').toLowerCase())) {
                     return { ok: false, reason: `${label} doesn't take ${ext ? ext + ' ' : ''}${kind} — it takes ${p.label || 'other kinds'}.` };
                 }
+            }
+            // 4.60.0 (spec 024): a per-kind size cap (GIFs before images), before anything uploads.
+            const caps = p.max_bytes || {};
+            const capKey = (String(ext || '').toLowerCase() === 'gif' && caps.gif) ? 'gif' : kind;
+            if (kind && bytes && caps[capKey] && bytes > caps[capKey]) {
+                const mb = n => (n / 1048576).toFixed(n >= 10485760 ? 0 : 1);
+                return { ok: false, reason: `${label} takes ${capKey === 'gif' ? 'GIFs' : kind + ' files'} up to ${Math.round(caps[capKey] / 1048576)} MB — this one is ${mb(bytes)} MB.` };
             }
             if (rating != null && p.max_rating) {
                 const have = this.ratingRank(rating), allowed = this.ratingRank(p.max_rating);

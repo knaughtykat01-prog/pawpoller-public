@@ -464,7 +464,9 @@ body.sidebar-collapsed .poll-progress-bar { left: var(--sidebar-w-collapsed); }
     .sidebar.collapsed .sidebar-footer { flex-direction: row; }
     .sidebar-overlay { z-index: 35; }
     .sidebar-overlay.open { display: block; }
-    body.sidebar-open .hamburger-btn { left: calc(min(290px, 86vw) - 4px); }
+    /* z 45 (DRAWERTOP, 4.58.0): moved to the drawer's edge as its close button, it stayed at z 12,
+       under the overlay (35) — dimmed, and a tap only closed the drawer because the overlay did. */
+    body.sidebar-open .hamburger-btn { left: calc(min(290px, 86vw) - 4px); z-index: 45; }
 
     .bottom-nav { display: flex; }
 
@@ -928,9 +930,24 @@ html[data-mobile="1"] .mobile-bar .acct-item { min-height: 44px; font-size: 15px
    the page; the drawer (40) and its overlay (35) still cover it. The page starts below it, so
    those per-page dodges are gone (bookshelf, laurels, editor, context bar). */
 html[data-mobile="1"] { --mbar-h: calc(env(safe-area-inset-top, 0px) + 64px); }
-html[data-mobile="1"] body::before {
-    content: ""; position: fixed; top: 0; left: 0; right: 0; height: var(--mbar-h); z-index: 11;
+/* 4.58.0 (PHONEBAR2): a real element, pinned to the very top and covering the notch / status-bar
+   inset. iOS Safari (26) fills its status-bar area from a fixed element at the top edge and
+   ignores pseudo-elements, so with body::before the page showed through, blurred, above the bar.
+   Solid colour only: no transparency or backdrop-filter, or Safari won't use it. The html
+   background matches, so overscroll at the top is the same colour. */
+.mobile-bar-bg { display: none; }
+html[data-mobile="1"] .mobile-bar-bg {
+    display: block; position: fixed; top: 0; left: 0; right: 0; height: var(--mbar-h); z-index: 11;
     background: var(--bg-primary); border-bottom: 1px solid var(--border);
+}
+html[data-mobile="1"] { background-color: var(--bg-primary); }
+/* DRAWERTOP (4.58.0, operator's screenshot): the cluster (z 41) and the Library's Filters pill
+   (z 42) sat ABOVE the open drawer (z 40): the pill over the PawPoller name, the 18+ badge over the
+   drawer's edge — exactly where ☰ moves to become the close button, so it was hidden. While the
+   drawer is open they step aside; they come back when it closes. */
+html[data-mobile="1"] body.sidebar-open .mobile-bar,
+html[data-mobile="1"] body.sidebar-open .shelf-fab {
+    opacity: 0 !important; pointer-events: none !important; visibility: hidden;
 }
 html[data-mobile="1"] .main-col { padding-top: var(--mbar-h); }
 html[data-mobile="1"] .context-bar { padding-left: 16px; padding-right: 16px; }

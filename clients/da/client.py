@@ -1138,6 +1138,70 @@ class DAClient:
         logger.info("DA: published deviation %s from stash", dev_id)
         return {"deviationid": dev_id, "url": url}
 
+    # ── Journals (spec 027) ────────────────────────────────────────────────
+
+    async def _journal_call(self, path: str, params: dict, what: str) -> dict:
+        resp = await self._http.post(f"https://www.deviantart.com/api/v1/oauth2/{path}", data=params, timeout=60.0)
+        if resp.status_code == 200:
+            return resp.json()
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {}
+        err = f"{body.get('error', '')} {body.get('error_description', '')}".strip()
+        if "insufficient_scope" in err or "scope" in err.lower():
+            raise RuntimeError("DeviantArt needs a fresh go-ahead to post journals: press Authorise posting "
+                               "(Settings → Accounts → DeviantArt), then try again")
+        if resp.status_code == 401:
+            raise RuntimeError("DA: OAuth token expired or invalid (401)")
+        raise RuntimeError(f"DeviantArt refused the journal {what}: "
+                           f"{body.get('error_description') or resp.text[:200]} ({resp.status_code})")
+
+    @staticmethod
+    def _journal_params(title: str, body: str, tags: list[str] | None, is_mature: bool, mature_level: str,
+                        mature_classification: list[str] | None, access_token: str) -> dict:
+        """Every field, every time: an update clears what it isn't sent (research R4)."""
+        params = {"title": title[:50], "body": body, "is_mature": "1" if is_mature else "0",
+                  "allow_comments": "1", "access_token": access_token}
+        for i, tag in enumerate((tags or [])[:30]):
+            params[f"tags[{i}]"] = tag
+        if is_mature:
+            if mature_level:
+                params["mature_level"] = mature_level
+            for i, mc in enumerate(mature_classification or []):
+                params[f"mature_classification[{i}]"] = mc
+        return params
+
+    async def oauth_create_journal(self, *, title: str, body: str, tags: list[str] | None = None,
+                                   is_mature: bool = False, mature_level: str = "",
+                                   mature_classification: list[str] | None = None,
+                                   access_token: str = "") -> dict:
+        """``deviation/journal/create`` (HTML body). → {"deviationid", "url"} — the url read back from the
+        deviation, since DA's journal URLs carry a slug PawPoller can't build."""
+        if not access_token:
+            raise RuntimeError("DA: OAuth2 access token required")
+        r = await self._journal_call("deviation/journal/create", self._journal_params(
+            title, body, tags, is_mature, mature_level, mature_classification, access_token), "")
+        dev_id = str(r.get("deviationid") or "")
+        url = r.get("url") or ""
+        if dev_id and not url:
+            try:
+                got = await self._http.get(f"https://www.deviantart.com/api/v1/oauth2/deviation/{dev_id}",
+                                           params={"access_token": access_token}, timeout=30.0)
+                url = (got.json() or {}).get("url", "") if got.status_code == 200 else ""
+            except Exception:
+                url = ""
+        return {"deviationid": dev_id, "url": url or f"https://www.deviantart.com/deviation/{dev_id}"}
+
+    async def oauth_update_journal(self, deviation_id: str, *, title: str, body: str,
+                                   tags: list[str] | None = None, is_mature: bool = False,
+                                   mature_level: str = "", mature_classification: list[str] | None = None,
+                                   access_token: str = "") -> dict:
+        if not access_token:
+            raise RuntimeError("DA: OAuth2 access token required")
+        return await self._journal_call(f"deviation/journal/update/{deviation_id}", self._journal_params(
+            title, body, tags, is_mature, mature_level, mature_classification, access_token), "update")
+
     async def oauth_update_literature(
         self,
         deviation_id: str,

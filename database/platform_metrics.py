@@ -255,6 +255,15 @@ _REGISTRY: tuple[PlatformMetrics, ...] = (
         code="pic", label="Picarto", table="pic_submissions", snapshots="pic_snapshots",
         family="views", views="views",
     ),
+    # Facebook Pages (4.59.0, spec 029): views are Meta's "media views" (impressions were retired
+    # in 2025-26); reactions (every kind, summed) sit with likes and favourites. A figure Facebook
+    # didn't give is stored NULL, so it adds nothing rather than a made-up 0.
+    PlatformMetrics(
+        code="fb", label="Facebook", table="fb_submissions", snapshots="fb_snapshots",
+        family="engagement", views="views", faves="reactions", comments="comments",
+        extra=("shares", "plays"),
+        labels={"faves": "Reactions", "views": "Views"},
+    ),
     PlatformMetrics(
         code="fbr", label="Furbooru", table="fbr_submissions", snapshots="fbr_snapshots",
         family="score", score="score", faves="favorites_count", comments="comments_count",
@@ -528,3 +537,47 @@ def _value(spec: PlatformMetrics, stats: dict, key: str) -> int:
         if col:
             v = stats.get(col)
     return v or 0
+
+
+def poll_deltas(conn: sqlite3.Connection, code: str, started_at: str, finished_at: str,
+                account_id: int | None = None) -> dict | None:
+    """What one poll saw change: ``{views, score, faves, comments, posts}`` summed over the
+    posts it snapshotted, each compared with that post's previous snapshot.
+
+    The poll logs only count a few event types (new comments, watchers, IB faves), so the
+    activity feed called a poll "no changes" while views and likes moved on every site — X's
+    log has no counters at all (POLLDELTA, 2026-10-07). Every poller writes a snapshot per
+    post per poll, so the snapshots are the one place every site's change can be read.
+
+    Posts first seen in this poll have nothing to compare with and are left out.
+    ``account_id`` None reads every account (a log without the column). Returns None when the
+    platform has no metrics or its snapshot table can't be read.
+    """
+    spec = BY_CODE.get(code)
+    if not spec or not spec.snapshots or not started_at or not finished_at:
+        return None
+    keys = [k for k in CANONICAL_KEYS if getattr(spec, k)]
+    if not keys:
+        return None
+    snap = spec.snapshots
+    acct = "c.account_id = ? AND " if account_id is not None else ""
+    match = "p2.account_id = c.account_id AND " if account_id is not None else ""
+    sums = ", ".join(f"SUM(c.{getattr(spec, k)} - p.{getattr(spec, k)})" for k in keys)
+    sql = (f"SELECT {sums}, COUNT(*) FROM {snap} c JOIN {snap} p ON p.id = ("
+           f"SELECT p2.id FROM {snap} p2 WHERE {match}p2.{spec.id_col} = c.{spec.id_col}"
+           f" AND p2.polled_at < ? ORDER BY p2.polled_at DESC, p2.id DESC LIMIT 1)"
+           f" WHERE {acct}c.polled_at >= ? AND c.polled_at <= ?")
+    start = str(started_at).replace("T", " ")[:19]
+    end = str(finished_at).replace("T", " ")[:19]
+    params: list = [start]
+    if account_id is not None:
+        params.append(account_id)
+    params += [start, end]
+    try:
+        row = conn.execute(sql, params).fetchone()
+    except sqlite3.Error as e:
+        logger.debug("poll_deltas: %s unavailable: %s", code, e)
+        return None
+    out = {k: int(row[i] or 0) for i, k in enumerate(keys)}
+    out["posts"] = int(row[len(keys)] or 0)
+    return out

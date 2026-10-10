@@ -58,11 +58,11 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, field
 
-# The 23 platforms that own a submissions/snapshots/poll_log trio. Inkbunny is
+# The 24 platforms that own a submissions/snapshots/poll_log trio. Inkbunny is
 # the unprefixed one — the app began as an Inkbunny analytics tool and those
 # tables kept their original names.
 PLATFORM_PREFIXES = (
-    "", "ao3_", "bsky_", "da_", "e621_", "fa_", "fbr_", "fn_", "ig_", "ik_",
+    "", "ao3_", "bsky_", "da_", "e621_", "fa_", "fb_", "fbr_", "fn_", "ig_", "ik_",
     "mast_", "ng_", "pic_", "pix_", "sc_", "sf_", "sqw_", "thr_", "tum_", "tw_", "wp_", "ws_", "yt_",
 )
 

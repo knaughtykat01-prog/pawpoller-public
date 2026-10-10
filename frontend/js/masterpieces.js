@@ -26,10 +26,10 @@ window.Masterpieces = {
     _wired: false,          // document click delegate attached once
     // Platforms whose poster can't edit in place (supports_edit=False, mirrors the
     // backend) — Sync skips them; they render "post-only" in the Locations table.
-    // 'da' is here for ARTWORK only — DeviantArt edits literature fine, but its
-    // API has no image-deviation update. This table is artwork-only, so the
-    // badge is correct here and must NOT be copied to the story matrix.
-    _POST_ONLY: new Set(['bsky', 'ig', 'fn', 'da', 'tg', 'tw']),
+    // 'da' left this list in 4.60.0: DeviantArt edits image deviations too since
+    // `poster.supports_artwork_edit` went True (POST /deviation/edit/{id}), and
+    // the stale entry kept Sync from offering it. Tumblr (4.60.0) edits in place.
+    _POST_ONLY: new Set(['bsky', 'ig', 'fn', 'tg', 'tw', 'fb', 'thr']),
 
     /* Drop the list cache so the piece page's prev/next list refetches (called on
        each Library open by bookshelf.render). */
@@ -1487,7 +1487,7 @@ window.Masterpieces = {
                 live: _live.filter(c => c !== code) };
         });
         window.Artwork._renderPlatformRows(host, optsByCode, extraByCode);
-        if (window.Artwork._applyMediaGating) window.Artwork._applyMediaGating('#mp-detail-platforms', (this._detail || {}).image || '', (this._detail || {}).rating || '');   // 4.18.0 kind, 4.21.0 rating
+        if (window.Artwork._applyMediaGating) window.Artwork._applyMediaGating('#mp-detail-platforms', (this._detail || {}).image || '', (this._detail || {}).rating || '', ((this._detail || {}).media || {}).bytes || 0);   // 4.18.0 kind, 4.21.0 rating
 
         // Dim + disable platforms this piece is already posted to. Both the
         // publications list and the resolved member locations count as "posted",
@@ -1592,6 +1592,12 @@ window.Masterpieces = {
             categories = categories || { ...oldCats };
             if (Object.keys(o).length) categories[code] = o; else delete categories[code];
         });
+        // Tumblr's Mature label ticks (spec 024, 4.60.0), stored with the piece like the panels above.
+        const tumLabels = A && A._collectTumLabels ? A._collectTumLabels() : null;
+        if (tumLabels && JSON.stringify((oldCats.tum || {}).tum_label_categories) !== JSON.stringify(tumLabels)) {
+            categories = categories || { ...oldCats };
+            categories.tum = { ...(categories.tum || {}), tum_label_categories: tumLabels };
+        }
         // Stored per-announcer text (4.3.0) \u2014 merged into descriptions, never
         // replacing the map, and only when the record exposed it (else no box).
         let descriptions = null;
@@ -1637,6 +1643,7 @@ window.Masterpieces = {
                 : platforms.map(code => ({ code, label: code })),
             textBoxes: window.Artwork ? window.Artwork._pubTextBoxes(platforms) : [],
             commentBoxes: window.Comments ? await Comments.boxesFor(platforms) : [],   // spec 021
+            journalBox: await Components.journalBox('art'),                               // spec 027
         });
         if (!conf) { if (msg) msg.textContent = ''; return; }
         if (msg) msg.textContent = 'Publishing…';
@@ -1648,6 +1655,7 @@ window.Masterpieces = {
                 persona_id: personaId,
                 description_overrides: window.Artwork ? window.Artwork._pubDescOverrides(conf) : undefined,
                 comments: conf.comments,          // spec 021: absent = each site's default
+                journal: conf.journal,            // spec 027: absent = no journal
                 discord: window.Artwork ? window.Artwork._discordChoice() : undefined,   // spec 008
                 confirm_live: true,
                 ...extra,

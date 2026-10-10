@@ -115,3 +115,31 @@ def test_reply_validation():
     # Missing text → 400.
     r = c.post("/api/inbox/reply", json={"platform": "bsky", "comment_id": "x"})
     assert r.status_code == 400
+
+
+def test_reply_refuses_a_never_post_account(monkeypatch):
+    """INBOXNEVER (4.56.2 release review): every other way of posting checks "Never post";
+    an Inbox reply went straight out. It is refused before any client is built."""
+    import config
+    from clients.bsky import client as bsky_client
+    from database import accounts as accounts_db
+
+    conn = get_connection()
+    try:
+        conn.execute("INSERT INTO accounts (account_id, platform, label, handle, is_default)"
+                     " VALUES (41, 'bsky', 'Friend', 'friend.bsky.social', 1)")
+        conn.commit()
+        _seed_platform_comment(conn, account_id=41)
+    finally:
+        conn.close()
+    config.save_settings({"never_post_account_ids": [41], "bsky_identifier": "friend.bsky.social",
+                          "bsky_app_password": "pw"})
+
+    def _boom(*a, **k):
+        raise AssertionError("no client may be built for a never-post account")
+    monkeypatch.setattr(bsky_client, "BskyClient", _boom)
+
+    r = _client().post("/api/inbox/reply", json={
+        "platform": "bsky", "comment_id": "at://did:plc:x/app.bsky.feed.post/r1", "text": "thanks!"})
+    assert r.status_code == 403
+    assert r.json()["detail"] == accounts_db.NEVER_POST_ERROR

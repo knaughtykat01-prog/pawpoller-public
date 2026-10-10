@@ -22,6 +22,10 @@ import sqlite3
 from datetime import datetime, timezone
 
 
+# Platforms the Inbox can reply on natively (routes/inbox_api.py); Facebook since 4.59.0.
+REPLYABLE = frozenset({"bsky", "mast", "e621", "fb"})
+
+
 def ensure_inbox_tables(conn: sqlite3.Connection) -> None:
     """Create the inbox tables if missing. Idempotent; called every startup."""
     conn.execute("""
@@ -187,7 +191,7 @@ def get_inbox(conn: sqlite3.Connection, *, platform: str | None = None,
 
     # Native reply is wired for these (Stage B); everything else is
     # "Reply on site ↗" via the permalink.
-    replyable = {"bsky", "mast", "e621"}
+    replyable = REPLYABLE
 
     out = []
     for r in rows:

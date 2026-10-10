@@ -764,7 +764,7 @@ PLATFORM_CREDENTIAL_FIELDS = {
     "sf": ["sf_api_token", "sf_display_name"],
     "sqw": ["sqw_username", "sqw_password", "sqw_target_user",
             "sqw_author_username", "sqw_author_password"],
-    "ao3": ["ao3_username", "ao3_password", "ao3_target_user", "ao3_session_cookie"],
+    "ao3": ["ao3_username", "ao3_password", "ao3_target_user", "ao3_session_cookie", "ao3_remember_token"],
     "da": ["da_cookie", "da_target_user",
            "da_client_id", "da_client_secret", "da_refresh_token"],
     "wp": ["wp_target_user"],
@@ -773,10 +773,14 @@ PLATFORM_CREDENTIAL_FIELDS = {
     "tw": ["tw_auth_token", "tw_ct0", "tw_target_user", "tw_api_bearer_token"],
     "mast": ["mast_instance_url", "mast_access_token"],
     "tum": ["tum_api_key", "tum_blog", "tum_consumer_secret",
-            "tum_oauth_token", "tum_oauth_token_secret"],
+            "tum_oauth_token", "tum_oauth_token_secret",
+            # The Connect sign-in (4.60.0, spec 024): OAuth 2 wins over the pasted OAuth 1 pair.
+            "tum_oauth2_access_token", "tum_oauth2_refresh_token", "tum_oauth2_expires_at", "tum_oauth2_user"],
     "pix": ["pix_refresh_token", "pix_user_id"],
     "thr": ["thr_access_token", "thr_user_id"],
     "ig": ["ig_access_token", "ig_user_id"],
+    # Facebook Page (spec 022, 4.57.0). The never-expiring Page token + which Page; post-only for now.
+    "fb": ["fb_page_token", "fb_page_id", "fb_page_name"],
     "e621": ["e621_username", "e621_api_key"],
     # Telegram channel (Posts-module broadcast target; post-only, not polled).
     "tg": ["tg_bot_token", "tg_channel"],
@@ -917,6 +921,16 @@ def account_setting_key(account_id: int, field: str, is_default: bool) -> str:
     return field if is_default else f"acct_{account_id}_{field}"
 
 
+# Fields naming a registered *app* rather than an account. Several accounts can
+# share one app, so an extra account with none of its own uses the default
+# account's (DAAPPFALLBACK, 2026-10-07: a second DeviantArt account authorised
+# against the default app, then its poster said "OAuth not configured" because
+# only the authorise route fell back).
+SHARED_APP_FIELDS = {
+    "da": ("da_client_id", "da_client_secret"),
+}
+
+
 def resolve_account_credentials(platform: str, account_id: int,
                                 is_default: bool, settings: dict | None = None) -> dict:
     """Return {canonical_field: value} for one account, no DB access.
@@ -926,8 +940,13 @@ def resolve_account_credentials(platform: str, account_id: int,
     fields = PLATFORM_CREDENTIAL_FIELDS.get(platform, [])
     if settings is None:
         settings = get_settings()
-    return {f: settings.get(account_setting_key(account_id, f, is_default), "")
-            for f in fields}
+    creds = {f: settings.get(account_setting_key(account_id, f, is_default), "")
+             for f in fields}
+    if not is_default:
+        for f in SHARED_APP_FIELDS.get(platform, ()):
+            if not creds.get(f):
+                creds[f] = settings.get(f, "")
+    return creds
 
 
 def get_account_credentials(account_id: int) -> dict:
@@ -1247,7 +1266,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.56.2"
+APP_VERSION = "4.62.2"
 
 
 def _app_commit() -> str:

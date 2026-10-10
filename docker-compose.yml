@@ -19,6 +19,10 @@ services:
       # next to this file.
       - ${PAWPOLLER_ARCHIVE_DIR:-./story-archive}:/app/story-archive
     restart: unless-stopped
+    # Docker keeps a container's output until the container is replaced; cap it.
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
     env_file: .env
 
 volumes:

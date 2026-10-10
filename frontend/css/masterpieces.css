@@ -483,7 +483,7 @@ html[data-mobile="1"] #shelf-view-btn { display: none; }
 }
 .bp-modal { width: min(880px, 100%); max-height: 88vh; }
 .bp-lead { font-size: .88rem; margin: .6rem 0; }
-.bp-warn { border-left: 3px solid var(--warning, #e0a53a); padding: .4rem .7rem; font-size: .85rem; background: rgba(224, 165, 58, .08); border-radius: 6px; }
+.bp-warn { border: 1px solid color-mix(in srgb, var(--warning, #e0a53a) 45%, transparent); padding: .4rem .7rem; font-size: .85rem; background: rgba(224, 165, 58, .08); border-radius: 6px; }
 .bp-h { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin: 1rem 0 .4rem; }
 .bp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .3rem .8rem; }
 .bp-row { display: flex; align-items: center; gap: .45rem; font-size: .88rem; padding: .2rem 0; }

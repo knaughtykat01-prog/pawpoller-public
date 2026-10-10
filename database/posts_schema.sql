@@ -23,6 +23,11 @@ CREATE TABLE IF NOT EXISTS posts (
     -- which fills a paired comment's {link}/{title}/{artist}. '' = none.
     linked_kind  TEXT NOT NULL DEFAULT '',
     linked_ref   TEXT NOT NULL DEFAULT '',
+    -- Spec 027: a journal is a post with a title (kind 'journal'), tags and FA's "featured" tick.
+    title        TEXT NOT NULL DEFAULT '',
+    kind         TEXT NOT NULL DEFAULT 'post',
+    tags         TEXT NOT NULL DEFAULT '',
+    featured     INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL DEFAULT '',
     updated_at   TEXT NOT NULL DEFAULT ''
 );

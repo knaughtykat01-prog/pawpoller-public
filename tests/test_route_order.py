@@ -48,6 +48,7 @@ SNAPSHOT_PATHS = {
     "ng": "/api/ng/submissions/1/snapshots",
     "yt": "/api/yt/submissions/1/snapshots",
     "pic": "/api/pic/submissions/1/snapshots",
+    "fb": "/api/fb/submissions/1/snapshots",
 }
 
 

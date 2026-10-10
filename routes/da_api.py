@@ -134,7 +134,7 @@ async def da_connect(body: dict):
 # scopes it was granted, so anyone authorised before this change must click
 # Authorise posting again — which is what DA's "client needs to re-authorize"
 # is telling them.
-_DA_SCOPES = "browse user stash publish"
+_DA_SCOPES = "browse user user.manage stash publish"   # user.manage: journals (spec 027)
 
 # state → {"at": issued-at, "verifier": PKCE code_verifier}. In-process and
 # single-user by design: this is a desktop app and a one-box server, so a store
@@ -228,9 +228,9 @@ def _da_app_creds(account_id: int | None) -> tuple[str, str]:
         if acct:
             creds = config.resolve_account_credentials(
                 "da", int(account_id), bool(acct["is_default"]), settings)
-            cid = creds.get("da_client_id") or settings.get("da_client_id", "")
-            sec = creds.get("da_client_secret") or settings.get("da_client_secret", "")
-            return cid, sec
+            # Falls back to the flat keys inside the resolver (SHARED_APP_FIELDS),
+            # so the poster and poller resolve the same app as this route.
+            return creds.get("da_client_id", ""), creds.get("da_client_secret", "")
     return settings.get("da_client_id", ""), settings.get("da_client_secret", "")
 
 

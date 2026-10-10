@@ -1693,7 +1693,6 @@ html:not([data-mobile="1"]) .editor-actions {
     margin: 24px 0 8px;
     padding: 8px 12px;
     background: color-mix(in srgb, var(--accent) 8%, transparent);
-    border-left: 3px solid var(--accent);
     border-radius: 4px;
     font-size: 13px;
     font-weight: 600;
@@ -2739,7 +2738,7 @@ html[data-mobile="1"] .wp-grid { grid-template-columns: repeat(auto-fill, minmax
 
 .publish-action-drift-banner {
     background: rgba(180, 130, 220, 0.15);
-    border-left: 3px solid #b8d;
+    border: 1px solid color-mix(in srgb, #b8d 55%, var(--border));
     padding: 8px 12px;
     border-radius: 3px;
     margin-top: 6px;
@@ -2749,7 +2748,7 @@ html[data-mobile="1"] .wp-grid { grid-template-columns: repeat(auto-fill, minmax
 
 .publish-action-deleted-banner {
     background: rgba(200, 90, 90, 0.15);
-    border-left: 3px solid #d88;
+    border: 1px solid color-mix(in srgb, #d88 55%, var(--border));
     padding: 8px 12px;
     border-radius: 3px;
     margin-top: 6px;
@@ -2789,14 +2788,14 @@ html[data-mobile="1"] .wp-grid { grid-template-columns: repeat(auto-fill, minmax
 
 .publish-action-success {
     background: rgba(80, 180, 120, 0.15);
-    border-left: 3px solid #4a9;
+    border: 1px solid color-mix(in srgb, #4a9 55%, var(--border));
     padding: 8px 12px;
     border-radius: 3px;
 }
 
 .publish-action-error {
     background: rgba(200, 90, 90, 0.15);
-    border-left: 3px solid #c66;
+    border: 1px solid color-mix(in srgb, #c66 55%, var(--border));
     padding: 8px 12px;
     border-radius: 3px;
 }
@@ -2977,7 +2976,7 @@ html[data-mobile="1"] .wp-grid { grid-template-columns: repeat(auto-fill, minmax
 
 .schedule-pending-item.schedule-processing {
     background: rgba(200, 180, 50, 0.12);
-    border-left: 2px solid #db4;
+    border: 1px solid color-mix(in srgb, #db4 55%, var(--border));
 }
 
 .schedule-pending-icon {
@@ -3199,7 +3198,7 @@ html[data-mobile="1"] .wp-grid { grid-template-columns: repeat(auto-fill, minmax
 
 .publish-action-live-banner {
     background: rgba(220, 180, 50, 0.2);
-    border-left: 3px solid #db4;
+    border: 1px solid color-mix(in srgb, #db4 55%, var(--border));
     padding: 8px 12px;
     border-radius: 3px;
     margin-top: 6px;
@@ -4095,7 +4094,6 @@ html[data-mobile="1"] .stat-card {
     justify-content: space-between;
     padding: 12px 14px;
     gap: 12px;
-    border-left-width: 3px;
 }
 
 html[data-mobile="1"] .stat-card .label {

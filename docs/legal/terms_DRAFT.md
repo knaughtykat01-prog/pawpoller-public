@@ -1,3 +1,6 @@
+> **Superseded 2026-10-08:** the published text is `site/src/pages/terms.astro` (LEGALPAGES, version 1). Edit the page, not
+> this draft; keep this file as the reviewed starting point.
+
 # Terms of use — DRAFT for review
 
 > **Draft, not yet published.** Text marked ⟦like this⟧ is waiting on a fact or a decision. Not legal advice;

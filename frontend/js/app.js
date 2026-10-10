@@ -330,6 +330,13 @@ const App = {
             console.warn('[App] Setup status check failed:', err);
         }
 
+        /* The 18+ step (LEGALPAGES, 4.58.0): apply the under-18 lock, or ask once on an install
+           set up before the step existed. Not awaited — the dashboard draws meanwhile. */
+        API.getAge().then(a => {
+            if (a && a.band) this._applyAgeLock(a.band);
+            else this._askAgeOnce();
+        }).catch(() => {});
+
         /* Inkbunny platform auth gate — decide which screen the user should
          * land on. Two important rules learned in 2.14.7 (BUG-005/006/007):
          *
@@ -505,6 +512,10 @@ const App = {
         };
         _syncSfwBtn();
         const _toggleSfw = () => {
+            if (document.documentElement.dataset.ageLocked === '1') {     // under-18 (4.58.0)
+                window.toast?.info('Safe mode stays on: this copy of PawPoller is set up for someone under 18.');
+                return;
+            }
             const on = document.documentElement.dataset.sfw !== '1';
             if (on) {
                 document.documentElement.dataset.sfw = '1';
@@ -552,12 +563,28 @@ const App = {
         ].join(', ');
         document.addEventListener('click', (e) => {
             if (document.documentElement.dataset.sfw !== '1') return;
+            if (document.documentElement.dataset.ageLocked === '1') return;   // no peeking under 18 (4.58.0)
             const el = e.target.closest?.(_sfwPeekSel);
             if (!el || el.classList.contains('sfw-revealed')) return;  // already peeked → let it through
             e.preventDefault();
             e.stopPropagation();
             el.classList.add('sfw-revealed');
         }, true);  // capture: intercept before the link/card navigation handlers
+
+        /* Under-18 (4.58.0): Mature / Adult can't be chosen in any rating menu. The server refuses
+           them anyway; this keeps the menus honest. Delegated, so every page's menu is covered. */
+        document.addEventListener('focusin', (e) => {
+            const sel = e.target;
+            if (document.documentElement.dataset.ageLocked !== '1' || sel?.tagName !== 'SELECT') return;
+            if (!/rating/i.test(sel.id || sel.name || '')) return;
+            for (const opt of sel.options) {
+                if (window.MediaKinds?.ratingRank ? window.MediaKinds.ratingRank(opt.value) > 0
+                    : !['general', 'safe', 'sfw', ''].includes(String(opt.value).toLowerCase())) {
+                    opt.disabled = true;
+                    opt.title = 'Locked for under-18s';
+                }
+            }
+        });
 
         /* Guided tours — the account menu's "Take the tour" runs the tour for wherever you
            are (Tour.startHere resolves it from the current hash). Auto-firing (getting-started
@@ -1315,6 +1342,12 @@ const App = {
             this.renderPICSubmissions();
         } else if (parts[0] === 'pic' && parts[1] === 'submission' && parts[2]) {
             this.renderPICDetail(parts[2]);
+        } else if (parts[0] === 'fb' && (!parts[1] || parts[1] === '')) {
+            this.renderFBDashboard();
+        } else if (parts[0] === 'fb' && parts[1] === 'submissions' && !parts[2]) {
+            this.renderFBSubmissions();
+        } else if (parts[0] === 'fb' && parts[1] === 'submission' && parts[2]) {
+            this.renderFBDetail(decodeURIComponent(parts[2]));
         } else if (parts[0] === 'fbr' && (!parts[1] || parts[1] === '')) {
             this.renderFBRDashboard();
         } else if (parts[0] === 'fbr' && parts[1] === 'submissions' && !parts[2]) {
@@ -1412,6 +1445,9 @@ const App = {
             if (window.Posts) window.Posts.renderContacts();
         } else if (parts[0] === 'posts' && parts[1] === 'new') {
             if (window.Posts) window.Posts.renderCompose();
+        } else if (parts[0] === 'posts' && parts[1] === 'journal') {
+            // Spec 027: a journal for FA / Weasyl / DeviantArt (new, or edit with an id).
+            if (window.Posts) window.Posts.renderJournal(parts[2] || null);
         } else if (parts[0] === 'posts' && parts[1]) {
             /* The post item page (4.34.4, UNIFORMITEM phase 4). Posts were the one
                item type with no page to click into: a post goes to up to six
@@ -1833,6 +1869,7 @@ const App = {
                 { key: 'ng', auth: auth.ngAuth?.has_credentials, name: 'Newgrounds', statusFn: 'getNGStatus', logFn: 'getNGPollLog', tableFn: 'ngPollLogTable' },
                 { key: 'yt', auth: auth.ytAuth?.has_credentials, name: 'YouTube', statusFn: 'getYTStatus', logFn: 'getYTPollLog', tableFn: 'ytPollLogTable' },
                 { key: 'pic', auth: auth.picAuth?.has_credentials, name: 'Picarto', statusFn: 'getPICStatus', logFn: 'getPICPollLog', tableFn: 'picPollLogTable' },
+                { key: 'fb', auth: auth.fbAuth?.has_credentials, name: 'Facebook', statusFn: 'getFBStatus', logFn: 'getFBPollLog', tableFn: 'ytPollLogTable' },
                 { key: 'fbr', auth: auth.fbrAuth?.has_credentials, name: 'Furbooru', statusFn: 'getFBRStatus', logFn: 'getFBRPollLog', tableFn: 'fbrPollLogTable' },
                 // Telegram's auth lives in the channel settings, not an
                 // /auth/status route, so its gate reads the health endpoint's
@@ -2015,7 +2052,7 @@ const App = {
         // Mirrors polling/session_check.py::CHECKABLE. Telegram's bot token
         // does not expire, but the bot can be removed from the channel — the
         // check catches that, which is otherwise invisible until a post fails.
-        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt', 'pic'];
+        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt', 'pic', 'fb'];
         const LABELS = (window.PlatformHealth && window.PlatformHealth.LABELS) || {};
         const DOT = { valid: 'connected', expired: 'disconnected', error: 'warn', unconfigured: 'muted' };
         const WORD = { valid: 'Valid', expired: 'Expired', error: 'Unverified', unconfigured: 'Not configured' };
@@ -2115,7 +2152,7 @@ const App = {
      * Falls back to the cached snapshot only if the health fetch fails/empty. */
     async _configuredPollCodes() {
         const ALL = ['ib', 'fa', 'ws', 'sf', 'sqw', 'ao3', 'da', 'wp', 'ik',
-            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt', 'pic'];
+            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'tg', 'sc', 'ng', 'yt', 'pic', 'fb'];
         try {
             const health = await API.getPlatformsHealth();
             if (health && typeof health === 'object') {
@@ -2130,12 +2167,70 @@ const App = {
             bsky: a.bskyAuth?.has_credentials, tw: a.twAuth?.has_credentials, mast: a.mastAuth?.has_credentials,
             tum: a.tumAuth?.has_credentials, pix: a.pixAuth?.has_credentials, thr: a.thrAuth?.has_credentials,
             ig: a.igAuth?.has_credentials, e621: a.e621Auth?.has_credentials,
-            fn: a.fnAuth?.has_credentials, fbr: a.fbrAuth?.has_credentials, sc: a.scAuth?.has_credentials, ng: a.ngAuth?.has_credentials, yt: a.ytAuth?.has_credentials, pic: a.picAuth?.has_credentials,
+            fn: a.fnAuth?.has_credentials, fbr: a.fbrAuth?.has_credentials, sc: a.scAuth?.has_credentials, ng: a.ngAuth?.has_credentials, yt: a.ytAuth?.has_credentials, pic: a.picAuth?.has_credentials, fb: a.fbAuth?.has_credentials,
             // No tgAuth snapshot exists — Telegram is configured through the
             // channel settings rather than an /auth route — so this fallback
             // asks PlatformHealth, which reads the same server-side gate.
             tg: !!(window.PlatformHealth && (window.PlatformHealth.get('tg') || {}).configured) };
         return ALL.filter(c => cached[c]);
+    },
+
+    /* Tumblr posting (spec 024, 4.60.0): every Tumblr account gets a Connect button that signs in
+     * with Tumblr itself. PawPoller keeps the sign-in only if the approving user owns the account's
+     * blog. The return address must be added to the Tumblr app once; it is shown here. */
+    async _fillTumPosting() {
+        const slot = document.getElementById('tum-posting-slot');
+        if (!slot) return;
+        let accts = [];
+        try { accts = ((await API.get('/api/accounts')).accounts || []).filter(a => a.platform === 'tum'); } catch (e) { return; }
+        if (!accts.length) return;
+        const rows = await Promise.all(accts.map(async a => {
+            let st = {};
+            try { st = await API.get('/api/tum/auth/posting/status', { account_id: a.account_id }); } catch (e) { /* shown as not connected */ }
+            return { a, st };
+        }));
+        if (!slot.isConnected) return;
+        const esc = s => Utils.escapeHtml(String(s || ''));
+        slot.innerHTML = `<h4 style="margin:0 0 6px">Posting to Tumblr</h4>
+            <p style="color:var(--text-muted);font-size:13px;margin:0 0 10px">To post (not just track), press <b>Connect for posting</b> and approve PawPoller on Tumblr while logged in as the blog's owner.</p>
+            ${rows.map(({ a, st }) => `
+            <div class="settings-row" data-tum-acct="${a.account_id}" style="flex-wrap:wrap;gap:8px">
+                <div><span class="settings-label">${esc(a.label || a.handle || st.blog || 'Tumblr')}</span>
+                    <div style="font-size:12px;color:var(--text-muted)">${st.method === 'oauth2'
+                        ? `Connected as ${esc(st.user)} · posts to ${esc(st.blog)}`
+                        : st.method === 'oauth1' ? `Posting with pasted keys · posts to ${esc(st.blog)} (Connect replaces them)`
+                        : `Not connected for posting${st.blog ? ' · blog ' + esc(st.blog) : ''}`}</div></div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                    ${st.has_app ? '' : `<input type="password" class="search-input tum-app-secret" placeholder="App's OAuth Consumer Secret" style="max-width:240px">`}
+                    <button class="btn btn-primary tum-post-connect">${st.method === 'oauth2' ? 'Connect again' : 'Connect for posting'}</button>
+                    ${st.method === 'oauth2' ? '<button class="btn btn-secondary tum-post-disconnect">Disconnect posting</button>' : ''}
+                </div>
+                <div class="tum-post-msg" style="flex-basis:100%;font-size:12px"></div>
+            </div>`).join('')}`;
+        slot.querySelectorAll('[data-tum-acct]').forEach(row => {
+            const id = Number(row.dataset.tumAcct);
+            const msg = row.querySelector('.tum-post-msg');
+            const say = (text, bad) => { msg.textContent = text; msg.style.color = bad ? 'var(--danger)' : 'var(--text-secondary)'; };
+            row.querySelector('.tum-post-connect').addEventListener('click', async () => {
+                const sec = row.querySelector('.tum-app-secret');
+                try {
+                    const r = await API.post('/api/tum/auth/posting/connect',
+                        { account_id: id, client_secret: sec ? sec.value.trim() : '' });
+                    say(`Approve PawPoller in the Tumblr tab that just opened. If Tumblr says the address isn't allowed, add ${r.redirect_uri} under "OAuth2 redirect URLs" in your Tumblr app (tumblr.com/oauth/apps), save, and press Connect again.`);
+                    window.open(r.url, '_blank', 'noopener');
+                } catch (err) {
+                    let d = err.message.replace(/^API \d+:\s*/, '');
+                    try { d = JSON.parse(d).detail || d; } catch (e) { /* plain text */ }
+                    say(d, true);
+                }
+            });
+            const dis = row.querySelector('.tum-post-disconnect');
+            if (dis) dis.addEventListener('click', async () => {
+                if (!confirm('Stop PawPoller posting to this Tumblr blog? Tracking carries on.')) return;
+                await API.post('/api/tum/auth/posting/disconnect', { account_id: id });
+                this._fillTumPosting();
+            });
+        });
     },
 
     async _dashPoll(btn, platform) {
@@ -2170,7 +2265,7 @@ const App = {
         if (!confirm(`Full resync re-fetches every ${label} submission from scratch. This can take several minutes and will hit ${label}'s rate limits hard. Continue?`)) return;
         btn.disabled = true;
         btn.textContent = 'Syncing...';
-        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync' };
+        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync', fb: 'fullFBResync' };
         try {
             await API[fns[platform]]();
             btn.textContent = 'Done!';
@@ -2733,6 +2828,54 @@ const App = {
      * main dashboard. The polling-owner gate in main.py reads
      * setup_mode at startup, so a fresh restart applies. */
 
+    /* The 18+ step (LEGALPAGES, 4.58.0). */
+    _applyAgeLock(band) {
+        const root = document.documentElement;
+        if (band === 'under18') {
+            root.dataset.ageLocked = '1';
+            root.dataset.sfw = '1';
+            try { localStorage.setItem('pawpoller-sfw', '1'); } catch (e) { /* ignore */ }
+            const pill = document.getElementById('sfw-toggle-btn');
+            if (pill) {
+                pill.setAttribute('aria-disabled', 'true');
+                pill.title = 'Safe mode stays on (under 18)';
+                const word = pill.querySelector('.sfw-word');
+                if (word) word.textContent = 'Safe';
+            }
+        } else {
+            delete root.dataset.ageLocked;
+            document.getElementById('sfw-toggle-btn')?.removeAttribute('aria-disabled');
+        }
+    },
+
+    /* An install set up before the age step asks once, in a small dialog. */
+    _askAgeOnce() {
+        if (document.getElementById('age-ask')) return;
+        const ov = document.createElement('div');
+        ov.className = 'modal-overlay open';
+        ov.id = 'age-ask';
+        ov.innerHTML = `
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="age-ask-title" style="max-width:480px">
+                <div class="modal-header"><h3 id="age-ask-title" style="margin:0">Are you 18 or older?</h3></div>
+                <div class="modal-body" style="font-size:14px;line-height:1.55">
+                    <p>PawPoller now asks once. It works for anyone making safe-for-work art and writing; its adult features are for people 18 and over.</p>
+                    <p style="color:var(--text-secondary);font-size:13px">If you're under 18, Mature and Adult ratings, adults-only sites (FurAffinity, Inkbunny, e621) and switching safe mode off are locked. Saying you're 18 or older when you aren't breaks PawPoller's <a href="https://pawpoller.com/terms" target="_blank" rel="noopener">terms</a>.</p>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+                        <button class="btn btn-primary" id="age-ask-adult">I'm 18 or older</button>
+                        <button class="btn" id="age-ask-minor">I'm under 18</button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        const answer = async (band) => {
+            try { await API.setAge(band); this._applyAgeLock(band); ov.remove(); }
+            catch (e) { window.toast?.error('Could not save: ' + (e.message || e)); }
+        };
+        ov.querySelector('#age-ask-adult').addEventListener('click', () => answer('adult'));
+        ov.querySelector('#age-ask-minor').addEventListener('click', () => answer('under18'));
+        ov.querySelector('#age-ask-adult').focus();
+    },
+
     /* 2.16.13 (BUG-017): #/setup route guard. If setup_complete is
      * already true (the normal post-onboarding state), bounce the
      * user back to overview instead of letting them re-enter the
@@ -2883,14 +3026,14 @@ const App = {
          * "skip archive + platforms" branch falls out naturally. */
         const stepOrder = () => {
             if (runtimeMode === 'server') {
-                return ['welcome', 'timezone', 'archive', 'platforms', 'persona', 'tech', 'done'];
+                return ['welcome', 'timezone', 'age', 'archive', 'platforms', 'persona', 'tech', 'done'];
             }
             if (selectedMode === 'paired_desktop' || selectedMode === 'connected') {
                 // Paired installs read the server's data — personas live there.
-                return ['welcome', 'timezone', 'mode', 'pairing', 'tech', 'done'];
+                return ['welcome', 'timezone', 'age', 'mode', 'pairing', 'tech', 'done'];
             }
             // standalone (or undecided) — full flow
-            return ['welcome', 'timezone', 'mode', 'archive', 'platforms', 'persona', 'tech', 'done'];
+            return ['welcome', 'timezone', 'age', 'mode', 'archive', 'platforms', 'persona', 'tech', 'done'];
         };
 
         // Validate against the CURRENT path rather than trusting what was stored:
@@ -3059,6 +3202,22 @@ const App = {
                         <button class="btn btn-primary login-btn" id="setup-persona-create" style="flex:1">Create persona</button>
                         <button class="btn" id="setup-skip" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Skip</button>
                     </div>`;
+            } else if (currentStep === 'age') {
+                /* ── The 18+ step (LEGALPAGES, 4.58.0). Under-18s can use PawPoller for safe-for-work
+                   work; adult features lock. Self-declared, as the Terms say. ──── */
+                body = `
+                    <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">Are you 18 or older?</h2>
+                    <p style="color:var(--text-secondary);margin-bottom:12px;font-size:13px">PawPoller works for anyone making safe-for-work art and writing. Its adult features are for people 18 and over.</p>
+                    <ul style="text-align:left;color:var(--text-secondary);font-size:13px;line-height:1.7;margin:0 0 12px;padding-left:18px">
+                        <li><strong style="color:var(--text-primary)">Under 18:</strong> Mature and Adult ratings, adults-only sites (FurAffinity, Inkbunny, e621) and switching safe mode off are locked.</li>
+                        <li>Each site has its own minimum age too. Settings → General lists them.</li>
+                    </ul>
+                    <p style="color:var(--text-muted);font-size:12px;margin-bottom:16px">Saying you're 18 or older when you aren't breaks PawPoller's <a href="https://pawpoller.com/terms" target="_blank" rel="noopener">terms</a>.</p>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
+                        <button class="btn btn-primary login-btn" id="setup-age-adult" style="flex:1">I'm 18 or older</button>
+                        <button class="btn" id="setup-age-minor" style="flex:0 0 auto">I'm under 18</button>
+                    </div>`;
             } else if (currentStep === 'tech') {
                 /* ── Technical error reports (4.10.0) — asked once, here, for
                    new installs; installs that predate this step get the same
@@ -3076,7 +3235,7 @@ const App = {
                         <input type="checkbox" id="setup-usage" style="margin-top:3px;flex:0 0 auto">
                         <span><strong style="color:var(--text-primary)">Also count this copy of PawPoller.</strong> Every few minutes it says "still running", anonymously, so the developer knows how many people use it and on what: the version, Windows or Linux, how it was installed, which sites you have connected (not the accounts), roughly how big your library is (a range, never a number), plus a random id for this copy so it is counted once and the country your connection comes from (never your address). No names, nothing you made.</span>
                     </label>
-                    <p style="color:var(--text-muted);font-size:12px;margin-bottom:16px">You can change both any time in Settings → Diagnostics.</p>
+                    <p style="color:var(--text-muted);font-size:12px;margin-bottom:16px">You can change both any time in Settings → Diagnostics. Reports are kept 90 days; check-ins 12 months, then only totals. <a href="https://pawpoller.com/privacy" target="_blank" rel="noopener">Privacy policy</a>.</p>
                     <div style="display:flex;gap:8px">
                         <button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
                         <button class="btn btn-primary login-btn" id="setup-tech-yes" style="flex:1">Yes, send them</button>
@@ -3221,6 +3380,15 @@ const App = {
                     if (msgEl) msgEl.textContent = 'Could not create persona: ' + (err.message || err);
                 }
             });
+
+            /* The 18+ step (4.58.0): either answer advances; the band locks adult features. */
+            for (const [id, band] of [['setup-age-adult', 'adult'], ['setup-age-minor', 'under18']]) {
+                document.getElementById(id)?.addEventListener('click', async () => {
+                    try { await API.setAge(band); App._applyAgeLock(band); }
+                    catch (err) { console.warn('[Setup] age save failed:', err); }
+                    goNext();
+                });
+            }
 
             /* Tech Centre consent (4.10.0) — both answers are answers: store, advance. */
             for (const [id, value] of [['setup-tech-yes', true], ['setup-tech-no', false]]) {
@@ -3821,7 +3989,7 @@ const App = {
 
     _dashWidgetMeta() {
         return [
-            { id: 'health', title: 'Platform health', icon: '\u{1FA7A}', desc: 'Live status of all 16 platforms', spans: [4] },
+            { id: 'health', title: 'Platform health', icon: '\u{1FA7A}', desc: 'Live status of every platform you use', spans: [4] },
             { id: 'stat-subs', title: 'Submissions', icon: '\u{1F4E6}', desc: 'Total works tracked', spans: [1, 2] },
             { id: 'stat-views', title: 'Total views', icon: '\u{1F441}', desc: 'Aggregate views', spans: [1, 2] },
             { id: 'stat-faves', title: 'Favourites', icon: '★', desc: 'Aggregate favourites', spans: [1, 2] },
@@ -11006,6 +11174,205 @@ const App = {
         }
     },
 
+    // ── Facebook (spec 029, 4.59.0) ──────────────────────────────
+    // A null figure means Facebook gave none (usually a missing permission) — shown as
+    // "not available", never as 0.
+
+    _fbCard(label, v, href = null) {
+        if (v != null) return Components.statCard(label, v, null, href);
+        return `<div class="stat-card"><div class="label">${Utils.escapeHtml(label)}</div>
+            <div class="value" style="font-size:15px;color:var(--text-muted)">not available</div></div>`;
+    },
+
+    _fbNum(v) { return v == null ? '<span style="color:var(--text-muted)">–</span>' : Utils.formatNumber(v); },
+
+    _fbMissingNote(perm) {
+        if (!perm) return '';
+        return `<div class="card" style="padding:12px 16px;margin-bottom:12px;border-left:3px solid var(--warning, #e0a030)">
+            Facebook didn't share every number: your connection is missing <b>${Utils.escapeHtml(perm)}</b>.
+            Add it to your Meta app and connect Facebook again (Settings → Platforms → Facebook, guide step 3).
+            Posting isn't affected.</div>`;
+    },
+
+    async renderFBDashboard() {
+        const token = this._routeToken();
+        this._loading();
+        try {
+            const [summary, agg] = await Promise.all([
+                API.getFBSummary({ account_id: this._acctId('fb') }),
+                API.getFBAggregate({ ...Utils.getDateRange(this._dateRange), account_id: this._acctId('fb') }),
+            ]);
+            const snaps = agg.snapshots || [];
+            const health = window.PlatformHealth && window.PlatformHealth.get('fb');
+            const isUnconfigured = health && health.configured === false;
+            if (isUnconfigured || (summary.total_submissions || 0) === 0) {
+                if (this._stale(token)) return;
+                this._setContent(`
+                    ${this._refreshIndicatorHtml()}
+                    <div class="page-header"><h1>Facebook Dashboard</h1>
+                        ${isUnconfigured ? '' : '<button class="btn btn-primary" data-poll="fb">Poll Now</button>'}</div>
+                    ${this._fbMissingNote(summary.missing_permission)}
+                    ${Components.platformEmptyState('fb', isUnconfigured ? {} : { reason: 'Facebook is connected but your Page has not been polled yet. The first poll may still be running.' })}
+                `);
+                return;
+            }
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h1>Facebook Dashboard</h1>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" data-poll="fb">Poll Now</button>
+                        <button class="btn btn-secondary" data-resync="fb">Full Resync</button>
+                    </div>
+                </div>
+                ${this._fbMissingNote(summary.missing_permission)}
+                <div class="stats-grid">
+                    ${Components.statCard('Posts', summary.total_submissions, null, '#/fb/submissions')}
+                    ${this._fbCard('Views', summary.total_views)}
+                    ${this._fbCard('Reactions', summary.total_reactions)}
+                    ${this._fbCard('Comments', summary.total_comments)}
+                    ${this._fbCard('Shares', summary.total_shares)}
+                </div>
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-row">
+                    <div class="chart-container"><h3>Views Over Time</h3><div class="chart-wrap"><canvas id="chart-agg-views"></canvas></div></div>
+                    <div class="chart-container"><h3>Reactions, Comments &amp; Shares</h3><div class="chart-wrap"><canvas id="chart-agg-eng"></canvas></div></div>
+                </div>
+            `;
+            if (this._stale(token)) return;
+            this._setContent(html);
+            // Two charts: views run far above reactions, which would read as flat on a shared axis.
+            if (snaps.length) {
+                Charts.aggregateLine('chart-agg-views', snaps, ['views']);
+                Charts.aggregateLine('chart-agg-eng', snaps, ['reactions', 'comments', 'shares']);
+            }
+            this._loadFollowerWidget('fb', this._acctId('fb'));
+            this._bindDateRange(() => this.renderFBDashboard());
+            this._startAutoRefresh(() => this.renderFBDashboard());
+        } catch (err) {
+            if (this._stale(token)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading Facebook dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderFBSubmissions() {
+        const _rt = this._routeToken();
+        this._loading();
+        try {
+            this._fbSortState = this._fbSortState || { field: 'posted_at', order: 'desc' };
+            const data = await API.getFBSubmissions({
+                sort_by: this._fbSortState.field, order: this._fbSortState.order, account_id: this._acctId('fb'),
+            });
+            const all = data.submissions || [];
+            const TYPE = { photo: 'Photo', video: 'Video', link: 'Link', post: 'Text' };
+            const grid = (subs) => {
+                if (!subs.length) return '<div class="empty-state"><p>No posts match.</p></div>';
+                return `<div class="submission-card-grid">${subs.map(s => `
+                    <a href="#/fb/submission/${encodeURIComponent(s.submission_id)}" class="submission-card">
+                        <div class="submission-card-body">
+                            <span class="card-type-badge">${TYPE[s.content_type] || 'Post'}</span>
+                            ${s.deleted ? '<span class="card-type-badge" title="No longer on Facebook — kept with its last numbers">gone</span>' : ''}
+                            <div class="submission-card-title">${Utils.escapeHtml(s.title || '(no text)')}</div>
+                            <div class="submission-card-stats">
+                                <span class="submission-card-stat">${this._fbNum(s.views)} <small>views</small></span>
+                                <span class="submission-card-stat">${this._fbNum(s.reactions)} <small>reactions</small></span>
+                                <span class="submission-card-stat">${this._fbNum(s.comments)} <small>comments</small></span>
+                                <span class="submission-card-stat">${this._fbNum(s.shares)} <small>shares</small></span>
+                            </div>
+                            ${s.posted_at ? `<div class="submission-card-date">${Utils.formatDate(s.posted_at)}</div>` : ''}
+                        </div>
+                    </a>`).join('')}</div>`;
+            };
+            const sortKey = `${this._fbSortState.field}:${this._fbSortState.order}`;
+            const opt = (v, label) => `<option value="${v}" ${sortKey === v ? 'selected' : ''}>${label}</option>`;
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header"><h1>Facebook Posts</h1></div>
+                <div class="toolbar">
+                    <input type="text" class="search-input" id="search-input" placeholder="Search posts..." aria-label="Search posts">
+                    <select class="filter-select" id="fb-sort" aria-label="Sort posts">
+                        ${opt('posted_at:desc', 'Newest')}
+                        ${opt('views:desc', 'Most views')}
+                        ${opt('reactions:desc', 'Most reactions')}
+                        ${opt('comments:desc', 'Most comments')}
+                        ${opt('shares:desc', 'Most shares')}
+                    </select>
+                </div>
+                <div id="grid-container">${grid(all)}</div>
+            `;
+            if (this._stale(_rt)) return;
+            this._setContent(html);
+            const sortSel = document.getElementById('fb-sort');
+            if (sortSel) sortSel.addEventListener('change', () => {
+                const [field, order] = sortSel.value.split(':');
+                this._fbSortState = { field, order };
+                this.renderFBSubmissions();
+            });
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) searchInput.addEventListener('input', () => {
+                const q = searchInput.value.toLowerCase();
+                document.getElementById('grid-container').innerHTML =
+                    grid(all.filter(s => (s.full_text || '').toLowerCase().includes(q)));
+            });
+            this._startAutoRefresh(() => this.renderFBSubmissions());
+        } catch (err) {
+            if (this._stale(_rt)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading Facebook posts</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderFBDetail(postId) {
+        const _rt = this._routeToken();
+        this._loading();
+        try {
+            const [data, snaps, pins, allTags] = await Promise.all([
+                API.getFBSubmission(postId),
+                API.getFBSnapshots(postId).catch(() => ({ snapshots: [] })),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getTags().catch(() => ({ tags: [] })),
+            ]);
+            const sub = data.submission;
+            const fullId = String(sub.submission_id);
+            const isPinned = (pins.pins || []).some(p => p.platform === 'fb' && String(p.submission_id) === fullId);
+            const link = Utils.safeUrl(sub.link);
+            const byType = Object.entries(sub.reactions_by_type || {}).filter(([, n]) => n > 0)
+                .sort((a, b) => b[1] - a[1]);
+            const stat = (v, lbl) => `<div class="detail-stat">${this._fbNum(v)} <span class="lbl">${lbl}</span></div>`;
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <a href="#/fb/submissions" class="back-link">&larr; Back to Facebook Posts</a>
+                <div class="detail-header">
+                    <div class="detail-info">
+                        <h2>${Utils.escapeHtml(sub.title || '(no text)')}</h2>
+                        <div class="detail-meta">${Utils.formatDate(sub.posted_at)}${sub.made_by_pawpoller ? ' &middot; posted with PawPoller' : ''}${sub.deleted ? ' &middot; no longer on Facebook' : ''}</div>
+                        ${link ? `<div class="detail-meta"><a href="${Utils.escapeHtml(link)}" target="_blank" rel="noopener">View on Facebook</a></div>` : ''}
+                        <div class="detail-stats">
+                            ${stat(sub.views, 'views')}${stat(sub.reactions, 'reactions')}${stat(sub.comments, 'comments')}${stat(sub.shares, 'shares')}
+                            ${sub.content_type === 'video' ? stat(sub.plays, 'plays') : ''}
+                        </div>
+                        ${byType.length ? `<div class="detail-meta" style="margin-top:6px">${byType.map(([k, n]) => `${Utils.escapeHtml(k)} ${Utils.formatNumber(n)}`).join(' &middot; ')}</div>` : ''}
+                        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <button class="btn ${isPinned ? 'btn-danger' : 'btn-secondary'} btn-pin" data-platform="fb" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">${isPinned ? 'Unpin' : 'Pin'}</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <h3>Stats Over Time</h3>
+                    <div class="chart-wrap"><canvas id="chart-detail"></canvas></div>
+                </div>
+            `;
+            if (this._stale(_rt)) return;
+            this._setContent(html);
+            if ((snaps.snapshots || []).length) {
+                Charts.submissionLine('chart-detail', snaps.snapshots, ['views', 'reactions', 'comments', 'shares']);
+            }
+            this._bindDetailPinTag('fb', fullId, allTags.tags || [], () => this.renderFBDetail(postId));
+        } catch (err) {
+            if (this._stale(_rt)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading Facebook post</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
     async renderE621Dashboard() {
         const token = this._routeToken();
         this._loading();
@@ -13022,7 +13389,7 @@ const App = {
                 // Determine platform badge colour and the correct hash route prefix
                 const badgeMap = { fa: '<span class="platform-badge fa">FA</span>', ws: '<span class="platform-badge ws">WS</span>', sf: '<span class="platform-badge sf">SF</span>', sqw: '<span class="platform-badge sqw">SqW</span>', ao3: '<span class="platform-badge ao3">AO3</span>', da: '<span class="platform-badge da">DA</span>', wp: '<span class="platform-badge wp">WP</span>', ik: '<span class="platform-badge ik">IK</span>', bsky: '<span class="platform-badge bsky">BSKY</span>', tw: '<span class="platform-badge tw">TW</span>', ib: '<span class="platform-badge ib">IB</span>' };
                 const badge = badgeMap[m.platform] || badgeMap.ib;
-                const prefixMap = { fa: '/fa/submission/', ws: '/ws/submission/', sf: '/sf/submission/', sqw: '/sqw/submission/', ao3: '/ao3/submission/', da: '/da/submission/', wp: '/wp/submission/', ik: '/ik/submission/', bsky: '/bsky/submission/', tw: '/tw/submission/', mast: '/mast/submission/', tum: '/tum/submission/', pix: '/pix/submission/', thr: '/thr/submission/', ig: '/ig/submission/', e621: '/e621/submission/', fn: '/fn/submission/', fbr: '/fbr/submission/', sc: '/sc/submission/', ng: '/ng/submission/', yt: '/yt/submission/', pic: '/pic/submission/', ib: '/submission/' };
+                const prefixMap = { fa: '/fa/submission/', ws: '/ws/submission/', sf: '/sf/submission/', sqw: '/sqw/submission/', ao3: '/ao3/submission/', da: '/da/submission/', wp: '/wp/submission/', ik: '/ik/submission/', bsky: '/bsky/submission/', tw: '/tw/submission/', mast: '/mast/submission/', tum: '/tum/submission/', pix: '/pix/submission/', thr: '/thr/submission/', ig: '/ig/submission/', e621: '/e621/submission/', fn: '/fn/submission/', fbr: '/fbr/submission/', sc: '/sc/submission/', ng: '/ng/submission/', yt: '/yt/submission/', pic: '/pic/submission/', fb: '/fb/submission/', ib: '/submission/' };
                 const prefix = prefixMap[m.platform] || prefixMap.ib;
                 return `
                     <tr>
@@ -13572,7 +13939,7 @@ const App = {
         try {
             // Core settings: only fetch what General/Platforms/Telegram/Data/About tabs need.
             // Polling tab data is loaded lazily when the user clicks into it.
-            const [creds, prefs, telegram, tgFeatures, pollPausedState, faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, updateInfo, postingSettings, browserLoginInfo, setupStatus, digest, tgChannel, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth, serverUpdate] = await Promise.all([
+            const [creds, prefs, telegram, tgFeatures, pollPausedState, faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, updateInfo, postingSettings, browserLoginInfo, setupStatus, digest, tgChannel, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth, serverUpdate, fbAuth] = await Promise.all([
                 API.getCredentials(),
                 API.getPreferences(),
                 API.getTelegram(),
@@ -13607,6 +13974,7 @@ const App = {
                 API.getYTAuthStatus().catch(() => ({ has_credentials: false, has_app: false, username: '' })),
                 API.getPICChannelStatus().catch(() => ({ has_credentials: false, channel: '', has_data: false })),
                 API.getServerUpdateStatus().catch(() => ({ applicable: false, host_agent_installed: false, available: false, in_progress: false })),
+                API.getFBAuthStatus().catch(() => ({ has_credentials: false, username: '' })),
             ]);
 
             // Resolve effective mode for hide/show logic. Falls back to inferred
@@ -13623,7 +13991,7 @@ const App = {
             const _pollingOwner = setupStatus.polling_owner || (_isServer ? 'local' : (_isPaired ? 'server' : 'local'));
 
             // Store auth state for lazy-loaded polling tab
-            this._pollingAuth = { faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth };
+            this._pollingAuth = { faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth, fbAuth };
 
             // Store browser login availability for platform connect forms
             const _browserLoginAvailable = browserLoginInfo.available;
@@ -13648,7 +14016,7 @@ const App = {
                     </div>
                     ${App._settingsRailHtml(_settingsPage, {
                         connection: _isServer ? 'server' : (_isPaired ? 'paired' : (_isConnectedPending ? 'restart' : (_setupMode === 'connected' ? 'connected' : 'standalone'))),
-                        platforms: `${[faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth].filter(a => a && (a.has_credentials || a.has_cookies || a.has_key)).length + (creds.username ? 1 : 0)} connected`,
+                        platforms: `${[faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth, fbAuth].filter(a => a && (a.has_credentials || a.has_cookies || a.has_key)).length + (creds.username ? 1 : 0)} connected`,
                         polling: pollPausedState.polling_paused ? 'paused' : (_pollingOwner === 'local' ? (_isServer ? 'this server' : 'this computer') : 'server'),
                         about: updateInfo && updateInfo.current && updateInfo.current !== '?' ? updateInfo.current : '',
                         telegram: telegram.connected ? 'connected' : '',
@@ -13827,6 +14195,22 @@ const App = {
                             ${App._timezoneOptions(prefs.display_timezone || 'UTC')}
                         </select>
                     </div>
+                    <div class="settings-row" id="pref-age-row">
+                        <div>
+                            <span class="settings-label">Age</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Under 18: Mature and Adult ratings, adults-only sites and switching safe mode off are locked. <a href="https://pawpoller.com/terms" target="_blank" rel="noopener">Terms</a></div>
+                        </div>
+                        <select class="filter-select" id="pref-age" style="width:auto">
+                            <option value="">Not answered</option>
+                            <option value="adult">18 or older</option>
+                            <option value="under18">Under 18</option>
+                        </select>
+                    </div>
+                    <details id="pref-age-sites" style="margin:4px 0 10px">
+                        <summary style="cursor:pointer;font-size:13px;color:var(--text-secondary)">Each site's own minimum age</summary>
+                        <div class="table-wrap" style="overflow-x:auto"><table class="data-table" style="font-size:12.5px"><thead><tr><th>Site</th><th>Minimum age</th><th>Notes</th></tr></thead><tbody id="pref-age-tbody"><tr><td colspan="3">Loading…</td></tr></tbody></table></div>
+                        <p style="font-size:11px;color:var(--text-muted);margin:6px 0 0">From each site's own terms, checked 8 Oct 2026. Rules change and vary by country, so the site's own terms always win.</p>
+                    </details>
                     ${_isServer ? '' : `
                     <div class="settings-row">
                         <div>
@@ -14637,6 +15021,13 @@ const App = {
                         </div>
                         <a class="btn btn-secondary" href="https://github.com/knaughtykat01-prog/pawpoller-public" target="_blank" rel="noopener noreferrer" style="padding:4px 12px;font-size:12px">Source code &nearr;</a>
                     </div>
+                    <div class="settings-row">
+                        <div>
+                            <span class="settings-label">Includes FFmpeg (GNU GPL-3.0)</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">PawPoller runs FFmpeg as a separate program to turn a GIF into video for Threads. It comes from the imageio-ffmpeg package, unchanged.</div>
+                        </div>
+                        <a class="btn btn-secondary" href="https://ffmpeg.org/download.html" target="_blank" rel="noopener noreferrer" style="padding:4px 12px;font-size:12px">FFmpeg source &nearr;</a>
+                    </div>
                 </div>
 
                 </div><!-- /tab:about -->
@@ -14830,6 +15221,7 @@ const App = {
                         <div>
                             <span class="settings-label">Send the weekly digest</span>
                             <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${digest.last_sent_at ? 'Last sent ' + Utils.escapeHtml(Utils.time.fmt.dateTime(digest.last_sent_at)) : 'Not sent yet'}</div>
+                            ${digest.last_error ? `<div role="status" style="font-size:12px;color:var(--danger);margin-top:4px">Didn't send${digest.last_error_at ? ' ' + Utils.escapeHtml(Utils.time.fmt.dateTime(digest.last_error_at)) : ''}: ${Utils.escapeHtml(digest.last_error)}</div>` : ''}
                         </div>
                         <label class="toggle-switch">
                             <input type="checkbox" id="digest-enabled" ${digest.enabled ? 'checked' : ''}>
@@ -15172,7 +15564,8 @@ const App = {
                             <summary style="cursor:pointer;font-size:12px;color:var(--text-muted)">Advanced: paste session cookie instead</summary>
                             <div style="margin-top:6px">
                                 <input type="password" id="ao3-session-cookie" class="search-input" placeholder="_otwarchive_session cookie value">
-                                <p style="font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.4">From your logged-in browser: DevTools → Application → Cookies → archiveofourown.org → copy the <code>_otwarchive_session</code> value. Bypasses AO3's per-IP login throttle (recommended when running on a server).</p>
+                                <input type="password" id="ao3-remember-token" class="search-input" placeholder="remember_user_token cookie value" style="margin-top:6px">
+                                <p style="font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.4">Log in to AO3 with <b>Remember me</b> ticked, then in DevTools → Application → Cookies → archiveofourown.org copy <code>_otwarchive_session</code> and <code>remember_user_token</code>. PawPoller keeps the sign-in renewed for you. Bypasses AO3's per-IP login throttle (recommended when running on a server).</p>
                             </div>
                         </details>
                     </div>
@@ -15452,6 +15845,7 @@ const App = {
                         <button class="btn btn-danger" id="tum-disconnect-btn">Disconnect</button>
                         <span id="tum-msg" style="font-size:13px"></span>
                     </div>
+                    <div id="tum-posting-slot" style="margin-top:16px"></div>
                     ` : `
                     <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Connect to Tumblr with an app API key and a blog name. Register an app at <code>tumblr.com/oauth/apps</code>, copy the <strong>OAuth Consumer Key</strong>, and enter the blog you want to track.</p>
                     <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
@@ -15975,6 +16369,37 @@ const App = {
                     </div>
                 </details>
 
+                <details class="settings-accordion" data-platform="fb">
+                    <summary><span class="status-dot ${fbAuth.has_credentials ? this._credStatus('fb', fbAuth.username).cls : 'disconnected'}"></span>Facebook${fbAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(fbAuth.username || '')}</span>` : ''}</summary>
+                    <div class="accordion-body">
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">PawPoller posts photos, GIFs, videos and text to a Facebook <strong>Page</strong> you manage (Facebook doesn't let apps post to personal profiles). Make a token in Meta's <strong>Graph API Explorer</strong>, paste it here with your app's ID and secret, and pick your Page. The secret is only used once, to make a token that doesn't expire, and isn't saved. Facebook takes general-rated work only.</p>
+                    ${fbAuth.has_credentials ? `
+                    <div class="settings-row">
+                        <div><span class="settings-label">Status</span></div>
+                        ${this._credStatus('fb', fbAuth.username).html}
+                    </div>
+                    <div style="margin:12px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-danger" id="fb-disconnect-btn">Disconnect</button>
+                    </div>
+                    <div class="settings-label" style="margin-top:8px">Switch to a different Page</div>
+                    ` : ''}
+                    <div style="display:flex;flex-direction:column;gap:6px;max-width:420px;margin-top:8px">
+                        <label for="fb-user-token" class="settings-label">Token from Graph API Explorer</label>
+                        <input type="password" id="fb-user-token" class="search-input" placeholder="Paste the access token" autocomplete="off">
+                        <label for="fb-app-id" class="settings-label">App ID</label>
+                        <input type="text" id="fb-app-id" class="search-input" placeholder="From your app's Basic settings" autocomplete="off" spellcheck="false">
+                        <label for="fb-app-secret" class="settings-label">App secret</label>
+                        <input type="password" id="fb-app-secret" class="search-input" placeholder="From your app's Basic settings (not saved)" autocomplete="off">
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="fb-find-btn">Find my Pages</button>
+                        <select id="fb-page-select" class="search-input" aria-label="Facebook Page to post to" style="display:none;max-width:260px"></select>
+                        <button class="btn btn-primary" id="fb-connect-btn" style="display:none">Connect</button>
+                        <span id="fb-msg" role="status" aria-live="polite" style="font-size:13px"></span>
+                    </div>
+                    </div>
+                </details>
+
                 <details class="settings-accordion" data-platform="fbr">
                     <summary><span class="status-dot ${fbrAuth.has_credentials ? this._credStatus('fbr', fbrAuth.username).cls : 'disconnected'}"></span>Furbooru${fbrAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(fbrAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
@@ -16261,7 +16686,7 @@ const App = {
                         wp: 'triggerWPPoll', ik: 'triggerIKPoll', bsky: 'triggerBSKYPoll', tw: 'triggerTWPoll',
                         mast: 'triggerMASTPoll', tum: 'triggerTUMPoll', pix: 'triggerPIXPoll',
                         thr: 'triggerTHRPoll', ig: 'triggerIGPoll', e621: 'triggerE621Poll',
-                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', tg: 'triggerTGPoll', sc: 'triggerSCPoll', ng: 'triggerNGPoll', yt: 'triggerYTPoll', pic: 'triggerPICPoll' };
+                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', tg: 'triggerTGPoll', sc: 'triggerSCPoll', ng: 'triggerNGPoll', yt: 'triggerYTPoll', pic: 'triggerPICPoll', fb: 'triggerFBPoll' };
                     const codes = await this._configuredPollCodes();
                     const triggers = codes.map(c => API[TRIGGERS[c]]());
                     const results = await Promise.allSettled(triggers);
@@ -16298,7 +16723,7 @@ const App = {
                         wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync',
                         mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync',
                         thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync',
-                        fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync' };
+                        fn: 'fullFNResync', fbr: 'fullFBRResync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync', fb: 'fullFBResync' };
                     const codes = await this._configuredPollCodes();
                     const resyncs = codes.map(c => API[RESYNCS[c]]());
                     const results = await Promise.allSettled(resyncs);
@@ -17186,7 +17611,7 @@ const App = {
                         if (el) el.value = String(v);
                     });
                     e.target.value = '';  // reset back to the placeholder
-                    if (window.toast) window.toast.success('All 17 platforms set to ' + (v >= 60 ? (v / 60) + 'h' : v + ' min'));
+                    if (window.toast) window.toast.success('Every platform set to ' + (v >= 60 ? (v / 60) + 'h' : v + ' min'));
                 } catch (err) {
                     e.target.value = '';
                     alert('Failed to save: ' + err.message);
@@ -17194,6 +17619,23 @@ const App = {
             });
 
             // Display timezone dropdown
+            /* The 18+ step in Settings (LEGALPAGES, 4.58.0). */
+            API.getAge().then(a => {
+                const sel = document.getElementById('pref-age');
+                if (sel) sel.value = a.band || '';
+                const tb = document.getElementById('pref-age-tbody');
+                if (tb) tb.innerHTML = (a.sites || []).filter(s => s.code !== 'pod').map(s =>
+                    `<tr><td>${Utils.escapeHtml(s.name)}</td><td>${s.adult_only ? '<strong>18+ only</strong>' : (s.checked ? Utils.escapeHtml(String(s.min)) + '+' : 'Not confirmed')}</td><td>${Utils.escapeHtml(s.note)}</td></tr>`).join('');
+            }).catch(() => {});
+            document.getElementById('pref-age')?.addEventListener('change', async (e) => {
+                if (!e.target.value) return;
+                try {
+                    await API.setAge(e.target.value);
+                    App._applyAgeLock(e.target.value);
+                    window.toast?.success(e.target.value === 'under18'
+                        ? 'Saved: adult features are locked and safe mode stays on.' : 'Saved.');
+                } catch (err) { window.toast?.error('Could not save: ' + (err.message || err)); }
+            });
             document.getElementById('pref-timezone')?.addEventListener('change', async (e) => {
                 try {
                     await API.savePreferences({ display_timezone: e.target.value });
@@ -17378,6 +17820,8 @@ const App = {
                     const target_user = document.getElementById('ao3-target-user').value.trim();
                     const sessionCookieEl = document.getElementById('ao3-session-cookie');
                     const session_cookie = sessionCookieEl ? sessionCookieEl.value.trim() : '';
+                    const rememberEl = document.getElementById('ao3-remember-token');
+                    const remember_token = rememberEl ? rememberEl.value.trim() : '';
                     if (!target_user) {
                         msg.textContent = 'Target user required';
                         msg.style.color = 'var(--danger)';
@@ -17392,7 +17836,7 @@ const App = {
                     ao3ConnectBtn.textContent = 'Connecting...';
                     msg.textContent = '';
                     try {
-                        await API.ao3Connect({ username, password, target_user, session_cookie });
+                        await API.ao3Connect({ username, password, target_user, session_cookie, remember_token });
                         msg.textContent = 'Connected!';
                         msg.style.color = 'var(--success)';
                         setTimeout(() => this.renderSettings(), 1000);
@@ -17867,6 +18311,9 @@ const App = {
                     btn: tumResyncBtn, msgId: 'tum-msg', platform: 'tum', apiMethod: 'fullTUMResync',
                 }));
             }
+
+            // TUM posting sign-in (spec 024, 4.60.0): one row per Tumblr account.
+            this._fillTumPosting();
 
             // TUM: Notifications toggle
             // PIX Connect: sends refresh_token + optional user_id
@@ -18559,6 +19006,67 @@ const App = {
                     btn: fbrResyncBtn, msgId: 'fbr-msg', platform: 'fbr', apiMethod: 'fullFBRResync',
                 }));
             }
+            // ── Facebook (spec 022): token → Pages → pick → connect. The Page tokens never reach the browser. ──
+            const fbFindBtn = document.getElementById('fb-find-btn');
+            if (fbFindBtn) {
+                const fbMsg = (text, ok) => {
+                    const m = document.getElementById('fb-msg');
+                    m.textContent = text;
+                    m.style.color = ok ? 'var(--success)' : 'var(--danger)';
+                };
+                const fbErr = (err) => {
+                    let detail = err.message.replace(/^API \d+:\s*/, '');
+                    try { detail = JSON.parse(detail).detail || detail; } catch {}
+                    return detail;
+                };
+                let fbPick = '';
+                fbFindBtn.addEventListener('click', async () => {
+                    const user_token = document.getElementById('fb-user-token').value.trim();
+                    const app_id = document.getElementById('fb-app-id').value.trim();
+                    const app_secret = document.getElementById('fb-app-secret').value.trim();
+                    if (!user_token) { fbMsg('Paste the token from Graph API Explorer first', false); return; }
+                    fbFindBtn.disabled = true;
+                    fbFindBtn.textContent = 'Looking...';
+                    fbMsg('', true);
+                    try {
+                        const r = await API.fbFindPages({ user_token, app_id, app_secret });
+                        fbPick = r.pick;
+                        const sel = document.getElementById('fb-page-select');
+                        sel.innerHTML = r.pages.map(p => `<option value="${Utils.escapeHtml(p.id)}">${Utils.escapeHtml(p.name)}${p.can_post ? '' : ' (no posting rights)'}</option>`).join('');
+                        sel.style.display = '';
+                        document.getElementById('fb-connect-btn').style.display = '';
+                        fbMsg(r.pages.length === 1 ? 'Found your Page — press Connect' : `Found ${r.pages.length} Pages — choose one, then Connect`, true);
+                        if (!r.long_lived) fbMsg('Found it. Without the App ID and secret the token may stop working within the hour — add them for one that lasts.', false);
+                    } catch (err) {
+                        fbMsg(fbErr(err), false);
+                    } finally {
+                        fbFindBtn.disabled = false;
+                        fbFindBtn.textContent = 'Find my Pages';
+                    }
+                });
+                document.getElementById('fb-connect-btn').addEventListener('click', async (ev) => {
+                    const btn = ev.currentTarget;
+                    btn.disabled = true;
+                    try {
+                        const r = await API.fbConnect({ pick: fbPick, page_id: document.getElementById('fb-page-select').value });
+                        fbMsg(r.message || 'Connected', true);
+                        document.getElementById('fb-user-token').value = '';
+                        document.getElementById('fb-app-secret').value = '';
+                        setTimeout(() => this.renderSettings(), 1500);
+                    } catch (err) {
+                        fbMsg(fbErr(err), false);
+                        btn.disabled = false;
+                    }
+                });
+            }
+            const fbDisconnectBtn = document.getElementById('fb-disconnect-btn');
+            if (fbDisconnectBtn) {
+                fbDisconnectBtn.addEventListener('click', async () => {
+                    if (!confirm('Disconnect Facebook? PawPoller stops posting to this Page until you connect it again.')) return;
+                    await API.fbDisconnect();
+                    this.renderSettings();
+                });
+            }
             // ── Picarto (spec 013): save + verify a channel name, poll, resync. No login. ──
             const picConnectBtn = document.getElementById('pic-connect-btn');
             if (picConnectBtn) {
@@ -19012,7 +19520,7 @@ const App = {
                         <li>${st.local_base ? yes : no} <b>This ${isServer ? 'server' : 'app'}'s public address</b> ${st.local_base ? `— <code>${Utils.escapeHtml(st.local_base)}</code>` : '— none (normal for a desktop app)'}</li>
                         <li>${st.paired ? yes : no} <b>Your paired server</b> ${st.paired ? '— set in Server Sync above' : '— not paired'}</li>
                         <li><label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ig-host-relay" ${r.enabled ? 'checked' : ''}> <b>The PawPoller relay</b></label>
-                            <span style="color:var(--text-muted)">— a public PawPoller server hosts the picture for 15 minutes, no setup: <code>${Utils.escapeHtml(r.url || '')}</code></span></li>
+                            <span style="color:var(--text-muted)">— off until you switch it on. The picture you're posting is sent to the PawPoller Project's server (in the United States) and held at an unguessable link for 15 minutes so Instagram can fetch it, then deleted; your IP address is used only to limit how often it's used. <a href="https://pawpoller.com/privacy" target="_blank" rel="noopener">Privacy policy</a>. <code>${Utils.escapeHtml(r.url || '')}</code>${r.enabled && r.record && r.record.at ? ` · switched on ${Utils.escapeHtml(Utils.time.fmt.dateTime(r.record.at))}` : ''}</span></li>
                         <li><label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ig-host-tunnel" ${t.enabled ? 'checked' : ''}> <b>A temporary tunnel from this PC</b></label>
                             <span style="color:var(--text-muted)">— if the relay is unreachable: a throwaway public link to the picture on this machine, closed after the post. ${Utils.escapeHtml(helper)}.</span>
                             <div style="margin:6px 0 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center">

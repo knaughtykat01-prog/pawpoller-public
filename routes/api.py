@@ -39,7 +39,7 @@ from database.db import get_connection, init_db
 from database import (
     queries, fa_queries, ws_queries, sf_queries, sqw_queries, ao3_queries,
     da_queries, wp_queries, ik_queries, bsky_queries, tw_queries, mast_queries, tum_queries, pix_queries, thr_queries, ig_queries,
-    e621_queries, fn_queries, fbr_queries, tg_queries, sc_queries, ng_queries, yt_queries, pic_queries,
+    e621_queries, fn_queries, fbr_queries, tg_queries, sc_queries, ng_queries, yt_queries, pic_queries, fb_queries,
     group_queries, analytics_queries, platform_metrics,
     accounts as accounts_db,
 )
@@ -420,6 +420,7 @@ _PLATFORM_HEALTH_CONFIG = [
     ("ng",  ng_queries,  "get_ng_last_poll",  "ng_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["ng"]),
     ("yt",  yt_queries,  "get_yt_last_poll",  "yt_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["yt"]),
     ("pic", pic_queries, "get_pic_last_poll", "pic_poll_interval_minutes", accounts_db.DEFAULT_CRED_CHECKS["pic"]),
+    ("fb",  fb_queries,  "get_fb_last_poll",  "fb_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["fb"]),
 ]
 
 
@@ -440,17 +441,44 @@ def platforms_media():
         from posting.platforms.base import RATING_WORD, rating_rank
         max_rating = str(getattr(poster, "max_rating", "adult") or "adult")
         allowed = rating_rank(max_rating)
-        out[code] = {"accepts": acc, "label": media_kinds.accepts_label(acc),
+        # Under-18 (LEGALPAGES, 4.58.0): General only everywhere, adults-only sites closed.
+        import age_gate
+        name = poster.platform_name or code
+        blocked = age_gate.refusal(code, "general", site_name=name)
+        if age_gate.is_under_18():
+            allowed = 0
+        out[code] = {"accepts": acc, "label": media_kinds.accepts_label(acc), "blocked": blocked or "",
+                     # 4.60.0 (spec 024): per-kind size caps, so the dialog greys a site out before upload
+                     "max_bytes": dict(getattr(poster, "max_bytes_by_kind", {}) or {}),
                      "refusals": {k: media_kinds.refusal(poster.platform_name or code, acc, k, "")
                                   for k in media_kinds.KINDS if not acc.get(k)},
                      # 4.21.0: the rating ceiling and the sentence for each rating above it.
                      "max_rating": RATING_WORD[allowed],
-                     "rating_refusals": {RATING_WORD[r]: f"{poster.platform_name or code} doesn't take {RATING_WORD[r]} work — "
-                                                          f"this piece is rated {RATING_WORD[r]}; it takes work up to {RATING_WORD[allowed]}."
+                     "rating_refusals": {RATING_WORD[r]: (age_gate.refusal(code, RATING_WORD[r], site_name=name)
+                                                          or f"{name} doesn't take {RATING_WORD[r]} work — "
+                                                          f"this piece is rated {RATING_WORD[r]}; it takes work up to {RATING_WORD[allowed]}.")
                                          for r in range(allowed + 1, 3)}}
     return {"platforms": out, "kinds": list(media_kinds.KINDS), "ratings": list(RATING_WORD),
             "extensions": {"image": list(media_kinds.IMAGE_EXTENSIONS), "video": list(media_kinds.VIDEO_EXTENSIONS),
                            "audio": list(media_kinds.AUDIO_EXTENSIONS)}}
+
+
+@router.get("/age")
+def get_age():
+    """The 18+ step (LEGALPAGES, 4.58.0): this copy's answer and each site's own minimum age."""
+    import age_gate
+    return {"band": age_gate.band(), "asked": bool(age_gate.band()), "sites": age_gate.table()}
+
+
+@router.post("/age")
+def set_age(body: dict):
+    import age_gate
+    band = str((body or {}).get("band") or "")
+    if band not in (age_gate.ADULT, age_gate.UNDER_18):
+        raise HTTPException(400, "band must be 'adult' or 'under18'")
+    # Either way is the person's own statement (people turn 18); the Terms make a false one a breach.
+    age_gate.set_band(band)
+    return get_age()
 
 
 @router.get("/platforms/health")
@@ -487,6 +515,19 @@ def _health_snapshot(settings: dict | None = None) -> dict:
     out: dict = {}
     conn = get_connection()
     try:
+        try:
+            accts = [a for a in accounts_db.list_accounts(conn) if a["enabled"]]
+        except Exception:  # noqa: BLE001 — no accounts table on a very old install
+            accts = []
+
+        def _any_account_configured(code, check) -> bool:
+            # The bare keys only hold the DEFAULT account. A platform whose only account is a
+            # second one (its keys stored per account) is still connected — the scheduler polls
+            # it — so ask each enabled account too (4.59.0: the brand Facebook Page, account 40).
+            return any(check(config.resolve_account_credentials(code, a["account_id"], bool(a["is_default"]),
+                                                                settings))
+                       for a in accts if a["platform"] == code)
+
         for code, qmodule, fn_name, interval_key, configured_fn in _PLATFORM_HEALTH_CONFIG:
             entry = {
                 "configured": False,
@@ -498,7 +539,7 @@ def _health_snapshot(settings: dict | None = None) -> dict:
                 "throttled_until": None,
             }
             try:
-                entry["configured"] = bool(configured_fn(settings))
+                entry["configured"] = bool(configured_fn(settings)) or _any_account_configured(code, configured_fn)
                 last = getattr(qmodule, fn_name)(conn)
                 if last:
                     started = last.get("started_at")
@@ -832,41 +873,143 @@ def mute_session_alert(body: dict):
     return {"status": "success", "muted_session_codes": cur}
 
 
-def _format_poll_summary(log: dict) -> str:
-    """Compose a single-line summary like '+2 faves, +1 comment' from
-    a poll_log row's delta counters. Returns 'no changes' when nothing
-    new came back, or 'failed' on error. Used by /api/activity/recent."""
+def _plural(n: int, word: str) -> str:
+    """'1 view', '3 views', '1 reply', '2 replies' — the feed's counts read as English."""
+    if abs(n) == 1:
+        return f"{n} {word}"
+    if word.endswith("y") and not word.endswith(("ay", "ey", "oy")):
+        return f"{n} {word[:-1]}ies"
+    return f"{n} {word}s"
+
+
+def _metric_word(code: str, key: str) -> str:
+    """The site's own singular word for a metric: 'like' on X, 'note' on Tumblr, 'fave' elsewhere."""
+    from database import platform_metrics
+    spec = platform_metrics.get(code)
+    if spec and key in spec.labels:
+        w = spec.labels[key].lower()
+        if w.endswith("ies"):
+            return w[:-3] + "y"
+        return w[:-1] if w.endswith("s") else w
+    return {"views": "view", "faves": "fave", "comments": "comment", "score": "score"}.get(key, key)
+
+
+def _format_poll_summary(log: dict, code: str = "", deltas: dict | None = None) -> str:
+    """One line for a poll: what moved ('+152 views, +4 likes, +1 reply'), else
+    'nothing new · 32 posts checked'.
+
+    ``deltas`` comes from the snapshots (``platform_metrics.poll_deltas``). Until
+    4.58.0 this read only the poll log's new-faves / new-comments / new-watchers
+    counters, which most sites never fill (X's log has none), so almost every poll
+    said "no changes" while views and likes were moving (POLLDELTA). The log's
+    counters are still used where the snapshots can't be read, and for watchers,
+    which no snapshot holds."""
     if log.get("status") == "error":
         return "poll failed"
     if log.get("status") == "running":
         return "poll in progress"
     parts = []
-    for counter, label in [
-        ("new_faves_found", "fave"),
-        ("new_comments_found", "comment"),
-        ("new_watchers_found", "watcher"),
-    ]:
-        n = log.get(counter) or 0
-        if n:
-            parts.append(f"+{n} {label}{'s' if n != 1 else ''}")
-    # A throttled poll (4.42.1) is not "no changes" — it may simply not have seen them.
+    if deltas:
+        for key in ("views", "score", "faves", "comments"):
+            n = deltas.get(key) or 0
+            if not n:
+                continue
+            if key == "score":
+                parts.append(f"score {n:+d}")
+            else:
+                parts.append(("+" if n > 0 else "") + _plural(n, _metric_word(code, key)))
+    else:
+        for counter, word in (("new_faves_found", "fave"), ("new_comments_found", "comment")):
+            n = log.get(counter) or 0
+            if n:
+                parts.append("+" + _plural(n, word))
+    w = log.get("new_watchers_found") or 0
+    if w:
+        parts.append("+" + _plural(w, "watcher"))
+    # A throttled poll (4.42.1) is not "nothing new" — it may simply not have seen it.
     if log.get("status") == "partial":
         return "throttled, " + ", ".join(parts) if parts else "throttled — some data may be missing"
-    if not parts:
-        subs = log.get("submissions_found") or 0
-        return f"no changes ({subs} subs scanned)" if subs else "no changes"
-    return ", ".join(parts)
+    if parts:
+        return ", ".join(parts)
+    subs = log.get("submissions_found") or 0
+    return f"nothing new · {_plural(subs, 'post')} checked" if subs else "no posts found"
 
 
-def _format_post_summary(log: dict) -> str:
-    """Single-line summary for a posting_log row."""
-    action = log.get("action", "post")
-    story = log.get("story_name", "?")
+_ACTION_WORDS = {"post": ("Posted", "Couldn't post"), "edit": ("Updated", "Couldn't update"),
+                 "update": ("Updated", "Couldn't update"), "delete": ("Removed", "Couldn't remove")}
+
+
+def _format_post_summary(log: dict, title: str = "") -> str:
+    """'Posted Shimmering Beauty' / 'Couldn't post Shimmering Beauty (chapter 3)'.
+
+    Until 4.58.0 this printed the raw action and the folder name —
+    'post Shimmering_Beauty' (FEEDWORDS)."""
+    action = (log.get("action") or "post").lower()
+    done, failed = _ACTION_WORDS.get(action, (action.capitalize(), f"Couldn't {action}"))
+    name = title or str(log.get("story_name") or "?").replace("_", " ")
     chapter = log.get("chapter_index") or 0
-    chap_suffix = f" ch{chapter}" if chapter else ""
+    suffix = f" (chapter {chapter})" if chapter else ""
     if log.get("status") == "error":
-        return f"{action} failed: {story}{chap_suffix}"
-    return f"{action} {story}{chap_suffix}"
+        return f"{failed} {name}{suffix}"
+    if log.get("status") == "needs_attention":       # 4.60.0: on the site, the owner must finish it
+        return f"Needs you: {name}{suffix} is waiting as a draft"
+    return f"{done} {name}{suffix}"
+
+
+_TITLE_CACHE: dict = {}
+
+
+def _work_title(content_type: str, name: str) -> str:
+    """A piece's or story's display title for the feed, '' when there isn't one to read.
+
+    Reads the one metadata file (cached by its mtime), never the whole library."""
+    if not name or content_type not in ("artwork", "story"):
+        return ""
+    try:
+        if content_type == "artwork":
+            from posting import artwork_reader
+            root = artwork_reader.get_artwork_archive_path().resolve()
+            folder = (root / name).resolve()
+            folder.relative_to(root)
+            meta = artwork_reader._meta_path(folder)
+        else:
+            from posting import story_reader
+            root = story_reader.get_archive_path().resolve()
+            folder = (root / name).resolve()
+            folder.relative_to(root)
+            meta = folder / "story.json"
+        if not meta or not meta.is_file():
+            return ""
+        key = (str(meta), meta.stat().st_mtime)
+        if key not in _TITLE_CACHE:
+            if len(_TITLE_CACHE) > 500:
+                _TITLE_CACHE.clear()
+            _TITLE_CACHE[key] = str((json.loads(meta.read_text(encoding="utf-8")) or {}).get("title") or "")
+        return _TITLE_CACHE[key]
+    except (OSError, ValueError, TypeError, AttributeError):
+        return ""
+
+
+def _account_names(conn) -> dict:
+    """{(platform, account_id): name} for platforms with MORE than one account — the only
+    case where the feed needs to say which (FEEDACCT: three FurAffinity polls at the same
+    minute looked like duplicates). One account per site keeps the rows as they were."""
+    try:
+        rows = conn.execute(
+            "SELECT account_id, platform, label, handle FROM accounts WHERE enabled = 1").fetchall()
+    except Exception:
+        return {}
+    by_plat: dict = {}
+    for r in rows:
+        by_plat.setdefault(r["platform"], []).append(r)
+    out = {}
+    for plat, accts in by_plat.items():
+        if len(accts) < 2:
+            continue
+        for r in accts:
+            name = (r["handle"] or r["label"] or f"account {r['account_id']}").strip()
+            out[(plat, r["account_id"])] = name
+    return out
 
 
 def _collect_activity_events(limit: int = 30) -> list:
@@ -884,22 +1027,34 @@ def _collect_activity_events(limit: int = 30) -> list:
         summary   : short single-line description for the feed line
         detail    : longer detail (error message) or None
     """
+    from database import platform_metrics
     polls: list[dict] = []
     posts: list[dict] = []
     per_platform = max(1, limit // 4)
     conn = get_connection()
     try:
+        names = _account_names(conn)
         for code, qmodule, _last_fn, _interval, _configured in _PLATFORM_HEALTH_CONFIG:
             log_fn_name = "get_poll_log" if code == "ib" else f"get_{code}_poll_log"
             try:
                 logs = getattr(qmodule, log_fn_name)(conn, per_platform)
                 for log in logs:
+                    aid = log.get("account_id")
+                    deltas = None
+                    if log.get("status") in ("success", "partial"):
+                        deltas = platform_metrics.poll_deltas(
+                            conn, code, log.get("started_at"), log.get("finished_at"), aid)
+                    summary = _format_poll_summary(log, code, deltas)
                     polls.append({
                         "timestamp": log.get("started_at"),
                         "platform": code,
+                        "account": names.get((code, aid), ""),
                         "kind": "poll",
                         "status": log.get("status"),
-                        "summary": _format_poll_summary(log),
+                        "summary": summary,
+                        # Nothing moved: the feeds can fold these away so posts stand out.
+                        "quiet": log.get("status") == "success" and (
+                            summary.startswith("nothing new") or summary == "no posts found"),
                         "detail": log.get("error_message"),
                     })
             except Exception as e:
@@ -917,13 +1072,17 @@ def _collect_activity_events(limit: int = 30) -> list:
             # isn't recording stuff like you'd expect" (3.17.0).
             for log in get_posting_log(conn, story_name=None, limit=limit,
                                        content_type=None):
+                plat = log.get("platform") or "posting"
                 posts.append({
                     "timestamp": log.get("created_at"),
-                    "platform": log.get("platform") or "posting",
+                    "platform": plat,
+                    "account": names.get((plat, log.get("account_id")), ""),
                     "kind": log.get("action") or "post",
                     "status": log.get("status"),
-                    "summary": _format_post_summary(log),
+                    "summary": _format_post_summary(
+                        log, _work_title(log.get("content_type") or "", log.get("story_name") or "")),
                     "detail": log.get("error_message"),
+                    "url": log.get("external_url") or "",
                 })
         except Exception as e:
             logger.debug("activity/recent: posting_log skipped: %s", e)
@@ -1001,6 +1160,39 @@ def get_notifications(limit: int = 40):
             })
     except Exception as e:
         logger.debug("notifications: session events skipped: %s", e)
+
+    # Opt-ins said yes to before consent records existed (LEGALPAGES, 4.58.0): off until confirmed,
+    # asked here once rather than silently assumed.
+    try:
+        import consent_records
+        for kind in consent_records.needs_reconfirm():
+            where = "Settings → Posting → Instagram image host" if kind == "ig_relay" else "Settings → Diagnostics"
+            items.append({
+                "timestamp": "",
+                "platform": "",
+                "kind": "consent",
+                "status": "warn",
+                # The bell shows details only for failures, so the summary carries the instruction.
+                # A fixed (empty) timestamp: a reminder, not a new event, so it never re-toasts.
+                "summary": (f"Please confirm {consent_records.LABELS[kind]}: it's off until you "
+                            f"switch it on again in {where}"),
+                "detail": (f"You switched on {consent_records.LABELS[kind]} before PawPoller kept a record of "
+                           f"when and to what. It's off until you switch it on again in {where}."),
+            })
+    except Exception as e:
+        logger.debug("notifications: consent reminders skipped: %s", e)
+
+    # The weekly email failed (DIGESTFAIL): until then this only reached the log.
+    _s = config.get_settings()
+    if _s.get("email_digest_enabled") and _s.get("last_email_digest_error"):
+        items.append({
+            "timestamp": _s.get("last_email_digest_error_at"),
+            "platform": "",
+            "kind": "digest",
+            "status": "error",
+            "summary": "The weekly email didn't send",
+            "detail": _s.get("last_email_digest_error"),
+        })
 
     # Mirror drift (3.18.0): the background watcher found the server has work
     # this install does not. Synthetic, like the session events above — there
@@ -3337,6 +3529,8 @@ def digest_status():
         "smtp_use_tls": bool(settings.get("smtp_use_tls", True)),
         "has_password": bool(settings.get("smtp_password")),
         "last_sent_at": settings.get("last_email_digest_sent_at"),
+        "last_error": settings.get("last_email_digest_error") or "",
+        "last_error_at": settings.get("last_email_digest_error_at") or "",
     }
 
 
@@ -3402,7 +3596,7 @@ def digest_test():
     try:
         result = email_digest.send_weekly_email_digest(force=True)
     except Exception as e:
-        raise HTTPException(400, detail=str(e) or "Send failed")
+        raise HTTPException(400, detail=email_digest.explain_send_error(e, config.get_settings()))
     if not result.get("sent"):
         raise HTTPException(400, detail=f"Not sent: {result.get('reason', 'unknown')}")
     return result

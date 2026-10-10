@@ -915,6 +915,47 @@ class FAClient:
         logger.info("FA: Story submitted — %s (id=%s)", clean_url, submission_id)
         return {"submission_id": submission_id, "url": clean_url}
 
+    async def submit_journal(self, subject: str, message: str, rating: str = "0", *,
+                             featured: bool = False, journal_id: str = "0") -> dict:
+        """Post (``journal_id="0"``) or edit a journal (spec 027).
+
+        The form (live check 2026-10-10): ``form#journal-form`` posting to ``/controls/journal/`` with
+        ``id``, ``key``, ``do=update``, ``subject`` (≤ 60), ``rating`` (0 General, 2 Mature, 1 Adult — the
+        submission codes), ``message`` (BBCode), ``make_featured``. The key is read from whichever form
+        posts there, not by the form's id (it has been renamed before). → {"id", "url"}."""
+        client = await self._get_fa_http()
+        page = f"{config.FA_BASE}/controls/journal/" + (f"{journal_id}/" if journal_id not in ("", "0") else "")
+        resp = await client.get(page)
+        if resp.status_code != 200:
+            raise RuntimeError(f"FA: couldn't open the journal form — status {resp.status_code}")
+        form = re.search(r'<form[^>]*action="/controls/journal/"[^>]*>(.*?)</form>', resp.text, re.S)
+        key = re.search(r'name="key"\s*value="([^"]+)"', form.group(1)) if form else None
+        if not key:
+            low = resp.text.lower()
+            if "/logout" not in low and "sign out" not in low:
+                raise RuntimeError("FA: not logged in — the session cookies (a/b) are expired or invalid. "
+                                   "Re-copy them from a signed-in browser.")
+            raise RuntimeError("FA: couldn't find the journal form's key — FA may have changed the page")
+        data = {"id": str(journal_id or "0"), "key": key.group(1), "do": "update",
+                "subject": subject[:60], "rating": str(rating), "message": message}
+        if featured:
+            data["make_featured"] = "on"
+        resp = await client.post(f"{config.FA_BASE}/controls/journal/", data=data,
+                                 headers={"Referer": page}, timeout=30.0)
+        final = str(resp.url).split("?")[0]
+        m = re.search(r"/journal/(\d+)", final)
+        if not m and "captcha" in resp.text.lower():
+            # Live 2026-10-10: "Error posting a journal. CAPTCHA verification failed." PawPoller never gets past a
+            # bot check (constitution VII), so this is the end of the road, said plainly.
+            raise RuntimeError("FurAffinity asks for a CAPTCHA on journals, so PawPoller can't post them for you")
+        if not m:
+            note = re.search(r'class="(?:notice-message|redirect-message|section-body alignleft)"[^>]*>(.*?)</',
+                             resp.text, re.S)
+            words = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", note.group(1))).strip() if note else ""
+            raise RuntimeError(f"FA didn't save the journal{': ' + words[:200] if words else ''}")
+        logger.info("FA: journal %s — id=%s", "edited" if journal_id not in ("", "0") else "posted", m.group(1))
+        return {"id": m.group(1), "url": f"{config.FA_BASE}/journal/{m.group(1)}/"}
+
     async def submit_visual(
         self,
         file_path: str,

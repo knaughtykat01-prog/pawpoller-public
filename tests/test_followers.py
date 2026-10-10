@@ -147,7 +147,8 @@ class TestClientContract:
             "sc",   # SoundCloud: followers_count on /me (4.22.0)
             "ng",   # Newgrounds: the profile's FANS count (4.23.0)
             "yt",   # YouTube: the channel's subscriberCount (4.24.0)
-            "pic"}  # Picarto: the channel's public follower count (4.46.0)
+            "pic",  # Picarto: the channel's public follower count (4.46.0)
+            "fb"}   # Facebook: the Page's followers_count (4.59.0)
 
 
 # ── API endpoint ──────────────────────────────────────────────

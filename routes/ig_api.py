@@ -167,15 +167,17 @@ def _client_ip(request: Request) -> str:
 def _relay_rate_ok(ip: str, now: float | None = None) -> bool:
     limit, window = config.IG_RELAY_PER_IP
     now = time.time() if now is None else now
+    # Forget every address whose window has passed, on every call (LEGALPAGES, 4.58.0): the privacy
+    # policy says the relay keeps an address only for the 10-minute rate window. Before, stale
+    # addresses were dropped only once the table passed 5,000, so they stayed until a restart.
+    for k in [k for k, v in _RELAY_HITS.items() if not v or now - v[-1] >= window]:
+        _RELAY_HITS.pop(k, None)
     hits = [t for t in _RELAY_HITS.get(ip, []) if now - t < window]
     if len(hits) >= limit:
         _RELAY_HITS[ip] = hits
         return False
     hits.append(now)
     _RELAY_HITS[ip] = hits
-    if len(_RELAY_HITS) > 5000:          # never let the table itself grow unbounded
-        for k in [k for k, v in _RELAY_HITS.items() if not v or now - v[-1] > window]:
-            _RELAY_HITS.pop(k, None)
     return True
 
 
@@ -237,6 +239,8 @@ def _host_status() -> dict:
     from posting import ig_tunnel
     from posting.scheduler import detect_runtime_mode
     from posting.ig_host import relay_url
+    from posting import ig_host
+    import consent_records
     s = config.get_settings()
 
     def on(key: str) -> bool:
@@ -246,7 +250,8 @@ def _host_status() -> dict:
         "runtime": detect_runtime_mode(),
         "local_base": s.get("ig_public_base_url", "").strip(),
         "paired": bool((s.get("posting_server_url") or "").strip()),
-        "relay": {"enabled": on("ig_relay_enabled"), "url": relay_url(s),
+        "relay": {"enabled": ig_host.relay_on(s), "url": relay_url(s),
+                  "record": consent_records.get("ig_relay", s),
                   "default_url": config.IG_RELAY_DEFAULT_URL, "open": bool(s.get("ig_relay_open", False))},
         "tunnel": {"enabled": on("ig_tunnel_enabled"), **ig_tunnel.helper_status()},
     }
@@ -271,6 +276,10 @@ def ig_host_settings(body: dict):
         upd["ig_relay_url"] = url
     if not upd:
         raise HTTPException(400, "Nothing to save")
+    if "ig_relay_enabled" in upd:
+        # The relay is opt-in with a record of when and to which wording (LEGALPAGES).
+        import consent_records
+        consent_records.record("ig_relay", upd["ig_relay_enabled"])
     config.save_settings(upd)
     return _host_status()
 

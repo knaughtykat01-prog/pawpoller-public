@@ -38,6 +38,8 @@ _PERMANENT_ERROR_MARKERS = (
     "expired or invalid",                # FA/SF session checks
     "token expired or invalid",
     "cookies stored for @",              # X: the session belongs to another account (4.6.3)
+    "try again tomorrow",                # a site's DAILY limit (Tumblr, 4.60.0): a retry in minutes re-fails
+    "press connect again",               # an OAuth sign-in that needs the owner (Tumblr, 4.60.0)
 )
 
 
@@ -190,6 +192,9 @@ _POSTER_CLASSES = {
     "fn": ("posting.platforms.furrynetwork", "FurryNetworkPoster"),
     "fbr": ("posting.platforms.furbooru", "FurbooruPoster"),
     "ig": ("posting.platforms.instagram", "InstagramPoster"),
+    "fb": ("posting.platforms.facebook", "FacebookPoster"),
+    "tum": ("posting.platforms.tumblr", "TumblrPoster"),   # spec 024 (4.60.0)
+    "thr": ("posting.platforms.threads", "ThreadsPoster"),  # spec 030 (4.61.0)
 }
 WORK_POSTERS = frozenset(_POSTER_CLASSES)
 
@@ -329,6 +334,12 @@ async def _comment_pass(kind: str, name: str, results: list[dict[str, Any]]) -> 
         await paired_comment.comment_pass_pieces(kind, name, results)
     except Exception:
         logger.error("Paired comment pass failed for %s %s", kind, name, exc_info=True)
+    # Spec 027: a journal announcing the piece goes up after everything else, linking this run.
+    try:
+        from posting import journals
+        await journals.journal_pass(kind, name, results)
+    except Exception:
+        logger.error("Journal pass failed for %s %s", kind, name, exc_info=True)
 
 
 def _refused(platform: str, err: Exception, **extra) -> dict[str, Any]:
@@ -625,7 +636,7 @@ async def post_story(
                     pub_id=pub_id,
                     external_id=result.external_id,
                     external_url=result.external_url,
-                    error_message=result.error,
+                    error_message=getattr(result, "needs_attention", "") or result.error,
                     duration_seconds=result.duration_seconds,
                 )
             finally:
@@ -966,19 +977,20 @@ async def post_artwork(
                     format_file=package.file_path or "",
                     file_hash=current_hash,
                     word_count=0,
-                    status="posted" if result.success else "failed",
+                    status=("draft" if getattr(result, "needs_attention", "") else "posted") if result.success else "failed",
                 )
                 posting_queries.log_posting_action(
                     conn, platform, artwork_name, 0,
                     action="post",
                     account_id=account_id,
                     content_type="artwork",
-                    status="success" if result.success else (
-                        "queued_desktop" if queued_for_desktop else "failed"),
+                    # needs_attention (4.60.0): on the site, but the owner must finish it (the bell lists it)
+                    status=("needs_attention" if getattr(result, "needs_attention", "") else "success")
+                    if result.success else ("queued_desktop" if queued_for_desktop else "failed"),
                     pub_id=pub_id,
                     external_id=result.external_id,
                     external_url=result.external_url,
-                    error_message=result.error,
+                    error_message=getattr(result, "needs_attention", "") or result.error,
                     duration_seconds=result.duration_seconds,
                 )
                 # Publishing IS mastering (spec §6.1): the artwork folder IS the
@@ -1015,6 +1027,7 @@ async def post_artwork(
                 "external_id": result.external_id,
                 "external_url": result.external_url,
                 "error": result.error,
+                "attention": getattr(result, "needs_attention", "") or "",
                 "duration": result.duration_seconds,
                 # Which render went to this site — "" for the primary (4.33.0).
                 "variant": (_variant or {}).get("label") or (_variant or {}).get("key") or "",
@@ -1268,7 +1281,7 @@ async def update_story(
                 pub_id=pub["pub_id"],
                 external_id=result.external_id or ext_id,
                 external_url=result.external_url,
-                error_message=result.error,
+                error_message=getattr(result, "needs_attention", "") or result.error,
                 duration_seconds=result.duration_seconds,
             )
         finally:
@@ -1461,18 +1474,19 @@ async def update_artwork(
                 description_used=package.description[:500],
                 tags_used=package.tags,
                 rating_used=package.rating,
-                status="posted" if result.success else "failed",
+                status=("draft" if getattr(result, "needs_attention", "") else "posted") if result.success else "failed",
             )
             posting_queries.log_posting_action(
                 conn, plat, artwork_name, 0,
                 action="update",
                 account_id=account_id,
                 content_type="artwork",
-                status="success" if result.success else "failed",
+                status=("needs_attention" if getattr(result, "needs_attention", "") else "success")
+                if result.success else "failed",
                 pub_id=pub_id,
                 external_id=result.external_id or ext_id,
                 external_url=result.external_url,
-                error_message=result.error,
+                error_message=getattr(result, "needs_attention", "") or result.error,
                 duration_seconds=result.duration_seconds,
             )
         finally:
@@ -1486,6 +1500,7 @@ async def update_artwork(
             # A successful edit may carry a soft note (e.g. Weasyl: file content
             # can't be replaced via API) — surface it without failing the sync.
             "note": result.error if result.success else None,
+            "attention": getattr(result, "needs_attention", "") or "",
             "error": None if result.success else result.error,
             "duration": result.duration_seconds,
         })

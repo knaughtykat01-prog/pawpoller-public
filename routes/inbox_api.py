@@ -4,7 +4,7 @@
   tables ∪ platform_comments), newest-first, with handled flags.
 - ``POST /api/inbox/handled``  — mark/unmark one comment handled.
 - ``POST /api/inbox/reply``    — native reply where the platform supports it
-  (Stage B: bsky / mast / e621). Everything else replies on-site via permalink.
+  (Stage B: bsky / mast / e621 / fb). Everything else replies on-site via permalink.
 - ``POST /api/inbox/backfill-own`` — re-run own-comment detection (2.192.0).
 
 Reply creds resolve exactly like the Posts publisher (explicit account, else the
@@ -24,7 +24,7 @@ from polling import self_comment
 logger = logging.getLogger(__name__)
 inbox_router = APIRouter(prefix="/api/inbox", tags=["inbox"])
 
-_REPLYABLE = {"bsky", "mast", "e621"}
+_REPLYABLE = inbox_queries.REPLYABLE
 
 
 _own_backfilled = False
@@ -136,6 +136,12 @@ async def reply(body: dict):
 
     from posting.post_publisher import _resolve_creds
     account_id, creds = _resolve_creds(platform, row.get("account_id"), None)
+    # FRIENDGUARD for replies too (INBOXNEVER, 4.56.2 release review): every other way of
+    # posting checks "Never post" (post_publisher, paired comments, manager._get_poster);
+    # a reply from the Inbox went straight out.
+    from database import accounts as accounts_db
+    if account_id in accounts_db.never_post_ids():
+        raise HTTPException(403, accounts_db.NEVER_POST_ERROR)
 
     ok, url = False, ""
     if platform == "bsky":
@@ -170,8 +176,7 @@ async def reply(body: dict):
         finally:
             await client.close()
         if r is None:
-            raise HTTPException(502, "Mastodon rejected the reply — a poll-only "
-                                     "token can't post (needs a write scope).")
+            raise HTTPException(502, client.last_error or "Mastodon rejected the reply.")
         ok = True
         url = r.get("url", "")
 
@@ -187,6 +192,21 @@ async def reply(body: dict):
         finally:
             await client.close()
         url = row.get("permalink", "")
+
+    elif platform == "fb":
+        token, page_id = creds.get("fb_page_token", ""), creds.get("fb_page_id", "")
+        if not (token and page_id):
+            raise HTTPException(400, "Facebook isn't connected")
+        from clients.fb.client import FbClient, FbError
+        client = FbClient(token, page_id)
+        try:
+            # Facebook threads two deep: a reply to a reply goes under the top comment.
+            await client.reply_comment(meta.get("parent_id") or comment_id, text)
+        except FbError as e:
+            raise HTTPException(400, str(e))
+        finally:
+            await client.close()
+        ok, url = True, row.get("permalink", "")
 
     if not ok:
         raise HTTPException(502, f"{platform} rejected the reply — check the logs.")

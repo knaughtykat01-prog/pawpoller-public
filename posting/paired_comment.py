@@ -259,7 +259,7 @@ async def send_reply(platform: str, account_id: int | None, parent: dict, text: 
             if r and r.get("id"):
                 out.update(success=True, external_id=str(r["id"]), external_url=r.get("url", ""))
             else:
-                out["error"] = "Mastodon rejected the comment"
+                out["error"] = client.last_error or "Mastodon rejected the comment"
         elif platform == "tw":
             from clients.tw.client import TWClient
             client = TWClient(auth_token=creds.get("tw_auth_token", ""), ct0=creds.get("tw_ct0", ""),

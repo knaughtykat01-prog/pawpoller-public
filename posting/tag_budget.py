@@ -50,6 +50,10 @@ BUDGETS: dict[str, dict] = {
     "da":   {"count": 30},
     "wp":   {"count": 24},
     "ik":   {"per_tag_chars": 59, "min_count": 5},
+    # Tumblr takes up to 30 tags a post; only the first 20 count for search (spec 024, 4.60.0).
+    "tum":  {"count": 30},
+    # Threads takes one topic per post (spec 030, 4.61.0): the first tag.
+    "thr":  {"count": 1, "per_tag_chars": 50},
 }
 
 

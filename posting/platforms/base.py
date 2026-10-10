@@ -23,6 +23,10 @@ class PostResult:
     external_url: str = ""
     error: str | None = None
     duration_seconds: float = 0.0
+    # 4.60.0 (spec 024): done as far as PawPoller can, but the owner must finish it on the site — e.g.
+    # Tumblr kept a Mature post as a draft because the label didn't stick. Used with success=True; the
+    # manager shows it amber on the result row and in the bell, and records the publication as 'draft'.
+    needs_attention: str = ""
 
 
 @dataclass
@@ -104,6 +108,10 @@ class PlatformPoster(ABC):
     # SoundCloud) honest rather than hidden. Every art site takes adult work, so the default
     # changes nothing for the existing posters.
     max_rating: str = "adult"
+    # 4.60.0 (spec 024): per-kind size caps, e.g. {"image": 20 MB, "gif": 10 MB, "video": …}. A "gif" key
+    # applies to .gif before "image" does. Served by GET /api/platforms/media so the publish dialog greys
+    # the site out before upload. Empty = no per-kind cap (max_file_size still applies).
+    max_bytes_by_kind: dict = {}
     # "any", "desktop", or "server" — which instance may execute this platform's
     # posts. The scheduler filters on it in SQL (posting_queries.get_pending_queue),
     # and manager re-queues a job with requires='desktop' when the server can't do
@@ -312,9 +320,12 @@ class PlatformPoster(ABC):
                 f"this piece is rated {RATING_WORD[have]}; it takes work up to {RATING_WORD[allowed]}.")
 
     def refusal(self, package: StoryUploadPackage) -> str | None:
-        """The pre-network gate the manager runs (4.21.0): the media-kind refusal, else the
-        rating refusal, else None."""
-        return self.media_refusal(package) or self.rating_refusal(package)
+        """The pre-network gate the manager runs (4.21.0): the under-18 lock (LEGALPAGES, 4.58.0),
+        else the media-kind refusal, else the rating refusal, else None."""
+        import age_gate
+        return (age_gate.refusal(self.platform_id, package.rating,
+                                 site_name=self.platform_name or self.platform_id)
+                or self.media_refusal(package) or self.rating_refusal(package))
 
     def validate(self, package: StoryUploadPackage) -> list[str]:
         """Validate a package before posting. Returns list of errors (empty = OK)."""

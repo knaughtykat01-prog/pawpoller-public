@@ -120,8 +120,16 @@ def test_build_report_shape():
 # ── consent + queue ──────────────────────────────────────────────────────────
 
 def test_consent_states():
+    import consent_records
     assert tc.consent({}) is None and tc.consent({"tech_reports": ""}) is None
-    assert tc.consent({"tech_reports": True}) is True and tc.consent({"tech_reports": "false"}) is False
+    assert tc.consent({"tech_reports": "false"}) is False
+    # LEGALPAGES (4.58.0): a yes from before consent records counts only once it's recorded
+    # against the current wording; until then the app asks again.
+    assert tc.consent({"tech_reports": True}) is None
+    rec = {"value": True, "at": "2026-10-08T00:00:00+00:00", "wording": consent_records.WORDING["tech_reports"]}
+    assert tc.consent({"tech_reports": True, "consent_records": {"tech_reports": rec}}) is True
+    old = dict(rec, wording=0)
+    assert tc.consent({"tech_reports": True, "consent_records": {"tech_reports": old}}) is None
 
 
 def test_unasked_install_holds_the_first_technical_error_as_a_prompt(_isolated):

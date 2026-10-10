@@ -14,7 +14,7 @@
 window.Artwork = {
 
     /* Image-capable platforms the hub posts to (v1), in display order. */
-    _PLATFORMS: ['ib', 'fa', 'sf', 'bsky', 'tw', 'ik', 'ws', 'da', 'e621', 'fbr', 'ig', 'fn', 'tg', 'pod', 'sc', 'ng', 'yt'],
+    _PLATFORMS: ['ib', 'fa', 'sf', 'bsky', 'tw', 'ik', 'ws', 'da', 'e621', 'fbr', 'ig', 'fn', 'tg', 'pod', 'sc', 'ng', 'yt', 'fb', 'tum', 'thr'],
     /* The announcing platforms — a caption, links to where the piece already
      * lives, hashtags — and therefore the ones whose row carries the per-piece
      * options panel (Telegram since 4.0.10; X and Bluesky since 4.3.7). Mirrors
@@ -176,6 +176,7 @@ window.Artwork = {
                         <input type="text" class="art-plat-tags" data-platform="${code}" placeholder="(defaults to the tags above)">
                     </label>
                     ${ann ? this._tgOptRows(o, { ...(extras[code] || {}), code }) : ''}
+                    ${code === 'tum' ? this._tumLabelRows(((extraByCode || {}).tum || {}).tum_label_categories) : ''}
                 </details>
             </div>`;
         }).join('') + '<div data-discord-slot></div>';
@@ -223,6 +224,8 @@ window.Artwork = {
             const o = this._collectPlatOpts(code);
             if (Object.keys(o).length) out[code] = o;
         });
+        const tl = this._collectTumLabels();          // Tumblr's Mature label ticks (spec 024)
+        if (tl) out.tum = { ...(out.tum || {}), tum_label_categories: tl };
         return out;
     },
 
@@ -244,7 +247,7 @@ window.Artwork = {
             // 4.18.0: a site that does not take this media kind is listed as skipped, with its sentence;
             // 4.21.0: the same for a rating above what the site takes.
             const g = (this._gate && this._gate.support && window.MediaKinds)
-                ? MediaKinds.acceptance(this._gate.support, code, this._gate.kind, this._gate.ext, this._gate.rating) : { ok: true, reason: '' };
+                ? MediaKinds.acceptance(this._gate.support, code, this._gate.kind, this._gate.ext, this._gate.rating, this._gate.bytes) : { ok: true, reason: '' };
             return { code, label: p.label, emoji: p.emoji, account, disabled: !g.ok, reason: g.reason };
         });
     },
@@ -326,7 +329,7 @@ window.Artwork = {
         // 4.21.0: a rating change re-gates the rows (an SFW-only site greys out for adult work).
         const ratingSel = document.getElementById('art-rating');
         if (ratingSel) ratingSel.addEventListener('change', () =>
-            this._applyMediaGating('#art-platforms', (this._pendingFile && this._pendingFile.name) || this._pendingPath || ''));
+            this._applyMediaGating('#art-platforms', (this._pendingFile && this._pendingFile.name) || this._pendingPath || '', null, this._pendingFile && this._pendingFile.size));
         const fileInput = document.getElementById('art-file');
         const drop = document.getElementById('art-drop');
         fileInput.addEventListener('change', () => {
@@ -376,7 +379,7 @@ window.Artwork = {
         this._pendingMedia = null;
         this._pendingPoster = null;
         if (this._previewUrl) URL.revokeObjectURL(this._previewUrl);
-        this._applyMediaGating('#art-platforms', file.name);
+        this._applyMediaGating('#art-platforms', file.name, null, file.size);
         if (kind === 'image') {
             this._previewUrl = URL.createObjectURL(file);
             this._showPreview(this._previewUrl, file.name);
@@ -411,19 +414,19 @@ window.Artwork = {
     /* 4.18.0: grey out the sites that do not take this file's kind, with the site's own sentence. */
     /* 4.21.0: also by rating — an SFW-only site is greyed with the reason (MEDIAPLATS §2). `rating`
      * defaults to the form's own select; the masterpiece page passes the piece's. */
-    async _applyMediaGating(scope, filename, rating) {
+    async _applyMediaGating(scope, filename, rating, bytes) {
         if (!window.MediaKinds) return;
         const kind = MediaKinds.kindOf(filename), ext = MediaKinds.extOf(filename);
         if (rating == null) {
             const sel = document.getElementById('art-rating');
             rating = sel ? sel.value : null;
         }
-        this._gate = { kind, ext, rating, support: null };
+        this._gate = { kind, ext, rating, bytes: bytes || 0, support: null };
         const rows = () => document.querySelectorAll(`${scope} .artwork-plat-row[data-platform]`);
         const support = await MediaKinds.support();
         if (!this._gate || this._gate.ext !== ext || this._gate.rating !== rating) return;
         this._gate.support = support;
-        rows().forEach(r => { const a = MediaKinds.acceptance(support, r.dataset.platform, kind, ext, rating); this._gateRow(r, a.ok, a.reason); });
+        rows().forEach(r => { const a = MediaKinds.acceptance(support, r.dataset.platform, kind, ext, rating, bytes); this._gateRow(r, a.ok, a.reason); });
     },
     _gateRow(row, ok, reason) {
         row.classList.toggle('is-media-refused', !ok);
@@ -589,6 +592,7 @@ window.Artwork = {
             targets: this._confirmTargets('#art-platforms', meta.platforms, accountIds),
             textBoxes: this._pubTextBoxes(meta.platforms),
             commentBoxes: window.Comments ? await Comments.boxesFor(meta.platforms) : [],   // spec 021
+            journalBox: await Components.journalBox('art'),                                   // spec 027
             renders: this._pubRenders(meta),
             renderWait: this._pubRenderWait(meta.platforms),
         });
@@ -608,6 +612,7 @@ window.Artwork = {
                 persona_id: this._personaId('#art-platforms'),
                 description_overrides: this._pubDescOverrides(conf),
                 comments: conf.comments,          // spec 021: absent = each site's default
+                journal: conf.journal,            // spec 027: absent = no journal
                 // Each ticked version posts as its own submission (4.34.0). Absent
                 // when the piece has no renders, so the ordinary path is unchanged.
                 renders: conf.renders,
@@ -864,6 +869,22 @@ window.Artwork = {
                 : 'caption limit 1,024 incl. tags and links';
             if (count) count.textContent = `${t.value.length} / ${cap} (${note})`;
         });
+    },
+
+    /* Tumblr's Mature label (spec 024, 4.60.0): which content categories a Mature piece is
+     * labelled with. Only used when the piece is rated Mature; "Sexual themes" is pre-ticked. */
+    _tumLabelRows(saved) {
+        const on = Array.isArray(saved) ? saved : ['sexual_themes'];
+        const box = (v, l) => `<label style="display:inline-flex;gap:6px;align-items:center;margin-right:14px">
+            <input type="checkbox" class="art-tum-label" value="${v}"${on.includes(v) ? ' checked' : ''}> ${l}</label>`;
+        return `<div class="field"><span>Tumblr's Mature label (only for Mature pieces)</span>
+            <div>${box('sexual_themes', 'Sexual themes')}${box('violence', 'Violence')}${box('drug_use', 'Drug and alcohol use')}</div>
+            <small style="color:var(--text-muted)">A Mature piece goes up as a draft with this label and is published once Tumblr shows the label on it.</small></div>`;
+    },
+    _collectTumLabels() {
+        const boxes = document.querySelectorAll('.art-tum-label');
+        if (!boxes.length) return null;
+        return Array.from(boxes).filter(b => b.checked).map(b => b.value);
     },
 
     /* The stored per-piece text for one announcer, or null when the page
@@ -1397,6 +1418,7 @@ window.Artwork = {
         // the six: the ticks came back from localStorage and may be unread,
         // so the dialog's button carries the count and the persona.
         let qpComments;      // spec 021: the dialog's comment per site (undefined = defaults)
+        let qpJournal;       // spec 027: the dialog's journal (undefined = none)
         let descOverrides;   // "this post only" text per announcer, from the dialog (4.3.0; all three since 4.3.7)
         if (!scheduledLocal) {
             const opt = (st.options || []).find(o => o.id === st.presetId) || {};
@@ -1405,6 +1427,7 @@ window.Artwork = {
                 subtitle: 'Quick publish',
                 textBoxes: this._pubTextBoxes(platforms),
                 commentBoxes: window.Comments ? await Comments.boxesFor(platforms) : [],   // spec 021
+                journalBox: await Components.journalBox('art'),                               // spec 027
                 persona: opt.id && opt.id !== 'all' ? opt.label : '',
                 targets: platforms.map(code => {
                     const p = (window.platformByCode && window.platformByCode(code)) || { label: code, emoji: '' };
@@ -1415,6 +1438,7 @@ window.Artwork = {
             if (!ok) { msg.textContent = 'Not published.'; return; }
             descOverrides = this._pubDescOverrides(ok);
             qpComments = ok.comments;
+            qpJournal = ok.journal;
         }
 
         let scheduledIso = null;
@@ -1491,6 +1515,7 @@ window.Artwork = {
                     persona_id: this._qpPersonaId(opt),
                     description_overrides: descOverrides,
                     comments: qpComments,
+                    journal: qpJournal,
                     discord: this._discordChoice(),
                     confirm_live: true });
                 const ok = res.successes || 0;

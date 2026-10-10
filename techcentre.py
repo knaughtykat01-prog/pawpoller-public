@@ -66,18 +66,31 @@ _handler: "TechHandler | None" = None
 
 # ── consent ──────────────────────────────────────────────────────────────────
 
-def consent(settings: dict | None = None) -> bool | None:
-    """True = send, False = never, None = not asked yet."""
+def _answer(kind: str, legacy_key: str, settings: dict | None) -> bool | None:
+    """The answer to the CURRENT wording (consent_records), else None (ask).
+
+    LEGALPAGES (4.58.0): a yes given before consent records existed has no date or wording, so it
+    no longer counts — the bell asks to confirm it once. A no needs no re-asking and stays a no."""
+    import consent_records
     s = settings if settings is not None else config.get_settings()
-    v = s.get("tech_reports")
-    if v is None or v == "":
+    v = consent_records.valid(kind, s)
+    if v is not None:
+        return v
+    legacy = s.get(legacy_key)
+    if legacy is None or legacy == "":
         return None
-    if isinstance(v, str):
-        return v.strip().lower() in ("1", "true", "yes", "on")
-    return bool(v)
+    said_yes = legacy.strip().lower() in ("1", "true", "yes", "on") if isinstance(legacy, str) else bool(legacy)
+    return None if said_yes else False
+
+
+def consent(settings: dict | None = None) -> bool | None:
+    """True = send, False = never, None = not asked yet (or asked to older wording)."""
+    return _answer("tech_reports", "tech_reports", settings)
 
 
 def set_consent(value: bool) -> None:
+    import consent_records
+    consent_records.record("tech_reports", value)
     config.save_settings({"tech_reports": bool(value)})
     with _lock:
         st = _state()
@@ -609,17 +622,13 @@ _lib_cache: dict = {"at": 0.0, "value": {}}
 
 
 def usage_consent(settings: dict | None = None) -> bool | None:
-    """True = count this copy, False = never, None = not asked yet."""
-    s = settings if settings is not None else config.get_settings()
-    v = s.get("tech_usage")
-    if v is None or v == "":
-        return None
-    if isinstance(v, str):
-        return v.strip().lower() in ("1", "true", "yes", "on")
-    return bool(v)
+    """True = count this copy, False = never, None = not asked yet (or asked to older wording)."""
+    return _answer("tech_usage", "tech_usage", settings)
 
 
 def set_usage_consent(value: bool) -> None:
+    import consent_records
+    consent_records.record("tech_usage", value)
     config.save_settings({"tech_usage": bool(value)})
     if value:
         with _lock:
@@ -832,12 +841,15 @@ def status() -> dict:
                          "fixed_in": e.get("fixed_in") or k.get("fixed_in", "")})
         prompt = _prompt_summary(st.get("prompt"))
         last_checkin = st.get("last_checkin", "")
+    import consent_records
     c = consent()
     u = usage_consent()
     return {"enabled": bool(TECH_CENTRE_URL), "url": TECH_CENTRE_URL, "consent": c, "asked": c is not None,
             "install_id": install_id() if TECH_CENTRE_URL else "", "runtime": runtime(), "pending": pending,
             "last": last, "prompt": prompt,
-            "usage": u, "usage_asked": u is not None, "last_checkin": last_checkin}
+            "usage": u, "usage_asked": u is not None, "last_checkin": last_checkin,
+            # When each answer was given and to which wording (LEGALPAGES) — shown in Diagnostics.
+            "records": {k: consent_records.get(k) for k in ("tech_reports", "tech_usage")}}
 
 
 def resolve_prompt(decision: str) -> dict:

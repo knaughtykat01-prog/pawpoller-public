@@ -455,5 +455,5 @@ class TestReviewFollowUps:
         """WSKEYHOST: the cover image comes from a page-supplied URL; the keyed client must not fetch it."""
         src = open("clients/weasyl/client.py", encoding="utf-8").read()
         block = src[src.index("async def thumbnail_from_cover"):src.index("async def _post_form")]
-        assert "httpx.AsyncClient(" in block and "await plain.get(url)" in block
+        assert "httpx.AsyncClient(" in block and 'plain.stream("GET", url)' in block
         assert "self._http.get(url" not in block

@@ -39,6 +39,9 @@ a = Analysis(
     ],
     hiddenimports=[
         *_POSTERS,
+        # GIF → MP4 for Threads (spec 030): imported lazily, so name it; the contrib hook
+        # (hook-imageio_ffmpeg) then bundles its ffmpeg binary.
+        'imageio_ffmpeg',
         'uvicorn.logging',
         'uvicorn.loops',
         'uvicorn.loops.auto',

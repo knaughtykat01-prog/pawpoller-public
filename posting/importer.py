@@ -891,7 +891,7 @@ async def import_from_ao3(submission_id: str) -> dict:
     # by pasting `_otwarchive_session` from their already-authenticated
     # browser; no username is strictly required (the importer will use
     # `ao3_target_user` for owner-of-draft sanity checks instead).
-    if not ao3_cookie and (not ao3_username or not ao3_password):
+    if not (ao3_cookie or settings.get("ao3_remember_token")) and (not ao3_username or not ao3_password):
         raise RuntimeError("AO3 credentials not configured — set up in Settings")
 
     # AO3 is in PROXY_REQUIRED — the singleton already runs through the
@@ -904,7 +904,9 @@ async def import_from_ao3(submission_id: str) -> dict:
     )
     from clients.ao3.client import AO3Client
 
-    direct_client = _get_ao3_client(settings)
+    direct_client = _get_ao3_client(settings, ao3_username, ao3_password,
+                                    settings.get("ao3_target_user", "") or ao3_username, ao3_cookie,
+                                    ao3_remember=settings.get("ao3_remember_token", ""))
     try:
         html_text, is_draft = await _fetch_ao3_work(direct_client, submission_id, ao3_username or settings.get("ao3_target_user", ""))
     except Exception as e:
@@ -919,6 +921,7 @@ async def import_from_ao3(submission_id: str) -> dict:
             password=ao3_password,
             target_user=settings.get("ao3_target_user", "") or ao3_username,
             session_cookie=settings.get("ao3_session_cookie", ""),
+            remember_token=settings.get("ao3_remember_token", ""),
             **creds,
         )
         try:

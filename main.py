@@ -609,6 +609,19 @@ def run_standalone():
                 logger.error("open_image_dialog failed: %s", e)
                 return []
 
+        def fa_journal(self, post_id, title, message, rating):
+            """Spec 027: FA's journal page, filled in (the person does the CAPTCHA and presses Post)."""
+            from auth.fa_journal_window import open_fa_journal
+            from posting import journals
+
+            def _posted(jid, link):
+                if post_id:
+                    journals.record_manual(int(post_id), "fa", jid, link)
+            try:
+                return open_fa_journal(str(title or ""), str(message or ""), str(rating or "0"), _posted)
+            except Exception as e:
+                return {"ok": False, "message": str(e)}
+
     logger.info("Opening native window at %s", url)
     _window = webview.create_window(
         "PawPoller",

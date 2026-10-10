@@ -88,13 +88,13 @@ window.Ledger = {
             : /run/.test(status) ? 'is-running' : 'is-ok';
         const plat = e.platform && e.platform !== 'posting' ? this._plat(e.platform) : null;
         const platChip = plat
-            ? `<span class="led-plat" title="${this.esc(plat.label)}">${plat.emoji || ''} ${this.esc(plat.label)}</span>` : '';
+            ? `<span class="led-plat" title="${this.esc(plat.label)}">${plat.emoji || ''} ${this.esc(plat.label)}${e.account ? ` · ${this.esc(e.account)}` : ''}</span>` : '';
         const time = this._timeLabel(e._d);
         const link = e.url
             ? `<a class="led-open" href="${this.esc(e.url)}" target="_blank" rel="noopener">open ↗</a>` : '';
         const detail = e.detail ? `<div class="led-detail">${this.esc(e.detail)}</div>` : '';
         return `
-            <div class="led-node ${statusCls}">
+            <div class="led-node ${statusCls}${e.quiet ? ' is-quiet' : ''}">
                 <span class="led-dot" aria-hidden="true">${n.icon}</span>
                 <div class="led-body">
                     <div class="led-line">
@@ -173,6 +173,8 @@ window.Ledger = {
             title: e.summary || (e.kind || 'Event'),
             detail: e.detail || '',
             platform: e.platform,
+            account: e.account || '',
+            quiet: !!e.quiet,
             status: e.status,
             _kind: e.kind, _statusRaw: (e.status || '').toLowerCase(),
         }));

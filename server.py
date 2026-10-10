@@ -228,6 +228,11 @@ def _start_poll_orchestrator():
         settings = config.get_settings()
         if not settings.get("email_digest_enabled", False):
             return False
+        # After a failed send, wait 6 hours before trying again rather than retrying
+        # on every poll (DIGESTFAIL); the error is on the bell and the Settings tab.
+        if settings.get("last_email_digest_error") and \
+                _seconds_until_next("last_email_digest_error_at", 6 * 60 * 60) > 60:
+            return False
         days = int(settings.get("email_digest_interval_days", 7) or 7)
         return _seconds_until_next("last_email_digest_sent_at", days * 24 * 60 * 60) <= 60
 

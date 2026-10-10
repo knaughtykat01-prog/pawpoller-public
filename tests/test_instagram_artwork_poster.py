@@ -50,11 +50,14 @@ def test_validate_requires_some_image_host(upload_file):
     ladder ran. It must object only when no rung at all can serve.
     """
     p = InstagramPoster()
+    import consent_records
     config.save_settings({"ig_public_base_url": "", "posting_server_url": "",
                           "ig_relay_enabled": True})
+    consent_records.record("ig_relay", True)          # opt-in since 4.58.0 (LEGALPAGES)
     assert [e for e in p.validate(_pkg(file_path=upload_file)) if "public address" in e] == []
 
     config.save_settings({"ig_relay_enabled": False, "ig_tunnel_enabled": False})
+    consent_records.record("ig_relay", False)
     try:
         assert any("public address" in e for e in p.validate(_pkg(file_path=upload_file)))
     finally:

@@ -133,6 +133,43 @@
             const data = await this.load(true);
             this._draft = { templates: (data.templates || []).map(t => ({ ...t })), defaults: { ...(data.defaults || {}) } };
             this._renderSettings(root);
+            await this._mountJournalTemplates(section);
+        },
+
+        /* Spec 027: the announcement journal's wording, beside the comment templates. */
+        async _mountJournalTemplates(section) {
+            let box = section.querySelector('.pp-journal-tpls');
+            if (!box) {
+                box = document.createElement('div');
+                box.className = 'settings-block pp-journal-tpls';
+                section.appendChild(box);
+            }
+            let data;
+            try { data = await API.get('/api/posts/journal-templates'); } catch (err) { return; }
+            const t = data.templates || {};
+            const field = (key, label, rows) => `<label class="pp-ctpl-text"><span>${esc(label)}</span>
+                <textarea rows="${rows}" maxlength="2000" data-jtpl="${key}">${esc(t[key] || '')}</textarea></label>`;
+            box.innerHTML = `
+                <h3>Journal templates</h3>
+                <p class="muted">The wording a journal announcing a piece starts with, in the publish dialog. {title}, {links},
+                    {link}, {site:fa}, {artist}, {chapter} and {chapter_title} fill in. Blank goes back to the default.</p>
+                ${field('art_title', 'New art: title', 1)}${field('art', 'New art: text', 2)}
+                ${field('chapter_title', 'New chapter: title', 1)}${field('chapter', 'New chapter: text', 2)}
+                <div class="pj-actions"><button type="button" class="btn btn-sm btn-primary" data-jtpl-save>Save journal templates</button>
+                    <span class="muted" data-jtpl-msg aria-live="polite"></span></div>`;
+            box.querySelector('[data-jtpl-save]').addEventListener('click', async () => {
+                const templates = {};
+                box.querySelectorAll('[data-jtpl]').forEach(el => { templates[el.dataset.jtpl] = el.value; });
+                const msg = box.querySelector('[data-jtpl-msg]');
+                try {
+                    const r = await API.put('/api/posts/journal-templates', { templates });
+                    box.querySelectorAll('[data-jtpl]').forEach(el => { el.value = (r.templates || {})[el.dataset.jtpl] || ''; });
+                    msg.textContent = 'Saved.';
+                    if (window.Components) Components._postRules = null;     // the dialog re-reads them
+                } catch (err) {
+                    msg.textContent = 'Not saved: ' + (err.message || err);
+                }
+            });
         },
 
         _defaultsHtml() {

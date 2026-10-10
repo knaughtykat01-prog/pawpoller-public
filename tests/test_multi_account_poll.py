@@ -27,6 +27,8 @@ def test_registry_has_all_platforms():
         "yt",
         # Picarto (4.46.0, spec 013): the channel's lifetime views / followers / subscribers + recordings.
         "pic",
+        # Facebook Pages (4.59.0, spec 029): post views / reactions / comments / shares + Page followers.
+        "fb",
     }
 
 

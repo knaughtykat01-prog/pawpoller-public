@@ -15,7 +15,7 @@ window.PlatformPicker = (function () {
     const GROUPS = [
         { name: 'Art sites', codes: ['fa', 'ib', 'da', 'e621', 'ws', 'fbr', 'fn', 'pix', 'ik'] },
         { name: 'Story sites', codes: ['ao3', 'sf', 'sqw', 'wp'] },
-        { name: 'Social', codes: ['bsky', 'tw', 'mast', 'thr', 'tum', 'ig'] },
+        { name: 'Social', codes: ['bsky', 'tw', 'mast', 'thr', 'tum', 'ig', 'fb'] },
         { name: 'Video & audio', codes: ['yt', 'sc', 'ng', 'pic', 'pod'] },
         { name: 'Messaging', codes: ['tg'] },
     ];

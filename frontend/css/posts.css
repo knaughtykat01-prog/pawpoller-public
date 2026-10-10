@@ -305,7 +305,7 @@ a.pp-chip:hover, button.pp-chip:hover { border-color: var(--accent); }
 .post-mentions {
     display: flex; flex-direction: column; gap: .4rem;
     padding: .55rem .7rem; background: var(--bg-secondary);
-    border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius-sm);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
 }
 .post-mentions[hidden] { display: none; }
 .post-mentions-head { font-size: 13px; font-weight: 600; }
@@ -472,3 +472,14 @@ a.pp-chip:hover, button.pp-chip:hover { border-color: var(--accent); }
 @media (max-width: 640px) {
     .pp-ctpl { grid-template-columns: 1fr; }
 }
+/* Journals (spec 027) */
+.pp-tag--journal { background: var(--accent-soft, rgba(212, 132, 58, .15)); }
+.pp-jtitle { font-size: 1.05em; }
+.pj-form { display: flex; flex-direction: column; gap: 10px; max-width: 760px; }
+.pj-field { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
+.pj-field input, .pj-field textarea, .pj-field select { font-weight: 400; width: 100%; max-width: none; box-sizing: border-box; }
+.pj-field .muted { font-weight: 400; }
+.pj-check { display: flex; gap: 8px; align-items: baseline; }
+.pj-count, .pj-hint { font-size: 12.5px; margin-top: -4px; }
+.pj-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pj-msg { min-height: 1.2em; }

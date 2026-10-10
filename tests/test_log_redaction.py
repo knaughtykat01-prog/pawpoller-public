@@ -283,3 +283,17 @@ def test_install_is_idempotent():
         assert n == 1
     finally:
         root.removeHandler(handler)
+
+
+def test_the_access_log_keeps_no_visitor_address():
+    """The privacy page says the relay forgets an address after 10 minutes, so uvicorn's
+    access line (client address first) must not carry one (LEGALPAGES)."""
+    log_redaction.install()
+    rec = logging.getLogRecordFactory()(
+        "uvicorn.access", logging.INFO, __file__, 1, '%s - "%s %s HTTP/%s" %d',
+        ("203.0.113.9:51234", "POST", "/api/ig/relay", "1.1", 200), None)
+    line = rec.getMessage()
+    assert "203.0.113.9" not in line and line.startswith('- - "POST /api/ig/relay')
+    other = logging.getLogRecordFactory()(
+        "routes.dashboard_auth", logging.WARNING, __file__, 1, "Auth: login failed (ip=%s)", ("203.0.113.9",), None)
+    assert "203.0.113.9" in other.getMessage()     # security events keep theirs on purpose

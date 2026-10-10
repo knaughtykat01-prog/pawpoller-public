@@ -28,7 +28,7 @@ _LABELS = {
     "ao3": "AO3", "sqw": "SquidgeWorld", "sf": "SoFurry", "e621": "e621", "fbr": "Furbooru",
     "mast": "Mastodon", "tum": "Tumblr", "bsky": "Bluesky", "pix": "Pixiv", "yt": "YouTube", "pic": "Picarto",
     "ig": "Instagram", "thr": "Threads", "ng": "Newgrounds", "sc": "SoundCloud", "fn": "FurryNetwork",
-    "ik": "Itaku", "wp": "Wattpad", "ws": "Weasyl", "ib": "Inkbunny",
+    "ik": "Itaku", "wp": "Wattpad", "ws": "Weasyl", "ib": "Inkbunny", "fb": "Facebook",
 }
 
 
@@ -75,7 +75,8 @@ def _classify_exc(platform, e) -> dict:
 def _b_ao3(c, pk):
     from clients.ao3.client import AO3Client
     return AO3Client(username=c.get("ao3_username", ""), password=c.get("ao3_password", ""),
-                     target_user=c.get("ao3_target_user", ""), session_cookie=c.get("ao3_session_cookie", ""), **pk)
+                     target_user=c.get("ao3_target_user", ""), session_cookie=c.get("ao3_session_cookie", ""),
+                     remember_token=c.get("ao3_remember_token", ""), **pk)
 
 
 def _b_sqw(c, pk):
@@ -139,6 +140,12 @@ def _b_pic(c, pk):
 def _b_ig(c, pk):
     from clients.ig.client import IgClient
     return IgClient(access_token=c.get("ig_access_token", ""), user_id=c.get("ig_user_id", ""), **pk)
+
+
+def _b_fb(c, pk):
+    # No proxy kwargs: the Graph API is reached directly, like Picarto's.
+    from clients.fb.client import FbClient
+    return FbClient(page_token=c.get("fb_page_token", ""), page_id=c.get("fb_page_id", ""))
 
 
 def _b_thr(c, pk):
@@ -213,6 +220,7 @@ PROBES = {
     "ig":   (lambda c: bool(c.get("ig_access_token")), _b_ig, "session_str", False),
     "pic":  (lambda c: bool(c.get("pic_channel")), _b_pic, "pic", False),
     "thr":  (lambda c: bool(c.get("thr_access_token")), _b_thr, "session_str", False),
+    "fb":   (lambda c: bool(c.get("fb_page_token") and c.get("fb_page_id")), _b_fb, "session_str", False),
     "ng":   (lambda c: bool(c.get("ng_cookie")), _b_ng, "session_dict", False),
     "sc":   (lambda c: bool(c.get("sc_client_id") and c.get("sc_client_secret") and c.get("sc_refresh_token")), _b_sc, "session_str", True),
     "fn":   (lambda c: bool(c.get("fn_username") and (c.get("fn_password") or c.get("fn_refresh_token"))), _b_fn, "session_str", True),

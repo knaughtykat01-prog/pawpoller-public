@@ -32,6 +32,10 @@ keyring>=25.0
 # source/dev installs get it here; packaged desktop users auto-detect a system
 # install or fall back. Loose floor so it can track X's changing API.
 gallery-dl>=1.32
+# imageio-ffmpeg (spec 030, 4.61.0): a static ffmpeg binary that turns a GIF into the MP4
+# Threads needs. The binary is GPL-3.0 and is ONLY run as a separate program
+# (posting/video_convert.py, subprocess) — never linked — the same licence isolation as gallery-dl.
+imageio-ffmpeg>=0.6
 
 # Dashboard auth (login + 2FA + signed sessions). These are imported directly by
 # routes/dashboard_auth.py + config.py; they were previously only in

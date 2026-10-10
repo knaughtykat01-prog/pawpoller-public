@@ -21,11 +21,26 @@
   - **technical error reports** — the error and a short log excerpt, with passwords, tokens, cookies, email
     addresses, @handles, other people's names and the paths of web addresses removed before sending;
   - **anonymous usage check-ins** — a random install ID, the app version, operating system, which platform types
-    are connected (not which accounts) and rough library sizes.
+    are connected (not which accounts) and rough library sizes;
+  - **the Instagram picture relay** — the picture being posted to Instagram, held for 15 minutes so Instagram can
+    fetch it, plus the uploader's IP address for 10 minutes (rate limits).
 
-  Both are off until you agree, and either can be switched off in Settings at any time. No analytics service, no
-  advertising tracker.
+  All three are off until someone agrees; PawPoller records when and to which wording, and any of them can be
+  switched off in Settings at any time. The PawPoller project's own policy covers what it does with them:
+  https://pawpoller.com/privacy. No analytics service, no advertising tracker.
 - **No third-party ad/tracking.**
+
+## Age
+
+PawPoller asks at setup whether the person is 18 or older and stores the answer on this instance. For anyone who says
+they're under 18, adult ratings, adults-only sites and switching safe mode off are locked. [Say here whether this
+instance accepts under-18 users at all.]
+
+## Other people's data
+
+Polling brings in other people's information from the connected sites: the names and handles of people who comment,
+favourite or follow, and the text of their comments. That data belongs to those people too. Use it only to run the
+instance, don't publish or share it elsewhere, and delete it on request where you can. [Name how someone can ask.]
 
 ## Where the data lives
 

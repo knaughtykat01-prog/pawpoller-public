@@ -122,6 +122,14 @@ def relay_url(settings: dict) -> str:
     return (settings.get("ig_relay_url") or config.IG_RELAY_DEFAULT_URL).strip()
 
 
+def relay_on(settings: dict | None = None) -> bool:
+    """Is the PawPoller relay switched on? Opt-in since 4.58.0 (LEGALPAGES): it sends the picture to
+    the project's server for 15 minutes, so it needs a recorded yes to the current wording. It was on
+    by default before; an install that never answered now has it off and is asked when it's needed."""
+    import consent_records
+    return consent_records.valid("ig_relay", settings) is True
+
+
 def first_available_rung(settings: dict | None = None) -> str:
     """The name of the first rung that could host an image, or ``""`` when none can.
 
@@ -137,7 +145,7 @@ def first_available_rung(settings: dict | None = None) -> str:
         return "local"
     if (s.get("posting_server_url") or "").strip():
         return "paired"
-    if _truthy(s.get("ig_relay_enabled", True)) and relay_url(s):
+    if relay_on(s) and relay_url(s):
         return "relay"
     if _truthy(s.get("ig_tunnel_enabled", True)):
         from posting import ig_tunnel
@@ -175,8 +183,8 @@ async def host_images(paths: list[str], settings: dict | None = None) -> Hosted:
         except Exception as e:
             tried.append(f"your paired server ({_short(e)})")
 
-    # 3. the PawPoller relay
-    if _truthy(s.get("ig_relay_enabled", True)):
+    # 3. the PawPoller relay — only with a yes to the current wording (LEGALPAGES)
+    if relay_on(s):
         endpoint = relay_url(s)
         try:
             urls = [await upload_to_host(endpoint, p) for p in paths]
@@ -184,7 +192,8 @@ async def host_images(paths: list[str], settings: dict | None = None) -> Hosted:
         except Exception as e:
             tried.append(f"the PawPoller relay ({_short(e)})")
     else:
-        tried.append("the PawPoller relay (turned off in Settings → Posting)")
+        tried.append("the PawPoller relay (off — it's opt-in: switch it on in Settings → Posting → "
+                     "Instagram image host; it holds the picture on PawPoller's server for 15 minutes)")
 
     # 4. a temporary tunnel
     if _truthy(s.get("ig_tunnel_enabled", True)):

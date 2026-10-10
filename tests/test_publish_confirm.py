@@ -57,7 +57,8 @@ def test_escape_and_backdrop_cancel_and_focus_starts_on_cancel():
     i = src.index("confirmPublish(o) {")
     # Window widened in 4.34.0: the render multi-select and its wait estimate pushed
     # the focus guard past 5000 chars. The guard is unchanged — the slice was stale.
-    block = src[i:i + 9000]
+    # Widened again in 4.62.0 for the journal box (spec 027).
+    block = src[i:i + 13000]
     assert "e.key === 'Escape'" in block
     assert "e.target === ov" in block
     assert "[data-pub-cancel]').focus()" in block

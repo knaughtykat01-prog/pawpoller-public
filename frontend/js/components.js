@@ -1921,6 +1921,18 @@ const Components = {
      *                               alone (4.3.0). Still honoured; its value also
      *                               comes back as `tgDescription`.
      */
+    /** Spec 027: the journal box for confirmPublish — `kind` 'art' or 'chapter' picks the saved template. */
+    async journalBox(kind) {
+        try {
+            if (!this._postRules) this._postRules = await API.get('/api/posts/rules');
+        } catch (err) { return null; }
+        const r = this._postRules || {};
+        const t = r.journal_templates || {};
+        const names = { fa: 'FurAffinity', ws: 'Weasyl', da: 'DeviantArt' };
+        return { sites: (r.journal_sites || []).map(code => ({ code, label: names[code] || code })),
+                 title: t[`${kind}_title`] || '', text: t[kind] || '' };
+    },
+
     confirmPublish(o) {
         const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
         const targets = (o.targets || []);
@@ -1973,6 +1985,16 @@ const Components = {
                         <textarea data-pub-comment="${esc(b.code)}" rows="2" maxlength="2000"
                             aria-label="${esc(b.label || b.code)} comment under the post">${esc(b.value || '')}</textarea>
                     </label>`).join('')}
+                    ${o.journalBox ? `<details class="pub-confirm-journal">
+                        <summary>📓 Also post a journal announcing it <span class="muted">— optional; goes up after the posts above, with their links</span></summary>
+                        <div class="pub-confirm-jsites">${(o.journalBox.sites || []).map(s => `<label class="pub-confirm-render">
+                            <input type="checkbox" data-pub-jsite="${esc(s.code)}"> <span>${esc(s.label)} journal</span></label>`).join('')}</div>
+                        <label class="pub-confirm-tgdesc"><span>Journal title</span>
+                            <input type="text" data-pub-jtitle maxlength="200" value="${esc(o.journalBox.title || '')}"></label>
+                        <label class="pub-confirm-tgdesc"><span>Journal text <span class="muted">— {links} becomes the links this publish makes; {title}, {link}, {site:fa}, {chapter}, {chapter_title} and {artist} fill in too.</span></span>
+                            <textarea data-pub-jtext rows="3" maxlength="20000">${esc(o.journalBox.text || '')}</textarea></label>
+                        <p class="muted" style="font-size:12px;margin:6px 0 0">FurAffinity asks for a CAPTCHA on journals, so it isn't here: Posts → New journal → Copy for FurAffinity gets it ready to paste.</p>
+                    </details>` : ''}
                     <p class="pub-confirm-note muted">This goes out live. Taking it down afterwards means doing it on each site by hand.</p>
                     <div class="pub-confirm-actions">
                         <button type="button" class="btn btn-secondary" data-pub-cancel>Cancel</button>
@@ -2023,9 +2045,20 @@ const Components = {
                         comments[el.dataset.pubComment] = (el.value || '').trim();
                     });
                 }
+                // Spec 027: present only when a journal site is ticked.
+                let journal;
+                const jsites = [...ov.querySelectorAll('[data-pub-jsite]:checked')].map(el => el.dataset.pubJsite);
+                if (jsites.length) {
+                    journal = {
+                        sites: jsites,
+                        title: (ov.querySelector('[data-pub-jtitle]').value || '').trim(),
+                        text: (ov.querySelector('[data-pub-jtext]').value || '').trim(),
+                    };
+                }
                 done({
                     ok: true,
                     comments,
+                    journal,
                     descriptions,
                     tgDescription: descriptions.tg || '',   // the 4.3.0 name, kept for callers that read it
                     // Only when the piece HAS renders and more than the default is picked —
@@ -2055,8 +2088,12 @@ const Components = {
             const p = plat(r.platform);
             const ok = !!r.success;
             const skipped = !ok && !!r.skipped;   // sync: post-only sites (4.2.0)
+            // 4.60.0 (spec 024): on the site but waiting for the owner (Tumblr kept a Mature post as a draft).
+            const attention = ok && r.attention ? String(r.attention) : '';
             const url = r.external_url || r.url || '';
-            const what = ok
+            const what = attention
+                ? esc(attention) + (url ? ` <a href="${esc(url)}" target="_blank" rel="noopener">Open it ↗</a>` : '')
+                : ok
                 ? (r.queued_desktop ? 'Queued for desktop'
                     : url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(okText)} ↗</a>` : esc(okText))
                 : skipped ? esc(r.reason || 'skipped')
@@ -2068,9 +2105,9 @@ const Components = {
                 ? `<span class="pub-result-variant">${esc(r.variant)} render</span>` : '';
             // Spec 021: the paired comment's own outcome, under its site — never folded into it.
             const comment = (r.comment && window.Comments) ? Comments.stateHtml(r.comment, { block: true }) : '';
-            return `<li class="pub-result ${ok ? 'is-ok' : skipped ? 'is-skip' : 'is-fail'}">
-                <span class="pub-result-mark">${ok ? '✓' : skipped ? '–' : '✗'}</span>
-                <span class="pub-result-plat">${esc(p.emoji || '')} ${esc(p.label)}</span>
+            return `<li class="pub-result ${attention ? 'is-warn' : ok ? 'is-ok' : skipped ? 'is-skip' : 'is-fail'}">
+                <span class="pub-result-mark">${attention ? '!' : ok ? '✓' : skipped ? '–' : '✗'}</span>
+                <span class="pub-result-plat">${esc(p.emoji || '')} ${esc(r.label || p.label)}</span>
                 <span class="pub-result-what">${what}${variant}${comment}</span>
             </li>`;
         }).join('');
@@ -2917,7 +2954,8 @@ const Components = {
             `;
         }
         const rows = events.map((e) => {
-            const platLabel = labels[e.platform] || (e.platform || '').toUpperCase();
+            const platLabel = (labels[e.platform] || (e.platform || '').toUpperCase())
+                + (e.account ? ` · ${e.account}` : '');
             const when = (window.PlatformHealth && window.PlatformHealth.relativePast)
                 ? window.PlatformHealth.relativePast(e.timestamp)
                 : (e.timestamp || '');
@@ -2926,7 +2964,7 @@ const Components = {
                 ? ` data-tooltip="${Utils.escapeHtml(e.detail)}"`
                 : '';
             return `
-                <li class="sys-evt-row ${statusClass}"${tooltip}>
+                <li class="sys-evt-row ${statusClass}${e.quiet ? ' is-quiet' : ''}"${tooltip}>
                     <span class="sys-evt-dot"></span>
                     <span class="sys-evt-platform">${Utils.escapeHtml(platLabel)}</span>
                     <span class="sys-evt-kind">${Utils.escapeHtml(e.kind || 'event')}</span>

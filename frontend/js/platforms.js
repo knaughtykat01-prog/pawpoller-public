@@ -44,6 +44,9 @@
         // 4.46.0 (spec 013): Picarto — art livestreams; channel name only, no login. Lifetime channel
         // views / followers / subscribers + recorded streams. Nothing to post to.
         { code: 'pic',  label: 'Picarto',      emoji: '\u{1F3A5}', color: '#2c9dd8'  },
+        // 4.57.0 (spec 022): Facebook Pages — photo / GIF / video / text posts to a Page. Polled for views,
+        // reactions, comments and shares since 4.59.0 (spec 029).
+        { code: 'fb',   label: 'Facebook',     emoji: '\u{1F4D8}', color: '#0866FF' },
     ];
 
     /* ── Metric metadata ──────────────────────────────────────────────────
@@ -97,6 +100,9 @@
         yt:   V({ faves: 'Likes' }),
         // Picarto: views = lifetime CHANNEL views (aggregate rows carry `views`); no faves/comments.
         pic:  M('views', 'total_views', null, null, 'views', 'views'),
+        // Facebook (4.59.0): views are Page insights (post_media_view); NULL when read_insights is missing.
+        fb:   M('views', 'total_views', 'total_reactions', 'total_comments',
+                'views', 'views', { faves: 'Reactions' }),
         wp:   M('views', 'total_reads', 'total_votes', 'total_comments',
                 'reads', 'views', { views: 'Reads', faves: 'Votes' }),
         ik:   M('engagement', null, 'total_likes', 'total_comments',
@@ -127,7 +133,10 @@
         tg:   M('engagement', null, 'total_reactions', null,
                 'reactions_count', 'faves', { faves: 'Reactions' }),
     };
-    PLATFORMS.forEach(p => { p.metrics = METRICS[p.code] || V(); });
+    // A post-only platform (podcast feed, Facebook until spec 022 phase 2) has no numbers, so no
+    // metrics: that is what keeps it out of POLLABLE_PLATFORMS below. The `|| V()` default used to
+    // hand it a views family too, folding it into every chart as a row of zeros (4.57.0).
+    PLATFORMS.forEach(p => { p.metrics = p.postOnly ? null : (METRICS[p.code] || V()); });
 
     // Display order is alphabetical by label (case-insensitive) everywhere that
     // reads window.PLATFORMS — the Platforms hub, command palette, context-bar
@@ -140,7 +149,7 @@
     // Each platform's official logo, bundled under /img/platforms/. Itaku and
     // Weasyl ship SVGs (scalable); the rest are PNGs. Trademarks of their owners
     // — see the disclaimer on the Platforms hub.
-    const _svgLogos = ['ik', 'ws', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'tg'];
+    const _svgLogos = ['ik', 'ws', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'tg', 'fb'];
     // Platforms with no bundled logo asset fall back to their emoji (the tile
     // renderer treats a null logo that way). Keeps a broken <img> off the hub.
     const _noLogo = ['fn', 'fbr', 'pod', 'sc', 'ng', 'yt', 'pic'];

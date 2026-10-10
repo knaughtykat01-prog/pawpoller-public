@@ -15,7 +15,7 @@
   <a href="#server--docker-deployment"><img src="https://img.shields.io/badge/Docker-supported-2496ED.svg" alt="Docker supported"></a>
 </p>
 
-PawPoller is a desktop app and self-hosted server for publishing fiction and artwork across furry platforms. Write in Markdown, convert to every format (BBCode, HTML, Styled HTML, PDF), publish to **22 platforms** with per-chapter tags and descriptions, and track views, favourites and comments across **22** from one dashboard. Corrections are made once and pushed back out: PawPoller can **edit an existing post in place on 9 platforms**. Most multi-platform tools stop at the upload. [PostyBirb](https://www.postybirb.com/) reaches more sites than PawPoller does (37 to 20) and is excellent at getting a piece out the door -- but it has no analytics and no way to edit a post once it is live. PawPoller is built around the half that comes after: every view, favourite and comment in one place, and the ability to go back and change what you published.
+PawPoller is a desktop app and self-hosted server for publishing fiction and artwork across furry platforms. Write in Markdown, convert to every format (BBCode, HTML, Styled HTML, PDF), publish to **22 platforms** with per-chapter tags and descriptions, and track views, favourites and comments across **23** from one dashboard. Corrections are made once and pushed back out: PawPoller can **edit an existing post in place on 9 platforms**. Most multi-platform tools stop at the upload. [PostyBirb](https://www.postybirb.com/) reaches more sites than PawPoller does (37 to 20) and is excellent at getting a piece out the door -- but it has no analytics and no way to edit a post once it is live. PawPoller is built around the half that comes after: every view, favourite and comment in one place, and the ability to go back and change what you published.
 
 ---
 
@@ -107,7 +107,7 @@ The dashboard binds to `127.0.0.1:8420` by default (loopback only), reachable at
 
 ## Supported Platforms
 
-**24 platforms — 22 polled, 22 posted to, 13 editable in place.**
+**25 platforms — 23 polled, 22 posted to, 13 editable in place.**
 
 "Edit" means PawPoller can push metadata changes to an *existing* post, so a
 correction made once in the app can be synced everywhere it was published.
@@ -139,7 +139,7 @@ correction made once in the app can be synced everywhere it was published.
 | Mastodon | Instance URL + access token | Yes | Yes | -- | Decentralised; favourites/boosts/replies |
 | Tumblr | API key + blog | Yes | Yes | -- | v2 API; notes |
 | X/Twitter | Auth token/ct0, or X API token | Yes | Yes | -- | Poll via official X API v2 (opt-in) → gallery-dl → GraphQL |
-| Threads | Meta access token | Yes | Yes | -- | Official API; needs a Meta app |
+| Threads | Meta access token | Yes | Yes | -- | Official API; needs a Meta app. Words, pictures, GIFs (as video) and video (4.61.0) |
 | Telegram | Bot token | -- | Yes | -- | Post-only; no analytics to poll |
 
 Editing is **not** implemented for the microblog side — the Posts module
@@ -289,7 +289,7 @@ python -m pytest tests/ -v
 
 ## Security
 
-PawPoller holds your login credentials for up to 24 platforms, so credential handling is
+PawPoller holds your login credentials for up to 25 platforms, so credential handling is
 treated as the core of the app: secrets are **always** stored in an encrypted vault
 (AES-128 + HMAC via Fernet), never in plaintext, with the key held in your OS keystore or an
 out-of-band env var on a server ([SETUP: the credential vault](docs/SETUP.md#the-credential-vault)).
@@ -320,6 +320,10 @@ PawPoller is free software: you can redistribute it and/or modify it under the t
 over a network, you must offer them its source code too (section 13).
 
 Versions released before 4.55.0 were licensed under MIT and remain available under it.
+
+PawPoller ships [FFmpeg](https://ffmpeg.org/) (GNU GPL-3.0) through the
+[imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg) package, unchanged, and runs it only as a separate
+program, to turn a GIF into video for Threads. Its source is at [ffmpeg.org](https://ffmpeg.org/download.html).
 
 ---
 

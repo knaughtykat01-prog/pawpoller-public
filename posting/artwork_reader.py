@@ -977,6 +977,33 @@ def _safe_filename(filename: str, default: str) -> str:
     return base
 
 
+def _check_metadata_shape(*, tags, titles, descriptions, categories, platforms,
+                          characters, **text) -> None:
+    """Raise ValueError (a 400 at the routes) when a new piece's metadata has the wrong shape.
+
+    ``tags`` is keyed by platform (plus the reserved core / auxiliary / default),
+    each a list of strings: ``{"core": ["fox", "digital"]}``, not ``["fox"]``.
+    """
+    for key_name, value in text.items():
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{key_name} must be text")
+    if tags is not None:
+        if not isinstance(tags, dict):
+            raise ValueError('tags must be an object keyed by platform, '
+                             'e.g. {"core": ["fox", "digital"]}')
+        for key, value in tags.items():
+            if not isinstance(value, list) or not all(isinstance(t, str) for t in value):
+                raise ValueError(f'tags["{key}"] must be a list of tags')
+    for key_name, value in (("titles", titles), ("descriptions", descriptions),
+                         ("categories", categories)):
+        if value is not None and not isinstance(value, dict):
+            raise ValueError(f"{key_name} must be an object keyed by platform")
+    for key_name, value in (("platforms", platforms), ("characters", characters)):
+        if value is not None and (not isinstance(value, list)
+                                  or not all(isinstance(v, str) for v in value)):
+            raise ValueError(f"{key_name} must be a list of names")
+
+
 def create_artwork(
     *,
     title: str,
@@ -1005,6 +1032,14 @@ def create_artwork(
     desktop create-from-local-path endpoint (bytes read from the chosen file),
     so a single code path handles both runtimes.
     """
+    # Refuse a bad shape BEFORE anything is written. A plain tag list used to be
+    # saved as-is, then load_artwork failed on it, and the half-made folder made
+    # GET /api/works fail for everyone until the file was fixed by hand
+    # (UPLOADTAGS500, brand launch 2026-10-07).
+    _check_metadata_shape(title=title, description=description, author=author,
+                          rating=rating, alt_text=alt_text, tags=tags, titles=titles,
+                          descriptions=descriptions, categories=categories,
+                          platforms=platforms, characters=characters)
     archive = get_artwork_archive_path()
     archive.mkdir(parents=True, exist_ok=True)
     folder = _unique_dir(archive, slugify(title))

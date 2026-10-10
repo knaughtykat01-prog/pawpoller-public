@@ -124,6 +124,10 @@
     <button class="hamburger-btn" id="hamburger-btn" aria-label="Toggle menu">&#9776;</button>
     <!-- Phone bar (spec 019): the same #bar-controls cluster is MOVED here when data-mobile="1"
          (App._placeBarControls). Outside .sidebar for the reason above: the drawer is transformed. -->
+    <!-- The phone bar's solid backing (4.58.0, PHONEBAR2). A real element, not body::before:
+         iOS Safari only fills the status-bar area when a fixed element sits at the very top,
+         and it ignores pseudo-elements, so the page scrolled up behind the clock. -->
+    <div class="mobile-bar-bg" id="mobile-bar-bg" aria-hidden="true"></div>
     <div class="mobile-bar" id="mobile-bar"></div>
 
     <nav class="sidebar" id="sidebar">

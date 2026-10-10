@@ -106,6 +106,24 @@ def test_cover_replaces_cover_then_crops_the_thumbnail(tmp_path, monkeypatch):
             r = _Resp()
             r.content = buf.getvalue()
             return r
+
+        def stream(self, method, url):
+            # WSPLAINPROXY (4.58.0): the cover is read as a stream with a size cap.
+            outer = self
+
+            class _S:
+                async def __aenter__(self):
+                    r = await outer.get(url)
+                    self.status_code = 200
+
+                    async def chunks():
+                        yield r.content
+                    self.aiter_bytes = chunks
+                    return self
+
+                async def __aexit__(self, *a):
+                    return False
+            return _S()
     import clients.weasyl.client as wsmod
     monkeypatch.setattr(wsmod.httpx, "AsyncClient", _Plain)
     asyncio.run(c.reupload_cover("5", str(img)))

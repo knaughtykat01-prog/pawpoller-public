@@ -17,7 +17,10 @@ CSS = {n: Path(f"frontend/css/{n}.css").read_text(encoding="utf-8") for n in ("l
 
 def test_a_solid_bar_sits_behind_the_phone_buttons():
     css = CSS["layout"]
-    assert 'html[data-mobile="1"] body::before' in css
+    # PHONEBAR2 (4.58.0): a real element — iOS Safari ignores a pseudo-element when it fills
+    # the status-bar area, so the page showed through above the bar.
+    assert 'html[data-mobile="1"] .mobile-bar-bg' in css and 'html[data-mobile="1"] body::before' not in css
+    assert 'id="mobile-bar-bg"' in Path("frontend/index.html").read_text(encoding="utf-8")
     assert 'html[data-mobile="1"] .main-col { padding-top: var(--mbar-h); }' in css
     # The page no longer pads around floating buttons.
     assert ".page-header { padding-right: 150px; }" not in css

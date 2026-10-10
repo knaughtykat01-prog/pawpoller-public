@@ -71,6 +71,7 @@ async def ao3_connect(body: dict):
     password = body.get("password", "").strip()
     target_user = body.get("target_user", "").strip()
     session_cookie = body.get("session_cookie", "").strip()
+    remember_token = body.get("remember_token", "").strip()
 
     if not target_user:
         raise HTTPException(400, "Target user is required (the AO3 user to track)")
@@ -90,7 +91,7 @@ async def ao3_connect(body: dict):
     }
     client = _get_or_create_client(
         overlay, overlay["ao3_username"], overlay["ao3_password"],
-        target_user, session_cookie)
+        target_user, session_cookie, ao3_remember=remember_token)
     try:
         result = await client.validate_session()
     except Exception as e:
@@ -107,6 +108,7 @@ async def ao3_connect(body: dict):
     }
     if cookie_mode:
         saved["ao3_session_cookie"] = session_cookie
+        saved["ao3_remember_token"] = remember_token
         if username:
             saved["ao3_username"] = username
     else:
@@ -121,7 +123,7 @@ async def ao3_connect(body: dict):
 def ao3_disconnect():
     """Clear AO3 credentials from settings."""
     config.delete_settings_keys([
-        "ao3_username", "ao3_password", "ao3_target_user", "ao3_session_cookie",
+        "ao3_username", "ao3_password", "ao3_target_user", "ao3_session_cookie", "ao3_remember_token",
     ])
     config.save_settings({"ao3_notifications_enabled": False})
     return {"status": "success", "message": "AO3 disconnected"}

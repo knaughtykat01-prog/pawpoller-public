@@ -560,7 +560,9 @@ const API = {
     // Tech Centre (4.10.0): consent, the first-error prompt, status for Diagnostics.
     getTechStatus() { return this.get('/api/tech/status'); },
     setTechConsent(value) { return this.post('/api/tech/consent', { value }); },
-    setTechUsage(value) { return this.post('/api/tech/usage', { value }); },           // 4.42.0 "count this copy"
+    setTechUsage(value) { return this.post('/api/tech/usage', { value }); },
+    getAge() { return this.get('/api/age'); },                                        // 4.58.0 the 18+ step
+    setAge(band) { return this.post('/api/age', { band }); },           // 4.42.0 "count this copy"
     getCheckinPreview() { return this.get('/api/tech/checkin-preview'); },
     resolveTechPrompt(decision) { return this.post('/api/tech/prompt', { decision }); },
     sendTechTest() { return this.post('/api/tech/test', {}); },
@@ -862,8 +864,24 @@ const API = {
     triggerPICPoll() { return this.post('/api/pic/poll/trigger'); },
     fullPICResync() { return this.post('/api/pic/poll/full-resync'); },
     getPICPollProgress() { return this.get('/api/pic/poll/progress'); },
+    /* ── Facebook stats (spec 029, 4.59.0) — null figures mean "not available" ─── */
+    getFBStatus() { return this.get('/api/fb/status'); },
+    getFBSummary(params) { return this.get('/api/fb/summary', params); },
+    getFBSubmissions(params) { return this.get('/api/fb/submissions', params); },
+    getFBSubmission(id) { return this.get(`/api/fb/submissions/${encodeURIComponent(id)}`); },
+    getFBSnapshots(id) { return this.get(`/api/fb/submissions/${encodeURIComponent(id)}/snapshots`); },
+    getFBAggregate(params) { return this.get('/api/fb/aggregate', params); },
+    getFBPollLog(limit) { return this.get('/api/fb/poll_log', { limit }); },
+    triggerFBPoll() { return this.post('/api/fb/poll/trigger'); },
+    fullFBResync() { return this.post('/api/fb/poll/full-resync'); },
+    getFBPollProgress() { return this.get('/api/fb/poll/progress'); },
     /* Saves a channel name after Picarto confirms it exists → { status, channel, adult }; 400 if not found. */
     savePICChannel(data) { return this.post('/api/pic/channel', data); },
+    /* ── Facebook Page (spec 022, 4.57.0) — connect by token exchange, post-only. */
+    getFBAuthStatus(accountId) { return this.get('/api/fb/auth/status', accountId ? { account_id: accountId } : undefined); },
+    fbFindPages(data) { return this.post('/api/fb/auth/pages', data); },
+    fbConnect(data) { return this.post('/api/fb/auth/connect', data); },
+    fbDisconnect(data) { return this.post('/api/fb/auth/disconnect', data || {}); },
     getPICChannelStatus(accountId) { return this.get('/api/pic/channel/status', accountId ? { account_id: accountId } : undefined); },
 
     /* ── Newgrounds (MEDIAPLATS §5, 4.23.0) ───────────────────────── */

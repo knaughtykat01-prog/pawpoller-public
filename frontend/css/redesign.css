@@ -309,7 +309,6 @@
         color-mix(in srgb, var(--page-accent, var(--accent)) 16%, var(--bg-card)),
         var(--bg-card) 72%);
     border: 1px solid color-mix(in srgb, var(--page-accent, var(--accent)) 32%, var(--border));
-    border-left: 4px solid var(--page-accent, var(--accent));
 }
 .main-col[data-platform] .page-header h2, .main-col[data-platform] .page-header h1 { color: var(--text-primary); }
 .main-col[data-platform] .platform-page-subtitle { color: var(--text-secondary); }

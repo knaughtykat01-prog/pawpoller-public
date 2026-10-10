@@ -23,7 +23,7 @@ JS = (Path(__file__).resolve().parent.parent / "frontend" / "js" / "notification
 def test_throttled_poll_is_not_called_no_changes():
     assert _format_poll_summary({"status": "partial"}) == "throttled — some data may be missing"
     assert _format_poll_summary({"status": "partial", "new_faves_found": 2}) == "throttled, +2 faves"
-    assert _format_poll_summary({"status": "success"}) == "no changes"
+    assert _format_poll_summary({"status": "success"}) == "no posts found"
 
 
 def _run(feeds: list[list[dict]]) -> list[list[str]]:

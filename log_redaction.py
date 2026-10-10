@@ -193,6 +193,16 @@ def _scrub_record(record: logging.LogRecord) -> None:
         pass
 
 
+def _drop_client_address(record: logging.LogRecord) -> None:
+    """uvicorn's access line is ``('%s - "%s %s HTTP/%s" %d', client_addr, …)``: every visitor's
+    address (the real one, through ``proxy_headers``), relay users included, kept for as long as the
+    log is. The privacy page promises the relay forgets an address after 10 minutes, so the access
+    log keeps none (LEGALPAGES). Security events (failed sign-ins, rate-limit blocks) still
+    log theirs on purpose, and the page says so."""
+    if record.name == "uvicorn.access" and isinstance(record.args, tuple) and record.args:
+        record.args = ("-",) + record.args[1:]
+
+
 class SecretRedactingFilter(logging.Filter):
     """Second line of defence. The record factory is the primary mechanism."""
 
@@ -215,6 +225,7 @@ def install(*_args, **_kwargs) -> None:
 
         def factory(*args, **kwargs):
             record = previous(*args, **kwargs)
+            _drop_client_address(record)
             _scrub_record(record)
             return record
 

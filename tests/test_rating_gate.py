@@ -66,7 +66,11 @@ def test_a_site_refuses_above_its_ceiling_with_the_reason_and_takes_the_rest():
 
 # The sites whose terms cap the rating below adult (MEDIAPLATS §2): SoundCloud forbids
 # pornographic audio and allows explicit lyrics, so it stops at mature (4.22.0).
-CAPPED = {"sc": "mature", "yt": "mature"}   # YouTube forbids sexually explicit content (4.24.0)
+CAPPED = {"sc": "mature", "yt": "mature",   # YouTube forbids sexually explicit content (4.24.0)
+          "fb": "general",                # Facebook: no sexual content or most nudity (4.57.0)
+          "tum": "mature",                # Tumblr: Mature with its label; explicit sex acts banned (4.60.0)
+          "thr": "general",               # Threads: Instagram's rules, no nudity or sexual content (4.61.0)
+          "ig": "general"}                # Instagram: no nudity or sexual content (4.61.1, spec 031)
 
 
 def test_every_existing_poster_still_takes_adult_work():
@@ -220,3 +224,16 @@ def test_fit_poster_steps_quality_down_to_a_byte_cap(tmp_path):
         assert os.path.getsize(out) <= 120_000 or True          # noise may not fit at q=40; must not loop forever
     finally:
         os.unlink(out)
+
+
+def test_instagram_takes_general_only_on_the_posts_page_too():
+    """Spec 031: the adult-work FAQ says Instagram never receives mature work; this keeps it true."""
+    import asyncio
+    import config
+    from posting import post_publisher
+    config.save_settings({"ig_access_token": "T0", "ig_user_id": "111"})
+    res = asyncio.run(post_publisher._publish_one({"body": "x", "rating": "mature", "media": [{"path": "a.png"}]},
+                                                  "ig", None, config.get_settings()))
+    assert not res["success"] and "mature or adult" in res["error"]
+    prev = post_publisher.preview("x", ["ig"], image_count=1, rating="adult")
+    assert any(w["level"] == "block" and "mature or adult" in w["text"] for w in prev["ig"]["warnings"])

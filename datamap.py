@@ -232,7 +232,7 @@ def P(name, group, why="", backup="", obsolete=False):
 # Each owns <P>_submissions / <P>_snapshots / <P>_poll_log. Inkbunny, the first site,
 # uses the bare names. A test checks this matches what init_db actually creates.
 PLATFORM_PREFIXES = (
-    "ao3", "bsky", "da", "e621", "fa", "fbr", "fn", "ig", "ik", "mast", "ng", "pix",
+    "ao3", "bsky", "da", "e621", "fa", "fb", "fbr", "fn", "ig", "ik", "mast", "ng", "pix",
     "pic", "sc", "sf", "sqw", "tg", "thr", "tum", "tw", "wp", "ws", "yt",
 )
 
@@ -343,11 +343,13 @@ _SETTINGS = (
     *(S(k, _SECRET) for k in (
         "password", "fa_cookie_a", "fa_cookie_b", "ws_api_key", "sf_api_token", "sf_password",
         "sf_session_cookies", "sqw_password", "sqw_author_password", "ao3_password", "ao3_session_cookie",
+        "ao3_remember_token",   # AO3's Remember me cookie (AO3REMEMBER)
         "da_client_secret", "da_cookie", "da_refresh_token", "e621_api_key",
         "fbr_api_key", "fn_access_token", "fn_password", "fn_refresh_token", "ik_auth_token",
         "bsky_app_password", "tw_api_bearer_token", "tw_auth_token", "tw_ct0", "mast_access_token",
         "tum_api_key", "tum_consumer_secret", "tum_oauth_token", "tum_oauth_token_secret",
-        "pix_refresh_token", "thr_access_token", "ig_access_token", "ng_cookie", "sc_access_token",
+        "tum_oauth2_access_token", "tum_oauth2_refresh_token",   # the Connect sign-in (4.60.0, spec 024)
+        "pix_refresh_token", "thr_access_token", "ig_access_token", "fb_page_token", "ng_cookie", "sc_access_token",
         "sc_client_secret", "sc_refresh_token", "yt_access_token", "yt_client_secret", "yt_refresh_token",
         "trello_api_key", "trello_secret", "trello_token", "github_pat", "cf_worker_key",
         "posting_server_api_key",
@@ -371,14 +373,14 @@ _SETTINGS = (
     *(S(k, _HANDLE, identity=True) for k in (
         "fa_username", "ws_username", "e621_username", "fbr_username", "fn_username", "ng_username",
         "sc_username", "yt_username", "pic_channel", "ig_username", "thr_username", "sf_display_name", "mast_handle",
-        "mast_instance_url", "tum_blog", "ig_user_id", "pix_user_id", "thr_user_id", "tg_channel",
+        "mast_instance_url", "tum_blog", "tum_oauth2_user", "ig_user_id", "fb_page_id", "fb_page_name", "pix_user_id", "thr_user_id", "tg_channel",
         "ao3_target_user", "da_target_user", "ik_target_user", "sqw_target_user", "tw_target_user",
         "wp_target_user", "auth_username", "default_author", "smtp_username", "smtp_from",
         "email_digest_recipients", "ig_public_base_url", "ig_relay_url", "<P>_own_handle",
     )),
     # Preferences.
     *(S(k, _PREF) for k in (
-        "announce_defaults", "comment_templates", "comment_defaults", "auto_backup_dir", "auto_backup_enabled", "auto_backup_interval_hours",
+        "announce_defaults", "comment_templates", "comment_defaults", "journal_templates", "auto_backup_dir", "auto_backup_enabled", "auto_backup_interval_hours",
         "auto_backup_keep", "auto_sync_enabled", "auto_update", "credits", "credential_mode",
         "da_client_id", "sc_client_id", "yt_client_id", "dashboard_layout", "discord_announce_on_publish",
         "display_timezone", "email_digest_enabled", "email_digest_interval_days", "hidden_platforms",
@@ -387,7 +389,7 @@ _SETTINGS = (
         "notification_min_views_delta", "notifications_enabled", "pawpoller_attribution",
         "pinned_submissions", "platform_order", "poll_interval_minutes", "polling_paused", "polling_paused_platforms",
         "setup_mode", "smtp_host", "smtp_port", "smtp_use_tls", "theme", "tours_seen", "trello",
-        "update_skip_version", "watcher_notifications_enabled", "tech_reports", "tech_usage",
+        "update_skip_version", "watcher_notifications_enabled", "tech_reports", "tech_usage", "consent_records", "age_band",
         "milestone_comments", "milestone_faves", "milestone_score", "milestone_views",
         "artwork_archive_path", "artwork_da_catpath", "artwork_default_platforms", "artwork_default_rating",
         "artwork_enabled", "artwork_fa_category", "artwork_fa_gender", "artwork_fa_species",
@@ -400,7 +402,7 @@ _SETTINGS = (
         "tg_channel_digest_enabled", "tg_document", "tg_no_tags", "tg_protect", "tg_silent",
         "fa_direct_polling", "fa_notification_comments_only", "fa_watcher_notification_mode",
         "fa_watcher_notifications_enabled", "sf_notification_comments_only", "ws_notification_comments_only",
-        "mast_instance_flavour", "ig_relay_open", "tw_account_stagger_seconds", "tw_gallerydl_path",
+        "mast_instance_flavour", "ig_relay_open", "ig_relay_enabled", "tw_account_stagger_seconds", "tw_gallerydl_path",
         "tw_polling_backend", "tw_roundrobin_batch", "tw_roundrobin_save_tokens", "yt_long_uploads",
         "ib_use_cf_proxy", "<P>_use_cf_proxy", "<P>_notifications_enabled", "<P>_poll_interval_minutes",
     )),
@@ -410,11 +412,11 @@ _SETTINGS = (
       backup="derivable", obsolete=True),
     # Housekeeping — rebuilt or re-stamped on their own.
     *(S(k, _HOUSE, backup="derivable") for k in (
-        "credential_set_at", "last_auto_backup_at", "last_digest_sent_at", "last_email_digest_sent_at",
+        "credential_set_at", "last_auto_backup_at", "last_digest_sent_at", "last_email_digest_sent_at", "last_email_digest_error", "last_email_digest_error_at",
         "last_poll_completed_at", "last_session_check_at", "last_snapshot_prune_at",
         "last_tg_channel_digest_sent_at", "last_weekly_digest_sent_at", "mirror_last_sync",
         "mirror_seeded_at", "notifications_cleared_at", "notifications_last_read_at", "setup_complete",
-        "sc_token_expires_at", "yt_token_expires_at",
+        "sc_token_expires_at", "yt_token_expires_at", "tum_oauth2_expires_at",
     )),
 )
 

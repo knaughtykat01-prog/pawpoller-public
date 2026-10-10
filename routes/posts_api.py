@@ -64,7 +64,8 @@ def _media_dir() -> Path:
 
 @posts_router.get("")
 def list_posts(limit: int = Query(100, ge=1, le=500), status: str | None = Query(None),
-               persona_id: int | None = Query(None), q: str | None = Query(None, max_length=200)):
+               persona_id: int | None = Query(None), q: str | None = Query(None, max_length=200),
+               kind: str | None = Query(None)):
     """The Posts feed — newest first, each post with its numbers (spec 018).
 
     Every publication on the page is resolved against the platforms' stored rows in ONE
@@ -75,7 +76,8 @@ def list_posts(limit: int = Query(100, ge=1, le=500), status: str | None = Query
     conn = get_connection()
     try:
         posts = posts_queries.list_posts(conn, limit=limit, status=status,
-                                         persona_id=persona_id, q=q)
+                                         persona_id=persona_id, q=q,
+                                         kind=kind if kind in ("post", "journal") else None)
         personas = _attach_numbers(conn, posts)
         return {"posts": posts, "counts": posts_queries.post_counts(conn),
                 "personas": personas}
@@ -249,6 +251,42 @@ def posts_rules():
     return post_publisher.rules()
 
 
+@posts_router.get("/journal-templates")
+def get_journal_templates():
+    """Spec 027: the announcement journal's wording (art and chapter, title and text)."""
+    from posting import journals
+    return {"templates": journals.templates(), "defaults": dict(journals.DEFAULT_TEMPLATES)}
+
+
+@posts_router.put("/journal-templates")
+def put_journal_templates(payload: dict):
+    """Save the four templates; a blank one goes back to the default. Unknown placeholders are refused."""
+    from posting import journals
+    raw = payload.get("templates") if isinstance(payload.get("templates"), dict) else {}
+    clean = {}
+    for key in journals.DEFAULT_TEMPLATES:
+        text = str(raw.get(key) or "").strip()[:2000]
+        if not text:
+            continue
+        bad = journals._unknown(text)
+        if bad:
+            raise HTTPException(400, f"{{{bad[0]}}} isn't a placeholder PawPoller knows")
+        clean[key] = text
+    config.save_settings({"journal_templates": clean})
+    return {"templates": journals.templates()}
+
+
+@posts_router.post("/journal-copy")
+def journal_copy(payload: dict):
+    """Spec 027: the FurAffinity version of a journal to paste on FA (its form needs a CAPTCHA)."""
+    from posting import journals
+    try:
+        return journals.copy_text(str(payload.get("site") or "fa"), str(payload.get("title") or "")[:300],
+                                  str(payload.get("body") or "")[:20000], str(payload.get("rating") or "general"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @posts_router.post("/preview")
 def preview_post(payload: dict):
     """How a draft comes out on each chosen site, with every reason one would refuse or
@@ -269,9 +307,13 @@ def preview_post(payload: dict):
         image_count = max(0, min(int(payload.get("image_count") or 0), _MAX_IMAGES))
     except (TypeError, ValueError):
         image_count = 0
+    if payload.get("kind") == "journal":            # spec 027: title limits, connected, never-post
+        from posting import journals
+        return {"sites": journals.preview(str(payload.get("title") or "")[:300], platforms, account_ids)}
     comments, linked = _parse_comment_fields(payload.get("comments"), payload.get("linked"))
     return {"sites": post_publisher.preview(body, platforms, mentions, image_count, parts,
-                                            account_ids, comments=comments, linked=linked)}
+                                            account_ids, comments=comments, linked=linked,
+                                            rating=str(payload.get("rating") or ""))}
 
 
 @posts_router.get("/image")
@@ -650,6 +692,10 @@ async def create_post(
     alts: str = Form(""),       # JSON [string] — ALT text per image, in order (spec 018)
     comments: str = Form(""),   # JSON {site: text | {text, mentions, template}} — spec 021
     linked: str = Form(""),     # JSON {kind: artwork|story, ref} — the piece placeholders fill from
+    kind: str = Form("post"),   # spec 027: 'journal' = a titled journal for FA / Weasyl / DeviantArt
+    title: str = Form(""),
+    tags: str = Form(""),
+    featured: str = Form(""),
     files: list[UploadFile] | None = File(None),
     file: UploadFile | None = File(None),   # legacy single-image field, still accepted
 ):
@@ -670,14 +716,28 @@ async def create_post(
         image_alt = alt_list[0]
     uploads = [f for f in ((files or []) + ([file] if file else [])) if f is not None]
     uploads = uploads[:_MAX_IMAGES]
-    if not body and not uploads:
+    is_journal = kind == "journal"
+    if is_journal:
+        title = (title or "").strip()[:200]
+        if not title or not body:
+            raise HTTPException(400, "A journal needs a title and some text")
+        if uploads:
+            raise HTTPException(400, "Journals take text only — link to a picture instead")
+    elif not body and not uploads:
         raise HTTPException(400, "A post needs text or an image")
     comment_map, linked_obj = _parse_comment_fields(comments, linked)
 
     conn = get_connection()
     try:
-        post_id = posts_queries.create_post(
-            conn, body=body, rating=rating, image_alt=image_alt, now=_now())
+        if is_journal:
+            from posting import journals
+            post_id = posts_queries.create_post(
+                conn, body=body, rating=rating, now=_now(), kind="journal", title=title,
+                tags=" ".join(journals.tag_list(tags))[:2000],
+                featured=str(featured).lower() in ("1", "true", "on", "yes"))
+        else:
+            post_id = posts_queries.create_post(
+                conn, body=body, rating=rating, image_alt=image_alt, now=_now())
         if linked_obj:
             posts_queries.update_post(conn, post_id, linked_kind=linked_obj["kind"],
                                       linked_ref=linked_obj["ref"], now=_now())
@@ -851,6 +911,94 @@ async def schedule_post(post_id: int, payload: dict):
     logger.info("Scheduled post #%d to %s at %s (queue %s)",
                 post_id, ",".join(platforms), scheduled_str, queue_ids)
     return {"ok": True, "queue_ids": queue_ids, "scheduled_at": scheduled_str}
+
+
+@posts_router.post("/{post_id}/journal-record")
+def journal_record(post_id: int, payload: dict):
+    """Spec 027: the desktop's filled-in FA window reports the journal FA just posted (the person passed the
+    CAPTCHA and pressed Post there)."""
+    from posting import journals
+    ok = journals.record_manual(post_id, str(payload.get("platform") or ""), str(payload.get("external_id") or ""),
+                                str(payload.get("external_url") or ""))
+    if not ok:
+        raise HTTPException(400, "Not a FurAffinity journal for this post")
+    return {"ok": True}
+
+
+@posts_router.patch("/{post_id}")
+async def edit_journal_post(post_id: int, payload: dict):
+    """Spec 027 (US3): change a journal, then update it on every site it's posted to. Posts aren't editable."""
+    from posting import journals
+    conn = get_connection()
+    try:
+        post = posts_queries.get_post(conn, post_id)
+        if not post:
+            raise HTTPException(404, "Post not found")
+        if post.get("kind") != "journal":
+            raise HTTPException(400, "Only journals can be edited after posting")
+        changes = {}
+        if "title" in payload:
+            changes["title"] = str(payload.get("title") or "").strip()[:200]
+        if "body" in payload:
+            changes["body"] = str(payload.get("body") or "").strip()[:20000]
+        if "rating" in payload:
+            changes["rating"] = payload["rating"] if payload["rating"] in _ALLOWED_RATINGS else post["rating"]
+        if "tags" in payload:
+            changes["tags"] = " ".join(journals.tag_list(payload.get("tags")))[:2000]
+        if "featured" in payload:
+            changes["featured"] = 1 if payload.get("featured") else 0
+        if not (changes.get("title", post["title"]) and changes.get("body", post["body"])):
+            raise HTTPException(400, "A journal needs a title and some text")
+        posts_queries.update_post(conn, post_id, now=_now(), **changes)
+        post = posts_queries.get_post(conn, post_id)
+        pubs = [p for p in posts_queries.get_post_publications(conn, post_id) if p["status"] == "posted"]
+    finally:
+        conn.close()
+    results = []
+    for pub in pubs:
+        res = await journals.edit_journal(post, pub)
+        results.append(res)
+        if res["success"] and res["external_url"] != pub.get("external_url"):
+            conn = get_connection()
+            try:
+                posts_queries.upsert_post_publication(
+                    conn, post_id=post_id, platform=pub["platform"], account_id=pub["account_id"],
+                    status="posted", external_id=pub["external_id"], external_url=res["external_url"],
+                    error="", now=_now())
+            finally:
+                conn.close()
+    return {"results": results}
+
+
+@posts_router.post("/{post_id}/remove-from-sites")
+async def remove_journal_from_sites(post_id: int, payload: dict):
+    """Spec 027 (US3): take a journal down where PawPoller can (Weasyl); FA and DeviantArt say
+    "remove it on the site". Needs ``confirm: true``: the dialog lists the sites first."""
+    from posting import journals
+    if not payload.get("confirm"):
+        raise HTTPException(400, "remove-from-sites requires confirm=true")
+    conn = get_connection()
+    try:
+        post = posts_queries.get_post(conn, post_id)
+        if not post or post.get("kind") != "journal":
+            raise HTTPException(404, "Journal not found")
+        pubs = [p for p in posts_queries.get_post_publications(conn, post_id) if p["status"] == "posted"]
+    finally:
+        conn.close()
+    results = []
+    for pub in pubs:
+        res = await journals.remove_journal(pub)
+        results.append(res)
+        if res["success"]:
+            conn = get_connection()
+            try:
+                posts_queries.upsert_post_publication(
+                    conn, post_id=post_id, platform=pub["platform"], account_id=pub["account_id"],
+                    status="removed", external_id=pub["external_id"], external_url=pub["external_url"],
+                    error="", now=_now())
+            finally:
+                conn.close()
+    return {"results": results}
 
 
 @posts_router.delete("/{post_id}")

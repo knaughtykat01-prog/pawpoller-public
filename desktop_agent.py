@@ -409,6 +409,27 @@ class AgentApi:
     def agent_status(self):
         return self._agent.status()
 
+    def fa_journal(self, post_id, title, message, rating):
+        """Spec 027: FA's journal page, filled in, in a desktop window (the person does the CAPTCHA)."""
+        from auth.fa_journal_window import open_fa_journal
+        agent = self._agent
+
+        def _posted(jid, url):
+            if not post_id:
+                return
+            c = agent._client()
+            try:
+                c.post(f"{agent.server_url}/api/posts/{int(post_id)}/journal-record",
+                       json={"platform": "fa", "external_id": jid, "external_url": url})
+            except Exception as e:
+                logger.warning("Couldn't record the FA journal on the server: %s", e)
+            finally:
+                agent._close(c)
+        try:
+            return open_fa_journal(str(title or ""), str(message or ""), str(rating or "0"), _posted)
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
 
 def offline_page(server_url: str, agent: Agent | None = None) -> str:
     """What the window shows while the server cannot be reached; it swaps to the server itself."""

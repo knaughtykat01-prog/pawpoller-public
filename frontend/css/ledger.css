@@ -57,6 +57,8 @@
     background: var(--bg-card); border: 2px solid var(--card-border-inner); line-height: 1;
     box-shadow: 0 0 0 4px var(--bg-primary);
 }
+/* A poll where nothing moved (4.58.0): quieter than a post or a change. */
+.led-node.is-quiet .led-title { color: var(--text-secondary); font-weight: 400; }
 .led-node.is-ok    .led-dot { border-color: color-mix(in srgb, var(--accent) 55%, var(--card-border-inner)); }
 .led-node.is-error .led-dot { border-color: var(--danger); }
 .led-node.is-warn  .led-dot { border-color: var(--warning); }

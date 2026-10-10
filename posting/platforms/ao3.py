@@ -105,7 +105,8 @@ class AO3Poster(PlatformPoster):
         password = creds.get("ao3_password", "")
         target_user = creds.get("ao3_target_user", "") or username
         session_cookie = creds.get("ao3_session_cookie", "")
-        if not session_cookie and (not username or not password):
+        remember_token = creds.get("ao3_remember_token", "")
+        if not (session_cookie or remember_token) and (not username or not password):
             raise RuntimeError("AO3 credentials not configured")
 
         # 2.22.11: route through the cf_proxy module's proxy_kwargs() so
@@ -118,6 +119,7 @@ class AO3Poster(PlatformPoster):
         self._client = AO3Client(
             username, password, target_user,
             session_cookie=session_cookie,
+            remember_token=remember_token,
             **proxy_kwargs(settings, "ao3"),
         )
         if not await self._client.ensure_logged_in():

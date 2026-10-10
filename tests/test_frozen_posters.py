@@ -26,3 +26,11 @@ def test_both_specs_bundle_the_whole_poster_package():
         text = Path(spec).read_text(encoding="utf-8")
         assert "collect_submodules('posting.platforms')" in text, spec
         assert "*_POSTERS," in text, f"{spec}: collected but never passed to hiddenimports"
+
+
+@pytest.mark.repo_only
+def test_both_specs_bundle_the_gif_encoder():
+    """Spec 030: posting/video_convert.py imports imageio_ffmpeg lazily, so both builds must name it
+    (the contrib hook then ships its ffmpeg binary) or a packaged app can't send a GIF to Threads."""
+    for spec in SPECS:
+        assert "'imageio_ffmpeg'" in Path(spec).read_text(encoding="utf-8"), spec

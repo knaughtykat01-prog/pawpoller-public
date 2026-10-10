@@ -15,7 +15,8 @@
 
 2. **Eligibility & access.** Access is granted solely by the Operator. You must be of legal age to view any adult
    content the instance handles in **[your jurisdiction]**. Do not access this instance without the Operator's
-   permission.
+   permission. PawPoller asks each user whether they're 18 or older at setup and locks adult features for anyone
+   under 18; [say whether this instance accepts under-18 users].
 
 3. **Platform rules still apply.** All posting done through this instance is subject to each destination platform's own
    Terms of Service and content rules. You are responsible for complying with them; the Operator and the PawPoller
@@ -27,7 +28,8 @@
 5. **Acceptable use.** Do not use this instance for content that is illegal in **[your jurisdiction]**, for spam, or to
    violate any third party's rights.
 
-6. **No warranty.** The software is provided "as is" under the MIT License, without warranty of any kind. The Operator
+6. **No warranty.** The software is provided "as is" under the GNU Affero General Public License v3 (AGPL-3.0;
+   versions before 4.55.0 under the MIT License), without warranty of any kind. The Operator
    does not guarantee uptime, delivery of posts, or accuracy of analytics.
 
 7. **Limitation of liability.** To the maximum extent permitted by law, neither the Operator nor the PawPoller project

@@ -129,7 +129,6 @@ button.acct-stat { font: inherit; line-height: inherit; }
 .acct-plat-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-left: 3px solid var(--pc, var(--accent));
     border-radius: var(--radius-lg);
     padding: 14px 16px;
     box-shadow: var(--shadow);
@@ -180,7 +179,14 @@ button.acct-stat { font: inherit; line-height: inherit; }
 
 @media (max-width: 720px) {
     .acct-card { gap: 10px; }
-    .acct-actions { margin-left: 0; width: 100%; justify-content: space-between; }
+    /* ACCTROWS (4.58.0): the row was full width but couldn't wrap, so Rename, Credentials and
+       Test ran off the right edge on a phone. Wrap onto a second line instead. */
+    .acct-actions { margin-left: 0; width: 100%; flex-wrap: wrap; justify-content: flex-start; gap: 8px 10px; }
+    .acct-actions .persona-wrap { flex: 1 1 100%; }
+    .acct-actions .persona-wrap select { max-width: 100%; }
+    .persona-row { flex-wrap: wrap; }
+    .persona-row .spacer { display: none; }
+    .persona-row .acct-actions { flex-wrap: wrap; flex-shrink: 1; }
 }
 
 /* DeviantArt posting authorisation, per account (3.9.3).

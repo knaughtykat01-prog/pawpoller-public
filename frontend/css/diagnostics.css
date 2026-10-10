@@ -198,11 +198,11 @@
     padding: 8px 10px;
     border-radius: 4px;
     background: var(--surface-base, var(--bg-secondary));
-    border-left: 3px solid var(--text-muted);
+    border: 1px solid var(--border);
 }
-.diag-summary-card.all-green { border-left-color: #4c4; }
-.diag-summary-card.has-failures { border-left-color: #f55; }
-.diag-summary-card.running { border-left-color: #4ae; }
+.diag-summary-card.all-green { border-color: color-mix(in srgb, #4c4 45%, var(--border)); }
+.diag-summary-card.has-failures { border-color: color-mix(in srgb, #f55 45%, var(--border)); }
+.diag-summary-card.running { border-color: color-mix(in srgb, #4ae 45%, var(--border)); }
 .diag-summary-card.empty { color: var(--text-muted); }
 .diag-summary-row {
     display: flex;

@@ -51,6 +51,7 @@ _SC_SCHEMA_PATH = config.resource_path("database/sc_schema.sql")      # SoundClo
 _NG_SCHEMA_PATH = config.resource_path("database/ng_schema.sql")      # Newgrounds tables (4.23.0)
 _YT_SCHEMA_PATH = config.resource_path("database/yt_schema.sql")      # YouTube tables (4.24.0)
 _PIC_SCHEMA_PATH = config.resource_path("database/pic_schema.sql")    # Picarto tables (4.46.0, spec 013)
+_FB_SCHEMA_PATH = config.resource_path("database/fb_schema.sql")      # Facebook stats (4.59.0, spec 029)
 _FBR_SCHEMA_PATH = config.resource_path("database/fbr_schema.sql")    # Furbooru tables
 _TG_SCHEMA_PATH = config.resource_path("database/tg_schema.sql")      # Telegram tables
 _POSTING_SCHEMA_PATH = config.resource_path("database/posting_schema.sql")  # Posting module tables
@@ -170,6 +171,7 @@ def init_db() -> None:
         yt_schema_sql = _YT_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(yt_schema_sql)
         conn.executescript(_PIC_SCHEMA_PATH.read_text(encoding="utf-8"))
+        conn.executescript(_FB_SCHEMA_PATH.read_text(encoding="utf-8"))
         fbr_schema_sql = _FBR_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(fbr_schema_sql)
         tg_schema_sql = _TG_SCHEMA_PATH.read_text(encoding="utf-8")
@@ -1423,6 +1425,16 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     if "posts" in tables:
         for _col in ("linked_kind TEXT NOT NULL DEFAULT ''",
                      "linked_ref TEXT NOT NULL DEFAULT ''"):
+            try:
+                conn.execute(f"ALTER TABLE posts ADD COLUMN {_col}")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
+
+    # Migration (spec 027): journals are posts with a title, a kind, tags and FA's featured tick.
+    if "posts" in tables:
+        for _col in ("title TEXT NOT NULL DEFAULT ''", "kind TEXT NOT NULL DEFAULT 'post'",
+                     "tags TEXT NOT NULL DEFAULT ''", "featured INTEGER NOT NULL DEFAULT 0"):
             try:
                 conn.execute(f"ALTER TABLE posts ADD COLUMN {_col}")
             except sqlite3.OperationalError as e:

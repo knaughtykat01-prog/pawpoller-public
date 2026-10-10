@@ -16,15 +16,18 @@ import sqlite3
 
 def create_post(conn: sqlite3.Connection, *, body: str, rating: str = "general",
                 image_path: str = "", image_alt: str = "", now: str = "",
-                parent_post_id: int = 0, thread_ordinal: int = 0) -> int:
+                parent_post_id: int = 0, thread_ordinal: int = 0,
+                kind: str = "post", title: str = "", tags: str = "", featured: bool = False) -> int:
     """Insert a draft post and return its post_id. parent_post_id/thread_ordinal
-    make the row a thread PART (gap-wave-3 §4); 0 = a top-level post."""
+    make the row a thread PART (gap-wave-3 §4); 0 = a top-level post. ``kind='journal'``
+    (spec 027) makes it a journal: a title, tags and FA's featured tick."""
     cur = conn.execute(
         "INSERT INTO posts (body, rating, image_path, image_alt, created_at, updated_at,"
-        " parent_post_id, thread_ordinal) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        " parent_post_id, thread_ordinal, kind, title, tags, featured) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (body, rating, image_path, image_alt, now, now,
-         int(parent_post_id or 0), int(thread_ordinal or 0)),
+         int(parent_post_id or 0), int(thread_ordinal or 0),
+         "journal" if kind == "journal" else "post", title, tags, 1 if featured else 0),
     )
     conn.commit()
     return int(cur.lastrowid)
@@ -33,7 +36,8 @@ def create_post(conn: sqlite3.Connection, *, body: str, rating: str = "general",
 def update_post(conn: sqlite3.Connection, post_id: int, *, now: str = "", **fields) -> None:
     """Patch a post's editable columns (body/rating/image_path/image_alt; spec 021's
     linked_kind/linked_ref — the piece its paired comment's placeholders fill from)."""
-    allowed = {"body", "rating", "image_path", "image_alt", "linked_kind", "linked_ref"}
+    allowed = {"body", "rating", "image_path", "image_alt", "linked_kind", "linked_ref",
+               "title", "tags", "featured"}                  # spec 027 journals
     sets, vals = [], []
     for k, v in fields.items():
         if k in allowed:
@@ -141,11 +145,12 @@ def pending_post_schedules(conn: sqlite3.Connection, post_ids=None) -> list[dict
 
 
 def list_posts(conn: sqlite3.Connection, limit: int = 100, *, status: str | None = None,
-               persona_id: int | None = None, q: str | None = None) -> list[dict]:
+               persona_id: int | None = None, q: str | None = None,
+               kind: str | None = None) -> list[dict]:
     """Posts newest-first, each with its publications, media and pending schedule rows.
 
     Filters (spec 018): ``status`` 'scheduled' | 'failed', ``persona_id``, and ``q``, a
-    literal search of the body."""
+    literal search of the body; ``kind`` 'post' | 'journal' (spec 027)."""
     # Thread parts (parent_post_id != 0) never appear as their own feed rows —
     # the parent carries a thread_count instead (gap-wave-3 §4).
     where, args = [_TOP_LEVEL], []
@@ -157,8 +162,11 @@ def list_posts(conn: sqlite3.Connection, limit: int = 100, *, status: str | None
         where.append(_PERSONA_SQL)
         args += [int(persona_id)] * 3
     if q and q.strip():
-        where.append("p.body LIKE ? ESCAPE '\\'")
-        args.append(_like(q.strip()))
+        where.append("(p.body LIKE ? ESCAPE '\\' OR p.title LIKE ? ESCAPE '\\')")
+        args += [_like(q.strip())] * 2
+    if kind in ("post", "journal"):
+        where.append("p.kind = ?")
+        args.append(kind)
     rows = conn.execute(
         "SELECT p.*, (SELECT COUNT(*) FROM posts c WHERE c.parent_post_id = p.post_id)"
         "   AS thread_count "

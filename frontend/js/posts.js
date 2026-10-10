@@ -14,7 +14,7 @@
 window.Posts = {
 
     /* Microblog platforms the module can post to, in the composer's order. */
-    _PLATFORMS: ['bsky', 'tw', 'mast', 'thr', 'tum', 'ig', 'tg'],
+    _PLATFORMS: ['bsky', 'tw', 'mast', 'thr', 'tum', 'ig', 'tg', 'fb'],
     /* Ticked by default — the rest need their posting creds set up first. */
     _DEFAULT_CHECKED: ['bsky', 'mast'],
     /* Post-only broadcast targets that aren't in the pollable window.PLATFORMS
@@ -25,9 +25,9 @@ window.Posts = {
     /* Used until GET /api/posts/rules answers (and if it never does). The server's
      * table in posting/post_publisher.py is the real one. */
     _RULES_FALLBACK: {
-        labels: { bsky: 'Bluesky', tw: 'X', mast: 'Mastodon', thr: 'Threads', tum: 'Tumblr', ig: 'Instagram', tg: 'Telegram' },
-        limits: { bsky: 300, tw: 280, mast: 500, thr: 500, ig: 2200, tg: 4096, tum: null },
-        tg_caption_limit: 1024, max_images: 4, text_only: ['thr', 'tum'], image_required: ['ig'],
+        labels: { bsky: 'Bluesky', tw: 'X', mast: 'Mastodon', thr: 'Threads', tum: 'Tumblr', ig: 'Instagram', tg: 'Telegram', fb: 'Facebook' },
+        limits: { bsky: 300, tw: 280, mast: 500, thr: 500, ig: 2200, tg: 4096, tum: null, fb: 63206 },
+        tg_caption_limit: 1024, max_images: 4, text_only: [], image_required: ['ig'],
         thread_platforms: ['bsky', 'mast'], handle_platforms: ['bsky', 'tw', 'mast', 'thr', 'tum'],
     },
     _rules: null,
@@ -153,7 +153,7 @@ window.Posts = {
         const app = document.getElementById('app');
         if (App._stale(_rt)) return;
         const saved = this._ls(this._FILTER_KEY) || {};
-        this._filters = { status: saved.status || '', persona: saved.persona || '', q: '' };
+        this._filters = { status: saved.status || '', persona: saved.persona || '', q: '', kind: saved.kind || '' };
         this._view = this._ls(this._VIEW_KEY) === 'table' ? 'table' : 'feed';
         app.innerHTML = `
             <div class="pp-page">
@@ -164,6 +164,7 @@ window.Posts = {
                     </div>
                     <div class="pp-head-actions">
                         <a class="btn" href="#/posts/contacts">@ Tag contacts</a>
+                        <a class="btn" href="#/posts/journal">＋ New journal</a>
                         <a class="btn btn-primary pp-new-btn" href="#/posts/new">＋ New post</a>
                     </div>
                 </div>
@@ -202,7 +203,9 @@ window.Posts = {
         document.getElementById('pp-status').addEventListener('click', e => {
             const b = e.target.closest('[data-status]');
             if (!b) return;
-            this._filters.status = b.dataset.status;
+            // Spec 027: "Journals" is a kind, not a status; the other buttons show every kind.
+            this._filters.kind = b.dataset.status === 'journal' ? 'journal' : '';
+            this._filters.status = b.dataset.status === 'journal' ? '' : b.dataset.status;
             this._saveFilters();
             this._loadFeed();
         });
@@ -229,17 +232,18 @@ window.Posts = {
     },
 
     _saveFilters() {
-        this._ls(this._FILTER_KEY, { status: this._filters.status, persona: this._filters.persona });
+        this._ls(this._FILTER_KEY, { status: this._filters.status, persona: this._filters.persona,
+                                     kind: this._filters.kind || '' });
     },
 
     _paintStatus(counts) {
         const el = document.getElementById('pp-status');
         if (!el) return;
-        const cur = this._filters.status;
+        const cur = this._filters.kind === 'journal' ? 'journal' : this._filters.status;
         const b = (key, label, n, cls) => `<button type="button" data-status="${key}" aria-pressed="${cur === key}">`
             + `${label}${n ? ` <b class="${cls}">${n}</b>` : ''}</button>`;
         el.innerHTML = b('', 'All', 0, '') + b('scheduled', 'Scheduled', counts.scheduled, 'pp-n-warn')
-            + b('failed', 'Failed', counts.failed, 'pp-n-bad');
+            + b('failed', 'Failed', counts.failed, 'pp-n-bad') + b('journal', 'Journals', 0, '');
     },
 
     _paintPersonas(personas) {
@@ -264,7 +268,7 @@ window.Posts = {
         let data;
         try {
             data = await API.getPosts({ status: this._filters.status, persona_id: this._filters.persona,
-                                        q: this._filters.q });
+                                        q: this._filters.q, kind: this._filters.kind || '' });
         } catch (err) {
             if (seq !== this._seq) return;
             feed.innerHTML = `<div class="card error">Failed to load posts: ${this.esc(err.message)}</div>`;
@@ -284,7 +288,7 @@ window.Posts = {
         if (!feed) return;
         const posts = this._feed || [];
         if (!posts.length) {
-            const filtered = this._filters.status || this._filters.persona || this._filters.q;
+            const filtered = this._filters.status || this._filters.persona || this._filters.q || this._filters.kind;
             feed.innerHTML = filtered
                 ? `<div class="empty-state"><p class="muted">No posts match.</p>
                      <button type="button" class="btn btn-sm" data-act="clear-filters">Show all posts</button></div>`
@@ -363,7 +367,9 @@ window.Posts = {
                 aria-controls="pp-menu-${id}" title="More">⋯<span class="sr-only"> More for this post</span></button>
             <div class="pp-menu" id="pp-menu-${id}" role="menu" hidden>
                 <a role="menuitem" href="#/posts/${id}">Open post page</a>
-                <button type="button" role="menuitem" data-act="again" data-id="${id}">Post again…</button>
+                ${p.kind === 'journal'
+                    ? `<a role="menuitem" href="#/posts/journal/${id}">Edit journal</a>`
+                    : `<button type="button" role="menuitem" data-act="again" data-id="${id}">Post again…</button>`}
                 <button type="button" role="menuitem" data-act="copy" data-id="${id}">Copy text</button>
                 <button type="button" role="menuitem" data-act="collect" data-id="${id}">Add to a collection</button>
                 <button type="button" role="menuitem" class="pp-menu-del" data-act="delete" data-id="${id}">Delete from PawPoller…</button>
@@ -383,6 +389,7 @@ window.Posts = {
             tags.push(`<span class="pp-tag pp-tag--${this.esc(p.rating)}">${this.esc(p.rating.charAt(0).toUpperCase() + p.rating.slice(1))}</span>`);
         }
         if (p.thread_count) tags.push(`<span class="pp-tag pp-tag--thread">🧵 ${p.thread_count + 1} parts</span>`);
+        if (p.kind === 'journal') tags.push('<span class="pp-tag pp-tag--journal">📓 Journal</span>');
         if (!posted && !scheduled.length && !failed.length) tags.push('<span class="pp-tag">Not posted</span>');
         const time = scheduled.length && !posted ? '' :
             `<time class="muted" datetime="${this.esc(p.created_at)}" title="${this.esc(Utils.time.fmt.dateTime(p.created_at))}">· ${this.esc(this._when(p.created_at))}</time>`;
@@ -403,9 +410,8 @@ window.Posts = {
                 <button type="button" class="btn btn-sm" data-sched="now" data-id="${p.post_id}">Post now</button>
                 <button type="button" class="btn btn-sm btn-ghost" data-sched="cancel" data-id="${p.post_id}">Unschedule</button>
             </div><div class="pp-sched-form" id="pp-sched-form-${p.post_id}" hidden></div>` : '';
-        const text = p.body
-            ? this._bodyHtml(p.body)
-            : '<span class="muted">(image only)</span>';
+        const text = (p.kind === 'journal' && p.title ? `<b class="pp-jtitle">${this.esc(p.title)}</b><br>` : '')
+            + (p.body ? this._bodyHtml(p.body) : '<span class="muted">(image only)</span>');
         return `
             <article class="pp-card${scheduled.length ? ' pp-card--sched' : ''}${failed.length ? ' pp-card--fail' : ''}" data-post="${p.post_id}">
                 ${this._avatar(p.persona)}
@@ -448,7 +454,7 @@ window.Posts = {
                 : this.esc(this._when(p.created_at));
             return `<tr data-post="${p.post_id}">
                 <td>${thumb}</td>
-                <td class="pp-td-txt"><a href="#/posts/${p.post_id}">${this.esc(p.body) || '<span class="muted">(image only)</span>'}</a></td>
+                <td class="pp-td-txt"><a href="#/posts/${p.post_id}">${p.kind === 'journal' && p.title ? `📓 <b>${this.esc(p.title)}</b> ` : ''}${this.esc(p.body) || '<span class="muted">(image only)</span>'}</a></td>
                 <td><span class="pp-icos">${sites}</span></td>
                 ${num(t.favorites, tr.favorites)}${num(t.comments, tr.comments)}${num(t.views, tr.views)}
                 <td class="pp-nowrap">${when}</td>
@@ -521,7 +527,7 @@ window.Posts = {
             const p = this._post(act.dataset.id);
             const a = act.dataset.act;
             if (a === 'clear-filters') {
-                this._filters = { status: '', persona: '', q: '' };
+                this._filters = { status: '', persona: '', q: '', kind: '' };
                 const q = document.getElementById('pp-q');
                 if (q) q.value = '';
                 this._saveFilters();
@@ -1271,6 +1277,7 @@ window.Posts = {
             platforms: this._PLATFORMS,
             mentions: this._collectMentions(),
             image_count: this._pendingFiles.length,
+            rating: document.getElementById('post-rating')?.value || 'general',   // the under-18 lock (4.58.0)
             parts: [...document.querySelectorAll('.post-part-text')].map(t => t.value.trim()).filter(Boolean),
             account_ids: this._accountIds(this._PLATFORMS),
             comments: this._commentsPayload(),
@@ -1799,6 +1806,248 @@ window.Posts = {
             msg.textContent = 'Failed: ' + this._errText(err);
         } finally {
             btn.disabled = false;
+        }
+    },
+
+    /* ══ Journals (spec 027) — #/posts/journal (new) and #/posts/journal/<id> (edit) ══════
+     * A journal is a post with a title, for FurAffinity, Weasyl and DeviantArt. It shares the
+     * Posts feed, scheduling, results and retry; this page is its composer. */
+
+    _JOURNAL_SITES: ['ws', 'da'],          // posted for you; FurAffinity is copied (its journal form needs a CAPTCHA)
+    _JOURNAL_LIMITS: { fa: 60, ws: 100, da: 50 },
+
+    async renderJournal(editId) {
+        const _rt = App._routeToken();
+        const app = document.getElementById('app');
+        if (App._stale(_rt)) return;
+        let post = null;
+        if (editId) {
+            try { post = await API.get(`/api/posts/${encodeURIComponent(editId)}`); } catch (err) { post = null; }
+            if (App._stale(_rt)) return;
+            if (!post || post.kind !== 'journal') {
+                app.innerHTML = '<div class="card error">That journal wasn\'t found.</div>';
+                return;
+            }
+        }
+        const esc = (s) => this.esc(s);
+        const posted = post ? (post.publications || []).filter(p => p.status === 'posted') : [];
+        const rows = this._JOURNAL_SITES.map(code => `
+            <div class="pp-drow post-plat" data-platform="${code}">
+                <span class="pp-drow-logo">${this._logo(code)}</span>
+                <div class="pp-drow-main">
+                    <div class="pp-drow-name">${esc(this._label(code))} <span class="muted">· title up to ${this._JOURNAL_LIMITS[code]} characters</span></div>
+                    <span class="post-acct-slot" data-platform="${code}"></span>
+                    <div class="pp-drow-why" id="pj-why-${code}"></div>
+                </div>
+                <label class="pp-switch">
+                    <input type="checkbox" class="post-plat-check" value="${code}" role="switch" checked>
+                    <span class="pp-switch-ui" aria-hidden="true"></span>
+                    <span class="sr-only">Post to ${esc(this._label(code))}</span>
+                </label>
+            </div>`).join('');
+        const where = posted.length
+            ? `<p class="muted">Posted on ${posted.map(p => esc(this._label(p.platform))).join(', ')}. Saving updates it there.</p>`
+            : '';
+        app.innerHTML = `
+            <div class="pp-page pj-page">
+                <div class="page-header pp-head">
+                    <div>
+                        <h1>${post ? 'Edit journal' : 'New journal'}</h1>
+                        <p class="muted">A titled journal written once: posted to Weasyl and DeviantArt, and ready to paste on FurAffinity.</p>
+                    </div>
+                    <div class="pp-head-actions"><a class="btn" href="#/posts">← Posts</a></div>
+                </div>
+                <div class="card pj-form">
+                    ${post ? where : '<div class="persona-picker" data-persona-picker hidden></div>'}
+                    <label class="pj-field">Title
+                        <input type="text" id="pj-title" class="search-input" maxlength="200" value="${esc(post ? post.title : '')}">
+                    </label>
+                    <div class="muted pj-count" id="pj-count" aria-live="polite"></div>
+                    <label class="pj-field">Text
+                        <textarea id="pj-body" class="pp-ta" rows="12">${esc(post ? post.body : '')}</textarea>
+                    </label>
+                    <p class="muted pj-hint">**bold**, *italic*, [link text](https://…), a line starting "- " for a list, "# " for a heading. Each site gets its own formatting.</p>
+                    <label class="pj-field">Tags <span class="muted">(Weasyl and DeviantArt; FurAffinity journals have none)</span>
+                        <input type="text" id="pj-tags" class="search-input" value="${esc(post ? post.tags : '')}" placeholder="commissions news">
+                    </label>
+                    <label class="pj-field">Rating
+                        <select id="pj-rating">${['general', 'mature', 'adult'].map(r =>
+                            `<option value="${r}"${(post ? post.rating : 'general') === r ? ' selected' : ''}>${r[0].toUpperCase() + r.slice(1)}</option>`).join('')}</select>
+                    </label>
+                    <div class="pj-copy">
+                        <button type="button" class="btn" id="pj-copy-fa">${this._hasFaWindow() ? '🦊 Open FurAffinity, filled in' : '📋 Copy for FurAffinity'}</button>
+                        <span class="muted">${this._hasFaWindow()
+                            ? 'FurAffinity asks for a CAPTCHA on journals, so PawPoller can\'t post them. This opens FA\'s journal page with everything filled in: tick the CAPTCHA and press Post.'
+                            : 'FurAffinity asks for a CAPTCHA on journals, so PawPoller can\'t post them. This copies the FA version and opens FA\'s journal page: paste it there. (In the desktop app it fills the page in for you.)'}</span>
+                    </div>
+                    ${post ? '' : `<div class="pj-sites" id="post-platforms">${rows}</div>`}
+                    <div class="pj-actions">
+                        ${post ? `<button type="button" class="btn btn-primary" id="pj-save">Save and update the sites</button>
+                                  <button type="button" class="btn btn-ghost" id="pj-remove">Remove from sites…</button>`
+                               : `<button type="button" class="btn btn-primary" id="pj-post">Post now</button>
+                                  <input type="datetime-local" id="pj-when" aria-label="Schedule for">
+                                  <button type="button" class="btn" id="pj-schedule">Schedule</button>`}
+                    </div>
+                    <div id="pj-msg" class="pj-msg" aria-live="polite"></div>
+                </div>
+            </div>`;
+        const count = () => {
+            const n = document.getElementById('pj-title').value.length;
+            const over = Object.keys(this._JOURNAL_LIMITS).filter(c => n > this._JOURNAL_LIMITS[c]).map(c => this._label(c));
+            document.getElementById('pj-count').textContent = over.length ? `${n} characters — too long for ${over.join(', ')}` : `${n} characters`;
+        };
+        document.getElementById('pj-title').addEventListener('input', count);
+        count();
+        this._journalPostId = post ? post.post_id : null;
+        document.getElementById('pj-copy-fa').addEventListener('click', () => this._copyForFa());
+        if (post) {
+            document.getElementById('pj-save').addEventListener('click', () => this._saveJournal(post));
+            document.getElementById('pj-remove').addEventListener('click', () => this._removeJournal(post, posted));
+            return;
+        }
+        await Components.personaPicker({
+            host: document.querySelector('[data-persona-picker]') || document.createElement('div'),
+            platforms: this._JOURNAL_SITES,
+            slot: code => document.querySelector(`.post-acct-slot[data-platform="${code}"]`),
+            row: code => document.querySelector(`.post-plat[data-platform="${code}"]`),
+            selectClass: 'post-acct-select',
+            storageKey: 'pp-persona-journals',
+            onChange: () => {},
+        });
+        document.getElementById('pj-post').addEventListener('click', () => this._submitJournal(null));
+        document.getElementById('pj-schedule').addEventListener('click', () => {
+            const v = document.getElementById('pj-when').value;
+            if (!v) { document.getElementById('pj-msg').textContent = 'Pick a date and time first.'; return; }
+            this._submitJournal(v);
+        });
+    },
+
+    _journalFields() {
+        return {
+            title: document.getElementById('pj-title').value.trim(),
+            body: document.getElementById('pj-body').value.trim(),
+            tags: document.getElementById('pj-tags').value.trim(),
+            rating: document.getElementById('pj-rating').value,
+        };
+    },
+
+    async _submitJournal(scheduledLocal) {
+        const msg = document.getElementById('pj-msg');
+        const f = this._journalFields();
+        const platforms = this._selectedPlatforms();
+        if (!f.title || !f.body) { msg.textContent = 'A journal needs a title and some text.'; return; }
+        if (!platforms.length) { msg.textContent = 'Switch on at least one site.'; return; }
+        let scheduledIso = null;
+        if (scheduledLocal) {
+            const when = Utils.time.toUtc(scheduledLocal);
+            if (!when || when.getTime() < Date.now()) { msg.textContent = 'Pick a time in the future.'; return; }
+            scheduledIso = when.toISOString();
+        }
+        const account_ids = this._accountIds(platforms);
+        let sites = {};
+        try {
+            sites = (await API.previewPost({ kind: 'journal', title: f.title, platforms, account_ids })).sites || {};
+        } catch (err) { sites = {}; }
+        this._JOURNAL_SITES.forEach(c => {
+            const el = document.getElementById(`pj-why-${c}`);
+            if (el) el.textContent = ((sites[c] || {}).warnings || []).map(w => w.text).join(' · ');
+        });
+        const blocked = platforms.map(c => {
+            const b = ((sites[c] || {}).warnings || []).find(w => w.level === 'block');
+            return b ? `${this._label(c)}: ${b.text}` : '';
+        }).filter(Boolean);
+        if (blocked.length) { msg.textContent = `Fix these or switch the site off first. ${blocked.join(' · ')}`; return; }
+        if (!scheduledIso && !(await Components.confirmPublish({
+            title: f.title, subtitle: 'Journal', noun: 'sites',
+            targets: platforms.map(code => ({ code, label: this._label(code), emoji: this._plat(code).emoji })),
+        }))) { msg.textContent = 'Not posted.'; return; }
+        const fd = new FormData();
+        fd.append('kind', 'journal');
+        fd.append('title', f.title);
+        fd.append('body', f.body);
+        fd.append('tags', f.tags);
+        fd.append('rating', f.rating);
+        try {
+            if (this._journalPostId) {         // saved earlier by the FA button: bring it up to date first
+                await API.patch(`/api/posts/${this._journalPostId}`, { title: f.title, body: f.body, tags: f.tags, rating: f.rating });
+            }
+            const post_id = this._journalPostId || (await API.createPost(fd)).post_id;
+            this._journalPostId = post_id;      // the FA window (desktop) records onto the same journal
+            if (scheduledIso) {
+                await API.schedulePost(post_id, { platforms, account_ids, scheduled_at: scheduledIso });
+                this._toast('success', `Scheduled for ${Utils.time.fmt.dateTime(scheduledIso)}`);
+                window.location.hash = '#/posts';
+                return;
+            }
+            msg.textContent = 'Posting…';
+            const res = await this._send(post_id, { platforms, account_ids }, msg);
+            if (!res) return;
+            Components.showPublishResults(msg, res.results);
+            if (!res.failures) this._toast('success', 'Journal posted');
+        } catch (err) {
+            msg.textContent = 'Failed: ' + this._errText(err);
+        }
+    },
+
+    _hasFaWindow() {
+        return !!(window.pywebview && window.pywebview.api && window.pywebview.api.fa_journal);
+    },
+
+    async _copyForFa() {
+        const msg = document.getElementById('pj-msg');
+        const f = this._journalFields();
+        if (!f.body) { msg.textContent = 'Write the journal first.'; return; }
+        try {
+            const r = await API.post('/api/posts/journal-copy', { site: 'fa', title: f.title, body: f.body, rating: f.rating });
+            if (this._hasFaWindow()) {
+                // Spec 027: the desktop fills FA's page in; the person does the CAPTCHA. A saved journal row lets
+                // PawPoller record the FA link when FA lands on it.
+                if (!this._journalPostId && f.title) {
+                    const fd = new FormData();
+                    fd.append('kind', 'journal'); fd.append('title', f.title); fd.append('body', f.body);
+                    fd.append('tags', f.tags); fd.append('rating', f.rating);
+                    this._journalPostId = (await API.createPost(fd)).post_id;
+                }
+                const out = await window.pywebview.api.fa_journal(this._journalPostId, r.title, r.text, r.rating);
+                msg.textContent = out && out.ok
+                    ? 'FurAffinity is open with your journal filled in. Tick the CAPTCHA and press Post there; PawPoller notes the link when it\'s up.'
+                    : 'Couldn\'t open it: ' + ((out && out.message) || 'unknown reason');
+                return;
+            }
+            await navigator.clipboard.writeText(r.text);
+            window.open(r.open_url, '_blank', 'noopener');
+            msg.textContent = `Copied the FurAffinity text. On FA: paste it into the message box, use the title "${r.title}"`
+                + `${r.title_cut ? ' (cut to FA\'s 60 characters)' : ''}, pick the rating and pass the CAPTCHA.`;
+        } catch (err) {
+            msg.textContent = 'Copy failed: ' + this._errText(err);
+        }
+    },
+
+    async _saveJournal(post) {
+        const msg = document.getElementById('pj-msg');
+        const f = this._journalFields();
+        if (!f.title || !f.body) { msg.textContent = 'A journal needs a title and some text.'; return; }
+        msg.textContent = 'Saving and updating the sites…';
+        try {
+            const res = await API.patch(`/api/posts/${post.post_id}`, f);
+            if ((res.results || []).length) Components.showPublishResults(msg, res.results);
+            else msg.textContent = 'Saved. It isn\'t posted anywhere yet.';
+        } catch (err) {
+            msg.textContent = 'Failed: ' + this._errText(err);
+        }
+    },
+
+    async _removeJournal(post, posted) {
+        const msg = document.getElementById('pj-msg');
+        if (!posted.length) { msg.textContent = 'It isn\'t posted anywhere.'; return; }
+        const names = posted.map(p => this._label(p.platform)).join(', ');
+        if (!window.confirm(`Remove "${post.title}" from ${names}? PawPoller removes it from Weasyl; on FurAffinity and DeviantArt it tells you to remove it there.`)) return;
+        try {
+            const res = await API.post(`/api/posts/${post.post_id}/remove-from-sites`, { confirm: true });
+            const lines = (res.results || []).map(r => `${this._label(r.platform)}: ${r.success ? 'removed' : r.error}`);
+            msg.textContent = lines.join(' · ');
+        } catch (err) {
+            msg.textContent = 'Failed: ' + this._errText(err);
         }
     },
 

@@ -154,6 +154,11 @@
                 const when = esc(String(e.at || '').replace('T', ' ').replace('Z', ' UTC'));
                 return `<li>${badge}${esc(e.title)}<span style="color:var(--text-muted)"> · ${when}${note}</span></li>`;
             }).join('');
+            // When each answer was given (LEGALPAGES, 4.58.0): the privacy policy says we record it.
+            const agreed = (rec) => rec && rec.at
+                ? `<p style="color:var(--text-muted);font-size:12px">You answered ${rec.value ? 'yes' : 'no'} on ${esc(String(rec.at).replace('T', ' ').replace('+00:00', ' UTC'))}. <a href="https://pawpoller.com/privacy" target="_blank" rel="noopener">Privacy policy</a></p>`
+                : '<p style="color:var(--text-muted);font-size:12px"><a href="https://pawpoller.com/privacy" target="_blank" rel="noopener">Privacy policy</a></p>';
+            const recs = st.records || {};
             return `
                 <div class="tech-panel" id="tech-panel">
                     <h3>Technical error reports</h3>
@@ -162,7 +167,8 @@
                         <label class="toggle-switch"><input type="checkbox" id="tech-consent" ${on ? 'checked' : ''}><span class="toggle-slider"></span></label>
                         <span>Send technical problems to the tech centre</span>
                     </div>
-                    <p>Sent: the error, a scrubbed traceback, the last log lines, the app version, your OS and a random install id. Never: account names, cookies, tokens, artwork or story text. Problems you can fix yourself are never sent.</p>
+                    <p>Sent: the error, a scrubbed traceback, the last log lines, the app version, your OS and a random install id. Never: account names, cookies, tokens, artwork or story text. Problems you can fix yourself are never sent. Kept for 90 days.</p>
+                    ${agreed(recs.tech_reports)}
                     <div class="tech-row">
                         <span>Install id: <span class="tech-id">${esc(st.install_id)}</span></span>
                         <span style="color:var(--text-muted)">· quote this if you write in about a problem</span>
@@ -190,7 +196,8 @@
                     <p>${st.usage === true
                         ? `On — this copy says "still running" every few minutes${st.last_checkin ? ` (last: ${esc(String(st.last_checkin).replace('T', ' ').replace('Z', ' UTC'))})` : ''}.`
                         : st.usage === false ? 'Off — nothing is sent.' : 'Not decided yet.'}
-                       Anonymous: the version, operating system, how it was installed, which sites are connected (not the accounts), a size range for the library and a random id for this copy; the tech centre also notes the country the connection comes from. Never names, handles, your address or anything you made.</p>
+                       Anonymous: the version, operating system, how it was installed, which sites are connected (not the accounts), a size range for the library and a random id for this copy; the tech centre also notes the country the connection comes from. Never names, handles, your address or anything you made. Kept for 12 months, then only totals.</p>
+                    ${agreed(recs.tech_usage)}
                     <details id="tech-usage-preview"><summary>Exactly what is sent</summary><pre class="tech-pre">Loading…</pre></details>
                 </div>`;
         },

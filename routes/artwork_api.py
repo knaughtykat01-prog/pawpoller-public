@@ -493,6 +493,16 @@ def _store_comments(name: str, platforms, body: dict) -> None:
             "artwork", name, platforms, body["comments"] if "comments" in body else None)
     except ValueError as e:
         raise HTTPException(400, detail=str(e))
+    if body.get("journal"):                   # spec 027: the dialog's journal box, posted after the piece
+        from posting import artwork_reader, journals
+        try:
+            rating = artwork_reader.load_artwork(name).rating
+        except Exception:
+            rating = "general"
+        try:
+            journals.store_piece_journal("artwork", name, body["journal"], rating, body.get("account_ids"))
+        except ValueError as e:
+            raise HTTPException(400, detail=str(e))
 
 
 @artwork_router.post("/publish")

@@ -12,6 +12,7 @@ and X are recognised but return a clear "not wired yet" error until Phase 3.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import unicodedata
 from datetime import datetime, timezone
@@ -25,11 +26,14 @@ from database import posts_queries
 logger = logging.getLogger(__name__)
 
 # Platforms this module can post to.
-SUPPORTED = ("bsky", "mast", "thr", "tw", "tum", "ig", "tg")
+SUPPORTED = ("bsky", "mast", "thr", "tw", "tum", "ig", "tg", "fb")
 
-# These still post text only (image cross-posting needs per-platform work:
-# Threads wants a public image_url, Tumblr NPF). X gained image posting in 2.58.0.
-_TEXT_ONLY = ("thr", "tum")
+# Sites that post text only. Empty since 4.61.0: X gained images in 2.58.0, Tumblr in 4.60.0 (spec 024),
+# Threads in 4.61.0 (spec 030, through the Instagram image-host ladder).
+_TEXT_ONLY: tuple = ()
+
+# Sites whose rules forbid anything above general (Meta's Community Standards): refused before sending.
+_GENERAL_ONLY = ("fb", "thr", "ig")
 
 # The inverse of _TEXT_ONLY: platforms that REQUIRE an image — Instagram has no
 # text-only feed post, so a caption alone can't be published.
@@ -39,10 +43,11 @@ _IMAGE_REQUIRED = ("ig",)
 # The ONE table of what each site takes; the composer is sent it (GET /api/posts/rules)
 # and asks `preview` how a draft will come out, so the browser holds no second copy.
 LABELS = {"bsky": "Bluesky", "tw": "X", "mast": "Mastodon", "thr": "Threads",
-          "tum": "Tumblr", "ig": "Instagram", "tg": "Telegram"}
+          "tum": "Tumblr", "ig": "Instagram", "tg": "Telegram",
+          "fb": "Facebook"}
 # Characters per post. Tumblr has no practical limit on a text post.
 TEXT_LIMITS = {"bsky": 300, "tw": 280, "mast": 500, "thr": 500, "ig": 2200, "tg": 4096,
-               "tum": None}
+               "tum": None, "fb": 63206}       # Facebook's documented post-text limit
 TG_CAPTION_LIMIT = 1024          # a Telegram post with a picture: the text is its caption
 MAX_IMAGES = 4                   # X / Bluesky / Mastodon all cap a post at 4 images
 THREAD_PLATFORMS = ("bsky", "mast")             # parts 2+ chain as replies; the rest get part 1
@@ -53,10 +58,11 @@ _REQUIRED_CREDS = {
     "mast": ("mast_instance_url", "mast_access_token"),
     "thr": ("thr_access_token",),
     "tw": ("tw_auth_token", "tw_ct0"),
-    "tum": ("tum_api_key", "tum_blog", "tum_consumer_secret", "tum_oauth_token",
-            "tum_oauth_token_secret"),
+    # The blog + app key; the sign-in (Connect, or the pasted OAuth 1 set) is checked in the branch.
+    "tum": ("tum_api_key", "tum_blog"),
     "ig": ("ig_access_token",),
     "tg": ("tg_bot_token", "tg_channel"),
+    "fb": ("fb_page_token", "fb_page_id"),
 }
 
 
@@ -97,8 +103,12 @@ def text_length(text: str) -> int:
 
 def rules() -> dict:
     from posting import paired_comment
+    from posting import journals as journals_mod
     return {"labels": LABELS, "limits": TEXT_LIMITS, "tg_caption_limit": TG_CAPTION_LIMIT,
-            "max_images": MAX_IMAGES, "text_only": list(_TEXT_ONLY),
+            "max_images": MAX_IMAGES, "text_only": list(_TEXT_ONLY), "general_only": list(_GENERAL_ONLY),
+            # Spec 027: journals' sites and title limits.
+            "journal_sites": list(journals_mod.JOURNAL_SITES), "journal_title_limits": dict(journals_mod.TITLE_LIMITS),
+            "journal_templates": journals_mod.templates(),
             "image_required": list(_IMAGE_REQUIRED), "thread_platforms": list(THREAD_PLATFORMS),
             "handle_platforms": list(HANDLE_PLATFORMS),
             # Spec 021: where a paired comment can go, and what a template may say.
@@ -159,7 +169,7 @@ def _mentions_for(conn, bindings) -> list[dict]:
 
 def preview(body: str, platforms: list[str], bindings=None, image_count: int = 0,
             parts=None, account_ids: dict | None = None, settings: dict | None = None,
-            comments: dict | None = None, linked: dict | None = None) -> dict:
+            comments: dict | None = None, linked: dict | None = None, rating: str = "") -> dict:
     """How a draft will come out on each chosen site, and every reason a site would refuse
     or change it — before anything is sent (spec 018, FR-004 / SC-002).
 
@@ -189,6 +199,12 @@ def preview(body: str, platforms: list[str], bindings=None, image_count: int = 0
 
         acct_id, creds = _resolve_creds(plat, account_ids.get(plat), settings)
         connected = all(creds.get(k) for k in _REQUIRED_CREDS.get(plat, ()))
+        import age_gate
+        age_block = age_gate.refusal(plat, rating or "general", site_name=label, settings=settings)
+        if age_block:
+            w("block", age_block)
+        elif plat in _GENERAL_ONLY and (rating or "general").lower() in _SENSITIVE_RATINGS:
+            w("block", f"{label} doesn't allow mature or adult posts")
         if not connected:
             w("block", f"{label} isn't connected")
         elif acct_id in never:
@@ -321,6 +337,15 @@ def _resolve_creds(platform: str, account_id: int | None,
     return (account_id or 0, creds)
 
 
+_URL_RE = re.compile(r"https?://[^\s<>\"']+")
+
+
+def _first_url(text: str) -> str:
+    """The first web address in a post's text, without trailing punctuation ("see x.com.")."""
+    m = _URL_RE.search(text or "")
+    return m.group(0).rstrip(".,;:!?)]}") if m else ""
+
+
 async def _publish_one(post: dict, platform: str, account_id: int | None,
                        settings: dict | None) -> dict[str, Any]:
     """Post one composed post to one platform. Returns a result dict; never raises."""
@@ -330,6 +355,13 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
     }
     if platform not in SUPPORTED:
         result["error"] = f"posting to {platform} isn't wired yet"
+        return result
+    # The under-18 lock (LEGALPAGES, 4.58.0), before any credential or network work.
+    import age_gate
+    age_block = age_gate.refusal(platform, post.get("rating") or "general",
+                                 site_name=LABELS.get(platform, platform), settings=settings)
+    if age_block:
+        result["error"] = age_block
         return result
 
     body = post.get("body", "")
@@ -409,25 +441,54 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
                 result.update(success=True, external_id=r.get("id", "") or r.get("uri", ""),
                               external_url=r.get("url", ""))
             else:
-                result["error"] = ("Mastodon rejected the post — the access token likely "
-                                    "needs a write scope (check the app / logs)")
+                # What Mastodon said (MASTGIF422): a 422 for a GIF still processing
+                # used to be reported as a missing write scope.
+                result["error"] = client.last_error or (
+                    "Mastodon rejected the post and gave no reason (check logs)")
 
         elif platform == "thr":
-            from clients.thr.client import ThrClient
+            from clients.thr.client import ThrClient, ThrError
             token = creds.get("thr_access_token", "")
             if not token:
                 result["error"] = "Threads account isn't connected"
                 return result
+            if rating in _SENSITIVE_RATINGS:
+                result["error"] = "Threads doesn't allow mature or adult posts, so this one wasn't sent there"
+                return result
             client = ThrClient(access_token=token, user_id=creds.get("thr_user_id", ""))
+            hosted, temps = None, []
             try:
-                r = await client.create_thread(text)
+                if image_paths:
+                    # Spec 030: pictures (a GIF as a looping video) via the Instagram host ladder.
+                    from posting import ig_host
+                    from posting.platforms.threads import prepare_media
+                    kinds = []
+                    for path in image_paths:
+                        out, kind, made = await prepare_media(path, "image")
+                        temps += made
+                        kinds.append((out, kind))
+                    try:
+                        hosted = await ig_host.host_images([p for p, _ in kinds], settings or config.get_settings())
+                    except ig_host.NoPublicHost as e:
+                        result["error"] = str(e)
+                        return result
+                    items = [{"kind": k, "url": u, "alt": a}
+                             for (_, k), u, a in zip(kinds, hosted.urls, image_alts)]
+                else:
+                    items = []
+                r = await client.create_media_post(text, items)
+                result.update(success=True, external_id=r["id"], external_url=r.get("url", ""))
+            except (ThrError, RuntimeError) as e:
+                result["error"] = str(e)
             finally:
                 await client.close()
-            if r and r.get("id"):
-                result.update(success=True, external_id=r["id"], external_url=r.get("url", ""))
-            else:
-                result["error"] = ("Threads rejected the post — the token likely needs the "
-                                    "threads_content_publish permission (check the app / logs)")
+                if hosted:
+                    await hosted.close()
+                for t in temps:
+                    try:
+                        os.remove(t)
+                    except OSError:
+                        pass
 
         elif platform == "tw":
             from clients.tw.client import TWClient
@@ -467,31 +528,55 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
                     "X rejected the post and gave no reason (check logs)")
 
         elif platform == "tum":
-            from clients.tum.client import TumClient
-            key = creds.get("tum_api_key", "")
-            blog = creds.get("tum_blog", "")
-            cs = creds.get("tum_consumer_secret", "")
-            ot = creds.get("tum_oauth_token", "")
-            ots = creds.get("tum_oauth_token_secret", "")
-            if not (key and blog and cs and ot and ots):
-                result["error"] = ("Tumblr posting needs OAuth1 tokens — add the consumer secret, "
-                                    "OAuth token and token secret in the Tumblr settings")
+            # 4.60.0 (spec 024): the same NPF path the artwork poster uses — images included, a
+            # sensitive post goes up as a labelled draft and is published only if the label stuck.
+            from clients.tum.writer import TumError, labelled
+            from posting.platforms.tumblr import DRAFT_SENTENCE, TumblrPoster, _media_block, fit_tags, npf_text_blocks
+            if rating == "adult":
+                result["error"] = "Tumblr doesn't take adult work"
                 return result
-            client = TumClient(api_key=key, blog=blog, consumer_secret=cs,
-                               oauth_token=ot, oauth_token_secret=ots)
+            poster = TumblrPoster()
+            poster.account_id = account_id
+            content, files = [], {}
+            for i, (path, alt) in enumerate(zip(image_paths, image_alts)):
+                ext = os.path.splitext(path)[1].lstrip(".").lower()
+                content.append(_media_block("image", ext, f"f{i}", alt or ""))
+                files[f"f{i}"] = path
+            content += npf_text_blocks("", text)
+            sensitive = rating in _SENSITIVE_RATINGS
             try:
-                r = await client.create_text_post(text)
-            finally:
-                await client.close()
-            if r and r.get("id"):
-                result.update(success=True, external_id=r["id"], external_url=r.get("url", ""))
-            else:
-                result["error"] = "Tumblr rejected the post (check the OAuth1 tokens / logs)"
+                async with await poster._writer() as tw:
+                    if not tw.can_post:
+                        result["error"] = ("Tumblr isn't connected for posting — press Connect "
+                                           "(Settings → Accounts → Tumblr)")
+                        return result
+                    r = await tw.create_post(content, tags=fit_tags(post.get("tags") or []), files=files,
+                                             state="draft" if sensitive else "published",
+                                             label=sensitive, categories=["sexual_themes"])
+                    result.update(success=bool(r["id"]), external_id=r["id"], external_url=r["url"])
+                    if not r["id"]:
+                        result["error"] = "Tumblr didn't return a post id"
+                    elif sensitive:
+                        try:
+                            ok = labelled(await tw.get_post(r["id"]))
+                        except Exception:
+                            ok = False
+                        if ok:
+                            cur = await tw.get_post(r["id"])
+                            await tw.edit_post(r["id"], cur.get("content") or content, state="published",
+                                               label=True, categories=["sexual_themes"], tags=cur.get("tags"))
+                        else:
+                            result["attention"] = DRAFT_SENTENCE
+            except TumError as e:
+                result["error"] = str(e)
 
         elif platform == "ig":
             token = creds.get("ig_access_token", "")
             if not token:
                 result["error"] = "Instagram account isn't connected"
+                return result
+            if rating in _SENSITIVE_RATINGS:
+                result["error"] = "Instagram doesn't allow mature or adult posts, so this one wasn't sent there"
                 return result
             # Instagram fetches the image from a public URL (it never accepts
             # bytes). posting/ig_host.py climbs the ladder — this instance's public
@@ -546,6 +631,50 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
             else:
                 result["error"] = ("Telegram rejected the post — check the bot is an admin of the "
                                    "channel and the token/channel are correct (see logs)")
+        elif platform == "fb":
+            # Facebook Page (spec 022): the file itself goes up — no public host needed.
+            token, page = creds.get("fb_page_token", ""), creds.get("fb_page_id", "")
+            if not (token and page):
+                result["error"] = "Facebook isn't connected (Settings → Platforms → Facebook)"
+                return result
+            if rating in _SENSITIVE_RATINGS:
+                result["error"] = "Facebook doesn't take mature or adult posts, so this one wasn't sent there"
+                return result
+            from clients.fb.client import FbClient, FbError
+            from posting.platforms.facebook import fit_photo
+            temps: list[str] = []
+            try:
+                async with FbClient(page_token=token, page_id=page) as client:
+                    if len(image_paths) == 1 and image_paths[0].lower().endswith(".gif"):
+                        # A lone GIF goes up as a video, so it keeps moving (as a photo Facebook
+                        # keeps one still frame — live proof 2026-10-09, T021).
+                        # ponytail: a GIF among several images still lands as a still; split the
+                        # post if that ever matters.
+                        r = await client.post_video(image_paths[0], "", text)
+                    elif image_paths:
+                        send = []
+                        for pth in image_paths:
+                            out, tmp = fit_photo(pth)
+                            send.append(out)
+                            if tmp:
+                                temps.append(tmp)
+                        r = await client.post_photos(send, text)
+                    else:
+                        # A URL in the message alone gets no preview card from the API (live proof
+                        # 2026-10-09, T013): hand Facebook the first link so it builds one.
+                        r = await client.post_text(text, link=_first_url(text))
+                result.update(success=bool(r.get("id")), external_id=r.get("id", ""),
+                              external_url=r.get("url", ""))
+                if not r.get("id"):
+                    result["error"] = "Facebook didn't return a post id"
+            except FbError as e:
+                result["error"] = str(e)
+            finally:
+                for t in temps:
+                    try:
+                        os.remove(t)
+                    except OSError:
+                        pass
     except Exception as e:
         logger.error("Post publish to %s failed: %s", platform, e, exc_info=True)
         result["error"] = str(e)
@@ -606,7 +735,8 @@ async def _publish_thread_parts(parts: list[dict], platform: str,
                        "success": bool(r and r.get("id")), "part": part["post_id"],
                        "external_id": str((r or {}).get("id", "")),
                        "external_url": (r or {}).get("url", ""),
-                       "error": "" if r else "Mastodon rejected a thread part"}
+                       "error": "" if r else (client.last_error
+                                              or "Mastodon rejected a thread part")}
                 out.append(res)
                 if not res["success"]:
                     break
@@ -635,11 +765,14 @@ async def publish_post(post_id: int, platforms: list[str],
         raise ValueError(f"post {post_id} not found")
 
     from posting import activity   # spec 017: no-ops unless the caller bound a job
+    from posting import journals
+    is_journal = post.get("kind") == "journal"          # spec 027: FA / Weasyl / DeviantArt journals
+    sites_ok = (journals.JOURNAL_SITES + journals.COPY_SITES) if is_journal else SUPPORTED   # FA: says why (CAPTCHA)
     results: list[dict[str, Any]] = []
     for platform in platforms:
         if activity.cancelled():       # "Cancel the rest": stop before the next site
             break
-        if platform not in SUPPORTED:
+        if platform not in sites_ok:
             # 4.52.0 release review: an unknown name is refused WITHOUT a publication row,
             # so a stray string never becomes a stored platform the feed renders.
             results.append({"platform": platform, "account_id": 0, "success": False,
@@ -663,19 +796,36 @@ async def publish_post(post_id: int, platforms: list[str],
                                 "error": err, "refused": True})
                 continue
         activity.step(platform, "Uploading")
-        res = await _publish_one(post, platform, account_ids.get(platform), settings)
+        if is_journal:
+            res = await journals.publish_journal(post, platform, account_ids.get(platform), settings)
+        else:
+            res = await _publish_one(post, platform, account_ids.get(platform), settings)
         results.append(res)
         conn = get_connection()
         try:
             posts_queries.upsert_post_publication(
                 conn, post_id=post_id, platform=platform, account_id=res["account_id"],
-                status="posted" if res["success"] else "failed",
+                # 'draft' (4.60.0): on the site, waiting for the owner (Tumblr's Mature label)
+                status=("draft" if res.get("attention") else "posted") if res["success"] else "failed",
                 external_id=res.get("external_id", ""),
                 external_url=res.get("external_url", ""),
-                error=res.get("error", ""), now=_now(),
+                error=res.get("attention") or res.get("error", ""), now=_now(),
             )
+            if res.get("attention"):          # the bell lists it (4.60.0): it went out while nobody may be watching
+                from database import posting_queries
+                posting_queries.log_posting_action(
+                    conn, platform, " ".join((post.get("body") or "").split())[:60] or "Post", 0, action="post",
+                    status="needs_attention", account_id=res["account_id"], content_type="post",
+                    external_id=res.get("external_id", ""), external_url=res.get("external_url", ""),
+                    error_message=res["attention"])
         finally:
             conn.close()
+
+    if is_journal:                      # no thread parts, paired comments or Discord line for a journal
+        for res in results:
+            activity.line_done(res["platform"], bool(res.get("success")), url=res.get("external_url") or "",
+                               error=res.get("error") or "" if not res.get("success") else "")
+        return results
 
     # Thread parts (gap-wave-3 §4): chain replies on bsky/mast after the parent
     # posted; other platforms get the parent only + a note. Each part records

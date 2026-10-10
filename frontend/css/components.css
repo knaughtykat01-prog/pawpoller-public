@@ -40,7 +40,6 @@ body {
     backdrop-filter: blur(var(--blur));
     -webkit-backdrop-filter: blur(var(--blur));
     border: 1px solid var(--card-border-inner);
-    border-left: 3px solid var(--accent);
     border-radius: var(--radius);
     padding: 20px;
     box-shadow: var(--shadow-glass);
@@ -58,7 +57,6 @@ a.stat-card:hover {
 
 [data-theme="light"] .stat-card {
     border-color: var(--card-border-inner);
-    border-left-color: var(--accent);
 }
 
 [data-theme="light"] .stat-card:hover {
@@ -754,10 +752,9 @@ a.stat-card:hover {
 
 /* Settings → Privacy (4.44.0, spec 011): one card per sensitivity class. */
 .privacy-intro, .privacy-meaning { color: var(--text-muted); margin-bottom: 12px; }
-.privacy-class { border-left: 3px solid var(--border); }
-.privacy-restricted { border-left-color: var(--danger); }
-.privacy-confidential { border-left-color: var(--warning); }
-.privacy-internal { border-left-color: var(--accent); }
+.privacy-restricted { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.privacy-confidential { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); }
+.privacy-internal { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .privacy-group { padding: 10px 0; border-top: 1px solid var(--card-border-inner); }
 .privacy-group p { margin: 4px 0; }
 .privacy-group-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -766,7 +763,7 @@ a.stat-card:hover {
 .privacy-details ul { margin: 6px 0 0 18px; font-size: 12px; }
 .privacy-handling dl { display: grid; grid-template-columns: minmax(120px, max-content) 1fr; gap: 4px 12px; margin-top: 8px; }
 .privacy-handling dt { color: var(--text-muted); }
-.privacy-unknown { border-left: 3px solid var(--warning); }
+.privacy-unknown { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); }
 
 .settings-row {
     display: flex;
@@ -2140,7 +2137,6 @@ a.stat-card:hover {
     backdrop-filter: blur(var(--blur));
     -webkit-backdrop-filter: blur(var(--blur));
     border: 1px solid var(--card-border-inner);
-    border-left: 3px solid var(--accent);
     border-radius: var(--radius);
     padding: 16px 20px;
     box-shadow: var(--shadow-glass);
@@ -2148,7 +2144,6 @@ a.stat-card:hover {
 
 [data-theme="light"] .highlight-card {
     border-color: var(--card-border-inner);
-    border-left-color: var(--accent);
 }
 
 .highlight-card .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
@@ -2260,6 +2255,9 @@ a.stat-card:hover {
 .pub-result.is-ok .pub-result-mark { color: var(--success); }
 .pub-result.is-fail { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
 .pub-result.is-fail .pub-result-mark { color: var(--danger); }
+/* 4.60.0 (spec 024): posted, but the owner has to finish it on the site (a Tumblr draft awaiting its label). */
+.pub-result.is-warn { border-color: color-mix(in srgb, var(--warning, #d29922) 45%, var(--border)); }
+.pub-result.is-warn .pub-result-mark { color: var(--warning, #d29922); font-weight: 700; }
 .pub-result-plat { font-weight: 600; white-space: nowrap; }
 .pub-result-what { color: var(--text-secondary); overflow-wrap: anywhere; }
 .pub-result-variant { display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: var(--radius-sm);
@@ -2586,6 +2584,7 @@ a.stat-card:hover {
     color: var(--danger, var(--danger));
 }
 
+.sys-evt-row.is-quiet .sys-evt-summary { color: var(--text-secondary); }
 .sys-evt-platform {
     font-weight: 600;
     color: var(--text-primary, var(--text-primary));
@@ -2951,3 +2950,9 @@ html[data-mobile="1"] .tgopt input[type="checkbox"] { width: 20px; height: 20px;
 /* Below 1400 px the top bar has no room left (the right-hand cluster already runs under the bell) —
    the clock waits for spec 019's tidier bar there. The phone drawer always shows it. */
 @media (max-width: 1399px) { html[data-navmode="top"]:not([data-mobile="1"]) .btn-clock { display: none; } }
+
+/* Spec 027: the publish dialog's journal box */
+.pub-confirm-journal { margin: 10px 0 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.pub-confirm-journal summary { cursor: pointer; font-weight: 600; }
+.pub-confirm-jsites { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0; }
+.pub-confirm-journal input[type="text"] { width: 100%; }

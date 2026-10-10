@@ -411,6 +411,34 @@ def send_email(settings: dict, subject: str, html_body: str,
 
 # ── Orchestrate ───────────────────────────────────────────────────────
 
+def explain_send_error(e: Exception, settings: dict) -> str:
+    """A failed send in words the operator can act on (DIGESTFAIL, 2026-10-07).
+
+    Until then a failure only reached the server log: the Settings tab kept saying
+    "Not sent yet", nothing reached the bell, and the send was retried silently on
+    every poll — the operator never received a digest and never learned why."""
+    host = settings.get("smtp_host") or DEFAULT_SMTP_HOST
+    port = int(settings.get("smtp_port") or DEFAULT_SMTP_PORT)
+    if isinstance(e, smtplib.SMTPAuthenticationError):
+        return (f"{host} refused the username or password. Gmail and Zoho need an app "
+                "password here, not your normal sign-in password.")
+    if isinstance(e, smtplib.SMTPRecipientsRefused):
+        return "The email server refused the recipient address(es). Check the recipients list."
+    if isinstance(e, smtplib.SMTPSenderRefused):
+        return ("The email server refused the From address. It usually has to be the "
+                "account you sign in with, or an alias of it.")
+    if isinstance(e, (TimeoutError, ConnectionError, OSError)) and not isinstance(e, smtplib.SMTPException):
+        return (f"Couldn't reach {host} on port {port} ({e}). Check the host and port: "
+                "587 for STARTTLS, 465 for SSL.")
+    return str(e)[:300] or e.__class__.__name__
+
+
+def _record_send_error(message: str) -> None:
+    config.save_settings({
+        "last_email_digest_error": message,
+        "last_email_digest_error_at": datetime.now(timezone.utc).isoformat(),
+    })
+
 def send_weekly_email_digest(force: bool = False) -> dict:
     """Build + send the weekly digest email. ``force`` (test-send) bypasses the
     enabled gate and does NOT reset the weekly clock. Returns a status dict;
@@ -420,6 +448,9 @@ def send_weekly_email_digest(force: bool = False) -> dict:
         return {"sent": False, "reason": "disabled"}
     recipients = parse_recipients(settings)
     if not recipients:
+        # Switched on with nobody to send to: say so rather than doing nothing for ever.
+        if not force:
+            _record_send_error("The weekly email is on but has no recipients.")
         return {"sent": False, "reason": "no recipients"}
 
     days = int(settings.get("email_digest_interval_days", 7) or 7)
@@ -433,12 +464,18 @@ def send_weekly_email_digest(force: bool = False) -> dict:
     subject = f"PawPoller Weekly Digest — {data['week_end']}"
     html_body = render_weekly_digest_html(data)
     text_body = render_weekly_digest_text(data)
-    send_email(settings, subject, html_body, text_body)
+    try:
+        send_email(settings, subject, html_body, text_body)
+    except Exception as e:
+        _record_send_error(explain_send_error(e, settings))
+        raise
 
     # Only the scheduled path advances the weekly clock; a manual test doesn't.
+    # Any success (test included) clears the last error.
+    saved = {"last_email_digest_error": "", "last_email_digest_error_at": ""}
     if not force:
-        config.save_settings(
-            {"last_email_digest_sent_at": datetime.now(timezone.utc).isoformat()})
+        saved["last_email_digest_sent_at"] = datetime.now(timezone.utc).isoformat()
+    config.save_settings(saved)
     logger.info("Weekly email digest sent to %d recipient(s)%s",
                 len(recipients), " (test)" if force else "")
     return {"sent": True, "recipients": recipients, "subject": subject}

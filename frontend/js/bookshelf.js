@@ -172,7 +172,7 @@ window.Bookshelf = {
         this._paintFab();
         const root = document.documentElement;
         // The bar's real height (--mbar-h is a calc() with the notch inset, so read the strip itself).
-        const barH = () => parseFloat(getComputedStyle(document.body, '::before').height) || 64;
+        const barH = () => (document.getElementById('mobile-bar-bg') || {}).offsetHeight || 64;
         this._fabObs = new IntersectionObserver(([e]) => {
             if (root.classList.contains('shelf-open')) return;   // the open panel isn't "scrolled past"
             root.classList.toggle('shelf-folded', !e.isIntersecting && e.boundingClientRect.top < barH());

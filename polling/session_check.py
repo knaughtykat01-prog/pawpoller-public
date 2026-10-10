@@ -38,7 +38,7 @@ _lock = threading.Lock()
 # Platforms with a real validate_session() network check. Order = check order.
 CHECKABLE: tuple[str, ...] = ("ao3", "sf", "sqw", "bsky", "mast", "tum", "pix",
                               "thr", "ig", "e621", "fn", "fbr", "tg", "sc", "ng", "yt",
-                              "pic", "tw")
+                              "pic", "tw", "fb")
 
 # Human labels for log/UI fallback (the frontend has its own map too).
 LABELS = {
@@ -46,7 +46,7 @@ LABELS = {
     "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads",
     "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "sc": "SoundCloud",
     "ng": "Newgrounds", "yt": "YouTube", "pic": "Picarto",
-    "tg": "Telegram", "tw": "X/Twitter",
+    "tg": "Telegram", "tw": "X/Twitter", "fb": "Facebook",
 }
 
 # What to tell the user when a check comes back CONFIRMED-failed. The default
@@ -84,6 +84,8 @@ def _configured(code: str, s: dict) -> bool:
         return bool(s.get("thr_access_token"))
     if code == "ig":
         return bool(s.get("ig_access_token"))
+    if code == "fb":
+        return bool(s.get("fb_page_token") and s.get("fb_page_id"))
     if code == "e621":
         return bool(s.get("e621_username") and s.get("e621_api_key"))
     if code == "fn":
@@ -159,7 +161,8 @@ async def _validate(code: str, s: dict):
         from polling.ao3_poller import _get_or_create_client
         c = _get_or_create_client(
             s, s.get("ao3_username", ""), s.get("ao3_password", ""),
-            s.get("ao3_target_user", ""), s.get("ao3_session_cookie", ""))
+            s.get("ao3_target_user", ""), s.get("ao3_session_cookie", ""),
+            ao3_remember=s.get("ao3_remember_token", ""))
     elif code == "sf":
         from polling.sf_poller import _get_or_create_client
         c = _get_or_create_client(s, 0, True)
@@ -217,6 +220,11 @@ async def _validate(code: str, s: dict):
             return bool(await c.validate_session())
         finally:
             await c.close()
+    elif code == "fb":
+        # A Page token from a long-lived user token has no expiry; "valid" = it still reads the Page.
+        from clients.fb.client import FbClient
+        async with FbClient(page_token=s.get("fb_page_token", ""), page_id=s.get("fb_page_id", "")) as c:
+            return bool(await c.validate_session())
     elif code == "yt":
         from polling.yt_poller import _get_or_create_client
         c = _get_or_create_client({k: s.get(k, "") for k in (

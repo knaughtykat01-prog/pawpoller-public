@@ -111,16 +111,21 @@ _HEADERS = {
 }
 
 
+SESSION_COOKIE = "_otwarchive_session"
+REMEMBER_COOKIE = "remember_user_token"
+
+
 class AO3Client:
     """Async HTTP client for Archive of Our Own (OTW Archive)."""
 
     def __init__(self, username: str, password: str, target_user: str,
                  proxy_url: str = "", proxy_key: str = "",
-                 session_cookie: str = ""):
+                 session_cookie: str = "", remember_token: str = ""):
         self.username = username
         self.password = password
         self.target_user = target_user
         self._session_cookie = session_cookie.strip()
+        self._remember_token = (remember_token or "").strip()
         # Set when login fails due to an AO3-side *block* (shields up / rate-limit)
         # rather than bad credentials — lets validate_session raise so the session
         # check reports amber "temporarily blocked", not red "expired".
@@ -195,15 +200,23 @@ class AO3Client:
         # entirely. AO3's per-IP login throttle (5–10 min cooldown after
         # one bad attempt) makes cold-login from datacenter IPs unreliable;
         # the cookie path bypasses the rate-limited login endpoint and
-        # uses the user's already-warm browser session instead. The cookie
-        # is long-lived (~1 year on AO3) and rotates only on logout.
+        # uses the user's already-warm browser session instead.
+        # AO3REMEMBER: the session cookie lasts two weeks from the LAST visit —
+        # AO3 hands back a renewed one on every logged-in page, which
+        # fresh_cookies() reports so the caller can store it. Remember me adds
+        # `remember_user_token` (three months from login), which signs a lapsed
+        # session back in on its own.
+        if self._remember_token:
+            self._http.cookies.set(REMEMBER_COOKIE, self._remember_token,
+                                   domain="archiveofourown.org", path="/")
         if self._session_cookie:
             self._http.cookies.set(
-                "_otwarchive_session",
+                SESSION_COOKIE,
                 self._session_cookie,
                 domain="archiveofourown.org",
                 path="/",
             )
+        if self._session_cookie or self._remember_token:
             self._logged_in = True
             logger.info("AO3 client using pasted session cookie (skipping form login)")
 
@@ -213,13 +226,41 @@ class AO3Client:
     async def __aexit__(self, *exc):
         await self.close()
 
+    def fresh_cookies(self) -> dict:
+        """Cookies AO3 renewed since the last call, as credential fields to store.
+
+        Only for a cookie sign-in: a username + password account is left alone.
+        """
+        if not (self._session_cookie or self._remember_token):
+            return {}
+        out = {}
+        for name, field, attr in ((SESSION_COOKIE, "ao3_session_cookie", "_session_cookie"),
+                                  (REMEMBER_COOKIE, "ao3_remember_token", "_remember_token")):
+            vals = [c.value for c in self._http.cookies.jar
+                    if c.name == name and c.domain.lstrip(".") == "archiveofourown.org" and c.value]
+            val = next((v for v in vals if v != getattr(self, attr)), "")
+            if val:
+                setattr(self, attr, val)
+                out[field] = val
+        return out
+
     def update_credentials(self, username: str, password: str, target_user: str,
-                           session_cookie: str = "") -> None:
+                           session_cookie: str = "", remember_token: str = "") -> None:
         cookie = (session_cookie or "").strip()
+        remember = (remember_token or "").strip()
+        if remember != self._remember_token:       # the shared poller client moves between accounts:
+            self._remember_token = remember         # never carry one account's token into another's
+            try:
+                self._http.cookies.delete(REMEMBER_COOKIE, domain="archiveofourown.org", path="/")
+            except Exception:
+                pass
+            if remember:
+                self._http.cookies.set(REMEMBER_COOKIE, remember, domain="archiveofourown.org", path="/")
+                self._logged_in = True
         if username != self.username or password != self.password:
             # Only flip logged_in off when we don't have a fresh cookie
             # to lean on; otherwise the cookie keeps the session alive.
-            if not cookie:
+            if not (cookie or remember):
                 self._logged_in = False
         self.username = username
         self.password = password
@@ -244,7 +285,7 @@ class AO3Client:
                 )
             except Exception:
                 pass
-            self._logged_in = False
+            self._logged_in = bool(remember)
 
     async def close(self) -> None:
         await self._http.aclose()
@@ -566,7 +607,7 @@ class AO3Client:
         # be the source of truth — if the cookie is bad, that fetch
         # will return a public/login-redirect page and the caller
         # surfaces the error.
-        if self._session_cookie:
+        if self._session_cookie or self._remember_token:
             return True
 
         if self._logged_in:
@@ -595,7 +636,7 @@ class AO3Client:
         # page (or fall back to the public profile page) so we can
         # confirm the cookie is alive. Only used by /auth/connect —
         # ensure_logged_in() trusts the cookie without checking.
-        if self._session_cookie:
+        if self._session_cookie or self._remember_token:
             html = await self._get_page(
                 f"{_BASE}/users/{self.target_user or self.username}"
             )
@@ -611,7 +652,7 @@ class AO3Client:
                 return self.target_user or self.username
             logger.error(
                 "AO3: pasted cookie did not produce a logged-in page. "
-                "Re-copy `_otwarchive_session` from your browser.",
+                "Re-copy `_otwarchive_session` (and `remember_user_token`) from your browser.",
             )
             return None
         self.blocked_reason = ""
@@ -934,8 +975,8 @@ class AO3Client:
         if 'name="user[login]"' in form_html:
             raise RuntimeError(
                 "AO3: session expired or invalid — /works/new redirected to the "
-                "login page. Re-copy your `_otwarchive_session` cookie from a "
-                "logged-in browser into Settings → Platforms → AO3."
+                "login page. Re-copy your `_otwarchive_session` and `remember_user_token` "
+                "cookies from a logged-in browser into Settings → Accounts → AO3."
             )
 
         token_m = re.search(

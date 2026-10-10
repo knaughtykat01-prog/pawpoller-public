@@ -101,7 +101,8 @@
         if (!_panel) return;
         const rows = _items.length ? _items.map((it, i) => {
             const label = LABELS[it.platform] || (it.platform || '').toUpperCase();
-            const meta = escapeText([label, relTime(it.timestamp)].filter(Boolean).join(' · '));
+            // Which account, when the site has more than one (FEEDACCT, 4.58.0) — the server sends it only then.
+            const meta = escapeText([label, it.account, relTime(it.timestamp)].filter(Boolean).join(' · '));
             const detail = (it.detail && isFailure(it)) ? '<div class="pp-notif-detail"></div>' : '';
             // Session-health alerts get quick actions: Reconnect (paste fresh
             // creds, for platforms with a reconnect spec) + Mute/Unmute (auto-
@@ -116,7 +117,7 @@
                     + `<button class="pp-notif-mute" type="button" data-idx="${i}">${it.muted ? 'Unmute' : 'Mute'}</button>`
                     + `</div>`;
             }
-            return `<div class="pp-notif-item ${it.unread ? 'is-unread' : ''} ${it.muted ? 'is-muted' : ''} pp-notif-${statusClass(it)}">
+            return `<div class="pp-notif-item ${it.unread ? 'is-unread' : ''} ${it.muted ? 'is-muted' : ''} ${it.quiet ? 'is-quiet' : ''} pp-notif-${statusClass(it)}">
                 <span class="pp-notif-item-ico" aria-hidden="true">${statusIcon(it)}</span>
                 <div class="pp-notif-item-body">
                     <div class="pp-notif-summary"></div>

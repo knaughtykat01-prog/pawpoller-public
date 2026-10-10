@@ -119,7 +119,7 @@ window.Tour = (function () {
      * body may contain <em>; keep it one short sentence. */
     const TOURS = {
         'getting-started': [
-            { target: null, title: 'Welcome to PawPoller 👋', body: 'PawPoller tracks and publishes your stories and art across 15 sites from one place. Here’s a quick tour of the essentials — about a minute.' },
+            { target: null, title: 'Welcome to PawPoller 👋', body: 'PawPoller tracks and publishes your stories and art across every site you use, from one place. Here’s a quick tour of the essentials — about a minute.' },
             { target: '.nav-link[data-page="platforms"]', title: 'Platforms', body: 'Start here. Connect the sites you use — Inkbunny, FurAffinity, AO3, Bluesky and more. PawPoller only ever tracks the platforms you connect.' },
             // One Library step, because there's now one works hub (2.155.0). These
             // were two steps targeting data-page="submissions" (hub retired 2.117.0)

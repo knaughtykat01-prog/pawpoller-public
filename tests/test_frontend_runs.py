@@ -201,7 +201,7 @@ def app_url(_offline):
     # tour sits over every page. Dummy logins for the seeded sites, so their dashboards draw their
     # charts instead of "not connected" — nothing can use them: see _offline.
     tours = re.findall(r"^ {8}'([a-z0-9-]+)': \[", (ROOT / "frontend/js/tour.js").read_text(encoding="utf-8"), re.M)
-    config.save_settings({"setup_complete": True, "setup_mode": "server", "tours_seen": tours,
+    config.save_settings({"setup_complete": True, "age_band": "adult", "setup_mode": "server", "tours_seen": tours,
                           "display_timezone": "Australia/Sydney", **_DUMMY_LOGINS})
     conn = get_connection()
     try:
@@ -442,3 +442,116 @@ def test_the_top_bar_keeps_the_bell_and_menu_on_screen(browser, app_url, mode):
         assert not fails, "\n".join(fails)
     finally:
         tab.close()
+
+
+def test_account_rows_fit_on_a_phone(browser, app_url):
+    """ACCTROWS (phone screenshot, 2026-10-06): each account row ran off the right edge —
+    Rename and the buttons after it were cut. Every control stays inside its card at 390px."""
+    tab = _Watched(browser, app_url, {"width": 390, "height": 844})
+    page = tab.page
+    try:
+        tab.open("#/accounts")
+        page.wait_for_selector(".acct-card", timeout=5000)
+        spill = page.evaluate("""() => {
+            const out = [];
+            for (const card of document.querySelectorAll('.acct-card')) {
+                const edge = card.getBoundingClientRect().right + 0.5;
+                for (const el of card.querySelectorAll('button, label, select, .acct-stat')) {
+                    const r = el.getBoundingClientRect();
+                    if (r.width && r.right > edge) out.push((el.textContent || el.tagName).trim().slice(0, 20));
+                }
+            }
+            return out;
+        }""")
+        assert not spill, f"controls past the card's right edge: {spill}"
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), "the page scrolls sideways"
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()
+
+
+def test_the_phone_bar_covers_the_top_edge_when_scrolled(browser, app_url):
+    """PHONEBAR2 (operator's iPhone screenshots, 2026-10-08): Library cards scrolled up behind the
+    clock above the bar. The bar's backing is a real fixed element from the very top (iOS Safari
+    fills its status-bar area from one and ignores pseudo-elements), solid, and nothing on the
+    page shows through the top strip once scrolled."""
+    tab = _Watched(browser, app_url, {"width": 390, "height": 844})
+    page = tab.page
+    try:
+        tab.open("#/library")
+        page.evaluate("window.scrollTo(0, 600)")
+        page.wait_for_timeout(300)
+        info = page.evaluate("""() => {
+            const bg = document.getElementById('mobile-bar-bg');
+            const cs = getComputedStyle(bg), r = bg.getBoundingClientRect();
+            const hit = document.elementFromPoint(200, 4);
+            return {pos: cs.position, top: r.top, h: r.height, w: r.width, color: cs.backgroundColor,
+                    blur: cs.backdropFilter, hitIsBar: hit === bg || !!hit.closest('#mobile-bar, .hamburger-btn')};
+        }""")
+        assert info["pos"] == "fixed" and info["top"] == 0 and info["h"] >= 64 and info["w"] >= 389, info
+        assert info["color"].startswith("rgb(") or info["color"].endswith(", 1)"), info   # opaque
+        assert info["blur"] in ("none", ""), info
+        assert info["hitIsBar"], "page content shows at the very top while scrolled"
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()
+
+
+def test_the_open_drawer_is_not_covered_on_a_phone(browser, app_url):
+    """DRAWERTOP (operator's screenshot, 2026-10-08): with the menu open on the Library, the Filters
+    pill covered the PawPoller name and the 18+ badge covered ☰, which moves to the drawer's edge
+    to close it. While the drawer is open nothing sits on it, and ☰ can be tapped."""
+    tab = _Watched(browser, app_url, {"width": 390, "height": 844})
+    page = tab.page
+    try:
+        tab.open("#/library")
+        page.evaluate("window.scrollTo(0, 900)")
+        page.wait_for_timeout(400)
+        page.locator(".hamburger-btn").click()
+        page.wait_for_timeout(400)          # the drawer slides in
+        out = page.evaluate("""() => {
+            const at = (el) => { const r = el.getBoundingClientRect();
+                return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); };
+            const ham = document.querySelector('.hamburger-btn');
+            const brand = document.querySelector('.sidebar .sidebar-header');
+            const hit = at(brand);
+            return {hamOnTop: at(ham)?.closest('.hamburger-btn') === ham,
+                    brandOnTop: !!(hit && hit.closest('.sidebar')),
+                    barHidden: getComputedStyle(document.getElementById('mobile-bar')).visibility === 'hidden'};
+        }""")
+        assert out["hamOnTop"], "☰ (the drawer's close button) is covered"
+        assert out["brandOnTop"], "something covers the top of the open drawer"
+        assert out["barHidden"], out
+        page.locator(".hamburger-btn").click()
+        page.wait_for_timeout(400)
+        assert page.evaluate("getComputedStyle(document.getElementById('mobile-bar')).visibility") == "visible"
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()
+
+
+def test_the_age_question_and_the_under_18_lock(browser, app_url):
+    """LEGALPAGES (4.58.0): an install with no answer asks once; answering "under 18" keeps safe mode on
+    (the 18+ pill won't switch it off) and greys Mature / Adult in rating menus."""
+    config.save_settings({"age_band": ""})
+    tab = _Watched(browser, app_url, {"width": 1400, "height": 900})
+    page = tab.page
+    try:
+        page.wait_for_selector("#age-ask", timeout=5000)
+        page.locator("#age-ask-minor").click()
+        page.wait_for_function("() => !document.getElementById('age-ask')", timeout=3000)
+        assert page.evaluate("document.documentElement.dataset.ageLocked") == "1"
+        assert page.evaluate("document.documentElement.dataset.sfw") == "1"
+        # The pill is aria-disabled (Playwright won't click that), so press it as a tap would.
+        assert page.evaluate("document.getElementById('sfw-toggle-btn').getAttribute('aria-disabled')") == "true"
+        page.evaluate("document.getElementById('sfw-toggle-btn').click()")
+        assert page.evaluate("document.documentElement.dataset.sfw") == "1", "the pill turned safe mode off"
+        tab.open("#/posts/new")
+        page.locator("#post-rating").focus()
+        disabled = page.evaluate("[...document.querySelectorAll('#post-rating option')]"
+                                 ".filter(o => o.disabled).map(o => o.value)")
+        assert "general" not in disabled and set(disabled) >= {"mature", "adult"}, disabled
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()
+        config.save_settings({"age_band": "adult"})

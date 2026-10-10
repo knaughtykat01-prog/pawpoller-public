@@ -68,7 +68,7 @@ class TestLadder:
                 raise RuntimeError("could not reach srv: ConnectError")
             return "https://pawpoller.example/api/ig/pubmedia/bb.jpg"
         monkeypatch.setattr(ig_host, "upload_to_host", up)
-        hosted = asyncio.run(ig_host.host_images([image], {"posting_server_url": "https://srv"}))
+        hosted = asyncio.run(ig_host.host_images([image], _relay_yes(posting_server_url="https://srv")))
         assert hosted.how == "relay" and calls[-1] == config.IG_RELAY_DEFAULT_URL
 
     def test_relay_url_can_be_pointed_elsewhere(self, image, monkeypatch):
@@ -78,7 +78,7 @@ class TestLadder:
             calls.append(endpoint)
             return "https://other/x.jpg"
         monkeypatch.setattr(ig_host, "upload_to_host", up)
-        asyncio.run(ig_host.host_images([image], {"ig_relay_url": "https://other/api/ig/relay"}))
+        asyncio.run(ig_host.host_images([image], _relay_yes(ig_relay_url="https://other/api/ig/relay")))
         assert calls == ["https://other/api/ig/relay"]
 
     def test_relay_failure_falls_through_to_the_tunnel(self, image, monkeypatch, stash_dir):
@@ -97,7 +97,7 @@ class TestLadder:
         async def open_host():
             return FakeHost()
         monkeypatch.setattr(ig_tunnel, "open_public_host", open_host)
-        hosted = asyncio.run(ig_host.host_images([image], {}))
+        hosted = asyncio.run(ig_host.host_images([image], _relay_yes()))
         assert hosted.how == "tunnel"
         assert hosted.urls[0].startswith("https://abc-def.trycloudflare.com/") and hosted.urls[0].endswith(".jpg")
         assert len(list(stash_dir.glob("*.jpg"))) == 1
@@ -110,7 +110,7 @@ class TestLadder:
         monkeypatch.setattr(ig_host, "upload_to_host", up)
         monkeypatch.setattr(ig_tunnel, "helper_status", lambda: {"supported": True, "present": False})
         with pytest.raises(ig_host.NoPublicHost) as ei:
-            asyncio.run(ig_host.host_images([image], {}))
+            asyncio.run(ig_host.host_images([image], _relay_yes()))
         msg = str(ei.value)
         assert "the PawPoller relay (could not reach" in msg
         assert "helper not downloaded" in msg
@@ -153,13 +153,20 @@ class TestUploadToHost:
 
 # ── the open relay route ─────────────────────────────────────────────────────
 
+# The relay is opt-in since 4.58.0 (LEGALPAGES): "on" means a recorded yes to the current wording.
+def _relay_yes(**extra):
+    import consent_records
+    return {"consent_records": {"ig_relay": {"value": True, "at": "2026-10-08T00:00:00+00:00",
+                                             "wording": consent_records.WORDING["ig_relay"]}}, **extra}
+
+
 @pytest.fixture()
 def relay_client(monkeypatch, stash_dir):
     from routes import ig_api
     app = FastAPI()
     app.include_router(ig_api.ig_router)
     ig_api._RELAY_HITS.clear()
-    state = {"ig_relay_open": True, "ig_public_base_url": "https://pub.example"}
+    state = _relay_yes(ig_relay_open=True, ig_public_base_url="https://pub.example")
     monkeypatch.setattr(config, "get_settings", lambda: dict(state))
     return TestClient(app), state
 
@@ -245,7 +252,9 @@ class TestRelayRoute:
         r = c.post("/api/ig/host-settings", json={"ig_relay_enabled": False, "ig_relay_url": "ftp://nope"})
         assert r.status_code == 400
         r = c.post("/api/ig/host-settings", json={"ig_relay_enabled": False, "ig_relay_open": False})
-        assert r.status_code == 200 and saved == {"ig_relay_enabled": False, "ig_relay_open": False}
+        assert r.status_code == 200
+        assert saved["ig_relay_enabled"] is False and saved["ig_relay_open"] is False
+        assert saved["consent_records"]["ig_relay"]["value"] is False      # the no is recorded too
         assert r.json()["relay"]["enabled"] is False
 
     def test_relay_open_never_syncs_to_a_desktop(self):
@@ -387,7 +396,7 @@ class TestThePreflightCheckAgreesWithTheLadder:
         s = {"ig_public_base_url": "", "posting_server_url": "",
              "ig_relay_enabled": True, "ig_tunnel_enabled": False}
         s.update(over)
-        return s
+        return {**_relay_yes(), **s} if s.get("ig_relay_enabled") else s
 
     def test_the_relay_alone_is_a_host(self):
         assert ig_host.first_available_rung(self._settings()) == "relay"
@@ -424,3 +433,46 @@ class TestThePreflightCheckAgreesWithTheLadder:
                                  file_path=image, file_type="png", media_kind="image")
         errs = [e for e in InstagramPoster().validate(pkg) if "public address" in e]
         assert errs and "Settings → Posting → Instagram image host" in errs[0]
+
+
+class TestTheRelayIsOptIn:
+    """LEGALPAGES (4.58.0): the relay sends the picture to the project's server, so it needs a recorded
+    yes to the current wording. Before, it was on by default with no question."""
+
+    def test_off_until_switched_on(self):
+        assert ig_host.relay_on({}) is False
+        assert ig_host.first_available_rung({}) == ""
+
+    def test_a_yes_from_before_records_doesnt_count_and_is_asked_again(self):
+        import consent_records
+        legacy = {"ig_relay_enabled": True}
+        assert ig_host.relay_on(legacy) is False
+        assert "ig_relay" in consent_records.needs_reconfirm(legacy)
+
+    def test_the_refusal_says_it_is_opt_in_and_where(self, image, monkeypatch):
+        monkeypatch.setattr(ig_tunnel, "helper_status", lambda: {"supported": False, "present": False})
+        with pytest.raises(ig_host.NoPublicHost) as ei:
+            asyncio.run(ig_host.host_images([image], {"ig_tunnel_enabled": False}))
+        assert "opt-in" in str(ei.value) and "Instagram image host" in str(ei.value)
+
+    def test_switching_it_on_records_when_and_the_wording(self, relay_client, monkeypatch):
+        import consent_records
+        c, state = relay_client
+        state.pop("consent_records", None)
+        monkeypatch.setattr(config, "save_settings", lambda d: state.update(d))
+        r = c.post("/api/ig/host-settings", json={"ig_relay_enabled": True})
+        assert r.status_code == 200
+        rec = consent_records.get("ig_relay")
+        assert rec["value"] is True and rec["at"] and rec["wording"] == consent_records.WORDING["ig_relay"]
+
+
+def test_the_relay_forgets_an_address_once_its_window_passes():
+    """LEGALPAGES (4.58.0): the privacy policy says the relay keeps an address only for the
+    10-minute rate window; stale ones used to stay until 5,000 had piled up."""
+    from routes import ig_api
+    ig_api._RELAY_HITS.clear()
+    limit, window = config.IG_RELAY_PER_IP
+    assert ig_api._relay_rate_ok("203.0.113.5", now=1000.0)
+    assert "203.0.113.5" in ig_api._RELAY_HITS
+    assert ig_api._relay_rate_ok("198.51.100.7", now=1000.0 + window)
+    assert "203.0.113.5" not in ig_api._RELAY_HITS

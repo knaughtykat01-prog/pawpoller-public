@@ -68,6 +68,14 @@ def _refusal(text: str) -> str:
     return re.sub(r" ([.,!?;:])", r"\1", words).strip()[:200]
 
 
+def _journal_refusal(text: str, status: int) -> str:
+    """Weasyl's reason for refusing a journal; its unverified-account code named in plain words."""
+    if "vouchRequired" in text or "has to be verified" in text:
+        return ("Weasyl needs your account verified (\"vouched\") before it takes journals — the same check its "
+                "submissions need")
+    return f"Weasyl refused the journal: {_refusal(text) or 'no reason given'} (status {status})"
+
+
 def _image_mime(path: str) -> str:
     """MIME for a cover / thumbnail upload by extension (4.19.3)."""
     ext = os.path.splitext(path or "")[1].lower()
@@ -83,6 +91,9 @@ class WeasylClient:
         # from the user's account settings. It is sent on every request as
         # a default header on the httpx client so callers don't need to
         # manage auth per-request.
+        # Kept so the plain (key-less) client for the cover image routes the same way
+        # (WSPLAINPROXY, 4.56.2 release review).
+        self._proxy = (proxy_url, proxy_key) if proxy_url and proxy_key else None
         if proxy_url and proxy_key:
             from polling.cf_proxy import CloudflareProxyTransport
             transport = CloudflareProxyTransport(proxy_url, proxy_key)
@@ -593,11 +604,63 @@ class WeasylClient:
         if not url.startswith("https://"):
             logger.info("WS: cover image on %s isn't https — not fetched", submission_id)
             return False
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as plain:
-            w, h = Image.open(BytesIO((await plain.get(url)).content)).size
+        # Same route as the keyed client (a CF proxy where Weasyl blocks the IP), and a size cap:
+        # only the dimensions are needed, so an oversized or endless body is never buffered whole
+        # (WSPLAINPROXY).
+        proxy = getattr(self, "_proxy", None)
+        if proxy:
+            from polling.cf_proxy import CloudflareProxyTransport
+            transport = CloudflareProxyTransport(*proxy)
+        else:
+            transport = httpx.AsyncHTTPTransport(retries=2)
+        body = bytearray()
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True, transport=transport) as plain:
+            async with plain.stream("GET", url) as resp:
+                if resp.status_code != 200:
+                    logger.info("WS: cover image on %s answered %s", submission_id, resp.status_code)
+                    return False
+                async for chunk in resp.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > _COVER_FETCH_CAP:
+                        logger.warning("WS: cover image on %s is over %d MB — not read",
+                                       submission_id, _COVER_FETCH_CAP // (1024 * 1024))
+                        return False
+        try:
+            w, h = Image.open(BytesIO(bytes(body))).size
+        except Exception as e:
+            logger.info("WS: cover image on %s couldn't be read: %s", submission_id, e)
+            return False
         await self._post_form(page_path, "/manage/thumbnail",
                               {"submitid": str(submission_id), "x1": "0", "y1": "0", "x2": str(w), "y2": str(h)})
         return True
+
+    # ── Journals (spec 027) ────────────────────────────────────────────────
+
+    async def submit_journal(self, title: str, content: str, rating: int = 10, tags: str = "") -> dict:
+        """POST /submit/journal (Markdown ``content``, ``rating`` 10/30/40, space-separated ``tags``). The API
+        key header signs the form (no token field — live check 2026-10-10). → {"id", "url"}."""
+        resp = await self._http.post("https://www.weasyl.com/submit/journal",
+                                     data={"title": title, "rating": str(rating), "content": content, "tags": tags},
+                                     timeout=60.0, follow_redirects=True)
+        final = str(resp.url)
+        m = re.search(r"/journal/(\d+)", final)
+        if not m:
+            raise RuntimeError(_journal_refusal(resp.text, resp.status_code))
+        logger.info("WS: journal posted — id=%s", m.group(1))
+        return {"id": m.group(1), "url": final if "/journal/" in final else f"https://www.weasyl.com/journal/{m.group(1)}"}
+
+    async def edit_journal(self, journal_id: str, title: str, content: str, rating: int, tags: str) -> dict:
+        """The edit form (current values posted back) + tags through ``/submit/tags``, which edit doesn't hold."""
+        await self._post_form(f"/edit/journal?journalid={journal_id}", "/edit/journal",
+                              {"journalid": str(journal_id), "title": title, "content": content, "rating": str(rating)})
+        await self._post_form(f"/journal/{journal_id}", "/submit/tags", {"journalid": str(journal_id), "tags": tags})
+        return {"id": str(journal_id), "url": f"https://www.weasyl.com/journal/{journal_id}"}
+
+    async def remove_journal(self, journal_id: str) -> None:
+        resp = await self._http.post("https://www.weasyl.com/remove/journal", data={"journalid": str(journal_id)},
+                                     timeout=30.0, follow_redirects=True)
+        if resp.status_code >= 400:
+            raise RuntimeError(_journal_refusal(resp.text, resp.status_code))
 
     async def _post_form(self, page: str, action: str, changes: dict, files: dict | None = None,
                          *, unchanged_ok: bool = False) -> None:
@@ -617,6 +680,10 @@ class WeasylClient:
                 logger.info("WS: %s — unchanged (%s)", action, why)
                 return
             raise RuntimeError(f"Weasyl refused {action}: {why} (status {resp.status_code})")
+
+
+# Weasyl's own cover limit is far below this; anything bigger isn't a cover.
+_COVER_FETCH_CAP = 20 * 1024 * 1024
 
 
 def _upload(path: str) -> tuple:

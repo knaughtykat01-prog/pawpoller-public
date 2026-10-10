@@ -129,19 +129,19 @@
 }
 
 .pp-toast-success {
-    border-left: 3px solid #6cd482;
+    border-color: color-mix(in srgb, #6cd482 50%, transparent);
 }
 
 .pp-toast-error {
-    border-left: 3px solid #ff7373;
+    border-color: color-mix(in srgb, #ff7373 50%, transparent);
 }
 
 .pp-toast-warn {
-    border-left: 3px solid var(--warning);
+    border-color: color-mix(in srgb, var(--warning) 50%, transparent);
 }
 
 .pp-toast-info {
-    border-left: 3px solid #91a8e0;
+    border-color: color-mix(in srgb, #91a8e0 50%, transparent);
 }
 
 .pp-toast-msg {
@@ -509,6 +509,9 @@
 .pp-notif-item.is-unread { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 /* Muted session alert — visible but quiet (dimmed, not nagging). */
 .pp-notif-item.is-muted { opacity: 0.55; }
+/* A poll where nothing moved (4.58.0): kept, but quieter than a post or a change. */
+.pp-notif-item.is-quiet .pp-notif-summary { color: var(--text-secondary); font-size: .92em; }
+.pp-notif-item.is-quiet .pp-notif-item-ico { color: var(--text-secondary); }
 /* Session-item action stack (Reconnect + Mute), pinned to the right. */
 .pp-notif-actions-col {
     flex-shrink: 0;
@@ -798,9 +801,9 @@ a.pp-notif-reconnect { text-decoration: none; text-align: center; }   /* the upd
 
 #act-toasts { position: fixed; right: 16px; top: 112px; z-index: 1400; display: flex; flex-direction: column; gap: 10px; }
 .act-toast { position: relative; width: 360px; max-width: calc(100vw - 32px); padding: 12px 34px 12px 14px; border-radius: 10px;
-  background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-left: 4px solid var(--success);
+  background: var(--bg-card); color: var(--text-primary); border: 1px solid color-mix(in srgb, var(--success) 45%, var(--border));
   box-shadow: 0 8px 24px rgba(0,0,0,.25); }
-.act-toast.fail { border-left-color: var(--danger); }
+.act-toast.fail { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
 .act-toast b { display: block; margin-bottom: 2px; }
 .act-toast .act-close { position: absolute; top: 6px; right: 6px; }
 .act-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }

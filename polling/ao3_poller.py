@@ -114,7 +114,7 @@ async def _send_ao3_kudos_telegram(new_kudos: list[dict]) -> None:
 
 
 def _get_or_create_client(settings: dict, ao3_user: str, ao3_pass: str,
-                          ao3_target: str, ao3_cookie: str) -> AO3Client:
+                          ao3_target: str, ao3_cookie: str, ao3_remember: str = "") -> AO3Client:
     """Return the persistent AO3Client, re-pointed at the account's creds."""
     global _ao3_client
 
@@ -125,13 +125,29 @@ def _get_or_create_client(settings: dict, ao3_user: str, ao3_pass: str,
             password=ao3_pass,
             target_user=ao3_target,
             session_cookie=ao3_cookie,
+            remember_token=ao3_remember,
             **proxy_kwargs(settings, "ao3"),
         )
     else:
         _ao3_client.update_credentials(ao3_user, ao3_pass, ao3_target,
-                                        session_cookie=ao3_cookie)
+                                        session_cookie=ao3_cookie, remember_token=ao3_remember)
 
     return loop_bound.pin(_ao3_client)
+
+
+def save_fresh_cookies(client: AO3Client, account_id: int, is_default: bool) -> None:
+    """Store the session cookie AO3 renewed on this visit (AO3REMEMBER).
+
+    AO3's session cookie lapses two weeks after the last visit, so keeping the renewed copy keeps a
+    pasted sign-in alive for as long as polling runs."""
+    try:
+        fresh = client.fresh_cookies()
+        if fresh:
+            config.save_settings({config.account_setting_key(account_id, f, is_default): v
+                                  for f, v in fresh.items()})
+            logger.info("AO3: stored the renewed sign-in cookie for account %s", account_id)
+    except Exception:
+        logger.warning("AO3: couldn't store the renewed sign-in cookie", exc_info=True)
 
 
 async def run_ao3_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
@@ -199,7 +215,8 @@ async def run_ao3_poll_cycle(account_id: int | None = None, force_full: bool = F
     creds = config.resolve_account_credentials("ao3", account_id, is_default, settings)
     client = _get_or_create_client(settings, creds.get("ao3_username", ""),
                                    creds.get("ao3_password", ""), creds.get("ao3_target_user", ""),
-                                   creds.get("ao3_session_cookie", ""))
+                                   creds.get("ao3_session_cookie", ""),
+                                   ao3_remember=creds.get("ao3_remember_token", ""))
 
     try:
         conn = get_connection()
@@ -363,6 +380,7 @@ async def run_ao3_poll_cycle(account_id: int | None = None, force_full: bool = F
             logger.debug("Error alert send failed", exc_info=True)
         raise
     finally:
+        save_fresh_cookies(client, account_id, is_default)
         _ao3_first_poll_done.add(account_id)
         _ao3_poll_running = False
         _ao3_poll_lock.release()

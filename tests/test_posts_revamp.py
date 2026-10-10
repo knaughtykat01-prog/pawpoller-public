@@ -236,8 +236,8 @@ class TestPreview:
     def test_media_rules_are_named(self, db_conn):
         out = posts_api.preview_post({"body": "hi", "platforms": ["thr", "ig"],
                                       "image_count": 2})["sites"]
-        assert any("2 images will be left off" in w["text"] and w["level"] == "warn"
-                   for w in out["thr"]["warnings"])
+        # Threads takes pictures since 4.61.0 (spec 030): nothing is left off any more.
+        assert not any("left off" in w["text"] for w in out["thr"]["warnings"])
         out = posts_api.preview_post({"body": "hi", "platforms": ["ig"]})["sites"]
         assert any("needs a photo" in w["text"] for w in out["ig"]["warnings"])
 

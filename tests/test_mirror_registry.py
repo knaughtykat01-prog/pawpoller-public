@@ -46,7 +46,8 @@ def test_class_counts_match_the_spec(conn):
     # Telegram post itself, so unlike a polled platform the DESKTOP can
     # originate one. See the registry entries for the full reasoning.
     # +4 in 4.46.0: Picarto — its trio via PLATFORM_PREFIXES, plus pic_channel_snapshots (poll output).
-    assert counts["SRV"] == 83
+    # +3 in 4.59.0: Facebook's trio via PLATFORM_PREFIXES (spec 029).
+    assert counts["SRV"] == 86
     # The spec's §1 says 25 but enumerates 26; two of those (posting_queue,
     # posting_log) are reclassified HANDOFF here for the reasons in the module
     # docstring, leaving 24 that actually travel as shared rows.

@@ -128,7 +128,7 @@ def app_url():
     import uvicorn
 
     import dashboard
-    config.save_settings({"setup_complete": True, "setup_mode": "server", "tours_seen": ["*"]})
+    config.save_settings({"setup_complete": True, "age_band": "adult", "setup_mode": "server", "tours_seen": ["*"]})
     from database.db import get_connection
     conn = get_connection()
     try:
@@ -267,7 +267,8 @@ def test_the_library_filter_bar_floats(browser, app_url):
                 assert page.evaluate("getComputedStyle(document.getElementById('shelf-fab')).opacity") == "1"
                 page.click("#shelf-fab")
                 page.wait_for_timeout(300)
-                bar = page.evaluate("parseFloat(getComputedStyle(document.body, '::before').height)")   # the bar strip
+                # the bar strip: a real .mobile-bar-bg element since 4.58.0 (PHONEBAR2 — iOS ignores body::before)
+                bar = page.evaluate("document.querySelector('.mobile-bar-bg').getBoundingClientRect().bottom")
                 panel = page.evaluate("document.getElementById('shelf-controls').getBoundingClientRect().top")
                 assert abs(panel - bar) <= 2, f"the panel should drop from under the top bar (top={panel}, bar={bar})"
                 page.keyboard.press("Escape")

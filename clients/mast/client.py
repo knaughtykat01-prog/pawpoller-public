@@ -115,6 +115,17 @@ def _status_mentions_account(status: dict, account_id: str) -> bool:
     return False
 
 
+def _error_text(resp) -> str:
+    """Mastodon's own error message from a failed response, else a short body."""
+    try:
+        err = (resp.json() or {}).get("error")
+        if err:
+            return str(err)[:200]
+    except Exception:
+        pass
+    return (resp.text or "").strip()[:200] or "no reason given"
+
+
 class MastClient:
     """Async HTTP client for a Mastodon instance's REST API."""
 
@@ -126,6 +137,9 @@ class MastClient:
         self._handle: str = ""          # @user@instance
         self._username: str = ""
         self._logged_in = False
+        # What Mastodon said about the last failed post, for the person to read
+        # (mirrors the X client). Empty when the last call succeeded.
+        self.last_error: str = ""
 
         # Optional CF Worker proxy — opt-in backup, not required from any IP
         # today. Mirrors the bsky client; enabled via mast_use_cf_proxy.
@@ -423,11 +437,13 @@ class MastClient:
     # -- Posting (Posts module) -----------------------------------------------
 
     async def _upload_media(self, image_path: str, description: str = "") -> str | None:
-        """Upload one image to /api/v2/media, return its media id (or None).
+        """Upload one image to /api/v2/media, return its media id once it is ready (or None).
 
-        v2 media may reply 200 (ready) or 202 (still processing) — either way the
-        id is usable straight away; Mastodon holds the status until the media is
-        processed, so we don't need to poll.
+        v2 media replies 200 (ready) or 202 (still processing). ⚠ A 202 id is NOT
+        safe to attach yet: this used to assume Mastodon holds the status until the
+        media is done, but mastodon.social answers 422 on /api/v1/statuses for a
+        GIF it is still converting (MASTGIF422, brand launch 2026-10-07). So a 202
+        is polled at GET /api/v1/media/:id until its ``url`` is set.
         """
         import mimetypes
         import os
@@ -444,11 +460,59 @@ class MastClient:
             if resp.status_code not in (200, 202):
                 logger.error("MAST: media upload failed (%s): %s",
                              resp.status_code, resp.text[:200])
+                self.last_error = (f"Mastodon refused the image ({resp.status_code}): "
+                                   f"{_error_text(resp)}")
                 return None
-            return str((resp.json() or {}).get("id") or "") or None
+            media = resp.json() or {}
+            mid = str(media.get("id") or "")
+            if not mid:
+                self.last_error = "Mastodon accepted the image but returned no id"
+                return None
+            if resp.status_code == 202 or not media.get("url"):
+                if not await self._wait_for_media(mid, headers):
+                    return None
+            return mid
         except Exception as e:
             logger.error("MAST: media upload error: %s", e)
+            self.last_error = f"Mastodon image upload failed: {e}"
             return None
+
+    # How long to wait for Mastodon to finish processing an upload. A GIF becomes
+    # a video server-side; a large one takes tens of seconds on a busy instance.
+    _MEDIA_WAIT_S = 120.0
+
+    async def _wait_for_media(self, media_id: str, headers: dict) -> bool:
+        """Poll GET /api/v1/media/:id until the attachment has a ``url`` (processed).
+
+        Mastodon answers 206 while processing and 200 once done. True when ready.
+        """
+        waited, delay = 0.0, 1.0
+        while waited < self._MEDIA_WAIT_S:
+            await asyncio.sleep(delay)
+            waited += delay
+            delay = min(delay * 1.5, 5.0)
+            try:
+                resp = await self._http.get(
+                    f"{self.instance_url}/api/v1/media/{media_id}",
+                    headers=headers, timeout=30.0,
+                )
+            except Exception as e:
+                logger.warning("MAST: media %s status check failed: %s", media_id, e)
+                continue
+            if resp.status_code == 206:
+                continue
+            if resp.status_code == 200 and (resp.json() or {}).get("url"):
+                return True
+            if resp.status_code != 200:
+                logger.error("MAST: media %s check returned %s: %s",
+                             media_id, resp.status_code, resp.text[:200])
+                self.last_error = (f"Mastodon couldn't process the image "
+                                   f"({resp.status_code}): {_error_text(resp)}")
+                return False
+        logger.error("MAST: media %s still processing after %.0fs", media_id, waited)
+        self.last_error = (f"Mastodon was still processing the image after "
+                           f"{int(waited)} seconds — try again in a minute")
+        return False
 
     async def create_status(self, text: str, *, image_path: str | None = None,
                             image_alt: str = "", image_paths: list[str] | None = None,
@@ -462,8 +526,11 @@ class MastClient:
         scope=read will 403 here — surfaced to the caller as an error).
         ``in_reply_to_id`` threads the status as a reply (gap G3 native reply).
         """
+        self.last_error = ""
         if not await self.ensure_logged_in():
             logger.error("MAST: not logged in, cannot post")
+            self.last_error = ("Mastodon didn't accept the access token "
+                               "(check the instance URL and token)")
             return None
 
         # Up to 4 images. Prefer the multi-image params, falling back to the
@@ -495,8 +562,17 @@ class MastClient:
             )
             if resp.status_code == 403:
                 logger.error("MAST: post rejected (403) — token lacks a write scope")
+                self.last_error = ("Mastodon refused the post (403) — the access token "
+                                   "needs the write:statuses and write:media scopes")
                 return None
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                # Say what Mastodon said. A 422 is a refused post (e.g. media still
+                # processing, too long), not a permissions problem.
+                logger.error("MAST: post rejected (%s): %s",
+                             resp.status_code, resp.text[:200])
+                self.last_error = (f"Mastodon refused the post ({resp.status_code}): "
+                                   f"{_error_text(resp)}")
+                return None
             status = resp.json() or {}
             result = {
                 "id": str(status.get("id", "")),
@@ -507,4 +583,5 @@ class MastClient:
             return result
         except Exception as e:
             logger.error("MAST: post failed: %s", e)
+            self.last_error = f"Mastodon post failed: {e}"
             return None

@@ -77,8 +77,52 @@ class ThrAuthError(Exception):
     """
 
 
+class ThrError(RuntimeError):
+    """A Threads refusal, already in plain words (spec 030, research R2/R3)."""
+
+
+# Container processing errors (troubleshooting docs) in plain words. INVALID_ASPEC_RATIO is Meta's spelling.
+_PROCESSING_ERRORS = {
+    "FAILED_DOWNLOADING_VIDEO": "Threads couldn't download the video",
+    "FAILED_PROCESSING_VIDEO": "Threads couldn't process the video",
+    "FAILED_PROCESSING_AUDIO": "Threads couldn't process the video's sound",
+    "INVALID_ASPEC_RATIO": "Threads doesn't take that shape (too wide or too tall)",
+    "INVALID_ASPECT_RATIO": "Threads doesn't take that shape (too wide or too tall)",
+    "INVALID_BIT_RATE": "Threads doesn't take the video's bit rate",
+    "INVALID_DURATION": "Threads doesn't take the video's length (5 minutes at most)",
+    "INVALID_FRAME_RATE": "Threads doesn't take the video's frame rate (23–60 frames a second)",
+    "INVALID_AUDIO_CHANNELS": "Threads doesn't take the video's sound channels",
+    "INVALID_AUDIO_CHANNEL_LAYOUT": "Threads doesn't take the video's sound channels",
+}
+PERMISSION_SENTENCE = ("Threads won't let this token publish: add the threads_content_publish permission to your "
+                       "Meta app and make a new token (Settings → Accounts → Threads, see the guide)")
+LIMIT_SENTENCE = "Threads' daily post limit is used up — try again tomorrow"
+
+
+def plain_error(status: int, body) -> ThrError:
+    """Meta's error JSON → one sentence for the owner (research R3)."""
+    err = (body or {}).get("error") if isinstance(body, dict) else None
+    err = err if isinstance(err, dict) else {}
+    code = err.get("code")
+    msg = str(err.get("error_user_msg") or err.get("message") or f"HTTP {status}")
+    low = msg.lower()
+    if "blocked" in low:
+        return ThrError("Meta has blocked Threads API access for your app — check the app's status in the Meta "
+                        f"developer dashboard ({msg})")
+    if code in (10, 200) or "threads_content_publish" in low or "permission" in low:
+        return ThrError(PERMISSION_SENTENCE)
+    if code == 190:
+        return ThrError("Threads sign-in expired — make a new token (Settings → Accounts → Threads)")
+    if code in (4, 17, 32, 613) or status == 429 or "limit" in low:
+        return ThrError(LIMIT_SENTENCE)
+    return ThrError(f"Threads refused the post: {msg}")
+
+
 class ThrClient:
     """Async client for the official Threads Graph API."""
+
+    # Processing wait (research R2): quick checks first, since pictures are usually ready in seconds.
+    WAIT_FAST, WAIT_FAST_FOR, WAIT_SLOW, WAIT_LIMIT = 3.0, 30.0, 10.0, 300.0
 
     def __init__(self, access_token: str = "", user_id: str = "",
                  proxy_url: str = "", proxy_key: str = ""):
@@ -260,6 +304,79 @@ class ThrClient:
             {"creation_id": create["id"]})
         if not pub or not pub.get("id"):
             return None
+        media_id = str(pub["id"])
+        perma = await self._get_json(f"{_API_BASE}/{media_id}", {"fields": "permalink"})
+        return {"id": media_id, "url": (perma or {}).get("permalink", "")}
+
+    async def _post_strict(self, url: str, data: dict) -> dict:
+        """POST that raises ThrError with Threads' own reason (spec 030) instead of returning None."""
+        try:
+            resp = await self._http.post(url, data={**data, "access_token": self.access_token})
+        except httpx.HTTPError as e:
+            raise ThrError(f"Couldn't reach Threads: {type(e).__name__}") from e
+        try:
+            body = resp.json() if resp.content else {}
+        except ValueError:
+            body = {}
+        if resp.status_code not in (200, 201) or not isinstance(body, dict) or not body.get("id"):
+            logger.error("THR: post failed (%s): %s", resp.status_code, resp.text[:300])
+            raise plain_error(resp.status_code, body)
+        return body
+
+    async def wait_ready(self, container_id: str) -> None:
+        """Wait for a container to finish processing (FINISHED / PUBLISHED); refuse on ERROR, EXPIRED or
+        after WAIT_LIMIT seconds."""
+        waited = 0.0
+        while True:
+            data = await self._get_json(f"{_API_BASE}/{container_id}", {"fields": "status,error_message"}) or {}
+            status = str(data.get("status") or "")
+            if status in ("FINISHED", "PUBLISHED"):
+                return
+            if status == "ERROR":
+                code = str(data.get("error_message") or "UNKNOWN")
+                raise ThrError(_PROCESSING_ERRORS.get(code, f"Threads couldn't process the file ({code})"))
+            if status == "EXPIRED":
+                raise ThrError("Threads let the upload expire before it was published — try again")
+            if waited >= self.WAIT_LIMIT:
+                raise ThrError("Threads was still processing after 5 minutes, so it wasn't published — try again")
+            step = self.WAIT_FAST if waited < self.WAIT_FAST_FOR else self.WAIT_SLOW
+            await asyncio.sleep(step)
+            waited += step
+
+    async def create_media_post(self, text: str, items: list[dict], topic_tag: str = "") -> dict:
+        """Publish pictures / video (spec 030). ``items``: 1–20 of {"kind": "image"|"video", "url", "alt"} —
+        one becomes a single post, two or more a carousel, none a text post. → {"id", "url"}; raises ThrError."""
+        if not items and not text:
+            raise ThrError("Nothing to post to Threads")
+        if not await self.ensure_logged_in():
+            raise ThrError("Threads sign-in expired — make a new token (Settings → Accounts → Threads)")
+        base = f"{_API_BASE}/{self.user_id}/threads"
+
+        def media_form(item: dict) -> dict:
+            kind = "VIDEO" if item.get("kind") == "video" else "IMAGE"
+            form = {"media_type": kind, ("video_url" if kind == "VIDEO" else "image_url"): item["url"]}
+            if item.get("alt"):
+                form["alt_text"] = str(item["alt"])[:1000]
+            return form
+
+        post_form: dict = {"text": text} if text else {}
+        if topic_tag:
+            post_form["topic_tag"] = topic_tag
+        if not items:
+            container = await self._post_strict(base, {"media_type": "TEXT", **post_form})
+        elif len(items) == 1:
+            container = await self._post_strict(base, {**media_form(items[0]), **post_form})
+        else:
+            children = []
+            for item in items[:20]:
+                child = await self._post_strict(base, {**media_form(item), "is_carousel_item": "true"})
+                await self.wait_ready(child["id"])
+                children.append(str(child["id"]))
+            container = await self._post_strict(base, {"media_type": "CAROUSEL",
+                                                       "children": ",".join(children), **post_form})
+        await self.wait_ready(container["id"])
+        pub = await self._post_strict(f"{_API_BASE}/{self.user_id}/threads_publish",
+                                      {"creation_id": container["id"]})
         media_id = str(pub["id"])
         perma = await self._get_json(f"{_API_BASE}/{media_id}", {"fields": "permalink"})
         return {"id": media_id, "url": (perma or {}).get("permalink", "")}
