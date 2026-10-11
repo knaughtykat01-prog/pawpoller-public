@@ -351,6 +351,7 @@ def confirm_email(body: dict):
     logger.info("Auth: account email confirmed")
     if old and old != to:
         account_mail.notice("email_changed", old)
+    account_mail.notice("verified", to)
     return {"status": "confirmed"}
 
 

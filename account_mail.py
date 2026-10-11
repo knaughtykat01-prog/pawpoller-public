@@ -33,7 +33,7 @@ PURPOSES = ("confirm", "reset")
 # pool, so without it parallel guesses each read tries=0 and the 5-try limit is void (4.69.0 review).
 # Not config's settings lock — get_settings takes that one, so holding it here would deadlock.
 _LOCK = threading.Lock()
-NOTICES = ("password_changed", "email_changed")
+NOTICES = ("password_changed", "email_changed", "verified")
 
 
 def ready() -> bool:
@@ -80,17 +80,35 @@ def _allowed(purpose: str) -> bool:
 
 
 def send_code(purpose: str, to: str) -> bool:
-    """Make a fresh code (the old one stops working) and email it. False if not sent."""
+    """Make a fresh code and email it; once it's sent, the old one stops working. False if not sent.
+
+    The code is saved only after the Tech Centre took it (4.69.1 review, High): saved before, it was
+    guessable during the send, and a failed send that got its slot back left it valid for good, so
+    anyone who could make sends fail could mint unlimited 5-try reset codes.
+    """
     if purpose not in PURPOSES or not to or not ready():
         return False
     with _LOCK:
         if not _allowed(purpose):
             return False
-        code = f"{secrets.randbelow(10 ** 6):06d}"
-        salt = secrets.token_hex(8)
-        rec = {"fp": _fp(salt, code), "salt": salt, "exp": time.time() + CODE_TTL, "tries": 0, "to": to}
+    code = f"{secrets.randbelow(10 ** 6):06d}"
+    if not _post(to, purpose, code):
+        _refund(purpose)   # a failed send (Tech Centre down, mail refused) mustn't lock the owner out for an hour
+        return False
+    salt = secrets.token_hex(8)
+    rec = {"fp": _fp(salt, code), "salt": salt, "exp": time.time() + CODE_TTL, "tries": 0, "to": to}
+    with _LOCK:
         config.save_settings({_key(purpose): rec})
-    return _post(to, purpose, code)
+    return True
+
+
+def _refund(purpose: str) -> None:
+    with _LOCK:
+        log = config.get_settings().get("auth_mail_log") or {}
+        hits = log.get(purpose) or []
+        if hits:
+            log[purpose] = hits[:-1]
+            config.save_settings({"auth_mail_log": log})
 
 
 def check_code(purpose: str, code: str) -> str | None:

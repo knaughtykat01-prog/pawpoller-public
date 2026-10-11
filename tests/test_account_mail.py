@@ -112,6 +112,7 @@ def test_signup_sends_the_confirm_code_and_it_confirms(mails):
     s = config.get_settings()
     assert s["auth_email"] == "owner@example.com" and not s.get("auth_email_pending")
     assert c.get("/api/auth/signup-status").json()["email"] == "confirmed"
+    assert mails[-1] == ("owner@example.com", "verified", "")   # "You've been verified" (4.69.1)
 
 
 def test_changing_a_confirmed_email_tells_the_old_one(mails):
@@ -213,3 +214,28 @@ def test_a_reset_code_dies_when_the_email_changes(mails):
     config.save_settings({"auth_email": "new@example.com"})
     r = c.post("/api/auth/reset", json={"code": code, "password": "new password 3", "confirm": "new password 3"})
     assert r.status_code == 400
+
+
+def test_a_failed_send_does_not_use_up_the_hour(mails, monkeypatch):
+    """4.69.1: every send failed (mail refused), and those failures locked the owner out for an hour."""
+    monkeypatch.setattr(account_mail, "_post", lambda *a, **k: False)
+    assert [account_mail.send_code("confirm", "owner@example.com") for _ in range(5)] == [False] * 5
+    monkeypatch.setattr(account_mail, "_post", lambda to, purpose, code="": mails.append((to, purpose, code)) or True)
+    assert account_mail.send_code("confirm", "owner@example.com")
+
+
+def test_a_code_that_never_went_out_cannot_be_used(mails, monkeypatch):
+    """4.69.1 review: a refunded send that kept its code let forced failures mint unlimited guessable codes."""
+    made = []
+    monkeypatch.setattr(account_mail, "_post", lambda to, purpose, code="": made.append(code) and False)
+    assert not account_mail.send_code("reset", "owner@example.com")
+    assert made and account_mail.check_code("reset", made[-1]) is None
+
+
+def test_a_code_is_not_valid_while_it_is_being_sent(mails, monkeypatch):
+    """4.69.1 re-review: saved before the send, a code could be guessed during the Tech Centre round trip."""
+    seen = []
+    monkeypatch.setattr(account_mail, "_post",
+                        lambda to, purpose, code="": seen.append(account_mail.check_code(purpose, code)) or True)
+    assert account_mail.send_code("reset", "owner@example.com")
+    assert seen == [None]

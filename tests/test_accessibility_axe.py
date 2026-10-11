@@ -423,3 +423,31 @@ def test_the_mail_and_import_screens_pass_axe(browser, signup_url, monkeypatch, 
     finally:
         ctx.close()
     assert not fails, "\n".join(fails)
+
+
+def test_the_overnight_sheet_closes_on_a_phone(browser, app_url):
+    """4.69.1: a long night pushed the only close button off the bottom of an iPhone screen."""
+    ctx = _ctx(browser, viewport={"width": 390, "height": 664}, is_mobile=True, has_touch=True)
+    page = ctx.new_page()
+    try:
+        page.goto(app_url + "/#/", wait_until="networkidle")
+        page.wait_for_timeout(500)
+        page.evaluate("() => window.Tour && Tour.end && Tour.end()")
+        page.evaluate("""() => {
+            const piece = i => ({title: 'Sample Piece ' + i, href: '#/', gain: {views: 10 * i, score: 0, faves: i, comments: 0},
+                                 sites: [], milestones: [], series: [1, 2, 3]});
+            Overnight.open({since: '2026-10-10T12:00:00Z', until: '2026-10-11T00:00:00Z', totals: {views: 900, faves: 40, comments: 3, followers: 2},
+                usual: null, coverage: {sites: 3, covered: 3}, names: {}, pieces: Array.from({length: 12}, (_, i) => piece(i + 1)),
+                comments: {count: 0, items: []}, followers: {named: [], counted: {}},
+                did: {attention: [], posted: [], checks: 0, check_sites: 0}, best_time: null, show_after: '6'});
+        }""")
+        page.evaluate("() => window.Tour && Tour.maybeAuto(location.hash)")   # a tour tries to start over it
+        page.wait_for_timeout(1500)
+        assert page.locator(".pp-tour-blocker").count() == 0, "a tour started on top of the sheet"
+        for sel in (".ov-x", ".ov-foot [data-close]"):
+            box = page.locator(sel).bounding_box()
+            assert box and box["y"] >= 0 and box["y"] + box["height"] <= 664, f"{sel} is off screen: {box}"
+        page.tap(".ov-foot [data-close]")
+        assert page.locator(".ov-overlay").count() == 0
+    finally:
+        ctx.close()

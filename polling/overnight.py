@@ -194,6 +194,33 @@ def _piece_index(conn) -> dict[tuple[str, str], dict]:
     return idx
 
 
+def _named(name: str, kind: str = "", _cache: dict | None = None) -> str:
+    """A Library piece's display title — its title from masterpiece.json / story.json — not the folder
+    name (4.69.1: the sheet showed folder names). Falls back to the folder name with spaces."""
+    if not name:
+        return ""
+    if _cache is not None and name in _cache:
+        return _cache[name]
+    title = ""
+    readers = ("story", "artwork") if kind == "story" else ("artwork", "story")
+    for r in readers:
+        try:
+            if r == "artwork":
+                from posting import artwork_reader
+                title = artwork_reader.load_artwork(name).title
+            else:
+                from posting import story_reader
+                title = story_reader.load_story(name).title
+        except Exception:
+            title = ""
+        if title:
+            break
+    title = title or name.replace("_", " ")
+    if _cache is not None:
+        _cache[name] = title
+    return title
+
+
 def _title(conn, code: str, sid: str) -> str:
     spec = pm.BY_CODE.get(code)
     try:
@@ -273,7 +300,7 @@ def top_pieces(conn, changes_by_site: dict, start: datetime, end: datetime, limi
                  "series": _series(conn, g["members"], start, end), "thumb": "", "thumb_platform": ""}
         if ref and ref["kind"] == "artwork":
             from database import masterpiece_queries as mq
-            piece.update(title=ref["name"].replace("_", " "), href=f"#/masterpieces/{ref['name']}", kind="artwork")
+            piece.update(title=_named(ref["name"], "artwork"), href=f"#/masterpieces/{ref['name']}", kind="artwork")
             try:
                 s = mq.summarize(conn, ref["name"])
                 piece.update(thumb=s.get("cover_thumb") or "", thumb_platform=s.get("cover_platform") or "")
@@ -281,7 +308,7 @@ def top_pieces(conn, changes_by_site: dict, start: datetime, end: datetime, limi
                 pass
         elif ref:
             ch = max(g["chapters"], key=g["chapters"].get) if g["chapters"] else None
-            piece.update(title=ref["name"].replace("_", " "), chapter=ch, kind="story",
+            piece.update(title=_named(ref["name"], ref["kind"]), chapter=ch, kind="story",
                          href=f"#/posting/{ref['name']}")
         else:
             piece.update(title=_title(conn, g["code"], g["sid"]), kind="post",
@@ -319,8 +346,9 @@ def did(conn, start: datetime, end: datetime) -> dict:
         if r[3] == "success":
             ok_after[(r[0], r[1])] = r[5]
     went: dict[str, dict] = {}
+    names: dict[str, str] = {}
     for plat, name, ch, status, err, at, sched in rows:
-        title = (name or "").replace("_", " ")
+        title = _named(name or "", _cache=names)
         if status == "success":
             w = went.setdefault(name, {"title": title, "sites": [], "at": at, "scheduled": False})
             if plat not in w["sites"]:

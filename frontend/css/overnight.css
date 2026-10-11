@@ -1,11 +1,16 @@
 /* Overnight sheet (spec 026) — a centred card on desktop, a bottom sheet on a phone. */
 .ov-overlay { z-index: 60; padding: 28px 16px; align-items: flex-start !important; }
-.ov-sheet { width: min(560px, 100%); max-height: calc(100vh - 56px); display: flex; flex-direction: column;
+.ov-sheet { width: min(560px, 100%); max-height: calc(100vh - 56px); max-height: calc(100dvh - 56px); display: flex; flex-direction: column;
     background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border);
     border-radius: 18px; box-shadow: 0 30px 80px rgba(0, 0, 0, .35); }
-.ov-scroll { overflow-y: auto; padding: 22px 22px 8px; display: grid; gap: 22px; }
+.ov-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; min-height: 0; flex: 1 1 auto;
+    padding: 22px 22px 8px; display: grid; gap: 22px; }
 .ov-grab { display: none; }
-.ov-head { display: grid; gap: 6px; }
+.ov-head { display: grid; gap: 6px; position: relative; padding-right: 40px; }
+/* 4.69.1: a close button that's always on screen, whatever the sheet's height. */
+.ov-x { position: absolute; top: -6px; right: -6px; width: 44px; height: 44px; border: 0; border-radius: 50%;
+    background: transparent; color: var(--text-secondary); font-size: 28px; line-height: 1; cursor: pointer; }
+.ov-x:hover, .ov-x:focus-visible { background: var(--bg-tertiary); color: var(--text-primary); }
 .ov-span { font-size: 13px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .ov-head h2 { font: 700 26px/1.15 var(--font-display); margin: 0; text-wrap: balance; letter-spacing: -.015em; }
 .ov-hl { color: var(--accent); }
@@ -73,7 +78,9 @@
 
 @media (max-width: 620px) {
     .ov-overlay { padding: 40px 0 0; align-items: stretch !important; }
-    .ov-sheet { width: 100%; max-height: none; margin-top: auto; border-radius: 20px 20px 0 0; border-bottom: 0; }
+    /* 4.69.1: was max-height: none, so a long night pushed the footer (the only close) off the bottom of
+       an iPhone screen. dvh is the visible height, address bar and all. */
+    .ov-sheet { width: 100%; max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); margin-top: auto; min-height: 0; border-radius: 20px 20px 0 0; border-bottom: 0; }
     .ov-grab { display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--border); margin: 8px auto 0; }
     .ov-scroll { padding: 14px 16px 8px; }
     .ov-head h2 { font-size: 23px; }

@@ -514,6 +514,10 @@ window.Tour = (function () {
             const firstTarget = (steps.find(s => s.target) || {}).target;
             if (firstTarget && !(await findTarget(firstTarget, 30))) return;
             if (_running || isDone(name) || tourForHash(location.hash) !== name) return;
+            // 4.69.1: never auto-start over an open dialog (the Overnight sheet, What's new): the blocker
+            // sits above it and swallows every tap, so the dialog can't be closed. The next visit retries.
+            if ([...document.querySelectorAll('.modal-overlay.open, [role=dialog], [role=alertdialog]')]
+                    .some(el => el.getClientRects().length > 0)) return;
             begin(name, steps, { auto: true });
         } catch (e) { /* never let onboarding break navigation */ }
     }

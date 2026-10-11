@@ -9,15 +9,19 @@
 const Overnight = {
     _open: null,
 
+    /* Never over sign-in, sign-up or setup (4.69.1: it opened over sign-up). Checked again at open time. */
+    blocked() { return /^#\/(login|loading|setup|signup|dashboard-)/.test(location.hash); },
+
     async auto() {
         try {
             const r = await API.post('/api/overnight/auto', {});
             if (!(r && r.show)) return;
             // Never stack on another dialog (What's new, a tour): wait for it to close.
             const busy = () => [...document.querySelectorAll('.modal-overlay.open, [role=dialog], [role=alertdialog]')]
-                .some(el => !el.closest('.ov-overlay') && el.getClientRects().length > 0);
+                .some(el => !el.closest('.ov-overlay') && el.getClientRects().length > 0)
+                || !!document.querySelector('.pp-tour-blocker');   // 4.69.1: nor under a running tour
             for (let i = 0; busy() && i < 600; i++) await new Promise(res => setTimeout(res, 1000));
-            if (!busy()) this.open(r);
+            if (!busy() && !this.blocked()) this.open(r);
         } catch (e) { /* the app works without it */ }
     },
 
@@ -172,6 +176,7 @@ const Overnight = {
           <div class="ov-grab" aria-hidden="true"></div>
           <div class="ov-scroll">
             <header class="ov-head"><div class="ov-span">${this._esc(this._span(d))}</div>
+              <button class="ov-x" type="button" data-close aria-label="Close">&times;</button>
               <h2 id="ov-title">${this._headline(d)}</h2>
               <p>${coverage}${u ? ', compared with your usual for these hours this week' : ''}.</p></header>
             <div class="ov-totals">${total(t.views, 'views', 'views', scoreLine)}${total(t.faves, 'faves &amp; likes', 'faves')}
@@ -195,7 +200,7 @@ const Overnight = {
         try { history.pushState({ overnight: 1 }, ''); } catch (e) { /* ignore */ }
         this._onPop = () => { if (this._open) this.close(true, true); };
         window.addEventListener('popstate', this._onPop);
-        const btn = ov.querySelector('[data-close]');
+        const btn = ov.querySelector('.ov-foot [data-close]');
         if (btn) btn.focus();
     },
 

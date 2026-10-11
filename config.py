@@ -1282,7 +1282,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.69.0"
+APP_VERSION = "4.69.1"
 
 
 def _app_commit() -> str:

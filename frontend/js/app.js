@@ -392,7 +392,7 @@ const App = {
         this._statusCheckInterval = setInterval(() => this._updateStatusCheck(), 60000);
         this._initProgressCheckBar();
         // Spec 026: the Overnight sheet, once per absence (the server decides; never over sign-in/setup).
-        if (window.Overnight && !/^#\/(login|loading|setup|dashboard-)/.test(location.hash)) Overnight.auto();
+        if (window.Overnight && !Overnight.blocked()) Overnight.auto();
 
         /* Guided tours auto-fire from route() (see the Tour.maybeAuto hook
            there): getting-started once on the overview first-run, then each
@@ -3086,10 +3086,13 @@ const App = {
                 </form>`));
             document.getElementById('signup-form').addEventListener('submit', async (ev) => {
                 ev.preventDefault();
+                const btn = document.getElementById('signup-submit');
+                if (btn.disabled) return;
+                btn.disabled = true; btn.textContent = 'Saving…';
                 try {
                     await API.addAccountEmail(document.getElementById('signup-email').value.trim(), document.getElementById('signup-current').value);
                     next();
-                } catch (err) { showErr(fieldErr(err.message)); }
+                } catch (err) { showErr(fieldErr(err.message)); btn.disabled = false; btn.textContent = 'Save email'; }
             });
             document.getElementById('signup-email').focus();
             return;
@@ -3114,12 +3117,21 @@ const App = {
                 </form>`));
             document.getElementById('signup-form').addEventListener('submit', async (ev) => {
                 ev.preventDefault();
+                const btn = document.getElementById('signup-submit');
+                if (btn.disabled) return;
+                btn.disabled = true;
                 try { await API.confirmEmail(document.getElementById('signup-code').value.trim()); next(); }
-                catch (err) { showErr(fieldErr(err.message)); }
+                catch (err) { showErr(fieldErr(err.message)); btn.disabled = false; }
             });
-            document.getElementById('signup-resend').addEventListener('click', async () => {
-                try { await API.sendEmailCode(); document.getElementById('signup-note').textContent = 'A new code is on its way. The old one no longer works.'; }
-                catch (err) { showErr(fieldErr(err.message)); }
+            document.getElementById('signup-resend').addEventListener('click', async (ev) => {
+                const b = ev.currentTarget;
+                if (b.disabled) return;
+                b.disabled = true;
+                const note = document.getElementById('signup-note');
+                note.textContent = 'Sending…';
+                try { await API.sendEmailCode(); note.textContent = 'A new code is on its way. The old one no longer works.'; }
+                catch (err) { note.textContent = ''; showErr(fieldErr(err.message)); }
+                finally { setTimeout(() => { b.disabled = false; }, 5000); }
             });
             document.getElementById('signup-later').addEventListener('click', () => {
                 try { sessionStorage.setItem('pp-verify-later', '1'); } catch (e) { /* ignore */ }
