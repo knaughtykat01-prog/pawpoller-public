@@ -523,7 +523,9 @@ def _start_server(host: str, port: int):
     """Run uvicorn in a daemon thread."""
     logger.info("Uvicorn thread starting on %s:%d ...", host, port)
     try:
+        import dashboard
         from dashboard import app as dash_app
+        dashboard.SIGNUP_GATES = True   # 4.67.0 (spec 033): the account + Terms gates
         uvicorn.run(
             dash_app, host=host, port=port, log_level="info",
             # Behind a reverse proxy (the maintainer's Caddy terminates TLS for

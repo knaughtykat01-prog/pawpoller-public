@@ -291,6 +291,21 @@ const App = {
             console.warn('[App] Dashboard status check failed:', err);
         }
 
+        /* First sign-up (4.67.0, spec 033): an account, its email and the current Terms come
+           before anything else — before the wizard, before anything that needs a session. */
+        try {
+            const su = await API.getSignupStatus();
+            this._signup = su;
+            if (!su.account || (su.authenticated && (su.legal.needs_accept || su.email === 'none'
+                    || App._verifyDue(su)))) {
+                window.location.hash = '#/signup';
+                this.route();
+                return;
+            }
+        } catch (err) {
+            console.warn('[App] Sign-up status check failed:', err);
+        }
+
         // Past the auth gate — safe to start the platform health
         // poller. /api/platforms/health requires a valid session, so
         // starting earlier would 401-spam the login page on its 60s tick.
@@ -325,7 +340,9 @@ const App = {
         try {
             const setupResp = await API.getSetupStatus();
             if (!setupResp.setup_complete) {
-                window.location.hash = '#/setup';
+                // Sign-up's own questions first (age, zone, reports), then the wizard.
+                const a = (this._signup && this._signup.answered) || {};
+                window.location.hash = this._signupAnswered(a) ? '#/setup' : '#/signup';
                 this.route();
                 return;  // Don't proceed with platform auth — wizard handles it
             }
@@ -1040,7 +1057,7 @@ const App = {
            remove the main column's left margin. */
         const isFullScreen = parts[0] === 'login' || parts[0] === 'loading'
             || parts[0] === 'dashboard-login' || parts[0] === 'dashboard-setup'
-            || parts[0] === 'setup';
+            || parts[0] === 'setup' || parts[0] === 'signup';
         const sidebar = document.querySelector('.sidebar');
         const mainCol = document.getElementById('main-col');
         const bottomNav = document.getElementById('bottom-nav');
@@ -1151,21 +1168,22 @@ const App = {
          * Skipped on the auth-gate screens (the /api/whatsnew fetch is auth-gated
          * and would 401 before login); runs once per session. */
         if (!this._whatsNewChecked
-            && !['dashboard-login', 'dashboard-setup', 'setup', 'login', 'loading'].includes(parts[0])) {
+            && !['dashboard-login', 'dashboard-setup', 'setup', 'signup', 'login', 'loading'].includes(parts[0])) {
             this._whatsNewChecked = true;
             this._maybeShowWhatsNew();
         }
 
         /* Tech Centre (4.10.0): an install that predates the consent step is asked
          * at its FIRST technical error — the backend holds the report until then. */
-        if (!['dashboard-login', 'dashboard-setup', 'setup', 'login', 'loading'].includes(parts[0])) {
+        if (!['dashboard-login', 'dashboard-setup', 'setup', 'signup', 'login', 'loading'].includes(parts[0])) {
             this._maybeShowTechPrompt();
         }
 
         if (parts[0] === 'dashboard-login') {
             this.renderDashboardLogin();
-        } else if (parts[0] === 'dashboard-setup') {
-            this.renderDashboardSetup();
+        } else if (parts[0] === 'dashboard-setup' || parts[0] === 'signup') {
+            // 4.67.0: the old "PawPoller Setup" password page is the sign-up now.
+            this.renderSignup();
         } else if (parts[0] === 'setup') {
             // 2.16.13 (BUG-017): hard-block #/setup once setup_complete
             // is true so users can't accidentally re-enter the wizard
@@ -2636,11 +2654,12 @@ const App = {
         }
 
         // Use cached dashboard status from init(), fall back to fresh fetch
-        let totpEnabled = false, turnstileSiteKey = '';
+        let totpEnabled = false, turnstileSiteKey = '', resetAvailable = false;
         try {
             const status = this._dashboardStatus || await API.getDashboardStatus();
             totpEnabled = status.totp_enabled;
             turnstileSiteKey = status.turnstile_site_key || '';
+            resetAvailable = !!status.reset_available;
         } catch { /* proceed with defaults */ }
 
         if (this._stale(_rt)) return;
@@ -2650,8 +2669,8 @@ const App = {
                     <h2>PawPoller</h2>
                     <p style="color:var(--text-muted);margin-bottom:20px;font-size:13px">Sign in to access your dashboard.</p>
                     <div class="login-field">
-                        <label>Username</label>
-                        <input type="text" id="dash-login-username" class="search-input" placeholder="Username" style="width:100%" autocomplete="username">
+                        <label for="dash-login-username">Username or email</label>
+                        <input type="text" id="dash-login-username" class="search-input" placeholder="Username or email" style="width:100%" autocomplete="username">
                     </div>
                     <div class="login-field">
                         <label>Password</label>
@@ -2669,6 +2688,7 @@ const App = {
                     </label>
                     <button class="btn btn-primary login-btn" id="dash-login-submit">Sign In</button>
                     <div class="login-error" id="dash-login-error"></div>
+                    ${resetAvailable ? '<p class="signup-hint"><a href="#" id="dash-login-forgot">Forgot your password?</a></p>' : ''}
                 </div>
             </div>
         `);
@@ -2742,6 +2762,7 @@ const App = {
         };
 
         document.getElementById('dash-login-submit').addEventListener('click', submit);
+        document.getElementById('dash-login-forgot')?.addEventListener('click', (e) => { e.preventDefault(); this._renderPasswordReset(); });
         document.getElementById('dash-login-password').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 const totpInput = document.getElementById('dash-login-totp');
@@ -2758,67 +2779,551 @@ const App = {
         document.getElementById('dash-login-username').focus();
     },
 
-    /* ── Dashboard Setup Screen ───────────────────────────────
-     * renderDashboardSetup() — First-time password setup for dashboard auth.
-     * Only accessible when no auth is configured.  Creates a new admin user
-     * with a bcrypt-hashed password.  Redirects to login on success. */
+    /* 4.69.0: every sign-up question that comes before the setup wizard is answered. */
+    _signupAnswered(a) {
+        return !!(a && a.age && a.timezone && a.tech && a.postybirb && a.twofa);
+    },
 
-    renderDashboardSetup() {
-        this._setContent(`
-            <div class="login-screen">
-                <div class="login-card">
-                    <h2>PawPoller Setup</h2>
-                    <p style="color:var(--text-muted);margin-bottom:20px;font-size:13px">Set up dashboard authentication. This is optional for desktop use.</p>
-                    <div class="login-field">
-                        <label>Username</label>
-                        <input type="text" id="setup-username" class="search-input" placeholder="admin" value="admin" style="width:100%">
-                    </div>
-                    <div class="login-field">
-                        <label>Password</label>
-                        <input type="password" id="setup-password" class="search-input" placeholder="Minimum 8 characters" style="width:100%">
-                    </div>
-                    <div class="login-field">
-                        <label>Confirm Password</label>
-                        <input type="password" id="setup-confirm" class="search-input" placeholder="Confirm password" style="width:100%">
-                    </div>
-                    <button class="btn btn-primary login-btn" id="setup-submit">Create Account</button>
-                    <div class="login-error" id="setup-error"></div>
-                </div>
+    /* PostyBirb import (4.69.0, spec 033 phase 8): the ticked list, then each account's result
+       with its login tested. Used by the sign-up screen and Settings → Accounts. */
+    async _pbImportPanel(host, onDone) {
+        const esc = (v) => Utils.escapeHtml(String(v ?? ''));
+        let r;
+        try { r = await API.pbScan(); }
+        catch (e) { host.innerHTML = `<p class="login-error">${esc(e.message)}</p><button class="btn" id="pb-done">Continue</button>`;
+            host.querySelector('#pb-done').addEventListener('click', onDone); return; }
+        const rows = r.accounts || [];
+        if (!rows.length) {
+            host.innerHTML = `<p class="signup-hint">${esc(r.note || "PostyBirb has no accounts to bring over.")}</p>
+                <div class="signup-actions"><button class="btn btn-primary" type="button" id="pb-done">Continue</button></div>`;
+            host.querySelector('#pb-done').addEventListener('click', async () => { if (!r.locked) { try { await API.pbSkip(); } catch (e) { /* ignore */ } } onDone(); });
+            return;
+        }
+        host.innerHTML = `
+            <fieldset class="pb-list"><legend class="signup-hint">Untick any you don't want.</legend>
+            ${rows.map(a => `<label class="signup-switch${a.portable ? '' : ' pb-off'}">
+                <input type="checkbox" value="${esc(a.pb_id)}"${a.portable ? ' checked' : ' disabled'}>
+                <span><strong>${esc(a.site)}</strong>${a.name && a.name !== a.site ? ` — ${esc(a.name)}` : ''}
+                ${a.portable ? '' : `<br><span class="signup-hint">${esc(a.reason)}</span>`}</span></label>`).join('')}
+            </fieldset>
+            <p class="signup-hint">A copied sign-in is the same session PostyBirb uses. If you sign out of a site in either app, sign in again in both.</p>
+            <div class="signup-actions">
+                <button class="btn" type="button" id="pb-skip">Not now</button>
+                <button class="btn btn-primary" type="button" id="pb-go">Bring them over</button>
             </div>
-        `);
-
-        const submit = async () => {
-            const btn = document.getElementById('setup-submit');
-            const errEl = document.getElementById('setup-error');
-            const username = document.getElementById('setup-username').value.trim() || 'admin';
-            const password = document.getElementById('setup-password').value;
-            const confirm = document.getElementById('setup-confirm').value;
-
-            if (!password) { errEl.textContent = 'Password is required.'; return; }
-            if (password.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; return; }
-            if (password !== confirm) { errEl.textContent = 'Passwords do not match.'; return; }
-
-            btn.disabled = true;
-            btn.textContent = 'Creating...';
-            errEl.textContent = '';
-
-            try {
-                await API.dashboardSetup({ username, password, confirm });
-                this.navigate('/dashboard-login');
-            } catch (err) {
-                let msg = err.message.replace(/^API \d+:\s*/, '');
-                try { msg = JSON.parse(msg).detail || msg; } catch {}
-                errEl.textContent = msg;
-                btn.textContent = 'Create Account';
-                btn.disabled = false;
+            <div class="login-error" id="pb-error" role="alert"></div>`;
+        host.querySelector('#pb-skip').addEventListener('click', async () => { try { await API.pbSkip(); } catch (e) { /* ignore */ } onDone(); });
+        host.querySelector('#pb-go').addEventListener('click', async () => {
+            const ids = [...host.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
+            if (!ids.length) { host.querySelector('#pb-error').textContent = 'Tick at least one, or choose Not now.'; return; }
+            let res;
+            try { res = (await API.pbApply(ids)).results || []; }
+            catch (e) { host.querySelector('#pb-error').textContent = e.message; return; }
+            host.innerHTML = `<ul class="signup-list" aria-live="polite">${res.map(x => `<li data-pb-result="${esc(x.account_id || '')}">
+                <strong>${esc(x.site)}</strong>${x.name ? ` — ${esc(x.name)}` : ''}:
+                <span>${x.status === 'imported' ? 'brought over, checking the login…' : esc(x.message)}</span></li>`).join('')}</ul>
+                <div class="signup-actions"><button class="btn btn-primary" type="button" id="pb-done">Continue</button></div>`;
+            host.querySelector('#pb-done').addEventListener('click', onDone);
+            for (const x of res.filter(x => x.status === 'imported')) {
+                const span = host.querySelector(`[data-pb-result="${x.account_id}"] span`);
+                try {
+                    const t = await API.testAccountLogin(x.account_id);
+                    span.textContent = t.status === 'ok' ? 'brought over, and the login works.'
+                        : t.status === 'unsupported' ? 'brought over.'
+                        : `brought over, but ${t.detail || 'the login needs renewing'}. Fix it in Accounts.`;
+                } catch (e) { span.textContent = 'brought over (the login check failed to run).'; }
+                if (x.platform === 'bsky') this.maybePostingDefaults('bsky');
             }
-        };
-
-        document.getElementById('setup-submit').addEventListener('click', submit);
-        document.getElementById('setup-confirm').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') submit();
         });
-        document.getElementById('setup-username').focus();
+    },
+
+    /* Settings → Accounts → Import from PostyBirb, in a dialog. */
+    openPbImport(onClose) {
+        if (document.getElementById('pb-import')) return;
+        const ov = document.createElement('div');
+        ov.className = 'modal-overlay open';
+        ov.id = 'pb-import';
+        ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="pb-import-h" style="max-width:560px">
+            <div class="modal-header"><h3 id="pb-import-h" style="margin:0">Import from PostyBirb</h3></div>
+            <div class="modal-body" id="pb-import-body"><p class="signup-hint">Looking…</p></div></div>`;
+        document.body.appendChild(ov);
+        this._pbImportPanel(ov.querySelector('#pb-import-body'), () => { ov.remove(); if (onClose) onClose(); });
+    },
+
+    /* X / Bluesky posting defaults (4.69.0, spec 033 US5): after a site is first connected or
+       tested OK, ask its usual post settings once. Writes the same announce_defaults the
+       Settings → Publishing defaults page does; "Use these defaults" writes nothing. */
+    async maybePostingDefaults(site) {
+        if (!['tw', 'bsky'].includes(site) || document.getElementById('postdef-card')) return;
+        let prefs;
+        try { prefs = await API.getPreferences(); } catch (e) { return; }
+        const asked = Array.isArray(prefs.announce_defaults_asked) ? prefs.announce_defaults_asked : [];
+        if (asked.includes(site)) return;
+        this._postingDefaultsCard(site, prefs, asked);
+    },
+
+    _postingDefaultsCard(site, prefs, asked) {
+        const spec = this.ANNOUNCE_DEFAULTS[site];
+        const all = (prefs.announce_defaults && typeof prefs.announce_defaults === 'object') ? prefs.announce_defaults : {};
+        const saved = all[site] || {};
+        const locked = document.documentElement.dataset.ageLocked === '1';
+        const opts = spec.opts.filter(([key]) => !(locked && key === 'sensitive'));
+        const ov = document.createElement('div');
+        ov.className = 'modal-overlay open';
+        ov.id = 'postdef-card';
+        ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="postdef-h" style="max-width:520px">
+            <div class="modal-header"><h3 id="postdef-h" style="margin:0">How should posts to ${Utils.escapeHtml(spec.label)} look?</h3></div>
+            <div class="modal-body" style="font-size:14px;line-height:1.5">
+                <p style="margin-top:0">These are your usual settings. Any single post can still change them.</p>
+                ${opts.map(([key, label, built, help]) => `<label class="signup-switch">
+                    <input type="checkbox" data-postdef="${key}"${(saved[key] ?? built) ? ' checked' : ''}>
+                    <span><strong>${Utils.escapeHtml(label)}</strong>${help ? `<br><span class="signup-hint">${Utils.escapeHtml(help)}</span>` : ''}</span></label>`).join('')}
+                <div class="login-field"><label for="postdef-links">Links back to the piece</label>
+                    <select id="postdef-links" class="search-input">
+                        ${[['', 'PawPoller decides'], ['none', 'None'], ['first', 'The first site it went to'], ['all', 'Every site it went to']]
+                            .map(([v, l]) => `<option value="${v}"${(saved.link_mode || '') === v ? ' selected' : ''}>${l}</option>`).join('')}
+                    </select></div>
+                <div class="signup-actions">
+                    <button class="btn" type="button" id="postdef-keep">Use these defaults</button>
+                    <button class="btn btn-primary" type="button" id="postdef-save">Save</button>
+                </div>
+                <p class="signup-hint">Change them any time in Settings → Publishing defaults.</p>
+            </div></div>`;
+        document.body.appendChild(ov);
+        const close = async (save) => {
+            const body = { announce_defaults_asked: [...new Set([...asked, site])] };
+            if (save) {
+                const per = { ...saved };
+                ov.querySelectorAll('[data-postdef]').forEach(c => { per[c.dataset.postdef] = c.checked; });
+                const lm = ov.querySelector('#postdef-links').value;
+                if (lm) per.link_mode = lm; else delete per.link_mode;
+                body.announce_defaults = { ...all, [site]: per };
+                this._announceDefaults = body.announce_defaults;
+            }
+            try { await API.savePreferences(body); ov.remove(); }
+            catch (e) { window.toast?.error('Could not save: ' + (e.message || e)); }
+        };
+        ov.querySelector('#postdef-keep').addEventListener('click', () => close(false));
+        ov.querySelector('#postdef-save').addEventListener('click', () => close(true));
+        ov.querySelector('#postdef-save').focus();
+    },
+
+    /* 4.68.0: an email waiting to be confirmed is asked for once per browser session —
+       only when the code can actually be mailed, and never a lock-out ("Do it later"). */
+    _verifyDue(su) {
+        let later = false;
+        try { later = sessionStorage.getItem('pp-verify-later') === '1'; } catch (e) { /* ignore */ }
+        return !!(su && su.authenticated && su.email === 'waiting' && su.mail_ready && !later);
+    },
+
+    /* Forgot password (4.68.0, spec 033 phase 6): name or email → a code to the
+       account's confirmed email → the code and a new password. The first answer never
+       says whether the name matched. Every signed-in session ends on success. */
+    _renderPasswordReset() {
+        const err = (raw) => {
+            let d = String(raw || '').replace(/^API \d+:\s*/, '');
+            try { d = JSON.parse(d).detail ?? d; } catch (e) { /* plain text */ }
+            return (d && typeof d === 'object') ? (d.message || '') : String(d);
+        };
+        this._setContent(`
+            <div class="login-screen"><div class="login-card signup-card">
+                <h2>Reset your password</h2>
+                <form id="reset-ask" novalidate>
+                    <div class="login-field"><label for="reset-who">Your username or email</label>
+                        <input type="text" id="reset-who" class="search-input" autocomplete="username" required style="width:100%"></div>
+                    <button class="btn btn-primary login-btn" type="submit">Email me a code</button>
+                </form>
+                <form id="reset-set" novalidate hidden>
+                    <p class="signup-lead" id="reset-sent" aria-live="polite"></p>
+                    <div class="login-field"><label for="reset-code">Code from the email</label>
+                        <input type="text" id="reset-code" class="search-input" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required style="width:100%"></div>
+                    <div class="login-field"><label for="reset-password">New password</label>
+                        <input type="password" id="reset-password" class="search-input" autocomplete="new-password" required style="width:100%"></div>
+                    <div class="login-field"><label for="reset-confirm">Type it again</label>
+                        <input type="password" id="reset-confirm" class="search-input" autocomplete="new-password" required style="width:100%"></div>
+                    <button class="btn btn-primary login-btn" type="submit">Change password</button>
+                </form>
+                <div class="login-error" id="reset-error" role="alert"></div>
+                <p class="signup-hint"><a href="#" id="reset-back">Back to sign in</a></p>
+            </div></div>`);
+        const errEl = document.getElementById('reset-error');
+        document.getElementById('reset-back').addEventListener('click', (e) => { e.preventDefault(); this.renderDashboardLogin(); });
+        document.getElementById('reset-ask').addEventListener('submit', async (ev) => {
+            ev.preventDefault();
+            errEl.textContent = '';
+            try {
+                const r = await API.resetRequest(document.getElementById('reset-who').value.trim());
+                document.getElementById('reset-ask').hidden = true;
+                document.getElementById('reset-set').hidden = false;
+                document.getElementById('reset-sent').textContent = r.message + ' It works for 15 minutes.';
+                document.getElementById('reset-code').focus();
+            } catch (e) { errEl.textContent = err(e.message); }
+        });
+        document.getElementById('reset-set').addEventListener('submit', async (ev) => {
+            ev.preventDefault();
+            errEl.textContent = '';
+            const v = (id) => document.getElementById('reset-' + id).value;
+            try {
+                const r = await API.resetPassword({ code: v('code').trim(), password: v('password'), confirm: v('confirm') });
+                await this.renderDashboardLogin();
+                document.getElementById('dash-login-error').textContent = r.message;
+            } catch (e) { errEl.textContent = err(e.message); }
+        });
+        document.getElementById('reset-who').focus();
+    },
+
+    /* ── First sign-up (4.67.0, spec 033) ─────────────────────
+     * renderSignup() — before the setup wizard: the account (with its email), the
+     * Terms + Privacy (scroll to the end to accept), then — on an install that hasn't
+     * finished setup — age, time zone and the two Tech Centre switches. Nothing is
+     * stored as "progress": each screen is answered or not by the setting it writes,
+     * so a closed app reopens at the first gap and the account can't be made twice. */
+
+    async renderSignup() {
+        const _rt = this._routeToken();
+        const esc = (v) => Utils.escapeHtml(String(v ?? ''));
+        let su;
+        try { su = await API.getSignupStatus(); }
+        catch (err) { this._setContent(`<div class="login-screen"><div class="login-card"><p>Could not reach PawPoller: ${esc(err.message)}</p></div></div>`); return; }
+        if (this._stale(_rt)) return;
+        this._signup = su;
+        if (su.account && !su.authenticated) { this.navigate('/dashboard-login'); return; }
+
+        let screen = !su.account ? 'account'
+            : su.email === 'none' ? 'email'
+            : this._verifyDue(su) ? 'verify'
+            : su.legal.needs_accept ? 'legal' : '';
+        let setupDone = true;
+        if (!screen) {
+            try { setupDone = !!(await API.getSetupStatus()).setup_complete; } catch (e) { /* treat as done */ }
+            if (this._stale(_rt)) return;
+            const a = su.answered || {};
+            if (!setupDone) screen = !a.age ? 'age' : !a.timezone ? 'timezone' : !a.tech ? 'tech'
+                : !a.postybirb ? 'postybirb' : !a.twofa ? 'twofa' : '';
+        }
+        if (!screen) { window.location.hash = setupDone ? '#/' : '#/setup'; this.init(); return; }
+
+        const steps = ['account', 'legal', 'age', 'timezone', 'tech', 'postybirb', 'twofa'].filter(s => s !== 'postybirb' || screen === 'postybirb' || !(su.answered || {}).postybirb);
+        const dot = steps.indexOf(screen);
+        const progress = dot < 0 ? '' : `<p class="signup-progress" aria-label="Step ${dot + 1} of ${steps.length}">Step ${dot + 1} of ${steps.length}</p>`;
+        const card = (inner, wide) => `<div class="login-screen"><div class="login-card signup-card${wide ? ' signup-wide' : ''}">${progress}${inner}</div></div>`;
+        const fieldErr = (raw) => {
+            // FastAPI wraps our {field, message} detail: "API 400: {"detail":{...}}".
+            let d = String(raw || '').replace(/^API \d+:\s*/, '');
+            try { d = JSON.parse(d).detail ?? d; } catch (e) { /* plain text */ }
+            return (d && typeof d === 'object') ? d : { field: '', message: String(d) };
+        };
+        const showErr = (e) => {
+            document.querySelectorAll('.signup-card [aria-invalid]').forEach(i => i.removeAttribute('aria-invalid'));
+            const box = document.getElementById('signup-error');
+            if (box) box.textContent = e.message || '';
+            const input = e.field && document.getElementById('signup-' + e.field);
+            if (input) { input.setAttribute('aria-invalid', 'true'); input.focus(); }
+        };
+        const next = () => this.renderSignup();
+
+        if (screen === 'account') {
+            this._setContent(card(`
+                <h2>Create your PawPoller account</h2>
+                <p class="signup-lead">This keeps your PawPoller to yourself, on this computer or a server.</p>
+                <form id="signup-form" novalidate>
+                    <div class="login-field"><label for="signup-username">Username</label>
+                        <input type="text" id="signup-username" class="search-input" autocomplete="username" required
+                            aria-describedby="signup-username-hint" style="width:100%">
+                        <div class="signup-hint" id="signup-username-hint">3 to 32 letters, numbers, dots, dashes or underscores.</div></div>
+                    <div class="login-field"><label for="signup-email">Email</label>
+                        <input type="email" id="signup-email" class="search-input" autocomplete="email" required
+                            aria-describedby="signup-email-hint" style="width:100%">
+                        <div class="signup-hint" id="signup-email-hint">Only for resetting your password and security notices. Never marketing.</div></div>
+                    <div class="login-field"><label for="signup-password">Password</label>
+                        <input type="password" id="signup-password" class="search-input" autocomplete="new-password" required
+                            aria-describedby="signup-strength" style="width:100%">
+                        <div class="signup-hint" id="signup-strength" aria-live="polite">At least 8 characters.</div></div>
+                    <div class="login-field"><label for="signup-confirm">Type the password again</label>
+                        <input type="password" id="signup-confirm" class="search-input" autocomplete="new-password" required style="width:100%"></div>
+                    <label class="login-remember"><input type="checkbox" id="signup-remember" checked>
+                        <span>Keep me signed in on this computer</span></label>
+                    <button class="btn btn-primary login-btn" type="submit" id="signup-submit">Create account</button>
+                    <div class="login-error" id="signup-error" role="alert"></div>
+                </form>`));
+            const pw = document.getElementById('signup-password');
+            pw.addEventListener('input', () => {
+                const v = pw.value, kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(r => r.test(v)).length;
+                document.getElementById('signup-strength').textContent = v.length < 8 ? 'At least 8 characters.'
+                    : (v.length >= 14 || (v.length >= 10 && kinds >= 3)) ? 'Strong.' : 'OK. Longer is stronger.';
+            });
+            document.getElementById('signup-form').addEventListener('submit', async (ev) => {
+                ev.preventDefault();
+                const val = (id) => document.getElementById('signup-' + id).value;
+                if (val('password') !== val('confirm')) { showErr({ field: 'confirm', message: "The two passwords don't match." }); return; }
+                const btn = document.getElementById('signup-submit');
+                btn.disabled = true; btn.textContent = 'Creating…';
+                try {
+                    await API.dashboardSetup({ username: val('username').trim(), email: val('email').trim(),
+                        password: val('password'), confirm: val('confirm'), remember: document.getElementById('signup-remember').checked });
+                    this._dashboardAuthRequired = true;
+                    next();
+                } catch (err) {
+                    showErr(fieldErr(err.message));
+                    btn.disabled = false; btn.textContent = 'Create account';
+                }
+            });
+            document.getElementById('signup-username').focus();
+            return;
+        }
+
+        if (screen === 'email') {
+            this._setContent(card(`
+                <h2>Add your email</h2>
+                <p class="signup-lead">PawPoller now keeps an email with your account, so a forgotten password can be reset. It's only used for that and for security notices.</p>
+                <form id="signup-form" novalidate>
+                    <div class="login-field"><label for="signup-email">Email</label>
+                        <input type="email" id="signup-email" class="search-input" autocomplete="email" required style="width:100%"></div>
+                    <div class="login-field"><label for="signup-current">Your current password</label>
+                        <input type="password" id="signup-current" class="search-input" autocomplete="current-password" required style="width:100%"></div>
+                    <button class="btn btn-primary login-btn" type="submit" id="signup-submit">Save email</button>
+                    <div class="login-error" id="signup-error" role="alert"></div>
+                </form>`));
+            document.getElementById('signup-form').addEventListener('submit', async (ev) => {
+                ev.preventDefault();
+                try {
+                    await API.addAccountEmail(document.getElementById('signup-email').value.trim(), document.getElementById('signup-current').value);
+                    next();
+                } catch (err) { showErr(fieldErr(err.message)); }
+            });
+            document.getElementById('signup-email').focus();
+            return;
+        }
+
+        if (screen === 'verify') {
+            this._setContent(card(`
+                <h2>Check your email</h2>
+                <p class="signup-lead">We sent a 6-digit code to <strong>${esc(su.email_waiting)}</strong>. It works for 15 minutes.
+                    Can't see it? Look in spam or junk.</p>
+                <form id="signup-form" novalidate>
+                    <div class="login-field"><label for="signup-code">Code</label>
+                        <input type="text" id="signup-code" class="search-input" inputmode="numeric" autocomplete="one-time-code"
+                            maxlength="7" required style="width:100%"></div>
+                    <button class="btn btn-primary login-btn" type="submit" id="signup-submit">Confirm</button>
+                    <div class="signup-actions">
+                        <button class="btn" type="button" id="signup-resend">Send a new code</button>
+                        <button class="btn" type="button" id="signup-later">Do it later</button>
+                    </div>
+                    <p class="signup-hint" id="signup-note" aria-live="polite"></p>
+                    <div class="login-error" id="signup-error" role="alert"></div>
+                </form>`));
+            document.getElementById('signup-form').addEventListener('submit', async (ev) => {
+                ev.preventDefault();
+                try { await API.confirmEmail(document.getElementById('signup-code').value.trim()); next(); }
+                catch (err) { showErr(fieldErr(err.message)); }
+            });
+            document.getElementById('signup-resend').addEventListener('click', async () => {
+                try { await API.sendEmailCode(); document.getElementById('signup-note').textContent = 'A new code is on its way. The old one no longer works.'; }
+                catch (err) { showErr(fieldErr(err.message)); }
+            });
+            document.getElementById('signup-later').addEventListener('click', () => {
+                try { sessionStorage.setItem('pp-verify-later', '1'); } catch (e) { /* ignore */ }
+                next();
+            });
+            document.getElementById('signup-code').focus();
+            return;
+        }
+
+        if (screen === 'legal') {
+            const cur = su.legal || {};
+            const again = !!cur.accepted;
+            let docs = '';
+            try {
+                const [t, p] = await Promise.all(['terms', 'privacy'].map(d => fetch(`/legal/${d}.html`).then(r => r.text())));
+                docs = `<h3 id="legal-terms">Terms of use</h3>${t}<h3 id="legal-privacy">Privacy policy</h3>${p}`;
+            } catch (e) { docs = '<p>Could not load the documents. Check your connection and reload.</p>'; }
+            if (this._stale(_rt)) return;
+            this._setContent(card(`
+                <h2>${again ? 'The terms have changed' : 'Terms of use and privacy'}</h2>
+                <p class="signup-lead">${again ? 'Please read the new version.' : 'Please read both.'} They're short and written to be read.
+                    <a href="#legal-privacy" id="legal-jump">Go to the privacy policy</a> ·
+                    <a href="https://pawpoller.com/terms" target="_blank" rel="noopener">Open on pawpoller.com</a></p>
+                <div class="legal-box" id="legal-box" tabindex="0" role="document" aria-label="Terms of use and privacy policy">${docs}
+                    <p class="legal-end">End of the terms and privacy policy.</p></div>
+                <p class="signup-hint" id="legal-reason" aria-live="polite">Scroll to the end to accept.</p>
+                <div class="signup-actions">
+                    <button class="btn" type="button" id="legal-decline">Decline</button>
+                    <button class="btn btn-primary" type="button" id="legal-accept" disabled aria-describedby="legal-reason">I accept</button>
+                </div>
+                <div class="login-error" id="signup-error" role="alert"></div>`, true));
+            const box = document.getElementById('legal-box');
+            const btn = document.getElementById('legal-accept');
+            let reached = false;
+            const check = () => {
+                if (reached || box.scrollHeight - box.scrollTop - box.clientHeight > 8) return;
+                reached = true;   // the end of both has been on screen (or everything fits)
+                btn.disabled = false;
+                document.getElementById('legal-reason').textContent = "You've reached the end. You can accept now.";
+            };
+            box.addEventListener('scroll', check, { passive: true });
+            requestAnimationFrame(check);
+            document.getElementById('legal-jump').addEventListener('click', (e) => {
+                e.preventDefault();
+                const h = document.getElementById('legal-privacy');
+                box.scrollTop = h.offsetTop - box.offsetTop;
+                box.focus();
+            });
+            btn.addEventListener('click', async () => {
+                if (!reached) return;
+                btn.disabled = true;
+                try { await API.acceptLegal(cur.terms, cur.privacy); next(); }
+                catch (err) { showErr(fieldErr(err.message)); btn.disabled = false; }
+            });
+            document.getElementById('legal-decline').addEventListener('click', () => {
+                showErr({ message: "PawPoller can't be used without accepting the terms. Nothing has been changed or deleted. Accept when you're ready, or close the app." });
+            });
+            return;
+        }
+
+        if (screen === 'age') {
+            this._setContent(card(`
+                <h2>Are you 18 or older?</h2>
+                <p class="signup-lead">PawPoller works for anyone making safe-for-work art and writing. Its adult features are for people 18 and over.</p>
+                <ul class="signup-list">
+                    <li><strong>Under 18:</strong> Mature and Adult ratings, adults-only sites (FurAffinity, Inkbunny, e621) and switching safe mode off are locked.</li>
+                    <li>Each site has its own minimum age too. Settings → General lists them.</li>
+                </ul>
+                <div class="signup-actions">
+                    <button class="btn" type="button" id="signup-minor">I'm under 18</button>
+                    <button class="btn btn-primary" type="button" id="signup-adult">I'm 18 or older</button>
+                </div>
+                <div class="login-error" id="signup-error" role="alert"></div>`));
+            for (const [id, band] of [['signup-adult', 'adult'], ['signup-minor', 'under18']]) {
+                document.getElementById(id).addEventListener('click', async () => {
+                    try { await API.setAge(band); App._applyAgeLock(band); next(); }
+                    catch (err) { showErr(fieldErr(err.message)); }
+                });
+            }
+            return;
+        }
+
+        if (screen === 'timezone') {
+            let zones = [];
+            try { zones = Intl.supportedValuesOf('timeZone'); } catch (e) { zones = []; }
+            if (!zones.includes('UTC')) zones = ['UTC', ...zones];
+            let guess = 'UTC';
+            try { guess = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { /* UTC */ }
+            this._setContent(card(`
+                <h2>Your time zone</h2>
+                <p class="signup-lead">Every time in PawPoller is shown in this zone, and scheduled posts use it. We've filled in this computer's.</p>
+                <form id="signup-form" novalidate>
+                    <div class="login-field"><label for="signup-tz">Time zone</label>
+                        <input type="text" id="signup-tz" class="search-input" list="signup-tz-list" value="${esc(guess)}"
+                            autocomplete="off" spellcheck="false" style="width:100%" aria-describedby="signup-tz-now">
+                        <datalist id="signup-tz-list">${zones.map(z => `<option value="${esc(z)}"></option>`).join('')}</datalist>
+                        <div class="signup-hint" id="signup-tz-now" aria-live="polite"></div></div>
+                    <button class="btn btn-primary login-btn" type="submit">Next</button>
+                    <div class="login-error" id="signup-error" role="alert"></div>
+                </form>`));
+            const tz = document.getElementById('signup-tz');
+            const now = () => {
+                try {
+                    const t = new Intl.DateTimeFormat('en-AU', { timeZone: tz.value.trim(), weekday: 'long', hour: 'numeric', minute: '2-digit' }).format(new Date());
+                    document.getElementById('signup-tz-now').textContent = `It's ${t} there now.`;
+                } catch (e) { document.getElementById('signup-tz-now').textContent = 'Pick a zone from the list — start typing a city, e.g. Sydney or New York.'; }
+            };
+            tz.addEventListener('input', now); now();
+            document.getElementById('signup-form').addEventListener('submit', async (ev) => {
+                ev.preventDefault();
+                const z = tz.value.trim();
+                try { new Intl.DateTimeFormat('en-AU', { timeZone: z }); if (!z) throw 0; }
+                catch (e) { showErr({ field: 'tz', message: "PawPoller doesn't know that time zone. Pick one from the list." }); return; }
+                try {
+                    await API.savePreferences({ display_timezone: z });
+                    Utils.time.setZone(z);
+                    try { localStorage.setItem('pp-display-tz', z); } catch (e) { /* ignore */ }
+                    next();
+                } catch (err) { showErr(fieldErr(err.message)); }
+            });
+            return;
+        }
+
+        if (screen === 'postybirb') {
+            this._setContent(card(`
+                <h2>Bring your logins over from PostyBirb?</h2>
+                <p class="signup-lead">PostyBirb is on this computer. PawPoller can copy the sites it's signed in to, so you don't type them again. PostyBirb is only read, never changed.</p>
+                <div id="pb-panel"><p class="signup-hint">Looking…</p></div>`, true));
+            this._pbImportPanel(document.getElementById('pb-panel'), next);
+            return;
+        }
+
+        if (screen === 'twofa') {
+            const server = su.runtime_mode === 'server';
+            this._setContent(card(`
+                <h2>Two-step sign-in</h2>
+                <p class="signup-lead">An app on your phone gives you a 6-digit code to type after your password, so a stolen password alone can't get in.
+                    ${server ? '<strong>Recommended</strong>: this PawPoller is on a server, reachable from the internet.' : 'Optional on a computer only you use.'}</p>
+                <div id="totp-setup-area" hidden>
+                    <p class="signup-hint">Scan this with your authenticator app (Google Authenticator, Authy, 1Password…), or type the key in.</p>
+                    <div id="totp-qr" style="margin:12px 0;text-align:center"></div>
+                    <code id="totp-secret" style="display:block;word-break:break-all;margin-bottom:12px"></code>
+                    <div class="login-field"><label for="signup-totp">6-digit code from the app</label>
+                        <input type="text" id="signup-totp" class="search-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" style="width:100%"></div>
+                    <div class="login-field"><label for="signup-totp-pw">Your PawPoller password</label>
+                        <input type="password" id="signup-totp-pw" class="search-input" autocomplete="current-password" style="width:100%"></div>
+                    <button class="btn btn-primary login-btn" type="button" id="signup-totp-enable">Turn it on</button>
+                    <div id="totp-codes-display"></div>
+                </div>
+                <div class="signup-actions" id="signup-twofa-actions">
+                    <button class="btn" type="button" id="signup-twofa-skip">Not now</button>
+                    <button class="btn btn-primary" type="button" id="signup-twofa-start">Set it up</button>
+                </div>
+                <p class="signup-hint">You can turn it on or off later in Settings → Security.</p>
+                <div class="login-error" id="signup-error" role="alert"></div>`));
+            const done = async () => {
+                try { await API.savePreferences({ twofa_offered: true }); next(); }
+                catch (err) { showErr(fieldErr(err.message)); }
+            };
+            document.getElementById('signup-twofa-skip').addEventListener('click', done);
+            document.getElementById('signup-twofa-start').addEventListener('click', async () => {
+                try {
+                    const r = await API.totpSetup();
+                    document.getElementById('totp-setup-area').hidden = false;
+                    document.getElementById('signup-twofa-start').hidden = true;
+                    document.getElementById('totp-secret').textContent = r.secret;
+                    const qr = document.getElementById('totp-qr');
+                    if (window.QRCode) new window.QRCode(qr, { text: r.uri, width: 180, height: 180 });
+                    document.getElementById('signup-totp').focus();
+                } catch (err) { showErr(fieldErr(err.message)); }
+            });
+            document.getElementById('signup-totp-enable').addEventListener('click', async () => {
+                const btn = document.getElementById('signup-totp-enable');
+                try {
+                    const res = await API.totpEnable({ code: document.getElementById('signup-totp').value.trim(),
+                        password: document.getElementById('signup-totp-pw').value });
+                    btn.hidden = true;
+                    this._showBackupCodes(res && res.backup_codes);
+                    const skip = document.getElementById('signup-twofa-skip');
+                    skip.textContent = "I've saved the codes, continue";
+                    skip.classList.add('btn-primary');
+                    showErr({ message: '' });
+                } catch (err) { showErr(fieldErr(err.message)); }
+            });
+            return;
+        }
+
+        // screen === 'tech' — the two Tech Centre switches, both off until turned on.
+        this._setContent(card(`
+            <h2>Help improve PawPoller</h2>
+            <p class="signup-lead">Two optional things. Both are off unless you turn them on, and you can change them any time in Settings → Logs &amp; diagnostics.</p>
+            <label class="signup-switch"><input type="checkbox" id="signup-reports">
+                <span><strong>Send error reports.</strong> When something breaks that isn't yours to fix, a short report goes to the PawPoller tech centre: the error, a scrubbed log excerpt, the app version and your operating system. Never account names, passwords, cookies, artwork or story text. Kept 90 days.</span></label>
+            <label class="signup-switch"><input type="checkbox" id="signup-usage">
+                <span><strong>Count this copy.</strong> An anonymous "still running" check-in: the version, Windows or Linux, how it was installed, which kinds of site are connected (not the accounts) and a size range for your library. No names, nothing you made. Kept 12 months.</span></label>
+            <p class="signup-hint"><a href="https://pawpoller.com/privacy" target="_blank" rel="noopener">What's sent, in full</a></p>
+            <button class="btn btn-primary login-btn" type="button" id="signup-submit">Continue</button>
+            <div class="login-error" id="signup-error" role="alert"></div>`));
+        document.getElementById('signup-submit').addEventListener('click', async () => {
+            const reports = document.getElementById('signup-reports').checked;
+            const usage = document.getElementById('signup-usage').checked;
+            try { await API.setTechConsent(reports); await API.setTechUsage(usage); next(); }
+            catch (err) { showErr(fieldErr(err.message)); }
+        });
     },
 
     /* ── Setup Wizard ─────────────────────────────────────────
@@ -3060,14 +3565,17 @@ const App = {
         /* Step ordering — recomputed each render so paired_desktop's
          * "skip archive + platforms" branch falls out naturally. */
         // The story folder is only asked of people who write (4.66.0, spec 032 FR-001).
-        const keep = (s) => s !== 'archive' || makesAll().includes('stories');
+        // Age, time zone and the Tech Centre switches are asked in sign-up now (4.67.0,
+        // spec 033); the wizard keeps its own copies only for an install where they're unanswered.
+        const answered = (this._signup && this._signup.answered) || {};
+        const keep = (s) => (s !== 'archive' || makesAll().includes('stories')) && !answered[s];
         const stepOrder = () => {
             if (runtimeMode === 'server') {
                 return ['welcome', 'timezone', 'age', 'make', 'archive', 'sites', 'platforms', 'interval', 'posting', 'hear', 'persona', 'tech', 'done'].filter(keep);
             }
             if (selectedMode === 'paired_desktop' || selectedMode === 'connected') {
                 // Paired installs read the server's data — personas, sites, intervals and defaults live there.
-                return ['welcome', 'timezone', 'age', 'mode', 'pairing', 'hear', 'tech', 'done'];
+                return ['welcome', 'timezone', 'age', 'mode', 'pairing', 'hear', 'tech', 'done'].filter(keep);
             }
             // standalone (or undecided) — full flow
             return ['welcome', 'timezone', 'age', 'mode', 'make', 'archive', 'sites', 'platforms', 'interval', 'posting', 'hear', 'persona', 'tech', 'done'].filter(keep);
@@ -15517,6 +16025,16 @@ const App = {
                         </div>
                     </div>
                 </div>`}
+                ${(() => {
+                    // Terms + Privacy accepted (4.67.0, spec 033 US2) — from init()'s sign-up status.
+                    const acc = App._signup && App._signup.legal && App._signup.legal.accepted;
+                    if (!acc) return '';
+                    const when = Utils.time.fmt.date(acc.at);
+                    return `<div class="settings-section"><h3>Terms</h3><div class="settings-row"><span class="settings-label">
+                        <a href="/legal/terms.html" target="_blank" rel="noopener">Terms v${Number(acc.terms)}</a> and
+                        <a href="/legal/privacy.html" target="_blank" rel="noopener">Privacy v${Number(acc.privacy)}</a>
+                        accepted on ${Utils.escapeHtml(when)}</span></div></div>`;
+                })()}
 
                 ${_isServer ? `
                 <div class="settings-section">

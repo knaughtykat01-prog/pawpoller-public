@@ -177,6 +177,18 @@ _DUMMY_LOGINS = {
 }
 
 
+def _signed_up() -> dict:
+    """An account, its email and the current Terms (4.67.0, spec 033) — or every page is the sign-up."""
+    import legal
+    cur = legal.current()
+    return {"auth_username": "inkwolf", "auth_password_hash": config.hash_password("sample-password"),
+            "auth_email": "owner@example.com", "tech_reports": False, "tech_usage": False,
+            "legal_accepted": {"terms": cur["terms"], "privacy": cur["privacy"], "at": "2026-10-11T00:00:00+00:00"}}
+
+
+_SIGNED_UP = _signed_up()
+
+
 @pytest.fixture
 def _offline(monkeypatch):
     """The app may not reach the network while a page is open — the browser is fenced in by _Watched,
@@ -202,7 +214,8 @@ def app_url(_offline):
     # charts instead of "not connected" — nothing can use them: see _offline.
     tours = re.findall(r"^ {8}'([a-z0-9-]+)': \[", (ROOT / "frontend/js/tour.js").read_text(encoding="utf-8"), re.M)
     config.save_settings({"setup_complete": True, "age_band": "adult", "setup_mode": "server", "tours_seen": tours,
-                          "display_timezone": "Australia/Sydney", **_DUMMY_LOGINS})
+                          "display_timezone": "Australia/Sydney", **_DUMMY_LOGINS, **_SIGNED_UP})
+    config.invalidate_auth_required_cache()
     conn = get_connection()
     try:
         _seed(conn)
@@ -219,6 +232,9 @@ def app_url(_offline):
     yield f"http://127.0.0.1:{port}"
     server.should_exit = True
     t.join(timeout=10)
+    # The account would make every later test's TestClient need a login.
+    config.delete_settings_keys(list(_SIGNED_UP))
+    config.invalidate_auth_required_cache()
 
 
 class _Watched:
@@ -229,6 +245,9 @@ class _Watched:
         self.ctx = browser.new_context(viewport=viewport)
         # Nothing leaves the machine: fonts, avatars, platform thumbnails are all refused.
         self.ctx.route("**/*", lambda r: r.continue_() if r.request.url.startswith(base) else r.abort())
+        # Signed in (4.67.0): every install has an account now.
+        self.ctx.add_cookies([{"name": "pp_session", "value": config.sign_session({"u": "inkwolf", "r": True}),
+                               "url": base}])
         self.page = self.ctx.new_page()
         self.errors: list[str] = []
         self.page.on("pageerror", lambda e: self.errors.append(f"uncaught: {e}"))

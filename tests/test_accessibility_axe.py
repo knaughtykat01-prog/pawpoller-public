@@ -56,8 +56,25 @@ def browser():
         b.close()
 
 
+def _ctx(browser, **kw):
+    """A browser context signed in to the app (4.67.0, spec 033: every install has an account, and
+    without one each app screen is the sign-up page). Harmless on the site's pages."""
+    ctx = browser.new_context(**kw)
+    ctx.add_cookies([{"name": "pp_session", "value": config.sign_session({"u": "inkwolf", "r": True}),
+                      "domain": "127.0.0.1", "path": "/"}])
+    return ctx
+
+
+def _signed_up() -> dict:
+    import legal
+    cur = legal.current()
+    return {"auth_username": "inkwolf", "auth_password_hash": config.hash_password("sample-password"),
+            "auth_email": "owner@example.com", "tech_reports": False, "tech_usage": False,
+            "legal_accepted": {"terms": cur["terms"], "privacy": cur["privacy"], "at": "2026-10-11T00:00:00+00:00"}}
+
+
 def _scan(browser, url: str, theme: str | None = None, before=None) -> list[str]:
-    ctx = browser.new_context(bypass_csp=True, viewport={"width": 1280, "height": 900})
+    ctx = _ctx(browser, bypass_csp=True, viewport={"width": 1280, "height": 900})
     page = ctx.new_page()
     try:
         page.goto(url, wait_until="networkidle")
@@ -128,7 +145,10 @@ def app_url():
     import uvicorn
 
     import dashboard
-    config.save_settings({"setup_complete": True, "age_band": "adult", "setup_mode": "server", "tours_seen": ["*"]})
+    signed_up = _signed_up()
+    config.save_settings({"setup_complete": True, "age_band": "adult", "setup_mode": "server", "tours_seen": ["*"],
+                          "display_timezone": "UTC", **signed_up})
+    config.invalidate_auth_required_cache()
     from database.db import get_connection
     conn = get_connection()
     try:
@@ -150,6 +170,9 @@ def app_url():
     yield f"http://127.0.0.1:{port}"
     server.should_exit = True
     t.join(timeout=10)
+    # The account would make every later test's TestClient need a login.
+    config.delete_settings_keys(list(signed_up))
+    config.invalidate_auth_required_cache()
 
 
 APP_SCREENS = ["/#/", "/#/library", "/#/accounts", "/#/posts", "/#/settings", "/#/settings/privacy"]
@@ -168,7 +191,7 @@ def test_the_app_key_screens_pass_axe(browser, app_url, theme):
 def test_every_site_page_reflows_at_320px(browser, site_url):
     """1.4.10: no sideways scrolling on a 320 px screen (code blocks may scroll inside themselves)."""
     fails = []
-    ctx = browser.new_context(viewport={"width": 320, "height": 800})
+    ctx = _ctx(browser, viewport={"width": 320, "height": 800})
     page = ctx.new_page()
     try:
         for path in _site_pages():
@@ -183,7 +206,7 @@ def test_every_site_page_reflows_at_320px(browser, site_url):
 
 def test_site_keyboard_basics(browser, site_url):
     """2.4.1 skip link first, 2.4.7 focus visible, 2.4.11 not hidden under the sticky header."""
-    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    ctx = _ctx(browser, viewport={"width": 1280, "height": 800})
     page = ctx.new_page()
     try:
         for path in _site_pages():
@@ -204,7 +227,7 @@ def test_site_keyboard_basics(browser, site_url):
 
 def test_reduced_motion_stops_transitions(browser, site_url, app_url):
     """2.3.3: with reduced motion asked for, nothing animates — site and app."""
-    ctx = browser.new_context(reduced_motion="reduce")
+    ctx = _ctx(browser, reduced_motion="reduce")
     page = ctx.new_page()
     try:
         for url, sel in ((site_url + "/", ".btn-primary"), (app_url + "/#/", ".btn, button")):
@@ -219,7 +242,7 @@ def test_reduced_motion_stops_transitions(browser, site_url, app_url):
 def test_the_app_key_screens_work_at_200_percent_zoom(browser, app_url):
     """1.4.4: at 200% zoom (a 640 px-wide viewport at 2x) no key screen needs sideways scrolling."""
     fails = []
-    ctx = browser.new_context(viewport={"width": 640, "height": 450}, device_scale_factor=2)
+    ctx = _ctx(browser, viewport={"width": 640, "height": 450}, device_scale_factor=2)
     page = ctx.new_page()
     try:
         for screen in APP_SCREENS:
@@ -251,7 +274,8 @@ def test_the_library_filter_bar_floats(browser, app_url):
     finally:
         conn.close()
     for vp, expect_top in (({"width": 1400, "height": 800}, 0), ({"width": 390, "height": 800}, None)):
-        page = browser.new_page(viewport=vp)
+        ctx = _ctx(browser, viewport=vp)
+        page = ctx.new_page()
         try:
             page.goto(app_url + "/#/library", wait_until="networkidle")
             page.wait_for_timeout(500)
@@ -277,4 +301,125 @@ def test_the_library_filter_bar_floats(browser, app_url):
             else:
                 assert abs(top - expect_top) <= 2, f"{vp['width']}px wide: the filter bar scrolled away (top={top})"
         finally:
-            page.close()
+            ctx.close()
+
+
+# ── The sign-up screens (4.69.0, spec 033 T039) ──────────────────────────────
+
+_SIGNUP_KEYS = ["auth_username", "auth_password_hash", "auth_email", "auth_email_pending", "legal_accepted",
+                "legal_history", "age_band", "display_timezone", "tech_reports", "tech_usage", "pb_import_asked",
+                "twofa_offered", "setup_complete"]
+
+
+@pytest.fixture
+def signup_url():
+    import uvicorn
+
+    import dashboard
+    saved = {k: v for k, v in config.get_settings().items() if k in _SIGNUP_KEYS}
+    server = uvicorn.Server(uvicorn.Config(dashboard.app, host="127.0.0.1", port=0, log_level="warning",
+                                           lifespan="off"))
+    t = threading.Thread(target=server.run, daemon=True)
+    t.start()
+    deadline = time.time() + 15
+    while not server.started and time.time() < deadline:
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{server.servers[0].sockets[0].getsockname()[1]}"
+    server.should_exit = True
+    t.join(timeout=10)
+    config.delete_settings_keys(_SIGNUP_KEYS)
+    config.save_settings(saved)
+    config.invalidate_auth_required_cache()
+
+
+def _signup_states():
+    """Each screen, by the settings that put it first. Built lazily (legal needs the documents)."""
+    full = _signed_up()
+    acct = {k: full[k] for k in ("auth_username", "auth_password_hash")}
+    legal = {"auth_email": "owner@example.com", "legal_accepted": full["legal_accepted"]}
+    return [
+        ("account", {}),
+        ("email", acct),
+        ("legal", {**acct, "auth_email": "owner@example.com"}),
+        ("age", {**acct, **legal}),
+        ("timezone", {**acct, **legal, "age_band": "adult"}),
+        ("tech", {**acct, **legal, "age_band": "adult", "display_timezone": "UTC"}),
+        ("twofa", {**acct, **legal, "age_band": "adult", "display_timezone": "UTC", "tech_reports": False,
+                   "tech_usage": False, "pb_import_asked": True}),
+    ]
+
+
+def test_the_signup_screens_pass_axe_and_fit_a_phone(browser, signup_url):
+    fails = []
+    for name, state in _signup_states():
+        config.delete_settings_keys(_SIGNUP_KEYS)
+        config.save_settings({"setup_complete": False, **state})
+        config.invalidate_auth_required_cache()
+        wait = lambda page: page.wait_for_selector(".signup-card h2", timeout=10000)  # noqa: E731
+        fails += [f"[{name}] {f}" for f in _scan(browser, signup_url + "/#/signup", before=wait)]
+        ctx = _ctx(browser, viewport={"width": 390, "height": 844})
+        page = ctx.new_page()
+        try:
+            page.goto(signup_url + "/#/signup", wait_until="networkidle")
+            wait(page)
+            over = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            if over > 1:
+                fails.append(f"[{name}] {over}px wider than a 390px phone")
+        finally:
+            ctx.close()
+    assert not fails, "\n".join(fails)
+
+
+def test_the_mail_and_import_screens_pass_axe(browser, signup_url, monkeypatch, tmp_path):
+    """Email confirm (mail working), PostyBirb (one found) and Forgot your password."""
+    import json as _json
+
+    import account_mail
+    import techcentre
+    monkeypatch.setattr(techcentre, "TECH_CENTRE_URL", "https://tc.example.invalid")
+    monkeypatch.setattr(account_mail, "_post", lambda *a, **k: True)
+    from routes import dashboard_auth
+    dashboard_auth._RESET_ASKS.clear()
+    docs = tmp_path / "PostyBirb" / "data"
+    docs.mkdir(parents=True)
+    (docs / "accounts.db").write_text(_json.dumps({"_id": "b1", "website": "Bluesky", "alias": "Inkwolf",
+                                                   "data": {"username": "inkwolf.example.social", "password": "x"}})
+                                      + "\n" + _json.dumps({"_id": "s1", "website": "SoFurry", "alias": "Inkwolf"}) + "\n",
+                                      encoding="utf-8")
+    monkeypatch.setenv("PAWPOLLER_PB_DIR", str(tmp_path / "PostyBirb"))
+    import posting.scheduler as sch
+    monkeypatch.setattr(sch, "detect_runtime_mode", lambda: "desktop")
+    full = _signed_up()
+    acct = {k: full[k] for k in ("auth_username", "auth_password_hash")}
+    done = {"legal_accepted": full["legal_accepted"], "age_band": "adult", "display_timezone": "UTC",
+            "tech_reports": False, "tech_usage": False}
+    fails = []
+    for name, state, sel in [
+        ("verify", {**acct, "auth_email_pending": "owner@example.com", **done}, "#signup-code"),
+        ("postybirb", {**acct, "auth_email": "owner@example.com", **done}, "#pb-go"),
+    ]:
+        config.delete_settings_keys(_SIGNUP_KEYS)
+        config.save_settings({"setup_complete": False, **state})
+        config.invalidate_auth_required_cache()
+        fails += [f"[{name}] {f}" for f in _scan(browser, signup_url + "/#/signup",
+                                                 before=lambda p, s=sel: p.wait_for_selector(s, timeout=10000))]
+    # Signed out, with a confirmed email: the login page offers the reset.
+    config.delete_settings_keys(_SIGNUP_KEYS)
+    config.save_settings({**acct, "auth_email": "owner@example.com", "setup_complete": True, **done})
+    config.invalidate_auth_required_cache()
+    ctx = browser.new_context(bypass_csp=True, viewport={"width": 390, "height": 844})
+    page = ctx.new_page()
+    try:
+        page.goto(signup_url + "/#/dashboard-login", wait_until="networkidle")
+        page.click("#dash-login-forgot")
+        page.wait_for_selector("#reset-who")
+        page.add_script_tag(content=AXE.read_text(encoding="utf-8"))
+        res = page.evaluate("tags => axe.run(document, {runOnly: {type: 'tag', values: tags}})", TAGS)
+        fails += [f"[reset] {v['id']} — {n['target']}" for v in res["violations"] for n in v["nodes"]]
+        page.fill("#reset-who", "nobody@example.com")
+        page.click("#reset-ask button")
+        page.wait_for_selector("#reset-code", state="visible")
+        assert "If that matches" in page.inner_text("#reset-sent")
+    finally:
+        ctx.close()
+    assert not fails, "\n".join(fails)

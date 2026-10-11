@@ -1807,6 +1807,7 @@ def get_preferences():
         # someone; no names ship in the repo.
         "credits": settings.get("credits", []),
         "announce_defaults": settings.get("announce_defaults", {}),
+        "announce_defaults_asked": settings.get("announce_defaults_asked", []),   # 4.69.0: the card, once per site
         "hidden_platforms": settings.get("hidden_platforms", []),
         "platform_order": settings.get("platform_order", []),   # the Platforms page's "My order" (spec 020)
         "theme": settings.get("theme", "dark"),
@@ -2092,6 +2093,13 @@ def save_preferences(body: dict):
                 if out:
                     clean[code] = out
         update["announce_defaults"] = clean
+    # 4.69.0 (spec 033): which sites have shown the posting-defaults card, so it's offered once.
+    if "announce_defaults_asked" in body:
+        raw = body.get("announce_defaults_asked")
+        update["announce_defaults_asked"] = sorted({str(c) for c in raw if str(c) in ("tw", "bsky")}) \
+            if isinstance(raw, list) else []
+    if "twofa_offered" in body:   # the sign-up's two-step screen was shown (4.69.0)
+        update["twofa_offered"] = bool(body["twofa_offered"])
 
     # ── Milestone threshold arrays ─────────────────────────────
     # Validate as sorted positive integer lists

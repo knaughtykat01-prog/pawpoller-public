@@ -54,6 +54,15 @@ function _maybeAuthModal(path, status, text) {
  * MUTATING request surfaces one — with copy-report + send-to-dev — unless the
  * auth modal above already took it. GETs are deliberately not hooked: screens
  * poll and prefetch constantly, and a flaky read shouldn't pop a card. */
+/* 4.67.0 (spec 033): the server refuses a signed-in session until the current Terms are
+ * accepted ({"error":"terms"}) — and, from 4.68.0, until the account has an email
+ * ({"error":"email"}). Wherever that lands, go to the sign-up screen that asks. */
+function _termsGate(status, text) {
+    if (status === 403 && /"error"\s*:\s*"(terms|email)"/.test(text || '') && location.hash !== '#/signup') {
+        location.hash = '#/signup';
+    }
+}
+
 function _popError(method, path, status, text) {
     if (window.ErrorPopup) window.ErrorPopup.onApiError(method, path, status, text);
 }
@@ -81,6 +90,7 @@ const API = {
         }
         if (!resp.ok) {
             const text = await resp.text();
+            _termsGate(resp.status, text);
             console.error(`[API] ${resp.status} on GET ${path}:`, text);
             throw new Error(`API ${resp.status}: ${text}`);
         }
@@ -110,6 +120,7 @@ const API = {
         }
         if (!resp.ok) {
             const text = await resp.text();
+            _termsGate(resp.status, text);
             console.error(`[API] ${resp.status} on POST ${path}:`, text);
             // If an action the user just triggered (a post / upload) died on an
             // expired platform session, escalate to a blocking modal — a toast
@@ -1204,7 +1215,20 @@ const API = {
      */
     getDashboardStatus() { return this.get('/api/auth/dashboard-status'); },
     dashboardLogin(data) { return this.post('/api/auth/dashboard-login', data); },
-    dashboardSetup(data) { return this.post('/api/auth/dashboard-setup', data); },
+    dashboardSetup(data) { return this.post('/api/auth/dashboard-setup', data, { quiet: [400, 403] }); },
+    // First sign-up (4.67.0, spec 033)
+    getSignupStatus() { return this.get('/api/auth/signup-status'); },
+    addAccountEmail(email, current_password) { return this.post('/api/auth/email', { email, current_password }, { quiet: [400, 401] }); },
+    acceptLegal(terms_version, privacy_version) { return this.post('/api/legal/accept', { terms_version, privacy_version }, { quiet: [409] }); },
+    // The account email's codes (4.68.0, spec 033 phase 6)
+    sendEmailCode() { return this.post('/api/auth/email/send-code', {}, { quiet: [400, 429] }); },
+    confirmEmail(code) { return this.post('/api/auth/email/confirm', { code }, { quiet: [400] }); },
+    resetRequest(who) { return this.post('/api/auth/reset-request', { who }, { quiet: [429] }); },
+    resetPassword(data) { return this.post('/api/auth/reset', data, { quiet: [400, 429] }); },
+    // PostyBirb login import (4.69.0, spec 033 phase 8; desktop only)
+    pbScan() { return this.get('/api/pb-import/scan'); },
+    pbApply(ids) { return this.post('/api/pb-import/apply', { ids }); },
+    pbSkip() { return this.post('/api/pb-import/skip', {}); },
     dashboardLogout() { return this.post('/api/auth/dashboard-logout'); },
     dashboardChangePassword(data) { return this.post('/api/auth/dashboard-change-password', data); },
     totpSetup() { return this.post('/api/auth/totp-setup'); },

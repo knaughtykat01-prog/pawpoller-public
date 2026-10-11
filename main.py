@@ -158,7 +158,9 @@ def _start_server():
         # Import here (not at top-level) to avoid circular imports --
         # dashboard module may import config, and config is still
         # being initialised when top-level imports run.
+        import dashboard
         from dashboard import app as dash_app
+        dashboard.SIGNUP_GATES = True   # 4.67.0 (spec 033): the account + Terms gates
         uvicorn.run(
             dash_app,
             host=config.DASHBOARD_HOST,

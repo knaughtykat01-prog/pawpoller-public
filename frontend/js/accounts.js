@@ -197,7 +197,12 @@ window.Accounts = {
             <div class="acct-form" style="margin-top:14px;">
                 <button id="acct-create-btn" class="btn btn-primary">Create account</button>
                 <span id="acct-create-msg" class="muted"></span>
-            </div>`;
+            </div>
+            ${App._runtimeMode === 'server' ? '' : `<div class="acct-form" style="margin-top:14px;">
+                <button id="acct-pb-import" class="btn">Import from PostyBirb</button>
+                <span class="muted">Brings over the logins PostyBirb has on this computer. PostyBirb is only read, never changed.</span>
+            </div>`}`;
+        el.querySelector('#acct-pb-import')?.addEventListener('click', () => App.openPbImport(() => this._refresh()));
 
         const platformSel = el.querySelector('#acct-platform');
         const renderFields = () => this._renderCredFields(
@@ -237,6 +242,7 @@ window.Accounts = {
         try {
             await API.createAccount({ platform, label, credentials });
             msg.textContent = '';
+            App.maybePostingDefaults(platform);
             this._refresh();   // re-fill the list in place (keeps scroll position)
         } catch (err) {
             msg.textContent = 'Error: ' + err.message;
@@ -291,7 +297,7 @@ window.Accounts = {
             btn.addEventListener('click', () => this._editCredentials(
                 btn.dataset.creds, btn.dataset.platform, btn)));
         el.querySelectorAll('[data-test-login]').forEach(btn =>
-            btn.addEventListener('click', () => this._testLogin(btn.dataset.testLogin)));
+            btn.addEventListener('click', () => this._testLogin(btn.dataset.testLogin, btn.dataset.platform)));
         el.querySelectorAll('[data-rename]').forEach(btn =>
             btn.addEventListener('click', () => this._renameAccount(btn.dataset.rename, btn.dataset.label)));
         el.querySelectorAll('[data-view-acct]').forEach(btn =>
@@ -376,7 +382,7 @@ window.Accounts = {
         const creds = `<button class="btn btn-sm" data-creds="${a.account_id}" data-platform="${a.platform}"
                        title="Paste renewed cookies or tokens for THIS account">🔑
                        Credentials</button>`;
-        const test = `<button class="btn btn-sm" data-test-login="${a.account_id}"
+        const test = `<button class="btn btn-sm" data-test-login="${a.account_id}" data-platform="${a.platform}"
                       title="Check whether this account's stored login still works">Test</button>
                       <span class="acct-test-status" data-test-status="${a.account_id}"></span>`;
         // DeviantArt posting needs an authorization-code token, which cannot be
@@ -686,7 +692,7 @@ window.Accounts = {
         });
     },
 
-    async _testLogin(accountId) {
+    async _testLogin(accountId, platform) {
         const out = document.querySelector(`[data-test-status="${accountId}"]`);
         if (out) out.textContent = '…';
         try {
@@ -695,6 +701,7 @@ window.Accounts = {
             if (r.status === 'ok') {
                 out.textContent = '✓ logged in' + (r.username ? ' as ' + r.username : '');
                 out.style.color = 'var(--success)';
+                App.maybePostingDefaults(platform);   // X / Bluesky: ask their post settings once (4.69.0)
             }
             // "Logged in, but as somebody else" is a different problem from
             // "logged in" and from "expired", and only naming it stops the

@@ -359,6 +359,8 @@ _SETTINGS = (
     S("sf_totp_code", _SECRET, "An old SoFurry sign-in code, only ever deleted now.", obsolete=True),
     # This install's own locks — the vault.
     *(S(k, _LOCKS) for k in (
+        "auth_email", "auth_email_pending",   # the account's email (4.67.0, spec 033): masked like a secret
+        "auth_code_confirm", "auth_code_reset",   # emailed codes: a salted fingerprint + expiry (4.68.0)
         "dashboard_password", "auth_password_hash", "auth_session_secret", "auth_totp_secret",
         "auth_totp_pending_secret", "auth_totp_backup_codes", "auth_totp_enabled", "auth_api_keys",
         "turnstile_secret_key", "turnstile_site_key",
@@ -392,6 +394,9 @@ _SETTINGS = (
         "pinned_submissions", "platform_order", "poll_interval_minutes", "polling_paused", "polling_paused_platforms",
         "setup_mode", "smtp_host", "smtp_port", "smtp_use_tls", "theme", "tours_seen", "trello",
         "update_skip_version", "watcher_notifications_enabled", "tech_reports", "tech_usage", "consent_records", "age_band",
+        "legal_accepted", "legal_history",   # Terms + Privacy accepted, and when (4.67.0, spec 033)
+        "auth_mail_log",   # when account emails were last sent, for the send limit (4.68.0)
+        "pb_import_asked", "twofa_offered", "announce_defaults_asked",   # sign-up's once-only offers (4.69.0)
         "milestone_comments", "milestone_faves", "milestone_score", "milestone_views",
         "artwork_archive_path", "artwork_da_catpath", "artwork_default_platforms", "artwork_default_rating",
         "artwork_enabled", "artwork_fa_category", "artwork_fa_gender", "artwork_fa_species",

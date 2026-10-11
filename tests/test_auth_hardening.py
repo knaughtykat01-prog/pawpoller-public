@@ -83,7 +83,8 @@ def test_setup_gate_refuses_remote_allows_override(monkeypatch):
     assert not config.get_settings().get("auth_password_hash")   # nothing set
     # Conscious opt-in env allows it.
     monkeypatch.setenv("PAWPOLLER_ALLOW_OPEN_SETUP", "1")
-    assert c.post("/api/auth/dashboard-setup", json=body).status_code == 200
+    assert c.post("/api/auth/dashboard-setup", json={**body, "username": "SecondFur",
+                                                      "email": "owner@example.com"}).status_code == 200
     assert config.get_settings().get("auth_password_hash")
 
 

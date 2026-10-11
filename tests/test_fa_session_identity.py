@@ -280,7 +280,7 @@ def test_the_result_outlives_the_panel():
 
 def test_the_row_status_distinguishes_wrong_account_from_expired():
     src = _code_only(_js("accounts.js"))
-    fn = _method(src, "async _testLogin(accountId) {")
+    fn = _method(src, "async _testLogin(accountId, platform) {")
     assert "wrong_account" in fn[:1600]
 
 

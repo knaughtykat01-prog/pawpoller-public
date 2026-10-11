@@ -62,6 +62,8 @@ from routes.masterpieces_api import masterpieces_router
 from routes.whatsnew_api import whatsnew_router
 from routes.privacy_api import privacy_router
 from routes.tech_api import tech_router
+from routes.legal_api import legal_router
+from routes.pb_import_api import pb_import_router
 from routes.media_api import media_router
 from routes.promos_api import promos_router
 from routes.podcast_api import podcast_router, feed_router
@@ -486,6 +488,9 @@ _AUTH_EXEMPT_PATHS = frozenset({
     "/api/auth/dashboard-status",
     "/api/auth/dashboard-login",
     "/api/auth/dashboard-setup",
+    "/api/auth/signup-status",   # 4.67.0 (spec 033): which sign-up screen comes first
+    "/api/auth/reset-request",   # 4.69.0: Forgot your password is used signed OUT (rate-limited, neutral answer)
+    "/api/auth/reset",
     # 2.16.8: favicon was returning 401 because the auth middleware
     # didn't exempt it. Browsers fetch /favicon.ico without auth
     # context on every page, producing console error noise.
@@ -509,7 +514,20 @@ _AUTH_EXEMPT_PATHS = frozenset({
     # rate-limits per address, and can only mark a board for re-reading.
     "/hooks/trello",
 })
-_AUTH_EXEMPT_PREFIXES = ("/css/", "/js/", "/vendor/", "/img/", "/api/ig/pubmedia/", "/share/", "/feed/")
+_AUTH_EXEMPT_PREFIXES = ("/css/", "/js/", "/vendor/", "/img/", "/api/ig/pubmedia/", "/share/", "/feed/",
+                         "/legal/")   # 4.67.0: the bundled Terms + Privacy text, shown before sign-in
+
+# 4.67.0 (spec 033): the no-account and Terms gates are switched on by the real entry
+# points (main.py, server.py). Tests import this app directly through TestClient, whose
+# peer is "testclient" (never loopback), so the gates stay off there unless a test turns
+# them on — otherwise every open-instance test in the suite would hit the sign-up wall.
+SIGNUP_GATES = False
+
+# 4.67.0 (spec 033 R1): what a signed-in session may reach before accepting the current
+# Terms -- the sign-up screens themselves.
+# (Not all of /api/auth/: the Inkbunny sign-in lives under it too.)
+_TERMS_OPEN_PREFIXES = ("/api/auth/dashboard-", "/api/auth/signup-status", "/api/auth/totp-",
+                        "/api/auth/email", "/api/auth/reset", "/api/legal/")
 
 # Endpoints that return stored credentials / full data backups or perform
 # destructive actions. On an UNCONFIGURED (no-password) instance these must
@@ -611,6 +629,16 @@ async def session_auth_middleware(request: Request, call_next):
                 status_code=403,
                 content="Set a dashboard password (Settings -> Security) before using this endpoint from a non-local client.",
             )
+        # 4.67.0 (spec 033 R1): every install has an account now. Until it does, a remote
+        # caller gets the sign-up page and nothing else. Loopback passes (the person at the
+        # machine already owns its files; the SPA routes them to sign-up first), and so
+        # does a paired desktop's key.
+        if (SIGNUP_GATES and not _keyed and not _client_is_loopback(request) and path != "/"
+                and not path.startswith(_AUTH_EXEMPT_PREFIXES) and path not in _AUTH_EXEMPT_PATHS):
+            return JSONResponse(status_code=403, content={
+                "error": "signup",
+                "detail": "This PawPoller has no account yet. Create it on the machine running PawPoller, "
+                          "or run it once with --reset-password, or set DASHBOARD_PASSWORD."})
         return await call_next(request)
 
     # Let SPA load (index.html) and static assets through unconditionally
@@ -643,6 +671,19 @@ async def session_auth_middleware(request: Request, call_next):
     if cookie:
         payload = config.verify_session(cookie)
         if payload:
+            # 4.67.0 (spec 033 US2): the current Terms must be accepted before anything
+            # but the sign-up screens. API keys skip this (accepted on the issuing install).
+            if SIGNUP_GATES and not path.startswith(_TERMS_OPEN_PREFIXES):
+                import legal
+                if legal.needs_accept():
+                    return JSONResponse(status_code=403, content={
+                        "error": "terms", "detail": "Accept the current Terms of use to carry on."})
+                # 4.68.0: an account with no email at all (made before 4.67.0) adds one first.
+                # Waiting-to-be-confirmed counts: confirming is nagged, never a lock-out.
+                _s = config.get_settings()
+                if not (_s.get("auth_email") or _s.get("auth_email_pending")):
+                    return JSONResponse(status_code=403, content={
+                        "error": "email", "detail": "Add an email to your PawPoller account to carry on."})
             return await call_next(request)
         # Present-but-invalid cookie (tampered/expired) — log at debug; these
         # also happen benignly on idle expiry so don't count toward lockout.
@@ -686,6 +727,8 @@ app.include_router(fbr_router)   # Furbooru routes (/api/fbr/*)
 app.include_router(r34_router)   # Rule34.xxx routes (/api/r34/*), tracking only (spec 028 US6)
 app.include_router(tg_router)    # Telegram channel analytics (/api/tg/*)
 app.include_router(tech_router)  # Tech Centre consent/status/reports (/api/tech/*)
+app.include_router(legal_router)  # Terms + Privacy acceptance (/api/legal/*, spec 033)
+app.include_router(pb_import_router)  # PostyBirb login import (/api/pb-import/*, spec 033 phase 8)
 app.include_router(media_router) # Connected-desktop uploads into the inbox (/api/media/*)
 app.include_router(posting_router)  # Posting module routes (/api/posting/*)
 app.include_router(artwork_router)  # Artwork hub routes (/api/artwork/*)
@@ -731,6 +774,7 @@ app.mount("/js", StaticFiles(directory=str(frontend_dir / "js")), name="js")
 app.mount("/vendor", StaticFiles(directory=str(frontend_dir / "vendor")), name="vendor")
 app.mount("/img", StaticFiles(directory=str(frontend_dir / "img")), name="img")
 app.mount("/fonts", StaticFiles(directory=str(frontend_dir / "fonts")), name="fonts")   # Lora for the Promo Maker (4.15.0)
+app.mount("/legal", StaticFiles(directory=str(frontend_dir / "legal")), name="legal")   # Terms + Privacy (4.67.0)
 
 
 # Browsers request /favicon.ico at the document root regardless of <link> tags;

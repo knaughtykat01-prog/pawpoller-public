@@ -723,6 +723,20 @@ SYNC_EXCLUDE = frozenset({
     "auth_2fa_secret",
     "auth_2fa_enabled",
     "auth_backup_codes",
+    # 4.67.0: the three above never matched anything — 2FA has always been stored under
+    # `auth_totp_*`, so a paired desktop's push could replace the server's 2FA secret.
+    "auth_totp_secret",
+    "auth_totp_pending_secret",
+    "auth_totp_enabled",
+    "auth_totp_backup_codes",
+    # 4.67.0 (spec 033): the account's email and this install's Terms acceptance.
+    "auth_email",
+    "auth_email_pending",
+    "legal_accepted",
+    "legal_history",
+    "auth_code_confirm",
+    "auth_code_reset",
+    "auth_mail_log",
     # ── Filesystem locations: they describe THIS box, not the install ──
     # `C:\Users\...\Archives` means nothing on a Linux VM and `/app/data/artwork`
     # means nothing on Windows, yet all four of these cross the sync today. The
@@ -1268,7 +1282,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.66.0"
+APP_VERSION = "4.69.0"
 
 
 def _app_commit() -> str:

@@ -14,7 +14,10 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 import secrets
+import threading
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -109,6 +112,8 @@ def dashboard_status(request: Request):
         "auth_required": auth_required,
         "authenticated": authenticated,
         "totp_enabled": totp_enabled,
+        # 4.68.0: "Forgot your password?" — only when a confirmed email can be mailed.
+        "reset_available": bool(auth_required and settings.get("auth_email") and _mail_ready()),
         # Remaining 2FA backup codes (gap-wave-4) — only meaningful to an
         # authenticated caller; drives the "regenerate" nudge in Settings.
         "backup_codes_remaining": (
@@ -164,6 +169,10 @@ async def dashboard_login(request: Request, body: dict):
     # Check credentials
     stored_hash = settings.get("auth_password_hash", "")
     stored_user = settings.get("auth_username", "admin")
+    # 4.68.0 (spec 033 / 023 FR-001): the CONFIRMED email signs in too, any letter case.
+    # It maps onto the username before the same timing-uniform check below.
+    if "@" in username and username.lower() == str(settings.get("auth_email") or "").lower() and stored_user:
+        username = stored_user
 
     if not stored_hash:
         # Legacy plaintext password (pre-migration)
@@ -204,13 +213,18 @@ async def dashboard_login(request: Request, body: dict):
     _auth_failures.pop(client_ip, None)
     logger.info("Auth: login success (ip=%s user=%s)", client_ip, _log_user)
 
+    return _session_response(request, username, remember, f"Welcome, {username}!")
+
+
+def _session_response(request: Request, username: str, remember: bool, message: str) -> JSONResponse:
+    """A JSON success with the signed ``pp_session`` cookie (login, and sign-up since 4.67.0)."""
     max_age = 30 * 86400 if remember else 86400
     payload = {"u": username}
     if remember:
         payload["r"] = True
     cookie_value = config.sign_session(payload)
 
-    response = JSONResponse({"status": "success", "message": f"Welcome, {username}!"})
+    response = JSONResponse({"status": "success", "message": message})
     response.set_cookie(
         key="pp_session",
         value=cookie_value,
@@ -261,24 +275,206 @@ def dashboard_setup(request: Request, body: dict):
             "(localhost). Open the dashboard there, or set PAWPOLLER_ALLOW_OPEN_SETUP=1 to "
             "allow remote setup on a trusted network.")
 
-    username = body.get("username", "admin").strip() or "admin"
+    # 4.67.0 (spec 033 US1): a real account — a chosen username (no "admin" default) and a
+    # required email, the address password resets will go to once it is confirmed. Each
+    # refusal names its field so the form can point at it.
+    username = str(body.get("username") or "").strip()
+    email = normalise_email(body.get("email"))
     password = body.get("password", "")
     confirm = body.get("confirm", "")
 
-    if not password:
-        raise HTTPException(400, "Password is required.")
+    if not _USERNAME_RE.fullmatch(username):
+        raise HTTPException(400, {"field": "username",
+                                  "message": "Choose a username of 3 to 32 letters, numbers, dots, dashes or underscores."})
+    if not email:
+        raise HTTPException(400, {"field": "email", "message": "Enter an email address, like name@example.com."})
     if len(password) < 8:
-        raise HTTPException(400, "Password must be at least 8 characters.")
+        raise HTTPException(400, {"field": "password", "message": "Use at least 8 characters."})
     if password != confirm:
-        raise HTTPException(400, "Passwords do not match.")
+        raise HTTPException(400, {"field": "confirm", "message": "The two passwords don't match."})
 
     config.save_settings({
         "auth_username": username,
         "auth_password_hash": config.hash_password(password),
+        "auth_email_pending": email,
     })
     config.invalidate_auth_required_cache()
-    logger.info("Dashboard auth configured for user '%s'", username)
-    return {"status": "success", "message": f"Dashboard auth configured for {username}."}
+    logger.info("Dashboard account created for user '%s'", _sanitize_for_log(username))
+    import account_mail
+    account_mail.send_code("confirm", email)   # no-op when mail isn't available; the email waits
+    # Signing up signs you in. "Keep me signed in" = the existing 30-day session.
+    return _session_response(request, username, bool(body.get("remember")), f"Welcome, {username}!")
+
+
+@dashboard_auth_router.post("/email")
+def set_account_email(body: dict):
+    """Add or change the account email (4.67.0, spec 033 US1 / spec 023 FR-009).
+
+    Needs the current password. The address waits for confirmation (the confirm link
+    arrives with spec 023's mail; until then it is kept as the address to confirm).
+    """
+    s = config.get_settings()
+    if not config.verify_password(str(body.get("current_password") or ""), s.get("auth_password_hash") or _DUMMY_HASH):
+        raise HTTPException(401, {"field": "current", "message": "That isn't your current password."})
+    email = normalise_email(body.get("email"))
+    if not email:
+        raise HTTPException(400, {"field": "email", "message": "Enter an email address, like name@example.com."})
+    config.save_settings({"auth_email_pending": email})
+    logger.info("Auth: account email set, waiting for confirmation")
+    import account_mail
+    return {"status": "waiting", "sent": account_mail.send_code("confirm", email)}
+
+
+@dashboard_auth_router.post("/email/send-code")
+def resend_email_code():
+    """Send (again) the code that confirms the waiting address (4.68.0)."""
+    import account_mail
+    pending = config.get_settings().get("auth_email_pending")
+    if not pending:
+        raise HTTPException(400, {"field": "", "message": "There's no email waiting to be confirmed."})
+    if not account_mail.send_code("confirm", pending):
+        raise HTTPException(429, {"field": "", "message": "The code couldn't be sent just now. Try again in a while."})
+    return {"sent": True}
+
+
+@dashboard_auth_router.post("/email/confirm")
+def confirm_email(body: dict):
+    """The 6-digit code from the email confirms the address (4.68.0, 023 FR-010/011)."""
+    import account_mail
+    to = account_mail.check_code("confirm", body.get("code"))
+    s = config.get_settings()
+    if not to or to != s.get("auth_email_pending"):
+        raise HTTPException(400, {"field": "code", "message": "That code isn't right, or it has run out. Send a new one."})
+    old = s.get("auth_email")
+    config.save_settings({"auth_email": to})
+    config.delete_settings_keys(["auth_email_pending"])
+    logger.info("Auth: account email confirmed")
+    if old and old != to:
+        account_mail.notice("email_changed", old)
+    return {"status": "confirmed"}
+
+
+@dashboard_auth_router.post("/reset-request")
+def reset_request(request: Request, body: dict):
+    """Forgot password: email a reset code to the confirmed address (4.68.0, 023 FR-003/004/008).
+
+    The answer never says whether the name or address matched. The send happens in the
+    background so the time taken can't tell either.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    if not _reset_ask_allowed(client_ip):   # its own limit: asking isn't a failed sign-in (4.69.0 review)
+        raise HTTPException(429, "Too many attempts. Try again later.")
+    who = str(body.get("who") or "").strip().lower()
+    s = config.get_settings()
+    email = str(s.get("auth_email") or "")
+    if who and email and who in (email.lower(), str(s.get("auth_username") or "").lower()):
+        import account_mail
+        import threading
+        threading.Thread(target=account_mail.send_code, args=("reset", email), daemon=True).start()
+        logger.info("Auth: password reset requested")
+    return {"status": "sent-if-known",
+            "message": "If that matches this PawPoller's account, a code is on its way to its email."}
+
+
+@dashboard_auth_router.post("/reset")
+def reset_password(request: Request, body: dict):
+    """Set a new password with the emailed code (4.68.0, 023 FR-005/006/012)."""
+    from dashboard import _is_rate_limited, _record_auth_failure
+    import account_mail
+    client_ip = request.client.host if request.client else "unknown"
+    if _is_rate_limited(client_ip):
+        raise HTTPException(429, "Too many attempts. Try again later.")
+    password, confirm = body.get("password", ""), body.get("confirm", "")
+    if len(password) < 8:
+        raise HTTPException(400, {"field": "password", "message": "Use at least 8 characters."})
+    if password != confirm:
+        raise HTTPException(400, {"field": "confirm", "message": "The two passwords don't match."})
+    to = account_mail.check_code("reset", body.get("code"))
+    if to and to.lower() != str(config.get_settings().get("auth_email") or "").lower():
+        to = None   # the account's email changed after this code was sent: it no longer counts
+    if not to:
+        _record_auth_failure(client_ip)
+        raise HTTPException(400, {"field": "code", "message": "That code isn't right, or it has run out. Ask for a new one."})
+    config.save_settings({"auth_password_hash": config.hash_password(password)})
+    config.rotate_session_secret()     # every signed-in session ends; 2FA is left as it was
+    logger.info("Auth: password reset with an emailed code")
+    account_mail.notice("password_changed", to)
+    return {"status": "success", "message": "Password changed. Sign in with it now."}
+
+
+_RESET_ASKS: dict = {}
+_RESET_ASKS_LOCK = threading.Lock()
+
+
+def _reset_ask_allowed(ip: str, limit: int = 5, window: int = 3600) -> bool:
+    """5 reset requests an hour per address. ponytail: in memory, a restart forgets it."""
+    now = time.time()
+    with _RESET_ASKS_LOCK:
+        hits = [t for t in _RESET_ASKS.get(ip, []) if now - t < window]
+        if len(hits) >= limit:
+            _RESET_ASKS[ip] = hits
+            return False
+        _RESET_ASKS[ip] = hits + [now]
+        if len(_RESET_ASKS) > 5000:
+            _RESET_ASKS.clear()
+        return True
+
+
+def _pb_present() -> bool:
+    import pb_import
+    return pb_import.present()
+
+
+def _mail_ready() -> bool:
+    import account_mail
+    return account_mail.ready()
+
+
+_USERNAME_RE = re.compile(r"[A-Za-z0-9_.-]{3,32}")
+_EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+
+def normalise_email(value) -> str:
+    """Lower-cased, trimmed address, or "" when it doesn't look like one (one @, a dot after it)."""
+    v = str(value or "").strip().lower()
+    return v if len(v) <= 254 and _EMAIL_RE.fullmatch(v) else ""
+
+
+@dashboard_auth_router.get("/signup-status")
+def signup_status(request: Request):
+    """Which sign-up screen comes first (4.67.0, spec 033). Exempt from auth.
+
+    Signed out, it says only whether an account exists and the current document
+    versions; the rest (email state, what's answered) needs a session. Nothing here is
+    stored as "progress": each screen is answered or not by the settings it writes.
+    """
+    import legal
+    from posting.scheduler import detect_runtime_mode
+    account = config.is_dashboard_auth_required()
+    authenticated = False
+    if account:
+        cookie = request.cookies.get("pp_session")
+        authenticated = bool(cookie and config.verify_session(cookie))
+    out = {"account": account, "authenticated": authenticated,
+           "legal": legal.current(), "runtime_mode": detect_runtime_mode()}
+    from dashboard import _client_is_loopback
+    if authenticated or (not account and _client_is_loopback(request)):
+        # No account yet: only the person at the machine sees the rest.
+        s = config.get_settings()
+        out["legal"] = legal.status(s)
+        out["email"] = ("confirmed" if s.get("auth_email") and not s.get("auth_email_pending") else
+                        "waiting" if s.get("auth_email_pending") else "none")
+        out["email_waiting"] = s.get("auth_email_pending") or ""
+        out["mail_ready"] = _mail_ready()
+        out["answered"] = {
+            "age": bool(s.get("age_band")),
+            "timezone": bool(s.get("display_timezone")),
+            "tech": "tech_reports" in s and "tech_usage" in s,
+            # 4.69.0: offered once, desktop only, and only when PostyBirb is on this computer.
+            "postybirb": bool(s.get("pb_import_asked")) or out["runtime_mode"] == "server" or not _pb_present(),
+            "twofa": bool(s.get("twofa_offered") or s.get("auth_totp_enabled")),
+        }
+    return out
 
 
 # -- Dashboard Logout --------------------------------------------------------
@@ -319,6 +515,8 @@ def dashboard_change_password(body: dict):
     # terminates any other logged-in session or stolen cookie (ASVS V7.4.3).
     config.rotate_session_secret()
     logger.info("Dashboard password changed — all sessions invalidated")
+    import account_mail
+    account_mail.notice("password_changed", settings.get("auth_email") or "")
     return {"status": "success", "message": "Password updated. Please log in again."}
 
 

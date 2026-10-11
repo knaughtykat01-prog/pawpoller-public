@@ -26,6 +26,14 @@ ACCESS_KEYS = [
     "auth_2fa_secret",
     "auth_2fa_enabled",
     "auth_backup_codes",
+    # The real 2FA keys (4.67.0 — the three names above never matched what is stored).
+    "auth_totp_secret",
+    "auth_totp_pending_secret",
+    "auth_totp_enabled",
+    "auth_totp_backup_codes",
+    "auth_email",
+    "auth_email_pending",
+    "legal_accepted",
 ]
 
 

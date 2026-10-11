@@ -27,7 +27,7 @@ def test_the_new_steps_are_in_every_full_path_and_paired_skips_the_server_ones()
 
 
 def test_the_story_folder_is_only_asked_of_writers():
-    assert "const keep = (s) => s !== 'archive' || makesAll().includes('stories');" in WIZ
+    assert "const keep = (s) => (s !== 'archive' || makesAll().includes('stories')) && !answered[s];" in WIZ
     assert all(o.rstrip().endswith(".filter(keep);") for o in _orders() if "'archive'" in o)
 
 
