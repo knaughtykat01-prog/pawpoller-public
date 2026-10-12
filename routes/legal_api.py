@@ -23,8 +23,10 @@ def legal_status():
 @legal_router.post("/accept")
 def legal_accept(body: dict):
     try:
-        rec = legal.accept(body.get("terms_version") or 0, body.get("privacy_version") or 0)
+        rec = legal.accept(body.get("terms_version") or 0, body.get("privacy_version") or 0,
+                           body.get("hosted_version"))
     except (TypeError, ValueError):
         raise HTTPException(409, "These aren't the current Terms. Reload the page to see the latest version.")
-    logger.info("Legal: terms v%s + privacy v%s accepted", rec["terms"], rec["privacy"])
+    logger.info("Legal: terms v%s + privacy v%s accepted%s", rec["terms"], rec["privacy"],
+                f" + hosted v{rec['hosted']}" if "hosted" in rec else "")
     return {"accepted": rec}

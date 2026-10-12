@@ -246,6 +246,9 @@ def _session_response(request: Request, username: str, remember: bool, message: 
 
 # -- Dashboard Setup (first-time) -------------------------------------------
 
+_SETUP_LOCK = threading.Lock()
+
+
 @dashboard_auth_router.post("/dashboard-setup")
 def dashboard_setup(request: Request, body: dict):
     """First-time password setup.  Only works when no auth is configured.
@@ -253,6 +256,13 @@ def dashboard_setup(request: Request, body: dict):
     This endpoint is exempt from auth (obviously — there's no password yet).
     Once a password hash is stored, this endpoint returns 403.
     """
+    # 4.70.0 (security review, Low): the "no account yet" check and the save are ~250 ms
+    # of password hashing apart; two requests at once must not both make the account.
+    with _SETUP_LOCK:
+        return _dashboard_setup(request, body)
+
+
+def _dashboard_setup(request: Request, body: dict):
     settings = config.get_settings()
     if settings.get("auth_password_hash") or settings.get("dashboard_password"):
         raise HTTPException(403, "Dashboard auth is already configured. Use change-password instead.")
@@ -266,8 +276,23 @@ def dashboard_setup(request: Request, body: dict):
     # genuinely needs remote first-run on a trusted network sets
     # PAWPOLLER_ALLOW_OPEN_SETUP=1 as a conscious opt-in.
     from dashboard import _client_is_loopback
-    if not _client_is_loopback(request) and os.environ.get("PAWPOLLER_ALLOW_OPEN_SETUP") != "1":
+    # 4.70.0 (spec 034 R1): a hosted seat's invite link carries a one-time claim code. Its
+    # hash and expiry live in the seat's .env; the account existing (403 above) is what
+    # makes it single-use. Without those env values nothing here changes.
+    claim = body.get("claim")
+    if claim:
+        from dashboard import _is_rate_limited
+        if _is_rate_limited(request.client.host if request.client else "unknown"):
+            raise HTTPException(429, "Too many attempts. Try again later.")
+    if (not _client_is_loopback(request) and os.environ.get("PAWPOLLER_ALLOW_OPEN_SETUP") != "1"
+            and not (claim and _claim_ok(str(claim)))):
         client_ip = request.client.host if request.client else "?"
+        if claim:
+            from dashboard import _record_auth_failure
+            _record_auth_failure(client_ip)
+            logger.warning("Auth: hosted claim refused (%s)", "expired" if _claim_state() == "expired" else "mismatch")
+            raise HTTPException(403, {"error": "claim", "field": "",
+                                      "message": "This invite link has expired or was already used. Ask for a new one."})
         logger.warning("Auth: remote dashboard-setup refused (ip=%s) — loopback only", client_ip)
         raise HTTPException(
             403,
@@ -421,6 +446,26 @@ def _reset_ask_allowed(ip: str, limit: int = 5, window: int = 3600) -> bool:
         return True
 
 
+def _claim_state() -> str:
+    """"none" (not a claimable seat), "expired" or "open" — from the seat's env (spec 034 R1)."""
+    if not os.environ.get("PAWPOLLER_CLAIM_HASH"):
+        return "none"
+    try:
+        expires = int(os.environ.get("PAWPOLLER_CLAIM_EXPIRES") or 0)
+    except ValueError:
+        expires = 0
+    return "open" if time.time() < expires else "expired"
+
+
+def _claim_ok(code: str) -> bool:
+    import hashlib
+    import hmac
+    if _claim_state() != "open":
+        return False
+    digest = hashlib.sha256(code.encode("utf-8", "replace")).hexdigest()
+    return hmac.compare_digest(digest, os.environ["PAWPOLLER_CLAIM_HASH"].strip().lower())
+
+
 def _pb_present() -> bool:
     import pb_import
     return pb_import.present()
@@ -457,7 +502,9 @@ def signup_status(request: Request):
         cookie = request.cookies.get("pp_session")
         authenticated = bool(cookie and config.verify_session(cookie))
     out = {"account": account, "authenticated": authenticated,
-           "legal": legal.current(), "runtime_mode": detect_runtime_mode()}
+           "legal": legal.current(), "runtime_mode": detect_runtime_mode(),
+           # 4.70.0 (spec 034): a hosted seat, and whether its invite link can still be used.
+           "hosted": legal.hosted(), "claim": not account and _claim_state() == "open"}
     from dashboard import _client_is_loopback
     if authenticated or (not account and _client_is_loopback(request)):
         # No account yet: only the person at the machine sees the rest.

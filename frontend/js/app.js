@@ -133,6 +133,13 @@ const App = {
      *    to the login screen.
      */
     async init() {
+        /* A hosted seat's invite link (4.70.0, spec 034): keep the one-time code in memory
+           and take it out of the address bar at once, so it isn't left in the history. */
+        const _cm = /[?&]claim=([A-Za-z0-9_-]{16,128})/.exec(window.location.hash);
+        if (_cm) {
+            this._claim = _cm[1];
+            history.replaceState(null, '', window.location.pathname + window.location.search + '#/signup');
+        }
         /* Listen for hash changes so browser back/forward works */
         window.addEventListener('hashchange', () => this.route());
         /* A plain click on a link to the address we are already on fires no
@@ -3022,6 +3029,20 @@ const App = {
         };
         const next = () => this.renderSignup();
 
+        // A hosted seat with no account (spec 034): only its invite link can make one.
+        if (screen === 'account' && su.hosted && !su.authenticated && !('answered' in su)) {
+            const used = !!this._claim && !su.claim;
+            if (!this._claim || used) {
+                this._setContent(card(used ? `
+                    <h2>This invite link has run out</h2>
+                    <p class="signup-lead">It has expired or was already used. Ask the person who invited you for a new one.</p>`
+                    : `<h2>This PawPoller is waiting for its owner</h2>
+                    <p class="signup-lead">This copy was set up for someone who hasn't opened their invite link yet.
+                        If that's you, open the link from your invite message.</p>`));
+                return;
+            }
+        }
+
         if (screen === 'account') {
             this._setContent(card(`
                 <h2>Create your PawPoller account</h2>
@@ -3060,7 +3081,9 @@ const App = {
                 btn.disabled = true; btn.textContent = 'Creating…';
                 try {
                     await API.dashboardSetup({ username: val('username').trim(), email: val('email').trim(),
-                        password: val('password'), confirm: val('confirm'), remember: document.getElementById('signup-remember').checked });
+                        password: val('password'), confirm: val('confirm'), remember: document.getElementById('signup-remember').checked,
+                        ...(this._claim ? { claim: this._claim } : {}) });
+                    this._claim = null;
                     this._dashboardAuthRequired = true;
                     next();
                 } catch (err) {
@@ -3146,13 +3169,15 @@ const App = {
             const again = !!cur.accepted;
             let docs = '';
             try {
-                const [t, p] = await Promise.all(['terms', 'privacy'].map(d => fetch(`/legal/${d}.html`).then(r => r.text())));
-                docs = `<h3 id="legal-terms">Terms of use</h3>${t}<h3 id="legal-privacy">Privacy policy</h3>${p}`;
+                const names = ['terms', 'privacy'].concat(cur.hosted ? ['hosted'] : []);
+                const [t, p, h] = await Promise.all(names.map(d => fetch(`/legal/${d}.html`).then(r => r.text())));
+                docs = `${h ? `<h3 id="legal-hosted">What a hosted seat means</h3>${h}` : ''}<h3 id="legal-terms">Terms of use</h3>${t}<h3 id="legal-privacy">Privacy policy</h3>${p}`;
             } catch (e) { docs = '<p>Could not load the documents. Check your connection and reload.</p>'; }
             if (this._stale(_rt)) return;
             this._setContent(card(`
                 <h2>${again ? 'The terms have changed' : 'Terms of use and privacy'}</h2>
-                <p class="signup-lead">${again ? 'Please read the new version.' : 'Please read both.'} They're short and written to be read.
+                <p class="signup-lead">${cur.hosted ? 'This PawPoller is a hosted beta seat, so there are three to read, starting with what that means.'
+                    : again ? 'Please read the new version.' : 'Please read both.'} They're short and written to be read.
                     <a href="#legal-privacy" id="legal-jump">Go to the privacy policy</a> ·
                     <a href="https://pawpoller.com/terms" target="_blank" rel="noopener">Open on pawpoller.com</a></p>
                 <div class="legal-box" id="legal-box" tabindex="0" role="document" aria-label="Terms of use and privacy policy">${docs}
@@ -3183,11 +3208,13 @@ const App = {
             btn.addEventListener('click', async () => {
                 if (!reached) return;
                 btn.disabled = true;
-                try { await API.acceptLegal(cur.terms, cur.privacy); next(); }
+                try { await API.acceptLegal(cur.terms, cur.privacy, cur.hosted); next(); }
                 catch (err) { showErr(fieldErr(err.message)); btn.disabled = false; }
             });
             document.getElementById('legal-decline').addEventListener('click', () => {
-                showErr({ message: "PawPoller can't be used without accepting the terms. Nothing has been changed or deleted. Accept when you're ready, or close the app." });
+                showErr({ message: cur.hosted
+                    ? "Nothing has been connected, and nothing will be until you accept. If you'd rather not use a hosted seat, tell the person who invited you and they'll remove it."
+                    : "PawPoller can't be used without accepting the terms. Nothing has been changed or deleted. Accept when you're ready, or close the app." });
             });
             return;
         }
@@ -16044,9 +16071,12 @@ const App = {
                     const when = Utils.time.fmt.date(acc.at);
                     return `<div class="settings-section"><h3>Terms</h3><div class="settings-row"><span class="settings-label">
                         <a href="/legal/terms.html" target="_blank" rel="noopener">Terms v${Number(acc.terms)}</a> and
-                        <a href="/legal/privacy.html" target="_blank" rel="noopener">Privacy v${Number(acc.privacy)}</a>
+                        <a href="/legal/privacy.html" target="_blank" rel="noopener">Privacy v${Number(acc.privacy)}</a>${acc.hosted ? `
+                        and <a href="/legal/hosted.html" target="_blank" rel="noopener">What a hosted seat means v${Number(acc.hosted)}</a>` : ''}
                         accepted on ${Utils.escapeHtml(when)}</span></div></div>`;
                 })()}
+                ${App._signup && App._signup.hosted ? `<div class="settings-section"><h3>Hosted beta seat</h3><div class="settings-row"><span class="settings-label">
+                    Hosted beta seat — may be paused, moved or wiped; you'll be told first where possible.</span></div></div>` : ''}
 
                 ${_isServer ? `
                 <div class="settings-section">

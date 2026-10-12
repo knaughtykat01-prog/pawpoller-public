@@ -71,6 +71,8 @@ _ENV_TO_SETTINGS = {
     # Installed servers (4.14.0): the installer names a backups folder and turns auto-backup on.
     "PAWPOLLER_AUTO_BACKUP_DIR": "auto_backup_dir",
     "PAWPOLLER_AUTO_BACKUP":     "auto_backup_enabled",
+    # 4.70.0 (spec 034): hosted seats keep 14 nightly backups on the home box's backup disk.
+    "PAWPOLLER_AUTO_BACKUP_KEEP": "auto_backup_keep",
     "IB_USERNAME":      "username",
     "IB_PASSWORD":      "password",
     "FA_USERNAME":      "fa_username",
@@ -120,6 +122,19 @@ _ENV_TO_SETTINGS = {
     "CF_WORKER_KEY":       "cf_worker_key",
 }
 
+def _poll_offset_minutes() -> int:
+    """Minutes to hold the first poll back (4.70.0, spec 034 R5).
+
+    Ten hosted seats share one home IP; after the box reboots they'd all poll in the same
+    minute. Each seat's .env gives it its own offset (0-59). Unset or bad means 0.
+    """
+    try:
+        n = int(os.environ.get("PAWPOLLER_POLL_OFFSET_MINUTES") or 0)
+    except ValueError:
+        return 0
+    return min(max(n, 0), 59)
+
+
 def _seed_settings_from_env():
     """One-time bootstrap from env vars into settings on a fresh install.
 
@@ -145,6 +160,11 @@ def _seed_settings_from_env():
             continue
         if settings_key in ("telegram_enabled", "auto_backup_enabled"):
             updates[settings_key] = val.lower() in ("true", "1", "yes")
+        elif settings_key == "auto_backup_keep":
+            try:
+                updates[settings_key] = max(1, int(val))
+            except ValueError:
+                logger.warning("PAWPOLLER_AUTO_BACKUP_KEEP=%r isn't a number; ignored", val)
         else:
             updates[settings_key] = val
     if updates:
@@ -391,7 +411,10 @@ def _start_poll_orchestrator():
 
     async def _run():
         # Brief startup delay so uvicorn is ready and settings are seeded.
-        await asyncio.sleep(5)
+        _offset = _poll_offset_minutes()
+        if _offset:
+            logger.info("Poll start offset: %d min (hosted seat)", _offset)
+        await asyncio.sleep(5 + 60 * _offset)
         _first_cycle = True
         poll_interval = _get_poll_interval()
         logger.info("Poll orchestrator started (interval: %d min)",

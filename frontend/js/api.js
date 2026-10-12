@@ -1219,7 +1219,7 @@ const API = {
     // First sign-up (4.67.0, spec 033)
     getSignupStatus() { return this.get('/api/auth/signup-status'); },
     addAccountEmail(email, current_password) { return this.post('/api/auth/email', { email, current_password }, { quiet: [400, 401] }); },
-    acceptLegal(terms_version, privacy_version) { return this.post('/api/legal/accept', { terms_version, privacy_version }, { quiet: [409] }); },
+    acceptLegal(terms_version, privacy_version, hosted_version) { return this.post('/api/legal/accept', { terms_version, privacy_version, hosted_version }, { quiet: [409] }); },
     // The account email's codes (4.68.0, spec 033 phase 6)
     sendEmailCode() { return this.post('/api/auth/email/send-code', {}, { quiet: [400, 429] }); },
     confirmEmail(code) { return this.post('/api/auth/email/confirm', { code }, { quiet: [400] }); },

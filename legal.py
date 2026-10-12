@@ -10,6 +10,7 @@ issued the key).
 from __future__ import annotations
 
 import functools
+import os
 import re
 from datetime import datetime, timezone
 
@@ -19,15 +20,29 @@ DOCS = ("terms", "privacy")
 _HISTORY_MAX = 10
 
 
-@functools.lru_cache(maxsize=1)
-def current() -> dict:
-    """``{"terms": N, "privacy": N}`` from the bundled documents (read once per process)."""
+def hosted() -> bool:
+    """A hosted beta seat (4.70.0, spec 034): set by the home box's seat .env, never by the tester."""
+    return os.environ.get("PAWPOLLER_HOSTED") == "1"
+
+
+def docs() -> tuple:
+    """The documents to accept here: a hosted seat adds "What a hosted seat means"."""
+    return DOCS + (("hosted",) if hosted() else ())
+
+
+@functools.lru_cache(maxsize=2)
+def _versions(names: tuple) -> dict:
     out = {}
-    for doc in DOCS:
+    for doc in names:
         text = (config.resource_path("frontend") / "legal" / f"{doc}.html").read_text(encoding="utf-8")
         m = re.search(r'data-version="(\d+)"', text)
         out[doc] = int(m.group(1)) if m else 1
     return out
+
+
+def current() -> dict:
+    """``{"terms": N, "privacy": N[, "hosted": N]}`` from the bundled documents (read once per process)."""
+    return dict(_versions(docs()))
 
 
 def accepted(settings: dict | None = None) -> dict | None:
@@ -39,16 +54,20 @@ def accepted(settings: dict | None = None) -> dict | None:
 def needs_accept(settings: dict | None = None) -> bool:
     a = accepted(settings)
     cur = current()
-    return not a or any(int(a.get(d) or 0) < cur[d] for d in DOCS)
+    return not a or any(int(a.get(d) or 0) < cur[d] for d in cur)
 
 
-def accept(terms: int, privacy: int) -> dict:
-    """Record acceptance of exactly the current versions; ValueError otherwise."""
+def accept(terms: int, privacy: int, hosted_version: int | None = None) -> dict:
+    """Record acceptance of exactly the current versions; ValueError otherwise.
+
+    On a hosted seat the hosted document's version is required too.
+    """
     cur = current()
     if int(terms) != cur["terms"] or int(privacy) != cur["privacy"]:
         raise ValueError("not the current version")
-    rec = {"terms": cur["terms"], "privacy": cur["privacy"],
-           "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    if "hosted" in cur and int(hosted_version or 0) != cur["hosted"]:
+        raise ValueError("not the current version")
+    rec = {**cur, "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     hist = [h for h in (config.get_settings().get("legal_history") or []) if isinstance(h, dict)]
     config.save_settings({"legal_accepted": rec, "legal_history": (hist + [rec])[-_HISTORY_MAX:]})
     return rec

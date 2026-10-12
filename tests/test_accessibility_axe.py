@@ -451,3 +451,37 @@ def test_the_overnight_sheet_closes_on_a_phone(browser, app_url):
         assert page.locator(".ov-overlay").count() == 0
     finally:
         ctx.close()
+
+
+def test_the_hosted_seat_screens_pass_axe_and_fit_a_phone(browser, signup_url, monkeypatch):
+    """4.70.0 (spec 034): a hosted seat's "waiting for its owner" page (a visitor without the invite
+    link) and its three-document accept screen."""
+    import dashboard
+    monkeypatch.setenv("PAWPOLLER_HOSTED", "1")
+    full = _signed_up()
+    acct = {k: full[k] for k in ("auth_username", "auth_password_hash")}
+    fails = []
+    for name, state, remote in [("waiting", {}, True),
+                                ("hosted-legal", {**acct, "auth_email": "owner@example.com"}, False)]:
+        monkeypatch.setattr(dashboard, "_client_is_loopback", (lambda r: False) if remote else (lambda r: True))
+        config.delete_settings_keys(_SIGNUP_KEYS)
+        config.save_settings({"setup_complete": False, **state})
+        config.invalidate_auth_required_cache()
+        wait = lambda page: page.wait_for_selector(".signup-card h2", timeout=10000)  # noqa: E731
+        fails += [f"[{name}] {f}" for f in _scan(browser, signup_url + "/#/signup", before=wait)]
+        ctx = _ctx(browser, viewport={"width": 390, "height": 844})
+        page = ctx.new_page()
+        try:
+            page.goto(signup_url + "/#/signup", wait_until="networkidle")
+            wait(page)
+            head = page.inner_text(".signup-card h2")
+            if name == "waiting" and "waiting for its owner" not in head:
+                fails.append(f"[waiting] showed {head!r}")
+            if name == "hosted-legal" and not page.query_selector("#legal-hosted"):
+                fails.append("[hosted-legal] no hosted document")
+            over = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            if over > 1:
+                fails.append(f"[{name}] {over}px wider than a 390px phone")
+        finally:
+            ctx.close()
+    assert not fails, "\n".join(fails)
