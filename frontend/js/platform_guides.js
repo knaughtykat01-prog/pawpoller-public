@@ -663,6 +663,51 @@
     // Not a publishing platform, so it has no entry in PLATFORMS and does not
     // appear on the Getting Started hub. Reached from Settings → Trello and from
     // the Connect button on the commissions board.
+    // Not a site: moving a whole PawPoller into a hosted seat or onto a new computer (4.71.0, spec 035).
+    move: {
+      title: 'Moving to a hosted seat', kind: 'Moving your PawPoller', difficulty: 'Easy',
+      summary: 'Bring your whole library, history and site logins into your hosted seat (or a new computer) in one go.',
+      need: ['Your old PawPoller, updated to the latest version', 'Your new PawPoller (your hosted seat), signed in',
+             'A moving phrase you\'ll remember for ten minutes: at least 12 characters'],
+      steps: [
+        { t: 'Open Settings on your old PawPoller',
+          b: 'On the PawPoller you\'ve been using, open <b>Settings</b> and go to <b>Moving to another PawPoller</b>.' },
+        { t: 'Choose a moving phrase',
+          b: 'Type a phrase of at least 12 characters, twice. It locks your site logins inside the moving file. ' +
+             'Nobody can recover it for you, so keep it handy until the move is done.' },
+        { t: 'Make the moving file',
+          b: 'Leave <b>Pause this copy afterwards</b> ticked and press <b>Make moving file</b>. A bar shows ' +
+             'progress; when it\'s done, the file downloads by itself. A big library can take a few minutes.' },
+        { t: 'See the old copy pause',
+          b: 'A banner says <b>This copy of PawPoller has moved and is paused</b>. It stops checking your sites ' +
+             'and posting, so the two copies don\'t trip over each other. Nothing is deleted.' },
+        { t: 'Open Settings on your new PawPoller',
+          b: 'Sign in to your hosted seat, open <b>Settings</b> and go to <b>Moving to another PawPoller</b>.' },
+        { t: 'Pick the file and type the phrase',
+          b: 'Under <b>Bring in my old PawPoller</b>, choose the moving file you just downloaded and type your ' +
+             'moving phrase. Press <b>Bring it in</b>.' },
+        { t: 'Wait for the upload',
+          b: 'A bar shows the upload. If your internet drops, pick the same file again and press ' +
+             '<b>Bring it in</b>: it carries on from where it stopped.' },
+        { t: 'Check and confirm',
+          b: 'PawPoller tells you what\'s in the file. Press <b>OK</b> to bring it in. Your seat keeps its own ' +
+             'password and email.' },
+        { t: 'Sign in again',
+          b: 'Your seat restarts by itself, which takes about a minute. Sign in with your <b>seat\'s</b> ' +
+             'password. Your library, history and site logins are all there.' },
+        { t: 'Delete the moving file',
+          b: 'Once you\'ve checked everything is there, delete the moving file from your Downloads folder.' },
+      ],
+      paste: 'Nothing to paste: everything happens in <b>Settings → Moving to another PawPoller</b>, on both PawPollers.',
+      renew: { when: 'Nothing to keep alive', how: 'A move is done once. If you change your mind, press <b>Resume this copy</b> on the old PawPoller\'s banner.' },
+      notes: [
+        'Your sign-in doesn\'t move: the new PawPoller keeps its own username, password, email and two-step code.',
+        'A link between your desktop app and a server doesn\'t move either. Connect them again afterwards if you use one.',
+        'If the new PawPoller already had work in it, its records are replaced by the moving file\'s. A safety copy is kept first, and artwork is never deleted.',
+        'The moving file holds your library unencrypted (your logins are locked). Keep it private and delete it after the move.',
+      ],
+    },
+
     trello: {
       title: 'Trello', kind: 'Commissions board', difficulty: 'Medium',
       summary: 'Your Trello boards inside PawPoller — drag cards here or on your phone, and both stay in step.',

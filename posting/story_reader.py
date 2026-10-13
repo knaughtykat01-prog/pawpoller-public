@@ -141,6 +141,10 @@ class ChapterInfo:
     files: dict[str, str]   # format_key → relative path
 
 
+def _in_container() -> bool:
+    return Path("/.dockerenv").exists()
+
+
 def get_archive_path() -> Path:
     """Get the story archive root, configurable via settings.
 
@@ -161,6 +165,13 @@ def get_archive_path() -> Path:
     docker_mount = Path("/app/story-archive")
     if docker_mount.is_dir() and any(docker_mount.iterdir()):
         return docker_mount
+    # 4.71.0 (spec 035 R7): any other container (a hosted seat) keeps stories on its data volume.
+    # Before this they fell through to APPDATA_DIR/story-archive, which in a container is /app,
+    # inside the image, so a seat's stories were lost whenever its container was recreated.
+    if _in_container():
+        vol = Path(config.DATA_DIR) / "story-archive"
+        vol.mkdir(parents=True, exist_ok=True)
+        return vol
     # Maintainer's dev checkout only — the m_x story pipeline, if it happens to sit
     # beside the source. Guarded by is_dir() so it's skipped on every real install.
     dev = Path(config.resource_path(".")).parent / "m_x" / "Archives" / "Complete_Stories"

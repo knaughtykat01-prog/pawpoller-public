@@ -270,6 +270,11 @@ def run_auto_backup_scheduler():
             maybe_prune_snapshots()
         except Exception as e:
             logger.warning("Snapshot thinning failed: %s", type(e).__name__)
+        try:
+            from routes import move_api
+            move_api.prune_stale()   # spec 035: unfinished moves and unfetched moving files, after a day
+        except Exception as e:
+            logger.warning("Clearing old moves failed: %s", type(e).__name__)
         _time.sleep(30 * 60)
 
 

@@ -200,7 +200,8 @@ def test_backup_dirs_match_the_registry():
     from routes import backup_api
     registry = {e.name[len("data/"):-1] for e in datamap.ENTRIES
                 if e.kind == "path" and e.name.startswith("data/") and e.name.endswith("/") and e.backup_route == "files"}
-    assert registry == set(backup_api._BACKUP_DIRS) - {"story-archive"}, registry ^ set(backup_api._BACKUP_DIRS)
+    # 4.71.0: data/story-archive/ is registered too (containers keep stories there, spec 035 R7).
+    assert registry == set(backup_api._BACKUP_DIRS), registry ^ set(backup_api._BACKUP_DIRS)
 
 
 def test_the_registry_is_well_formed_and_holds_no_personal_data():

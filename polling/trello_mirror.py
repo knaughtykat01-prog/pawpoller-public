@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import time
 
+import config
 from clients.trello.client import TrelloAuthError, TrelloError
 from database.db import get_connection
 from trello import commission, covers, mapping, mirror, outbox, runtime, webhooks
@@ -28,6 +29,8 @@ DEBOUNCE = 2.0
 
 
 def _ready() -> bool:
+    if config.get_settings().get("moved_away_at"):   # 4.71.0: the board went with the move
+        return False
     return mapping.is_configured() and mapping.owner_state()[0]
 
 

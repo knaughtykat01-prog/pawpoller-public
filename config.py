@@ -480,36 +480,55 @@ def delete_settings_keys(keys: list[str]) -> None:
     Keys that do not exist are silently ignored.
     Uses the same atomic write pattern as save_settings().
     """
-    import tempfile
     with _settings_lock:
         current = _load_settings()
         for key in keys:
             current.pop(key, None)
-
-        # Re-split credentials into vault vs plaintext (vault always-on).
-        # Unconditional rewrite: deleting the LAST credential must clear the
-        # vault too, or the stale ciphertext resurrects it on the next load.
-        vault_creds = {k: v for k, v in current.items()
-                       if is_credential_key(k) and v}
-        _encrypt_vault(vault_creds)
-        plaintext = {k: v for k, v in current.items()
-                     if not is_credential_key(k)}
-        plaintext["credential_mode"] = "local"
-
-        fd, tmp_path = tempfile.mkstemp(dir=SETTINGS_PATH.parent, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(plaintext, f, indent=2)
-            os.replace(tmp_path, SETTINGS_PATH)
-            _secure_file_permissions(SETTINGS_PATH)
-        except BaseException:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+        _write_all_locked(current)
 
     _schedule_auto_sync_push()
+
+
+def replace_settings(full: dict) -> None:
+    """Write *full* as the whole of the settings: nothing of the current ones survives (spec 035).
+
+    For a move brought in from another install: the caller has already merged in what this
+    install keeps. Secrets go to the vault under THIS install's key. No auto-sync push: a move
+    is not an edit to mirror to a paired install.
+    """
+    global _cred_generation
+    with _settings_lock:
+        _write_all_locked(dict(full))
+        _cred_generation += 1          # posters built on the old logins rebuild (no restart off a container)
+    _push_log_secrets(full)
+
+
+def _write_all_locked(current: dict) -> None:
+    """Split *current* into vault vs plaintext and write both atomically. Caller holds _settings_lock.
+
+    Unconditional vault rewrite: deleting the LAST credential must clear the vault too, or the
+    stale ciphertext resurrects it on the next load.
+    """
+    import tempfile
+    vault_creds = {k: v for k, v in current.items()
+                   if is_credential_key(k) and v}
+    _encrypt_vault(vault_creds)
+    plaintext = {k: v for k, v in current.items()
+                 if not is_credential_key(k)}
+    plaintext["credential_mode"] = "local"
+
+    fd, tmp_path = tempfile.mkstemp(dir=SETTINGS_PATH.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(plaintext, f, indent=2)
+        os.replace(tmp_path, SETTINGS_PATH)
+        _secure_file_permissions(SETTINGS_PATH)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _schedule_auto_sync_push() -> None:
@@ -1282,7 +1301,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.70.0"
+APP_VERSION = "4.71.0"
 
 
 def _app_commit() -> str:

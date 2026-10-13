@@ -114,7 +114,7 @@ def test_the_hosted_text_says_the_hard_parts():
     html = (ROOT / "frontend" / "legal" / "hosted.html").read_text(encoding="utf-8")
     assert 'data-version="' in html and "<script" not in html and "style=" not in html
     for words in ("someone else's computer", "could in principle reach", "may be paused, moved or wiped",
-                  "same computer", "Download everything", "don't move", "never sold"):
+                  "same computer", "Download everything", "moving file", "never sold"):
         assert words.lower() in html.lower(), words
 
 

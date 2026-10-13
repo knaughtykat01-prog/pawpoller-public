@@ -1803,6 +1803,8 @@ def get_preferences():
         "update_skip_version": settings.get("update_skip_version", ""),
         "run_on_startup": config.get_run_on_startup(),
         "display_timezone": settings.get("display_timezone", "UTC"),
+        # 4.71.0 (spec 035): this copy moved to another PawPoller and paused itself (the banner).
+        "moved_away_at": settings.get("moved_away_at"),
         # Who helped — shown in Settings → About. Empty until the operator adds
         # someone; no names ship in the repo.
         "credits": settings.get("credits", []),

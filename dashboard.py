@@ -68,6 +68,7 @@ from routes.media_api import media_router
 from routes.promos_api import promos_router
 from routes.podcast_api import podcast_router, feed_router
 from routes.backup_api import backup_router
+from routes.move_api import move_router
 from routes.mirror_api import mirror_router
 from routes.discord_api import discord_router
 from routes.inbox_api import inbox_router
@@ -539,6 +540,8 @@ _SENSITIVE_WHEN_OPEN_PREFIXES = (
     "/api/settings/sync",
     "/api/settings/uninstall",
     "/api/backup",
+    # 4.71.0, spec 035: a moving file holds the library and the logins; bringing one in replaces it all.
+    "/api/move",
     "/api/posting/sync/upload",
     # 3.6.0: /api/mirror/db-snapshot serves the entire database and
     # /api/mirror/artwork/* the whole art catalogue, so the mirror API is the
@@ -749,6 +752,7 @@ app.include_router(server_update_router)  # Server self-update: button + host-ag
 app.include_router(whatsnew_router)  # In-app "What's new" changelog popup (/api/whatsnew)
 app.include_router(privacy_router)  # Settings → Privacy: what this install holds (/api/privacy, spec 011)
 app.include_router(backup_router)    # Backup & restore (/api/backup/*)
+app.include_router(move_router)      # Move to / bring in from another install (/api/move/*, spec 035)
 app.include_router(mirror_router)    # Server → desktop mirroring (/api/mirror/*)
 app.include_router(discord_router)   # Discord announce webhook (/api/discord/*)
 app.include_router(inbox_router)     # Unified comment inbox (/api/inbox/*)

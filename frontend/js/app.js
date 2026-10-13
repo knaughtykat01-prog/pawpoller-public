@@ -661,6 +661,7 @@ const App = {
             Utils.time.setZone(prefs && prefs.display_timezone);
             try { localStorage.setItem('pp-display-tz', (prefs && prefs.display_timezone) || ''); } catch (e) { /* private mode */ }
             this._maybeOfferZone(prefs && prefs.display_timezone);
+            if (prefs && prefs.moved_away_at) this._showMovedBanner();
             if (Utils.time.zone !== zoneBefore) {
                 if (this._redrawClock) this._redrawClock();
                 if (this.route) this.route();
@@ -5675,6 +5676,151 @@ const App = {
                 ? `${T.fmt.dateTime(best.t)} (${(this._platformLabels || {})[best.code] || best.code.toUpperCase()})`
                 : 'none scheduled';
         } catch (e) { const el = document.getElementById('clock-pop-poll'); if (el) el.textContent = 'unknown'; }
+    },
+
+    /* Moving to another PawPoller (4.71.0, spec 035): Settings → Data's two cards. */
+    _wireMove() {
+        const $ = id => document.getElementById(id);
+        const say = (el, text, tone) => {
+            if (!el) return;
+            el.textContent = text;
+            el.style.color = tone === 'bad' ? 'var(--danger)' : tone === 'good' ? 'var(--success)' : 'var(--text-muted)';
+        };
+        const mb = n => (n / 1048576 >= 1024 ? (n / 1073741824).toFixed(1) + ' GB' : Math.max(1, Math.round(n / 1048576)) + ' MB');
+
+        // Making the moving file: built in the background, then downloaded once.
+        const makeBtn = $('move-make-btn');
+        if (makeBtn && !makeBtn.dataset.wired) {
+            makeBtn.dataset.wired = '1';
+            const msg = $('move-make-msg'), bar = $('move-make-progress');
+            const watch = async () => {
+                for (;;) {
+                    const st = await API.moveExportStatus().catch(() => ({ state: 'failed', error: 'Lost contact with PawPoller.' }));
+                    if (st.state === 'building') {
+                        bar.hidden = false;
+                        bar.value = st.total_bytes ? Math.round(100 * st.done_bytes / st.total_bytes) : 0;
+                        say(msg, st.total_bytes ? `Making your moving file… ${mb(st.done_bytes)} of ${mb(st.total_bytes)}` : 'Making your moving file…');
+                        await new Promise(r => setTimeout(r, 1500));
+                        continue;
+                    }
+                    bar.hidden = true;
+                    makeBtn.disabled = false;
+                    if (st.state === 'ready') {
+                        const note = st.logins === 'unreadable'
+                            ? ' Your saved site logins couldn\'t be read on this computer, so they aren\'t in it — you\'ll enter them again on the other PawPoller.'
+                            : st.logins === 'none' ? ' (No site logins were saved here.)' : ' Your site logins are inside, locked with your phrase.';
+                        say(msg, `Your moving file is ready: ${st.files} files, ${mb(st.size)}. It's downloading now. Keep it private and delete it after the move.` + note, 'good');
+                        const again = document.createElement('a');
+                        again.href = '/api/move/export/file';
+                        again.textContent = ' Download it again';
+                        msg.appendChild(again);
+                        window.location.href = '/api/move/export/file';
+                        if (st.moved_away_at) this._showMovedBanner();
+                    } else if (st.state === 'failed') {
+                        say(msg, st.error || 'Making the moving file failed.', 'bad');
+                    }
+                    return;
+                }
+            };
+            makeBtn.addEventListener('click', async () => {
+                const p1 = $('move-phrase').value, p2 = $('move-phrase2').value;
+                if (p1.length < 12) return say(msg, 'The moving phrase needs at least 12 characters.', 'bad');
+                if (p1 !== p2) return say(msg, 'The two phrases don\'t match.', 'bad');
+                makeBtn.disabled = true;
+                try {
+                    await API.moveExportStart(p1, !!$('move-pause').checked);
+                    $('move-phrase').value = $('move-phrase2').value = '';
+                    watch();
+                } catch (err) {
+                    makeBtn.disabled = false;
+                    say(msg, err.message, 'bad');
+                }
+            });
+            API.moveExportStatus().then(st => { if (st.state === 'building') { makeBtn.disabled = true; watch(); } }).catch(() => {});
+        }
+
+        // Bringing one in: upload in pieces → check with the phrase → confirm → apply → wait for the restart.
+        const inBtn = $('move-in-btn'), fileIn = $('move-file');
+        if (inBtn && fileIn && !inBtn.dataset.wired) {
+            inBtn.dataset.wired = '1';
+            const msg = $('move-in-msg'), bar = $('move-in-progress');
+            const ready = () => { inBtn.disabled = !(fileIn.files.length && $('move-in-phrase').value.length >= 12); };
+            fileIn.addEventListener('change', ready);
+            $('move-in-phrase').addEventListener('input', ready);
+            const waitForRestart = async () => {
+                say(msg, 'Your old PawPoller is in. Restarting to finish — this takes about a minute…');
+                await new Promise(r => setTimeout(r, 5000));
+                let up = false;
+                for (let i = 0; i < 90 && !up; i++) {
+                    try { up = (await fetch('/api/health/ready', { cache: 'no-store' })).ok; } catch (e) { /* still down */ }
+                    if (!up) await new Promise(r => setTimeout(r, 2000));
+                }
+                if (!up) return say(msg, 'Your old PawPoller is in, but this PawPoller hasn\'t come back yet. Wait a few minutes, then reload the page.', 'bad');
+                say(msg, 'Your old PawPoller is in. Sign in with this PawPoller\'s own password.', 'good');
+                setTimeout(() => location.reload(), 2500);
+            };
+            inBtn.addEventListener('click', async () => {
+                const file = fileIn.files[0], phrase = $('move-in-phrase').value;
+                inBtn.disabled = true; fileIn.disabled = true;
+                bar.hidden = false; bar.value = 0;
+                let id;
+                try {
+                    try {
+                        id = await API.moveUpload(file, (got, size) => {
+                            bar.value = Math.round(100 * got / size);
+                            say(msg, `Uploading… ${mb(got)} of ${mb(size)}`);
+                        });
+                    } catch (err) {
+                        if (err.status === 409 && err.detail && err.detail.id
+                            && confirm(`Another file (${err.detail.name}) is part-way in. Cancel it and bring in this one instead?`)) {
+                            await API.moveCancel(err.detail.id);
+                            id = await API.moveUpload(file, (got, size) => { bar.value = Math.round(100 * got / size); say(msg, `Uploading… ${mb(got)} of ${mb(size)}`); });
+                        } else throw err;
+                    }
+                    say(msg, 'Checking the file and your phrase…');
+                    const info = await API.moveCheck(id, phrase);
+                    const lines = [`This moving file came from PawPoller ${info.app_version}: ${info.files} files, ${mb(info.bytes)}.`];
+                    if (info.logins === 'unreadable') lines.push('Its site logins couldn\'t be read where it was made, so you\'ll enter them again.');
+                    if (info.here_has_work) lines.push('⚠ This PawPoller already has work in it. Its records will be replaced by the moving file\'s (a safety copy is kept first). Its artwork files are kept.');
+                    lines.push('Your sign-in here stays as it is.', '', 'Bring it in now?');
+                    if (!confirm(lines.join('\n'))) { say(msg, 'Not brought in. The upload is kept for a day if you change your mind — pick the same file again.'); return; }
+                    say(msg, 'Bringing it in…');
+                    await API.moveApply(id, phrase);
+                    $('move-in-phrase').value = '';
+                    let res;
+                    for (;;) {                       // a big library takes minutes; the page asks how it's going
+                        await new Promise(r => setTimeout(r, 2000));
+                        res = await API.moveApplyStatus().catch(() => ({ state: 'gone' }));
+                        if (res.state !== 'applying') break;
+                    }
+                    if (res.state === 'failed') throw new Error(res.error || 'Bringing it in stopped.');
+                    bar.value = 100;
+                    if (res.restarting || res.state === 'gone' || res.state === 'idle') return waitForRestart();   // it restarted under us
+                    say(msg, 'Your old PawPoller is in. Close PawPoller and open it again to finish.', 'good');
+                } catch (err) {
+                    say(msg, err.message, 'bad');
+                } finally {
+                    fileIn.disabled = false; ready();
+                }
+            });
+        }
+    },
+
+    /* This copy made a moving file and stood down: say so on every page, with the way back. */
+    async _showMovedBanner() {
+        if (document.getElementById('moved-banner')) return;
+        const box = document.createElement('div');
+        box.id = 'moved-banner';
+        box.className = 'banner banner-info moved-banner';
+        box.setAttribute('role', 'status');
+        box.innerHTML = `<div class="banner-text"><b>This copy of PawPoller has moved and is paused.</b>
+            It isn't checking your sites or posting, so your new PawPoller has them to itself. Nothing here was deleted.</div>
+            <button type="button" class="btn btn-sm btn-outline" data-moved-resume>Resume this copy</button>`;
+        box.querySelector('[data-moved-resume]').addEventListener('click', async () => {
+            if (!confirm('Start this copy checking your sites and posting again? If your new PawPoller is running too, both will use the same logins.')) return;
+            try { await API.moveResume(); box.remove(); } catch (err) { alert(err.message); }
+        });
+        document.body.appendChild(box);
     },
 
     /* An install still on UTC whose computer says otherwise (installs from before
@@ -15957,6 +16103,50 @@ const App = {
                     <span id="backup-msg" style="font-size:13px;margin-top:8px;display:block"></span>
                 </div>
 
+                <div class="settings-section" id="move-section">
+                    <h3>Moving to another PawPoller</h3>
+                    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
+                        Moving into a hosted seat, or onto a new computer? Make a <strong>moving file</strong> here,
+                        then bring it in on the other PawPoller. Your library, history and site logins all come across;
+                        the other PawPoller keeps its own sign-in.
+                        <a href="#" data-guide="move">How moving works</a>
+                    </div>
+                    <div class="settings-row move-row">
+                        <div>
+                            <span class="settings-label">Move to a hosted seat</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
+                                Choose a moving phrase (at least 12 characters). It locks your site logins inside the
+                                file. You'll type it once on the other PawPoller. Nobody can recover it, not even us.
+                            </div>
+                            <div class="move-fields">
+                                <label>Moving phrase <input type="password" id="move-phrase" autocomplete="new-password" minlength="12"></label>
+                                <label>Type it again <input type="password" id="move-phrase2" autocomplete="new-password" minlength="12"></label>
+                                <label class="move-check"><input type="checkbox" id="move-pause" checked> Pause this copy afterwards (recommended)</label>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" id="move-make-btn">Make moving file</button>
+                    </div>
+                    <progress id="move-make-progress" class="move-progress" max="100" value="0" hidden></progress>
+                    <span id="move-make-msg" class="move-msg" role="status" aria-live="polite"></span>
+                    <hr style="border:none;border-top:1px solid var(--card-border-inner);margin:14px 0">
+                    <div class="settings-row move-row">
+                        <div>
+                            <span class="settings-label">Bring in my old PawPoller</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
+                                Pick the moving file you made on your old PawPoller and type its phrase. If the
+                                upload stops, pick the same file again and it carries on.
+                            </div>
+                            <div class="move-fields">
+                                <label>Moving file <input type="file" id="move-file" accept=".zip"></label>
+                                <label>Moving phrase <input type="password" id="move-in-phrase" autocomplete="off"></label>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" id="move-in-btn" disabled>Bring it in</button>
+                    </div>
+                    <progress id="move-in-progress" class="move-progress" max="100" value="0" hidden></progress>
+                    <span id="move-in-msg" class="move-msg" role="status" aria-live="polite"></span>
+                </div>
+
                 <div class="settings-section" data-page="notifications">
                     <h3>Discord announcements</h3>
                     <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
@@ -20449,6 +20639,8 @@ const App = {
                     }
                 });
             }
+
+            this._wireMove();
 
             // Settings Sync
             const syncResult = document.getElementById('sync-result');

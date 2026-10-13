@@ -425,6 +425,10 @@ _SETTINGS = (
         "mirror_seeded_at", "notifications_cleared_at", "notifications_last_read_at", "overnight_last_seen_at", "setup_complete",
         "sc_token_expires_at", "yt_token_expires_at", "tum_oauth2_expires_at",
     )),
+    # 4.71.0 (spec 035): this copy made a moving file and stood down; what to put back on Resume.
+    S("moved_away_at", _HOUSE, "When this copy moved to another PawPoller and paused itself.", backup="derivable"),
+    S("moved_away_restore", _HOUSE, "Whether polling, posting and sync were on before the move paused them.",
+      backup="derivable"),
 )
 
 # ── The data area (paths relative to the app's data home; "/" = a folder and all inside) ──
@@ -484,6 +488,16 @@ _PATHS = (
     P("data/commission_files/", "People you work with", "Files a commission client sent you.", backup="files"),
     P("helpers/", _HOUSE, "A small program downloaded for the Instagram picture link.", backup="derivable"),
     P("data/podcasts/", "Your podcast", "Your podcast audio and artwork.", backup="files"),
+    # 4.71.0 (spec 035): a moving file on its way in or out. Holds the library and the phrase-sealed
+    # logins; removed once used, or after a day.
+    P("data/move-in/", _SECRET, "A moving file being brought in from your other PawPoller.", backup="derivable"),
+    P("data/move-out/", _SECRET, "A moving file made for your other PawPoller, until you download it.",
+      backup="derivable"),
+    P("data/story-archive/", "Unpublished work", "Your story files (hosted seats and other containers).",
+      backup="files"),
+    P("data/restore-safety-<stamp>/", _SECRET,
+      "Your database, settings and vault as they were before a restore or a move, in case you need them back.",
+      backup="derivable"),
     P("logs/", "Logs", "The app's logs, with secrets masked.", backup="derivable"),
 )
 

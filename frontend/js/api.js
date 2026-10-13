@@ -557,6 +557,59 @@ const API = {
         fd.append('file', file);
         return this._upload('/api/backup/import', fd, onProgress);
     },
+    /* Moving to another PawPoller (4.71.0, spec 035). Errors come back as Error(detail). */
+    async _moveCall(method, path, body) {
+        const r = await fetch(path, {
+            method, headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            const d = data.detail;
+            const err = new Error((d && d.message) || d || `Something went wrong (${r.status}).`);
+            err.status = r.status; err.detail = d;
+            throw err;
+        }
+        return data;
+    },
+    moveExportStart(phrase, pause) { return this._moveCall('POST', '/api/move/export', { phrase, pause }); },
+    moveExportStatus() { return this._moveCall('GET', '/api/move/export'); },
+    moveResume() { return this._moveCall('POST', '/api/move/resume', {}); },
+    moveCheck(id, phrase) { return this._moveCall('POST', `/api/move/uploads/${id}/check`, { phrase }); },
+    moveApply(id, phrase) { return this._moveCall('POST', `/api/move/uploads/${id}/apply`, { phrase, confirm: true }); },
+    moveApplyStatus() { return this._moveCall('GET', '/api/move/apply'); },
+    moveCancel(id) { return this._moveCall('DELETE', `/api/move/uploads/${id}`); },
+    /* Send a file in pieces small enough for Cloudflare's 100 MB limit. Picking the same file again
+       (same name and size) carries on from where the server says it got to; a dropped piece is
+       retried a few times before giving up. onProgress(received, size). Resolves to the upload id. */
+    async moveUpload(file, onProgress) {
+        const st = await this._moveCall('POST', '/api/move/uploads', { name: file.name, size: file.size });
+        let at = st.received;
+        onProgress && onProgress(at, file.size);
+        let tries = 0;
+        while (at < file.size) {
+            const piece = file.slice(at, Math.min(at + st.piece_bytes, file.size));
+            try {
+                const r = await fetch(`/api/move/uploads/${st.id}?offset=${at}`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: piece,
+                });
+                const data = await r.json().catch(() => ({}));
+                if (r.status === 409 && data.detail && typeof data.detail.received === 'number') {
+                    at = data.detail.received;          // out of step: carry on from the server's count
+                } else if (!r.ok) {
+                    throw new Error((data && data.detail) || `Upload stopped (${r.status}).`);
+                } else {
+                    at = data.received;
+                }
+                tries = 0;
+            } catch (err) {
+                if (++tries > 5) throw new Error('The connection keeps dropping. Pick the same file again to carry on.');
+                await new Promise(res => setTimeout(res, 2000 * tries));
+            }
+            onProgress && onProgress(at, file.size);
+        }
+        return st.id;
+    },
     // Mute/unmute a platform's session-health alert (auto-clears on recovery).
     muteSessionAlert(code, muted) { return this.post('/api/platforms/sessions/mute', { code, muted }); },
     getNotifications(limit) { return this.get('/api/notifications', limit ? { limit } : {}); },

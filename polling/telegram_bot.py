@@ -1227,8 +1227,8 @@ async def run_bot() -> None:
         chat_id = str(settings.get("telegram_chat_id") or "").strip()
         notif_on = bool(settings.get("telegram_enabled", False) and token and chat_id)
         channel_tokens = channel_bot_tokens(settings)
-        if not notif_on and not channel_tokens:
-            await asyncio.sleep(30)
+        if (not notif_on and not channel_tokens) or settings.get("moved_away_at"):
+            await asyncio.sleep(30)    # 4.71.0: a copy that moved away leaves its bots to the new one
             continue
         if config.get_polling_owner(detect_runtime_mode()) != "local":
             await asyncio.sleep(60)

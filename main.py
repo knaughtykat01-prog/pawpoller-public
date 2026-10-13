@@ -398,6 +398,7 @@ def run_connected(server_url: str, api_key: str):
     """
     global _tray_icon, _window
     import webview
+    webview.settings["ALLOW_DOWNLOADS"] = True   # 4.71.0: moving files and backups save to Downloads
     import desktop_agent
 
     # A desktop that just migrated from paired mode still has the old copy on disk (4.14.0).
@@ -584,6 +585,7 @@ def run_standalone():
     # loads the local dashboard URL.  This gives PawPoller the look and
     # feel of a native desktop app while the UI is actually a web app.
     import webview
+    webview.settings["ALLOW_DOWNLOADS"] = True   # 4.71.0: moving files and backups save to Downloads
 
     class _DesktopApi:
         """JS bridge exposed to the dashboard as window.pywebview.api.*.

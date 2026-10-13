@@ -18,10 +18,20 @@ class TestArchivePathFallback:
         src = tmp_path / "src"; src.mkdir()
         monkeypatch.setattr(config, "resource_path", lambda rel=".": src / rel)
         monkeypatch.setattr(config, "APPDATA_DIR", tmp_path / "appdata")
+        monkeypatch.setattr(story_reader, "_in_container", lambda: False)
 
         path = story_reader.get_archive_path()
         assert path == tmp_path / "appdata" / "story-archive"
         assert path.is_dir()          # created on resolve, so no "not found" warning
+
+    def test_a_container_keeps_stories_on_its_data_volume(self, tmp_path, monkeypatch):
+        """A hosted seat: APPDATA_DIR is inside the image, so stories there were lost on every recreate."""
+        import config
+        config.save_settings({"posting_story_archive_path": ""})
+        monkeypatch.setattr(story_reader, "_in_container", lambda: True)
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
+        path = story_reader.get_archive_path()
+        assert path == tmp_path / "data" / "story-archive" and path.is_dir()
 
     def test_valid_custom_override_still_wins(self, tmp_path, monkeypatch):
         import config
