@@ -486,6 +486,7 @@ def _is_rate_limited(ip: str) -> bool:
 _AUTH_EXEMPT_PATHS = frozenset({
     "/api/health",
     "/api/health/ready",         # 4.45.5: numbers only, for a monitor (the Tech Centre probe)
+    "/api/health/details",       # 4.73.0, spec 038: checks its own token (404 when none is set)
     "/api/auth/dashboard-status",
     "/api/auth/dashboard-login",
     "/api/auth/dashboard-setup",

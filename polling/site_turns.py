@@ -38,6 +38,9 @@ _held: set[str] = set()   # sites this process holds the turn for (flock is per 
 class TurnTimeout(Exception):
     def __init__(self, code: str):
         self.code = code
+        # 4.73.0 (spec 038): every caller (scheduled and manual) gets here, so the skip is recorded once.
+        from polling.last_check import record_skip
+        record_skip(code, "waited 10 minutes for its turn")
         super().__init__(f"Skipped: another PawPoller on this server was checking {_site_name(code)} for too long. "
                          "It runs next round.")
 

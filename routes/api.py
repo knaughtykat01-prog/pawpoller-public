@@ -32,7 +32,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Query, HTTPException, UploadFile, File
+from fastapi import APIRouter, Query, HTTPException, UploadFile, File, Request
 from fastapi.responses import Response, StreamingResponse
 
 from database.db import get_connection, init_db
@@ -124,6 +124,84 @@ def health_ready():
     out["status"] = "degraded" if problems else "ok"
     out["problems"] = problems
     return JSONResponse(out, status_code=503 if problems else 200)
+
+
+# /api/health/details (4.73.0, spec 038): the per-site results of the last check, for the box
+# agent (seats) and the Tech Centre (the VM). Codes in poll-log order; Inkbunny's table has no prefix.
+DETAILS_SITES = ("ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky", "tw", "mast", "tum", "pix",
+                 "thr", "ig", "e621", "fn", "fbr", "r34", "tg", "sc", "ng", "yt", "pic", "fb")
+_DETAILS_RESULT = {"success": "ok", "error": "failed", "running": "running"}
+
+
+def _iso(ts: str | None) -> str:
+    """poll_log's SQLite 'YYYY-MM-DD HH:MM:SS' (UTC) → ISO with Z; already-ISO passes through."""
+    if not ts:
+        return ""
+    t = str(ts).replace(" ", "T")
+    return t if t.endswith("Z") or "+" in t else t + "Z"
+
+
+@router.get("/health/details")
+def health_details(request: Request):
+    """Counts and states only, for the operator's Tech Centre (contracts/details-endpoint.md).
+
+    Answers only with ``Authorization: Bearer $PAWPOLLER_DETAILS_TOKEN``; with the variable unset
+    (desktop, any self-hoster) the route doesn't exist. Reasons pass through ``techcentre.scrub``,
+    which removes every handle in settings: no titles, handles or URLs ever leave (FR-004).
+    """
+    import hmac as _hmac
+    import os as _os
+    import techcentre
+    from polling.last_check import skips
+
+    want = _os.environ.get("PAWPOLLER_DETAILS_TOKEN", "").strip()
+    if not want:
+        raise HTTPException(404, "Not Found")
+    import dashboard   # lazy: dashboard imports this module
+    ip = request.client.host if request.client else "unknown"
+    if dashboard._is_rate_limited(ip):
+        raise HTTPException(429, "Too many attempts")
+    got = request.headers.get("authorization", "")
+    if not _hmac.compare_digest(got.encode(), f"Bearer {want}".encode()):
+        dashboard._record_auth_failure(ip)
+        raise HTTPException(401, "Unauthorised")
+
+    ready = health_ready()
+    body = json.loads(ready.body)
+    settings = config.get_settings()
+    out = {"version": config.APP_VERSION, "commit": config.APP_COMMIT,
+           "health": "ok" if ready.status_code == 200 else "degraded", "problems": body.get("problems", []),
+           "polling": "moved" if settings.get("moved_away_at") else ("paused" if settings.get("polling_paused") else "on"),
+           "sites": [], "queue": {"waiting": 0, "failed": 0}}
+    skipped = skips()
+    conn = get_connection()
+    try:
+        for code in DETAILS_SITES:
+            table = "poll_log" if code == "ib" else f"{code}_poll_log"
+            try:
+                row = conn.execute(f"SELECT status, error_message, started_at FROM {table} "
+                                   "ORDER BY id DESC LIMIT 1").fetchone()
+            except sqlite3.Error:
+                row = None   # the site's tables were never made on this install
+            site = None
+            if row:
+                site = {"site": code, "result": _DETAILS_RESULT.get(row[0], "failed"), "at": _iso(row[2])}
+                if site["result"] == "failed" and row[1]:
+                    site["reason"] = techcentre.scrub(row[1], limit=200, settings=settings)
+            if code in skipped and (site is None or skipped[code][0] > site["at"]):
+                site = {"site": code, "result": "skipped", "at": skipped[code][0], "reason": skipped[code][1]}
+            if site:
+                out["sites"].append(site)
+        for status, key in (("pending", "waiting"), ("failed", "failed")):
+            out["queue"][key] = conn.execute("SELECT count(*) FROM posting_queue WHERE status = ?",
+                                             (status,)).fetchone()[0]
+    finally:
+        conn.close()
+    if out["sites"]:
+        out["last_check_at"] = max(s["at"] for s in out["sites"])
+    if techcentre.consent(settings):
+        out["tech_id"] = techcentre.install_id()
+    return out
 
 
 # In-memory credentials for "don't remember me" logins.
