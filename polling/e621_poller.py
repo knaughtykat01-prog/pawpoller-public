@@ -25,6 +25,7 @@ from database.db import get_connection
 from polling.notifications import describe_error
 from database import e621_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,7 @@ def _get_or_create_client(settings: dict, e621_username: str, e621_api_key: str)
     return loop_bound.pin(_e621_client)
 
 
+@site_turn("e621")
 async def run_e621_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete e621 poll cycle for a single account."""
     global _e621_poll_running

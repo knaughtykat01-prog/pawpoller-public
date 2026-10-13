@@ -73,6 +73,7 @@ KEEP_HERE = frozenset(config.SYNC_EXCLUDE) | frozenset({
     "turnstile_site_key", "turnstile_secret_key",        # this install's sign-in guard
     "consent_records", "tech_reports", "tech_usage",     # consent is given per install
     "moved_away_at", "moved_away_restore",
+    "cf_worker_url", "cf_worker_key",                    # 4.72.0 (spec 037): the old install's relay isn't the new one's
 })
 
 

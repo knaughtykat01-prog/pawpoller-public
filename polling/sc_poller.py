@@ -27,6 +27,7 @@ from database import sc_queries
 from polling import notifications
 from polling.followers import capture_followers
 from polling.notifications import describe_error
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,7 @@ def _persist_tokens(client: ScClient, account_id: int, is_default: bool) -> None
         logger.debug("sc token persist failed", exc_info=True)
 
 
+@site_turn("sc")
 async def run_sc_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete SoundCloud poll cycle for a single account."""
     from database import accounts as accounts_db

@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 
 import config
 from database.db import init_db
@@ -496,6 +496,7 @@ _AUTH_EXEMPT_PATHS = frozenset({
     # didn't exempt it. Browsers fetch /favicon.ico without auth
     # context on every page, producing console error noise.
     "/favicon.ico",
+    "/robots.txt",               # 4.72.0, spec 037: "list nothing", answered signed out
     # PWA: the browser fetches the manifest and (re)registers the service
     # worker outside the page's auth context — these must answer without a
     # session or install / offline support silently breaks. Neither exposes
@@ -786,6 +787,13 @@ app.mount("/legal", StaticFiles(directory=str(frontend_dir / "legal")), name="le
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse(str(frontend_dir / "img" / "favicon.ico"))
+
+
+# An install is never meant to be in a search engine: say so to any crawler, signed out (4.72.0, spec 037).
+# Hosted seats also carry an X-Robots-Tag noindex from the Cloudflare rule; this is the second signal.
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    return PlainTextResponse("User-agent: *\nDisallow: /\n")
 
 
 # ── PWA (installable to the home screen) ─────────────────────────────

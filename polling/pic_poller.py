@@ -21,6 +21,7 @@ from database.db import get_connection
 from database import pic_queries
 from polling.followers import capture_followers
 from polling.notifications import describe_error
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ def _progress(phase: str, message: str = "", current: int = 0, total: int = 0) -
                              phase=phase, current=current, total=total, message=message)
 
 
+@site_turn("pic")
 async def run_pic_poll_cycle(account_id: int | None = None, force_full: bool = False,
                              client: PicClient | None = None) -> dict:
     """One Picarto poll for one account. ``client`` is for tests; a real cycle builds its own.

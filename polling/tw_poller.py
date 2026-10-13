@@ -27,6 +27,7 @@ from polling.notifications import describe_error
 from polling.followers import capture_followers
 from database import tw_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,7 @@ def _get_or_create_client(settings: dict, tw_auth_token: str, tw_ct0: str, tw_ta
     return loop_bound.pin(_tw_client)
 
 
+@site_turn("tw")
 async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete X/Twitter poll cycle for a single account.
 

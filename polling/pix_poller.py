@@ -25,6 +25,7 @@ from polling.notifications import describe_error
 from polling.followers import capture_followers
 from database import pix_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,7 @@ def _get_or_create_client(settings: dict, pix_refresh_token: str, pix_user_id: s
     return loop_bound.pin(_pix_client)
 
 
+@site_turn("pix")
 async def run_pix_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete Pixiv poll cycle for a single account."""
     global _pix_poll_running

@@ -28,6 +28,7 @@ from polling.notifications import describe_error
 from polling.followers import capture_followers
 from database import wp_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,7 @@ def _get_or_create_client(settings: dict, wp_target: str) -> WPClient:
     return loop_bound.pin(_wp_client)
 
 
+@site_turn("wp")
 async def run_wp_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete Wattpad poll cycle for a single account.
 

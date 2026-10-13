@@ -31,6 +31,7 @@ from database.db import get_connection
 from polling.notifications import describe_error
 from polling.followers import capture_followers
 from database import da_queries
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,7 @@ def _get_or_create_client(settings: dict, client_id: str, client_secret: str,
     return loop_bound.pin(_da_client)
 
 
+@site_turn("da")
 async def run_da_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete DA poll cycle for a single account.
 

@@ -25,6 +25,7 @@ from database.db import get_connection
 from polling.notifications import describe_error
 from database import fbr_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,7 @@ def _get_or_create_client(settings: dict, fbr_username: str, fbr_api_key: str) -
     return loop_bound.pin(_fbr_client)
 
 
+@site_turn("fbr")
 async def run_fbr_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete fbr poll cycle for a single account."""
     global _fbr_poll_running

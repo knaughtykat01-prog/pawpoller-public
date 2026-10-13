@@ -24,6 +24,7 @@ from database.db import get_connection
 from polling.notifications import describe_error
 from database import tum_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,7 @@ def _get_or_create_client(settings: dict, tum_api_key: str, tum_blog: str) -> Tu
     return loop_bound.pin(_tum_client)
 
 
+@site_turn("tum")
 async def run_tum_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete Tumblr poll cycle for a single account."""
     global _tum_poll_running

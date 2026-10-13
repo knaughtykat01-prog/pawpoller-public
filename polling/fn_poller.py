@@ -22,6 +22,7 @@ from database import fn_queries
 from polling import notifications
 from polling.followers import capture_followers
 from polling.notifications import describe_error
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,7 @@ def _persist_tokens(client: FnClient, is_default: bool) -> None:
             logger.debug("fn token persist failed", exc_info=True)
 
 
+@site_turn("fn")
 async def run_fn_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete FurryNetwork poll cycle for a single account."""
     from database import accounts as accounts_db

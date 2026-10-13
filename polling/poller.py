@@ -28,6 +28,7 @@ from polling.notifications import describe_error
 from database import queries
 from polling import notifications
 from polling import self_comment
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +192,7 @@ async def _send_telegram(new_fave_details: list[dict], new_comment_details: list
     )
 
 
+@site_turn("ib")
 async def run_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete Inkbunny poll cycle for a single account.
 

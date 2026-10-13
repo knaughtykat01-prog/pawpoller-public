@@ -21,6 +21,7 @@ from database.db import get_connection
 from polling.notifications import describe_error
 from database import r34_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,7 @@ def _get_or_create_client(settings: dict, r34_username: str, r34_api_key: str,
     return loop_bound.pin(_r34_client)
 
 
+@site_turn("r34")
 async def run_r34_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete r34 poll cycle for a single account."""
     global _r34_poll_running

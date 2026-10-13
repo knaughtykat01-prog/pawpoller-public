@@ -24,6 +24,7 @@ from database.db import get_connection
 from polling.notifications import describe_error
 from database import ig_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,7 @@ def _get_or_create_client(settings: dict, ig_access_token: str, ig_user_id: str)
     return loop_bound.pin(_ig_client)
 
 
+@site_turn("ig")
 async def run_ig_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete Instagram poll cycle for a single account."""
     global _ig_poll_running

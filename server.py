@@ -409,8 +409,32 @@ def _start_poll_orchestrator():
                 logger.warning("Poll %s failed: %s", r["platform"], r["error"])
         return results
 
+    from polling import schedule as _schedule
+
+    async def _wait_for_slot():
+        """4.72.0 (spec 037): a seat waits for its next clock slot (start minute + k x interval, UTC).
+
+        Sleeps in steps of at most a minute so a changed interval moves the next slot straight away (FR-005).
+        """
+        off = _schedule.offset_minutes() or 0
+        iv = _get_poll_interval()
+        target = _schedule.next_slot(_time.time(), off, iv)
+        logger.info("Next poll at %s UTC (slot)", datetime.fromtimestamp(target, timezone.utc).strftime("%H:%M"))
+        while True:
+            remaining = target - _time.time()
+            if remaining <= 0:
+                return
+            await asyncio.sleep(min(remaining, 60))
+            if _get_poll_interval() != iv:
+                iv = _get_poll_interval()
+                target = _schedule.next_slot(_time.time(), off, iv)
+                logger.info("Poll interval changed: next poll at %s UTC (slot)",
+                            datetime.fromtimestamp(target, timezone.utc).strftime("%H:%M"))
+
     async def _run():
-        # Brief startup delay so uvicorn is ready and settings are seeded.
+        _slots = _schedule.slot_mode()
+        # Brief startup delay so uvicorn is ready and settings are seeded. On a seat the offset also spreads the
+        # start-up session check below, so seats don't all probe every site from the box's address at once.
         _offset = _poll_offset_minutes()
         if _offset:
             logger.info("Poll start offset: %d min (hosted seat)", _offset)
@@ -434,7 +458,13 @@ def _start_poll_orchestrator():
         # Skip the immediate first poll if the last cycle was recent enough.
         # This prevents hammering platforms on every app restart / deploy.
         secs_until = _seconds_until_next("last_poll_completed_at", poll_interval)
-        if secs_until > 60:
+        if _slots:
+            # A seat always starts at its next slot: never straight away, never a catch-up (FR-002/FR-003).
+            # As before, the first cycle is silent when the last poll is overdue (never polled, or stopped a while),
+            # so a backlog doesn't arrive as a burst of "new" alerts.
+            _first_cycle = secs_until <= 60
+            await _wait_for_slot()
+        elif secs_until > 60:
             wait_min = int(secs_until / 60)
             logger.info("Skipping startup poll — last cycle was recent, next in %d min", wait_min)
             _first_cycle = False
@@ -509,6 +539,9 @@ def _start_poll_orchestrator():
             else:
                 logger.info("Poll cycle skipped — polling is paused")
 
+            if _slots:
+                await _wait_for_slot()
+                continue
             interval_min = _get_poll_interval() // 60
             logger.info("Next poll cycle in %d minutes", interval_min)
             await asyncio.sleep(_get_poll_interval())

@@ -26,6 +26,7 @@ from database.db import get_connection
 from polling.notifications import describe_error
 from database import sf_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,7 @@ def _get_or_create_client(settings: dict, account_id: int, is_default: bool) -> 
     return loop_bound.pin(_sf_client)
 
 
+@site_turn("sf")
 async def run_sf_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete SoFurry poll cycle for a single account.
 

@@ -24,6 +24,7 @@ from database.db import get_connection
 from polling.notifications import describe_error
 from database import thr_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,7 @@ def _get_or_create_client(settings: dict, thr_access_token: str, thr_user_id: st
     return loop_bound.pin(_thr_client)
 
 
+@site_turn("thr")
 async def run_thr_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete Threads poll cycle for a single account."""
     global _thr_poll_running

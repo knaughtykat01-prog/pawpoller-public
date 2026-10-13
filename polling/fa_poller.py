@@ -31,6 +31,7 @@ import httpx
 from polling import notifications
 from polling import self_comment
 from polling.notifications import describe_error
+from polling.site_turns import site_turn
 
 import config
 from clients.fa.client import FAClient
@@ -234,6 +235,7 @@ async def _send_fa_telegram(new_comment_details: list[dict],
     )
 
 
+@site_turn("fa")
 async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete FurAffinity poll cycle for a single account.
 

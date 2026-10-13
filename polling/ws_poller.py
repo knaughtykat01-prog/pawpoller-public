@@ -32,6 +32,7 @@ from polling.notifications import describe_error
 from polling.followers import capture_followers
 from database import ws_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,7 @@ async def _send_ws_telegram(new_details: list[dict]) -> None:
     )
 
 
+@site_turn("ws")
 async def run_ws_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete Weasyl poll cycle for a single account.
 

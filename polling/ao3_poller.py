@@ -25,6 +25,7 @@ from database.db import get_connection
 from polling.notifications import describe_error
 from database import ao3_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,7 @@ def save_fresh_cookies(client: AO3Client, account_id: int, is_default: bool) -> 
         logger.warning("AO3: couldn't store the renewed sign-in cookie", exc_info=True)
 
 
+@site_turn("ao3")
 async def run_ao3_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete AO3 poll cycle for a single account.
 

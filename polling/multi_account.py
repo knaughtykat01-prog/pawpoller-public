@@ -18,6 +18,8 @@ import logging
 
 import config
 
+from polling.site_turns import TurnTimeout
+
 logger = logging.getLogger(__name__)
 
 
@@ -193,6 +195,9 @@ async def poll_platform_accounts(platform, account_id=None, *, run_cycle=None):
             current_alert_account.set((platform, a["account_id"]))
         try:
             await run_cycle(a["account_id"])
+        except TurnTimeout as e:
+            logger.info("%s account %s: %s", platform, a["account_id"], e)
+            continue
         except Exception as e:  # noqa: BLE001 — one account must not kill the rest
             logger.error("%s account %s (%s) poll failed: %s",
                          platform, a["account_id"], a.get("label") or "", e)

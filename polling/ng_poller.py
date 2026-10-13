@@ -25,6 +25,7 @@ from database import ng_queries
 from polling import notifications
 from polling.followers import capture_followers
 from polling.notifications import describe_error
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,7 @@ def _get_or_create_client(creds: dict) -> NgClient:
 ITEM_PAUSE_S = 1.5      # between item pages — no API, so be a polite browser
 
 
+@site_turn("ng")
 async def run_ng_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete Newgrounds poll cycle for a single account."""
     from database import accounts as accounts_db

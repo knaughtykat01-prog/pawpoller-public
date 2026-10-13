@@ -27,6 +27,7 @@ import config
 from database import tg_queries
 from database.db import get_connection
 from polling import followers as followers_mod
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 progress: dict = {"running": False, "platform": "tg"}
 
 
+@site_turn("tg")
 async def run_tg_poll_cycle(account_id: int | None = None,
                             force_full: bool = False) -> dict:
     """Record one subscriber snapshot for a Telegram channel account.

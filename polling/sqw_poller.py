@@ -26,6 +26,7 @@ from database.db import get_connection
 from polling.notifications import describe_error
 from database import sqw_queries
 from polling import notifications
+from polling.site_turns import site_turn
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,7 @@ def _get_or_create_client(settings: dict, sqw_user: str, sqw_pass: str, sqw_targ
     return loop_bound.pin(_sqw_client)
 
 
+@site_turn("sqw")
 async def run_sqw_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete SquidgeWorld poll cycle for a single account.
 
