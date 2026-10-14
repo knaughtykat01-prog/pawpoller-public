@@ -3032,7 +3032,13 @@ const App = {
 
         // A hosted seat with no account (spec 034): only its invite link can make one.
         if (screen === 'account' && su.hosted && !su.authenticated && !('answered' in su)) {
-            const used = !!this._claim && !su.claim;
+            // 4.73.1: check the link's code on open, so a replaced or expired link says so before the form
+            // (the form's own submit check still decides; a failed check here falls back to showing it).
+            if (this._claim && su.claim && this._claimChecked !== this._claim) {
+                try { this._claimGood = !!(await API.dashboardClaimCheck(this._claim)).ok; } catch (_) { this._claimGood = true; }
+                this._claimChecked = this._claim;
+            }
+            const used = !!this._claim && (!su.claim || this._claimGood === false);
             if (!this._claim || used) {
                 this._setContent(card(used ? `
                     <h2>This invite link has run out</h2>

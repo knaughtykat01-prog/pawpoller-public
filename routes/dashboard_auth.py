@@ -446,6 +446,23 @@ def _reset_ask_allowed(ip: str, limit: int = 5, window: int = 3600) -> bool:
         return True
 
 
+@dashboard_auth_router.post("/dashboard-claim-check")
+def dashboard_claim_check(request: Request, body: dict):
+    """4.73.1: is this invite link's code the seat's current one? Asked when the sign-up page opens, so a
+    replaced or expired link says so before the form is filled in. Same rate limit and failure count as
+    the setup itself, which still checks the code again (this only decides which screen shows)."""
+    from dashboard import _is_rate_limited, _record_auth_failure
+    ip = request.client.host if request.client else "unknown"
+    if _is_rate_limited(ip):
+        raise HTTPException(429, "Too many attempts. Try again later.")
+    if config.is_dashboard_auth_required():
+        return {"ok": False}
+    ok = _claim_ok(str(body.get("claim") or "")[:200])
+    if not ok:
+        _record_auth_failure(ip)
+    return {"ok": ok}
+
+
 def _claim_state() -> str:
     """"none" (not a claimable seat), "expired" or "open" — from the seat's env (spec 034 R1)."""
     if not os.environ.get("PAWPOLLER_CLAIM_HASH"):

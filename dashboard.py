@@ -491,6 +491,7 @@ _AUTH_EXEMPT_PATHS = frozenset({
     "/api/auth/dashboard-login",
     "/api/auth/dashboard-setup",
     "/api/auth/signup-status",   # 4.67.0 (spec 033): which sign-up screen comes first
+    "/api/auth/dashboard-claim-check",   # 4.73.1: is this invite link still good (rate-limited)
     "/api/auth/reset-request",   # 4.69.0: Forgot your password is used signed OUT (rate-limited, neutral answer)
     "/api/auth/reset",
     # 2.16.8: favicon was returning 401 because the auth middleware

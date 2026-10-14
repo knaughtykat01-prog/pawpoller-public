@@ -1269,6 +1269,7 @@ const API = {
     getDashboardStatus() { return this.get('/api/auth/dashboard-status'); },
     dashboardLogin(data) { return this.post('/api/auth/dashboard-login', data); },
     dashboardSetup(data) { return this.post('/api/auth/dashboard-setup', data, { quiet: [400, 403] }); },
+    dashboardClaimCheck(claim) { return this.post('/api/auth/dashboard-claim-check', { claim }, { quiet: [429] }); },
     // First sign-up (4.67.0, spec 033)
     getSignupStatus() { return this.get('/api/auth/signup-status'); },
     addAccountEmail(email, current_password) { return this.post('/api/auth/email', { email, current_password }, { quiet: [400, 401] }); },

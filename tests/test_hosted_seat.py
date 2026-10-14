@@ -140,3 +140,28 @@ def test_the_front_end_drops_the_code_from_the_address_bar():
     init = src[src.index("async init() {"):src.index("Listen for hash changes")]
     assert "history.replaceState" in init and "this._claim" in init
     assert "This PawPoller is waiting for its owner" in src
+
+
+def test_the_page_can_tell_a_replaced_link_before_the_form(monkeypatch):
+    """4.73.1: a fresh invite replaces the code; the old link must say so on open, not after the form."""
+    _seat(monkeypatch)
+    c = _remote()
+    assert c.post("/api/auth/dashboard-claim-check", json={"claim": _CODE}).json() == {"ok": True}
+    assert c.post("/api/auth/dashboard-claim-check", json={"claim": "old-code-old-code-1"}).json() == {"ok": False}
+    assert not config.get_settings().get("auth_password_hash")          # checking never makes an account
+    monkeypatch.setenv("PAWPOLLER_CLAIM_EXPIRES", str(int(time.time()) - 1))
+    assert c.post("/api/auth/dashboard-claim-check", json={"claim": _CODE}).json() == {"ok": False}
+
+
+def test_claim_checks_share_the_guess_limit(monkeypatch):
+    _seat(monkeypatch)
+    import dashboard
+    for _ in range(20):
+        _remote().post("/api/auth/dashboard-claim-check", json={"claim": "guess-guess-guess-1"})
+    assert dashboard._is_rate_limited("testclient")
+    assert _remote().post("/api/auth/dashboard-claim-check", json={"claim": _CODE}).status_code == 429
+
+
+def test_the_front_end_checks_the_link_on_open():
+    src = (Path(__file__).resolve().parents[1] / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
+    assert "dashboardClaimCheck(this._claim)" in src and "this._claimGood === false" in src
