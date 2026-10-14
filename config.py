@@ -374,6 +374,64 @@ def credentials_generation() -> int:
     return _cred_generation
 
 
+# ── Hosted-seat poll intervals (4.74.0, spec 039) ───────────────────────────
+# Seats on the operator's home box share one internet address, so they poll at one of a short
+# list of intervals. The box sets the list (PAWPOLLER_HOSTED_INTERVALS, minutes, the first is the
+# default); `homebox.sh intervals` changes it for every seat without a release.
+HOSTED_INTERVALS_DEFAULT = (240, 360, 480, 720, 1440)
+
+
+def hosted_intervals() -> list[int] | None:
+    """The allowed intervals on a hosted seat, or None anywhere else (desktop, self-hosted)."""
+    if os.environ.get("PAWPOLLER_HOSTED") != "1":
+        return None
+    try:
+        got = sorted({int(x) for x in os.environ.get("PAWPOLLER_HOSTED_INTERVALS", "").split(",") if x.strip()})
+    except ValueError:
+        got = []
+    got = [m for m in got if 60 <= m <= 10080][:8]   # the same bounds homebox.sh checks
+    return got or list(HOSTED_INTERVALS_DEFAULT)
+
+
+def allowed_interval(minutes) -> int:
+    """*minutes* rounded up to the next allowed choice on a hosted seat (the largest if it's over them all)."""
+    try:
+        m = int(minutes)
+    except (TypeError, ValueError, OverflowError):
+        m = 0
+    choices = hosted_intervals()
+    if choices is None:
+        return m
+    return next((c for c in choices if c >= m), choices[-1])
+
+
+def _round_intervals(current: dict, touched) -> None:
+    """Round every ``*poll_interval_minutes`` key in *touched* (in place, in *current*).
+
+    A value that had to change leaves ``interval_changed_from`` for the polling page to show once;
+    a save that needed no rounding clears an older notice.
+    """
+    if hosted_intervals() is None:
+        return
+    keys = [k for k in touched if k.endswith("poll_interval_minutes")]
+    changed = None
+    for k in keys:
+        if current.get(k) is None:
+            continue
+        r = allowed_interval(current[k])
+        try:
+            same = int(current[k]) == r       # "240" stored as text is the same choice, not a change
+        except (TypeError, ValueError, OverflowError):
+            same = False
+        if not same and (k == "poll_interval_minutes" or changed is None):
+            changed = current[k]
+        current[k] = r
+    if changed is not None:
+        current["interval_changed_from"] = changed
+    elif keys:
+        current.pop("interval_changed_from", None)
+
+
 def save_settings(data: dict) -> None:
     """Merge *data* into settings.json and write.
 
@@ -392,6 +450,7 @@ def save_settings(data: dict) -> None:
         current = _load_settings()
         _before = dict(current)               # snapshot for credential-age stamping
         current.update(data)  # Overlay new values on top of existing ones
+        _round_intervals(current, data)       # hosted seats: only the allowed intervals (spec 039)
 
         # Proactive credential-age (W): stamp when a platform's credentials are
         # (re)connected, so the UI can warn before a finite-lifetime cookie/token
@@ -497,8 +556,10 @@ def replace_settings(full: dict) -> None:
     is not an edit to mirror to a paired install.
     """
     global _cred_generation
+    full = dict(full)
+    _round_intervals(full, list(full))    # a move-in can carry any interval (spec 039)
     with _settings_lock:
-        _write_all_locked(dict(full))
+        _write_all_locked(full)
         _cred_generation += 1          # posters built on the old logins rebuild (no restart off a container)
     _push_log_secrets(full)
 
@@ -1301,7 +1362,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.73.1"
+APP_VERSION = "4.74.0"
 
 
 def _app_commit() -> str:

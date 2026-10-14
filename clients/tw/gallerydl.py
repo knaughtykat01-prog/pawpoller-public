@@ -32,6 +32,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 from datetime import datetime, timezone
@@ -55,6 +56,14 @@ _TWITTER_EPOCH_MS = 1288834974657
 # get_follower_count() reads this instead of spending a billed official-API
 # user-lookup. Warmed (and invalidated) by fetch_tweets().
 _LAST_FOLLOWERS: dict[str, int] = {}
+
+# Handles whose last fetch waited out X's rate limit (4.74.0, spec 039). gallery-dl
+# waits a limit out by itself and still exits 0, so without this a limited timeline
+# looks like a slow success. Its wait line (gallery_dl/extractor/common.py ``wait``,
+# 1.32.x) reads "Waiting for N minutes until HH:MM:SS (rate limit)", at info level:
+# fetch_tweets runs without -q so that line reaches stderr.
+_LAST_THROTTLED: dict[str, bool] = {}
+_RATE_WAIT = re.compile(r"\(rate limit\)|rate limit exceeded", re.I)
 
 
 # -- Discovery ---------------------------------------------------------------
@@ -282,18 +291,18 @@ def _extract_follower_count(raw: str, handle: str) -> int | None:
 # -- Subprocess --------------------------------------------------------------
 
 async def _run(exe: str, url: str, cookie_path: str, settings: dict,
-               range_spec: str | None = None) -> tuple[int, str, str]:
+               range_spec: str | None = None, quiet: bool = True) -> tuple[int, str, str]:
     """Run gallery-dl in metadata-dump mode and return (returncode, stdout, stderr).
 
-    ``-j`` dumps metadata without downloading media bytes; ``-q`` keeps stdout to
-    pure JSON; ``--sleep-request`` throttles politely; ``text-tweets`` includes
+    ``-j`` dumps metadata without downloading media bytes; ``-q`` (``quiet``) drops
+    gallery-dl's info lines (they go to stderr either way, so stdout stays pure JSON); ``--sleep-request`` throttles politely; ``text-tweets`` includes
     text-only posts; ``retweets=false`` keeps the account's own posts (a pure
     retweet's engagement belongs to the original author). ``videos=false`` avoids
     resolving video variants we'd discard anyway.
     """
     delay = getattr(config, "TW_REQUEST_DELAY_SECONDS", 2.0)
     args = [
-        exe, "-j", "-q",
+        exe, "-j", *(["-q"] if quiet else []),
         "--cookies", cookie_path,
         "--sleep-request", str(delay),
         "-o", "extractor.twitter.text-tweets=true",
@@ -358,6 +367,7 @@ async def fetch_tweets(auth_token: str, ct0: str, target_user: str,
     # failure this cycle can't hand get_follower_count() a stale number — it will
     # fall through to the paid/scrape path instead.
     _LAST_FOLLOWERS.pop(handle.lower(), None)
+    _LAST_THROTTLED.pop(handle.lower(), None)
     if not exe or not (auth_token and ct0 and handle):
         return None
 
@@ -366,10 +376,12 @@ async def fetch_tweets(auth_token: str, ct0: str, target_user: str,
     cookie_path = os.path.join(tmpdir, "cookies.txt")
     try:
         _write_cookies(auth_token, ct0, cookie_path)
-        rc, out, err = await _run(exe, url, cookie_path, settings)
+        rc, out, err = await _run(exe, url, cookie_path, settings, quiet=False)
+        if _RATE_WAIT.search(err or ""):
+            _LAST_THROTTLED[handle.lower()] = True
         if rc != 0:
             logger.warning("TW: gallery-dl exited %s — falling back to GraphQL: %s",
-                           rc, (err or "").strip()[:300])
+                           rc, _problems(err)[:300])
             return None
         tweets = _parse_dump_json(out, handle)
         # Ride the timeline scrape for the follower count too (free), so the
@@ -384,6 +396,17 @@ async def fetch_tweets(auth_token: str, ct0: str, target_user: str,
         return None
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _problems(err: str) -> str:
+    """Only gallery-dl's warning and error lines: with -q off, info lines would bury them."""
+    lines = [l for l in (err or "").splitlines() if "][error]" in l or "][warning]" in l]
+    return " | ".join(lines) if lines else (err or "").strip()
+
+
+def was_rate_limited(target_user: str) -> bool:
+    """True when this cycle's fetch_tweets for this handle waited out a rate limit."""
+    return _LAST_THROTTLED.get((target_user or "").lstrip("@").lower(), False)
 
 
 def get_follower_count(target_user: str, settings: dict | None = None) -> int | None:

@@ -630,7 +630,9 @@ async def _cmd_interval(token: str, chat_id: str, args: str) -> None:
         return
 
     config.save_settings({"poll_interval_minutes": minutes})
-    await _send(token, chat_id, f"Poll interval set to {minutes} minutes for all platforms.")
+    saved = config.get_settings().get("poll_interval_minutes", minutes)   # a hosted seat rounds it (spec 039)
+    note = "" if saved == minutes else " (the nearest choice this hosted seat allows)"
+    await _send(token, chat_id, f"Poll interval set to {saved} minutes for all platforms{note}.")
 
 
 async def _cmd_pause(token: str, chat_id: str, args: str) -> None:

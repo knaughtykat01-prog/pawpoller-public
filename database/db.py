@@ -189,6 +189,9 @@ def init_db() -> None:
         trello_schema_sql = _TRELLO_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(trello_schema_sql)
         conn.executescript(_TRELLO_MIRROR_SCHEMA_PATH.read_text(encoding="utf-8"))
+        # 4.74.0 (spec 039): turns given up after waiting 10 minutes, kept 7 days for rate watch.
+        conn.executescript("CREATE TABLE IF NOT EXISTS turn_skips (site TEXT NOT NULL, at TEXT NOT NULL);"
+                           "CREATE INDEX IF NOT EXISTS ix_turn_skips_site_at ON turn_skips(site, at);")
         # Apply any migrations for tables added after the original schema release.
         _run_migrations(conn)
         conn.commit()

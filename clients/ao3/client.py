@@ -505,6 +505,9 @@ class AO3Client:
                 last_status = 0
 
         if not html:
+            if not self.blocked_reason and last_status in (429, 525):
+                # 4.74.0 (spec 039): a refusal must say so, or rate watch can't tell it from a bad password.
+                self.blocked_reason = f"AO3 refused the sign-in (HTTP {last_status}) — AO3-side, not your credentials."
             if rate_limited:
                 logger.error("AO3: Login blocked by rate limiter (HTTP 429 'Retry later')")
             else:

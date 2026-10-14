@@ -3804,7 +3804,9 @@ const App = {
                 body = `
                     <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">How often should PawPoller check your sites?</h2>
                     <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">More often means fresher numbers, and more requests to each site. Settings &rarr; Polling can set each site on its own later.</p>
-                    <div class="setup-mode-cards">${opt(60, 'Every hour', 'Freshest numbers')}${opt(240, 'Every 4 hours', 'Recommended')}${opt(720, 'Twice a day', 'Lightest on each site')}</div>
+                    <div class="setup-mode-cards">${(typeof prefs !== 'undefined' && prefs && Array.isArray(prefs.interval_choices))
+                        ? prefs.interval_choices.slice(0, 3).map((m, i) => opt(m, `Every ${m / 60} hours`, i === 0 ? 'Recommended for hosted seats' : 'Lighter on each site')).join('')
+                        : `${opt(60, 'Every hour', 'Freshest numbers')}${opt(240, 'Every 4 hours', 'Recommended')}${opt(720, 'Twice a day', 'Lightest on each site')}`}</div>
                     <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
                         <button class="btn btn-primary login-btn" id="setup-next" style="flex:1" ${answers.interval ? '' : 'disabled'}>Next</button><button class="btn" id="setup-skip" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Skip</button></div>`;
             } else if (currentStep === 'posting') {
@@ -18204,6 +18206,32 @@ const App = {
                     alert('Failed to save preference: ' + err.message);
                 }
             });
+
+            // 4.74.0 (spec 039): a hosted seat offers only the box's intervals. Every interval menu on
+            // this page (the "set all" one included) is rebuilt from prefs.interval_choices.
+            if (typeof prefs !== 'undefined' && Array.isArray(prefs.interval_choices) && prefs.interval_choices.length) {
+                const ch = prefs.interval_choices;
+                const label = (m) => (m % 60 ? `${m} min` : `${m / 60} hour${m === 60 ? '' : 's'}`);
+                document.querySelectorAll('select[id^="pref-"][id*="poll-interval"]').forEach((sel) => {
+                    const all = sel.id === 'pref-poll-interval-all';
+                    const key = (sel.id.replace(/^pref-/, '').replace(/-?poll-interval$/, '').replace(/-/g, '_') || '');
+                    const cur = Number(prefs[(key ? key + '_' : '') + 'poll_interval_minutes']) || ch[0];
+                    const pick = ch.find((m) => m >= cur) || ch[ch.length - 1];
+                    sel.innerHTML = (all ? '<option value="">— choose —</option>' : '')
+                        + ch.map((m) => `<option value="${m}" ${!all && m === pick ? 'selected' : ''}>${label(m)}</option>`).join('');
+                });
+                const body = document.getElementById('pref-poll-interval-all')?.closest('.accordion-body');
+                if (body && !body.querySelector('.hosted-interval-note')) {
+                    const note = document.createElement('p');
+                    note.className = 'hosted-interval-note';
+                    note.style.cssText = 'font-size:12px;color:var(--text-muted);margin:0 0 10px';
+                    note.textContent = `Hosted seats share one internet connection, so they check every ${label(ch[0])} or less often.`;
+                    if (prefs.interval_changed_from) {
+                        note.textContent += ` Your interval was ${label(Number(prefs.interval_changed_from))}, so it was changed to the nearest choice.`;
+                    }
+                    body.prepend(note);
+                }
+            }
 
             document.getElementById('pref-poll-interval')?.addEventListener('change', async (e) => {
                 try {

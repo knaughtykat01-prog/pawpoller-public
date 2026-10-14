@@ -292,6 +292,7 @@ _TABLES = (
     # internal — history
     T("poll_log", "Polling and posting history", "When Inkbunny was polled and what came back."),
     T("<P>_poll_log", "Polling and posting history", "When that site was polled and what came back."),
+    T("turn_skips", "Polling and posting history", "When a check was skipped because another seat on the same box had that site's turn (kept 7 days)."),
     T("posting_queue", "Polling and posting history", "What is waiting to be posted, and to which account."),
     T("posting_log", "Polling and posting history", "What was posted where, and what went wrong."),
     T("publications", "Polling and posting history", "Where each work is published."),
@@ -397,6 +398,7 @@ _SETTINGS = (
         "legal_accepted", "legal_history",   # Terms + Privacy accepted, and when (4.67.0, spec 033)
         "auth_mail_log",   # when account emails were last sent, for the send limit (4.68.0)
         "pb_import_asked", "twofa_offered", "announce_defaults_asked",   # sign-up's once-only offers (4.69.0)
+        "interval_changed_from",   # a hosted seat's interval before it was rounded to the allowed list (4.74.0)
         "milestone_comments", "milestone_faves", "milestone_score", "milestone_views",
         "artwork_archive_path", "artwork_da_catpath", "artwork_default_platforms", "artwork_default_rating",
         "artwork_enabled", "artwork_fa_category", "artwork_fa_gender", "artwork_fa_species",

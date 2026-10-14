@@ -177,7 +177,7 @@ async def test_fetch_returns_none_when_unavailable(monkeypatch):
 async def test_fetch_full_pipeline(monkeypatch):
     monkeypatch.setattr(gallerydl, "find_gallerydl", lambda *_a, **_k: "/usr/bin/gallery-dl")
 
-    async def fake_run(exe, url, cookie_path, settings, range_spec=None):
+    async def fake_run(exe, url, cookie_path, settings, range_spec=None, quiet=True):
         assert url == "https://x.com/TestHandle/tweets"
         return 0, SAMPLE, ""
 
@@ -393,3 +393,32 @@ async def test_client_follower_count_falls_back_to_official(monkeypatch):
         await c.close()
 
     assert fc == 77                  # official API's value when gallery-dl has none
+
+
+# ── 4.74.0 (spec 039): a limit waited out still counts as limited ─────────────
+
+def _fake_run(rc, err, seen):
+    async def run(exe, url, cookie_path, settings, range_spec=None, quiet=True):
+        seen.append(quiet)
+        return rc, "[]", err
+    return run
+
+
+@pytest.mark.asyncio
+async def test_fetch_notices_a_rate_limit_wait(monkeypatch):
+    seen = []
+    monkeypatch.setattr(gallerydl, "is_enabled", lambda *_a, **_k: True)
+    monkeypatch.setattr(gallerydl, "find_gallerydl", lambda *_a, **_k: "/usr/bin/gallery-dl")
+    monkeypatch.setattr(gallerydl, "_run", _fake_run(
+        0, "[twitter][info] Waiting for 12 minutes until 03:12:00 (rate limit)\n", seen))
+    assert await gallerydl.fetch_tweets("a", "b", "@SecondFur", settings={}) == []
+    assert gallerydl.was_rate_limited("SecondFur") and seen == [False]   # fetched without -q
+
+    monkeypatch.setattr(gallerydl, "_run", _fake_run(0, "", seen))
+    await gallerydl.fetch_tweets("a", "b", "SecondFur", settings={})
+    assert not gallerydl.was_rate_limited("SecondFur")                   # reset each fetch
+
+
+def test_only_warnings_and_errors_are_logged():
+    err = "[twitter][info] Requesting\n[twitter][error] HttpError: 404\n[twitter][info] more"
+    assert gallerydl._problems(err) == "[twitter][error] HttpError: 404"

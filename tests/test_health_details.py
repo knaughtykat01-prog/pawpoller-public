@@ -7,7 +7,7 @@ import config
 
 TOKEN = "t" * 43
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
-KEYS = {"version", "commit", "health", "problems", "polling", "sites", "queue", "last_check_at", "tech_id"}
+KEYS = {"version", "commit", "health", "problems", "polling", "sites", "queue", "last_check_at", "tech_id", "pressure"}
 
 
 def _client():
@@ -76,3 +76,24 @@ def test_a_turn_timeout_records_the_skip():
     last_check._skips.clear()
     TurnTimeout("fa")
     assert last_check.skips()["fa"][1] == "waited 10 minutes for its turn"
+
+
+def test_pressure_is_counts_only(monkeypatch):
+    """4.74.0 (spec 039): the per-site counts carry no text but the site code."""
+    from datetime import datetime, timezone
+    monkeypatch.setenv("PAWPOLLER_DETAILS_TOKEN", TOKEN)
+    monkeypatch.setattr(config, "is_dashboard_auth_required", lambda: True)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    _log("fa_poll_log", "error", "Client error '429 Too Many Requests' for url 'https://example.com/user/Inkwolf'", now)
+    _log("fa_poll_log", "success", None, now)
+    body = _client().get("/api/health/details", headers=AUTH).json()
+    fa = next(p for p in body["pressure"] if p["site"] == "fa")
+    assert (fa["checks_24h"], fa["away_24h"], fa["kinds_7d"]["limited"], fa["away_in_a_row"]) == (2, 1, 1, 0)
+    strings = [v for p in body["pressure"] for k, v in p.items() if isinstance(v, str)]
+    assert all(k == "site" for p in body["pressure"] for k, v in p.items() if isinstance(v, str))
+    assert "Inkwolf" not in str(body["pressure"]) and all(s in config_sites() for s in strings)
+
+
+def config_sites():
+    from routes.api import DETAILS_SITES
+    return DETAILS_SITES

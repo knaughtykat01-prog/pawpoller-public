@@ -896,6 +896,8 @@ class TWClient:
             logger.warning("TW: gallery-dl backend error, trying next: %s", e)
             via_gdl = None
         if via_gdl is not None:
+            if gallerydl.was_rate_limited(self.target_user):
+                self.throttled = True   # it waited a limit out: still a limited check (spec 039)
             return via_gdl
 
         # 2. Official X API v2 (paid fallback — only reached when gallery-dl fails)

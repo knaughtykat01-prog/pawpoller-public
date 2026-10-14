@@ -232,8 +232,10 @@ async def run_ao3_poll_cycle(account_id: int | None = None, force_full: bool = F
         # loudly if the cookie has expired, so the probe adds only delay,
         # not safety. ensure_logged_in() trusts the cookie without fetching.
         _update_ao3_progress("searching", message="Authenticating with AO3...")
+        client.blocked_reason = ""
         if not await client.ensure_logged_in():
-            raise ValueError("AO3 login failed -- check credentials or AO3 may be blocking (see logs for HTTP status)")
+            # 4.74.0 (spec 039): an AO3-side refusal is logged as one, so rate watch counts it.
+            raise ValueError(client.blocked_reason or "AO3 login failed -- check credentials")
 
         # Step 2: Discover works
         _update_ao3_progress("searching", message="Fetching works list...")

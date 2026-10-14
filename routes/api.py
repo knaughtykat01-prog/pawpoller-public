@@ -192,6 +192,9 @@ def health_details(request: Request):
                 site = {"site": code, "result": "skipped", "at": skipped[code][0], "reason": skipped[code][1]}
             if site:
                 out["sites"].append(site)
+        # 4.74.0 (spec 039): per-site counts of checks turned away; counts only.
+        from polling import rate_watch
+        out["pressure"] = rate_watch.pressure(conn, DETAILS_SITES)
         for status, key in (("pending", "waiting"), ("failed", "failed")):
             out["queue"][key] = conn.execute("SELECT count(*) FROM posting_queue WHERE status = ?",
                                              (status,)).fetchone()[0]
@@ -1883,6 +1886,9 @@ def get_preferences():
         "display_timezone": settings.get("display_timezone", "UTC"),
         # 4.71.0 (spec 035): this copy moved to another PawPoller and paused itself (the banner).
         "moved_away_at": settings.get("moved_away_at"),
+        # 4.74.0 (spec 039): a hosted seat's interval menus offer only these (None = every choice).
+        "interval_choices": config.hosted_intervals(),
+        "interval_changed_from": settings.get("interval_changed_from"),
         # Who helped — shown in Settings → About. Empty until the operator adds
         # someone; no names ship in the repo.
         "credits": settings.get("credits", []),
@@ -2065,8 +2071,13 @@ def save_preferences(body: dict):
     # silently dropped on save. See platform_metrics.setting_keys.
     for key in platform_metrics.setting_keys("poll_interval_minutes"):
         if key in body:
-            val = int(body[key])
-            if val in _ALLOWED_INTERVALS:
+            try:
+                val = int(body[key])
+            except (TypeError, ValueError, OverflowError):
+                continue                     # not a number: nothing saved for this key
+            if config.hosted_intervals() is not None:
+                update[key] = val            # hosted seat: save_settings rounds it to the box's list (spec 039)
+            elif val in _ALLOWED_INTERVALS:
                 update[key] = val
 
     # ── Timezone ───────────────────────────────────────────────

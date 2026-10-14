@@ -69,7 +69,8 @@ def test_class_counts_match_the_spec(conn):
     # +10 in 4.37.0: the Trello board mirror (spec 006) -- boards, lists, cards,
     # labels, checklists, check items, comments, covers, outbox, conflicts.
     # +1 in 4.56.0: paired_comments (spec 021) -- keyed by this box's own post_id.
-    assert counts["LOC"] == 21  # + this stage's own outbox, + promos (4.16.0), + podcast feeds / episodes (4.21.1)
+    # +1 in 4.74.0: turn_skips (spec 039) -- this box's own skipped turns.
+    assert counts["LOC"] == 22  # + this stage's own outbox, + promos (4.16.0), + podcast feeds / episodes (4.21.1)
 
 
 def test_unregistered_table_raises_rather_than_defaulting():

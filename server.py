@@ -207,7 +207,11 @@ def _start_poll_orchestrator():
     def _get_poll_interval() -> int:
         """Read unified poll interval from settings (in seconds)."""
         minutes = config.get_settings().get("poll_interval_minutes", 240)
-        return max(int(minutes), 15) * 60
+        allowed = config.allowed_interval(minutes)
+        if allowed != int(minutes or 0) and config.hosted_intervals() is not None:
+            # 4.74.0 (spec 039): a value saved before the list existed is rounded once, with the notice.
+            config.save_settings({"poll_interval_minutes": minutes})
+        return max(allowed, 15) * 60
 
     def _get_digest_interval() -> int:
         hours = config.get_settings().get("telegram_digest_interval_hours", 6)

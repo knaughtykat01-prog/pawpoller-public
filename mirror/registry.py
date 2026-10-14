@@ -434,6 +434,11 @@ _RULES += [
         "still needs or re-runs a destructive one it has already done.",
     ),
     TableRule(
+        "turn_skips", LOC,
+        "Spec 039. When THIS install gave up waiting for a site's turn on its own box: "
+        "another machine's skips say nothing about this one's shared address.",
+    ),
+    TableRule(
         "sqlite_sequence", LOC,
         "SQLite's own AUTOINCREMENT allocator. Syncing it corrupts both sides.",
     ),
