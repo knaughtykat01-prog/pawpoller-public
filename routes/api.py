@@ -189,7 +189,7 @@ def health_details(request: Request):
                 if site["result"] == "failed" and row[1]:
                     site["reason"] = techcentre.scrub(row[1], limit=200, settings=settings)
             if code in skipped and (site is None or skipped[code][0] > site["at"]):
-                site = {"site": code, "result": "skipped", "at": skipped[code][0], "reason": skipped[code][1]}
+                site = {"site": code, "result": "skipped", "at": skipped[code][0], "reason": techcentre.scrub(skipped[code][1], limit=200, settings=settings)}
             if site:
                 out["sites"].append(site)
         # 4.74.0 (spec 039): per-site counts of checks turned away; counts only.

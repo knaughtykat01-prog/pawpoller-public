@@ -69,6 +69,7 @@ from routes.promos_api import promos_router
 from routes.podcast_api import podcast_router, feed_router
 from routes.backup_api import backup_router
 from routes.move_api import move_router
+from routes.move_direct_api import owner_router as move_owner_router, direct_router as move_direct_router
 from routes.mirror_api import mirror_router
 from routes.discord_api import discord_router
 from routes.inbox_api import inbox_router
@@ -519,7 +520,12 @@ _AUTH_EXEMPT_PATHS = frozenset({
     "/hooks/trello",
 })
 _AUTH_EXEMPT_PREFIXES = ("/css/", "/js/", "/vendor/", "/img/", "/api/ig/pubmedia/", "/share/", "/feed/",
-                         "/legal/")   # 4.67.0: the bundled Terms + Privacy text, shown before sign-in
+                         "/legal/",   # 4.67.0: the bundled Terms + Privacy text, shown before sign-in
+                         # 4.75.0 (spec 036): an old PawPoller sending a move to a seat has no session here.
+                         # Every route under it checks a signature made with the seat's live move code
+                         # (like /hooks/trello), works only on a seat with a code showing, and can only
+                         # upload: checking, applying and discarding stay signed-in /api/move routes.
+                         "/api/move/direct/")
 
 # 4.67.0 (spec 033): the no-account and Terms gates are switched on by the real entry
 # points (main.py, server.py). Tests import this app directly through TestClient, whose
@@ -756,6 +762,8 @@ app.include_router(whatsnew_router)  # In-app "What's new" changelog popup (/api
 app.include_router(privacy_router)  # Settings → Privacy: what this install holds (/api/privacy, spec 011)
 app.include_router(backup_router)    # Backup & restore (/api/backup/*)
 app.include_router(move_router)      # Move to / bring in from another install (/api/move/*, spec 035)
+app.include_router(move_owner_router)   # Move code + send to a seat (/api/move/code, /api/move/send*, spec 036)
+app.include_router(move_direct_router)  # A seat receiving a signed send (/api/move/direct/*, auth-exempt, spec 036)
 app.include_router(mirror_router)    # Server → desktop mirroring (/api/mirror/*)
 app.include_router(discord_router)   # Discord announce webhook (/api/discord/*)
 app.include_router(inbox_router)     # Unified comment inbox (/api/inbox/*)

@@ -70,6 +70,18 @@ def test_a_newer_skip_wins_an_older_one_loses(monkeypatch):
     assert sites["bsky"]["result"] == "ok"
 
 
+def test_a_skip_reason_is_scrubbed_like_a_failure(monkeypatch):
+    """4.74.1: the skip reason goes through the same scrub as a failed site's reason."""
+    from polling import last_check
+    monkeypatch.setenv("PAWPOLLER_DETAILS_TOKEN", TOKEN)
+    real = config.get_settings
+    monkeypatch.setattr(config, "get_settings", lambda: {**real(), "fa_username": "Inkwolf"})
+    monkeypatch.setattr(last_check, "_skips", {"fa": ("2026-10-14T04:00:00Z",
+                                                      "waited for Inkwolf at https://example.com/users/Inkwolf")})
+    r = _client().get("/api/health/details", headers=AUTH)
+    assert "Inkwolf" not in r.text and "example.com/users" not in r.text
+
+
 def test_a_turn_timeout_records_the_skip():
     from polling import last_check
     from polling.site_turns import TurnTimeout

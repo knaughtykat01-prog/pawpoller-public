@@ -3805,7 +3805,7 @@ const App = {
                     <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">How often should PawPoller check your sites?</h2>
                     <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px">More often means fresher numbers, and more requests to each site. Settings &rarr; Polling can set each site on its own later.</p>
                     <div class="setup-mode-cards">${(typeof prefs !== 'undefined' && prefs && Array.isArray(prefs.interval_choices))
-                        ? prefs.interval_choices.slice(0, 3).map((m, i) => opt(m, `Every ${m / 60} hours`, i === 0 ? 'Recommended for hosted seats' : 'Lighter on each site')).join('')
+                        ? prefs.interval_choices.slice(0, 3).map((m, i) => opt(m, m === 60 ? 'Every hour' : `Every ${m % 60 ? `${m} minutes` : `${m / 60} hours`}`, i === 0 ? 'Recommended for hosted seats' : 'Lighter on each site')).join('')
                         : `${opt(60, 'Every hour', 'Freshest numbers')}${opt(240, 'Every 4 hours', 'Recommended')}${opt(720, 'Twice a day', 'Lightest on each site')}`}</div>
                     <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
                         <button class="btn btn-primary login-btn" id="setup-next" style="flex:1" ${answers.interval ? '' : 'disabled'}>Next</button><button class="btn" id="setup-skip" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Skip</button></div>`;
@@ -5695,6 +5695,186 @@ const App = {
             el.style.color = tone === 'bad' ? 'var(--danger)' : tone === 'good' ? 'var(--success)' : 'var(--text-muted)';
         };
         const mb = n => (n / 1048576 >= 1024 ? (n / 1073741824).toFixed(1) + ' GB' : Math.max(1, Math.round(n / 1048576)) + ' MB');
+        const pause = ms => new Promise(r => setTimeout(r, ms));
+        const waitForRestart = async (msg) => {
+            say(msg, 'Your old PawPoller is in. Restarting to finish — this takes about a minute…');
+            await pause(5000);
+            let up = false;
+            for (let i = 0; i < 90 && !up; i++) {
+                try { up = (await fetch('/api/health/ready', { cache: 'no-store' })).ok; } catch (e) { /* still down */ }
+                if (!up) await pause(2000);
+            }
+            if (!up) return say(msg, 'Your old PawPoller is in, but this PawPoller hasn\'t come back yet. Wait a few minutes, then reload the page.', 'bad');
+            say(msg, 'Your old PawPoller is in. Sign in with this PawPoller\'s own password.', 'good');
+            setTimeout(() => location.reload(), 2500);
+        };
+        // Check → confirm → apply → wait, for an upload that's fully in (a moving file, or a move sent
+        // with a code, whose phrase the server supplies). Resolves false if the person said no.
+        const bringIn = async (id, phrase, msg, bar) => {
+            say(msg, 'Checking it…');
+            const info = await API.moveCheck(id, phrase);
+            const lines = [`This move came from PawPoller ${info.app_version}: ${info.files} files, ${mb(info.bytes)}.`];
+            if (info.logins === 'unreadable') lines.push('Its site logins couldn\'t be read where it was made, so you\'ll enter them again.');
+            if (info.here_has_work) lines.push('⚠ This PawPoller already has work in it. Its records will be replaced by the move\'s (a safety copy is kept first). Its artwork files are kept.');
+            lines.push('Your sign-in here stays as it is.', '', 'Bring it in now?');
+            if (!confirm(lines.join('\n'))) return false;
+            say(msg, 'Bringing it in…');
+            await API.moveApply(id, phrase);
+            let res;
+            for (;;) {                               // a big library takes minutes; the page asks how it's going
+                await pause(2000);
+                res = await API.moveApplyStatus().catch(() => ({ state: 'gone' }));
+                if (res.state !== 'applying') break;
+            }
+            if (res.state === 'failed') throw new Error(res.error || 'Bringing it in stopped.');
+            if (bar) bar.value = 100;
+            if (res.restarting || res.state === 'gone' || res.state === 'idle') { await waitForRestart(msg); return true; }
+            say(msg, 'Your old PawPoller is in. Close PawPoller and open it again to finish.', 'good');
+            return true;
+        };
+        const until = t => Utils.time.fmt.time(new Date(t * 1000));
+
+        // Receiving a move on a hosted seat (4.75.0, spec 036). The card stays hidden anywhere else
+        // (the code routes answer 404 off a seat).
+        const recv = $('move-receive');
+        if (recv && !recv.dataset.wired) {
+            recv.dataset.wired = '1';
+            const msg = $('move-recv-msg'), bar = $('move-recv-progress'), box = $('move-code-box');
+            const acts = $('move-recv-actions'), btn = $('move-code-btn');
+            let shown = null, last = 'none', timer = null;
+            const render = (st) => {
+                last = st.state;
+                box.hidden = acts.hidden = bar.hidden = true;
+                btn.disabled = false;
+                btn.textContent = 'Show a code';
+                if (st.state === 'waiting') {
+                    btn.textContent = 'Show a new code';
+                    if (shown) {
+                        box.hidden = false;
+                        box.textContent = shown.code;
+                        const left = Math.max(1, Math.ceil((st.expires_at - Date.now() / 1000) / 60));
+                        say(msg, `Type this code into your old PawPoller. It works once and runs out in ${left} min.`);
+                    } else say(msg, 'A code is waiting (shown earlier). Show a new one if you don\'t have it.');
+                } else if (st.state === 'sending') {
+                    bar.hidden = false;
+                    bar.value = st.size ? Math.round(100 * st.received / st.size) : 0;
+                    btn.textContent = 'Stop and show a new code';
+                    say(msg, `Your old PawPoller is sending… ${mb(st.received)} of ${mb(st.size)}`);
+                } else if (st.state === 'arrived') {
+                    shown = null;
+                    acts.hidden = false;
+                    btn.textContent = 'Show a new code';
+                    say(msg, `Your old PawPoller has arrived (${mb(st.size)}). Bring it in to finish.`, 'good');
+                } else if (st.state === 'expired') {
+                    shown = null;
+                    say(msg, 'That code has run out or was used. Show a new one when you\'re ready.');
+                } else if (st.state === 'locked') {
+                    shown = null;
+                    btn.disabled = true;
+                    say(msg, `Someone typed a wrong code too many times, so it was cancelled. You can show a new code after ${until(st.locked_until)}.`, 'bad');
+                } else say(msg, '');
+            };
+            const poll = async () => {
+                clearTimeout(timer);
+                if (!document.body.contains(recv)) return;
+                try {
+                    const st = await API.moveCodeGet();
+                    recv.hidden = st.state === 'unavailable';      // not a hosted seat
+                    if (recv.hidden) return;
+                    render(st);
+                    if (st.state === 'waiting' || st.state === 'sending' || st.state === 'locked') timer = setTimeout(poll, 3000);
+                } catch (err) { recv.hidden = true; }
+            };
+            btn.addEventListener('click', async () => {
+                if (last === 'sending' && !confirm('Your old PawPoller is sending right now. Stop it and show a new code?')) return;
+                try { shown = await API.moveCodeShow(false); }
+                catch (err) {
+                    if (!(err.status === 409 && err.detail && err.detail.arrived)) return say(msg, err.message, 'bad');
+                    if (!confirm('A move has arrived and is waiting. A new code throws it away. Carry on?')) return;
+                    try { shown = await API.moveCodeShow(true); } catch (e2) { return say(msg, e2.message, 'bad'); }
+                }
+                poll();
+            });
+            $('move-recv-bring').addEventListener('click', async () => {
+                const st = await API.moveCodeGet().catch(() => ({}));
+                if (st.state !== 'arrived') return poll();
+                acts.hidden = true; btn.disabled = true;
+                try { if (!(await bringIn(st.upload_id, '', msg, bar))) poll(); }
+                catch (err) { say(msg, err.message, 'bad'); acts.hidden = false; btn.disabled = false; }
+            });
+            $('move-recv-throw').addEventListener('click', async () => {
+                if (!confirm('Throw away the move that arrived? Nothing here changes, and your old PawPoller keeps everything.')) return;
+                try { await API.moveCodeCancel(); } catch (err) { return say(msg, err.message, 'bad'); }
+                poll();
+            });
+            poll();
+        }
+
+        // Sending to a seat with its code (4.75.0, spec 036): the address comes from the code and is
+        // confirmed before anything is sent; the server builds and sends, and resumes after drops.
+        const sendBtn = $('move-send-btn'), codeIn = $('move-send-code');
+        if (sendBtn && codeIn && !sendBtn.dataset.wired) {
+            sendBtn.dataset.wired = '1';
+            const msg = $('move-send-msg'), bar = $('move-send-progress'), conf = $('move-send-confirm');
+            const acts = $('move-send-actions'), resumeBtn = $('move-send-resume');
+            let pending = null;
+            codeIn.addEventListener('input', () => { sendBtn.disabled = codeIn.value.replace(/[\s-]/g, '').length < 14; conf.hidden = true; });
+            const watch = async () => {
+                for (;;) {
+                    const st = await API.moveSendStatus().catch(() => ({ state: 'failed', error: 'Lost contact with PawPoller.' }));
+                    resumeBtn.hidden = true;
+                    if (st.state === 'building' || st.state === 'sending') {
+                        bar.hidden = false; acts.hidden = false; sendBtn.disabled = true;
+                        bar.value = st.state === 'building' ? (st.total ? Math.round(100 * st.built / st.total) : 0)
+                            : (st.size ? Math.round(100 * st.sent / st.size) : 0);
+                        say(msg, st.state === 'building' ? 'Getting your library ready to send…'
+                            : `Sending to ${st.address}… ${mb(st.sent || 0)} of ${mb(st.size || 0)}`);
+                        await pause(1500);
+                        continue;
+                    }
+                    bar.hidden = true;
+                    acts.hidden = st.state !== 'interrupted';
+                    if (st.state === 'interrupted') {
+                        resumeBtn.hidden = false;
+                        say(msg, st.error || `Sending to ${st.address} stopped at ${mb(st.sent || 0)} of ${mb(st.size || 0)}. Press Carry on sending to finish it.`, 'bad');
+                    } else if (st.state === 'sent') {
+                        say(msg, 'Sent. Now open your seat and press Bring it in under Settings → Data → Receive a move.', 'good');
+                        if (st.moved_away_at) this._showMovedBanner();
+                    } else if (st.state === 'failed') say(msg, st.error || 'Sending stopped.', 'bad');
+                    else if (st.state === 'cancelled') say(msg, 'Cancelled. Nothing was changed here.');
+                    sendBtn.disabled = codeIn.value.replace(/[\s-]/g, '').length < 14;
+                    return;
+                }
+            };
+            sendBtn.addEventListener('click', async () => {
+                try {
+                    const p = await API.moveSendPreview(codeIn.value);
+                    pending = { code: codeIn.value, address: p.address };
+                    $('move-send-address').textContent = p.address;
+                    conf.hidden = false;
+                    say(msg, '');
+                } catch (err) { say(msg, err.message, 'bad'); }
+            });
+            $('move-send-no').addEventListener('click', () => { conf.hidden = true; pending = null; say(msg, 'Not sent. Check the code on your seat\'s screen.'); });
+            $('move-send-yes').addEventListener('click', async () => {
+                if (!pending) return;
+                conf.hidden = true;
+                try {
+                    await API.moveSend(pending.code, pending.address, !!$('move-send-pause').checked);
+                    codeIn.value = ''; pending = null;
+                    watch();
+                } catch (err) { say(msg, err.message, 'bad'); }
+            });
+            resumeBtn.addEventListener('click', async () => {
+                try { await API.moveSendResume(); watch(); } catch (err) { say(msg, err.message, 'bad'); }
+            });
+            $('move-send-cancel').addEventListener('click', async () => {
+                if (!confirm('Stop sending? This copy goes back to how it was.')) return;
+                try { await API.moveSendCancel(); } catch (err) { return say(msg, err.message, 'bad'); }
+                watch();
+            });
+            API.moveSendStatus().then(st => { if (['building', 'sending', 'interrupted'].includes(st.state)) watch(); }).catch(() => {});
+        }
 
         // Making the moving file: built in the background, then downloaded once.
         const makeBtn = $('move-make-btn');
@@ -5755,18 +5935,6 @@ const App = {
             const ready = () => { inBtn.disabled = !(fileIn.files.length && $('move-in-phrase').value.length >= 12); };
             fileIn.addEventListener('change', ready);
             $('move-in-phrase').addEventListener('input', ready);
-            const waitForRestart = async () => {
-                say(msg, 'Your old PawPoller is in. Restarting to finish — this takes about a minute…');
-                await new Promise(r => setTimeout(r, 5000));
-                let up = false;
-                for (let i = 0; i < 90 && !up; i++) {
-                    try { up = (await fetch('/api/health/ready', { cache: 'no-store' })).ok; } catch (e) { /* still down */ }
-                    if (!up) await new Promise(r => setTimeout(r, 2000));
-                }
-                if (!up) return say(msg, 'Your old PawPoller is in, but this PawPoller hasn\'t come back yet. Wait a few minutes, then reload the page.', 'bad');
-                say(msg, 'Your old PawPoller is in. Sign in with this PawPoller\'s own password.', 'good');
-                setTimeout(() => location.reload(), 2500);
-            };
             inBtn.addEventListener('click', async () => {
                 const file = fileIn.files[0], phrase = $('move-in-phrase').value;
                 inBtn.disabled = true; fileIn.disabled = true;
@@ -5785,26 +5953,11 @@ const App = {
                             id = await API.moveUpload(file, (got, size) => { bar.value = Math.round(100 * got / size); say(msg, `Uploading… ${mb(got)} of ${mb(size)}`); });
                         } else throw err;
                     }
-                    say(msg, 'Checking the file and your phrase…');
-                    const info = await API.moveCheck(id, phrase);
-                    const lines = [`This moving file came from PawPoller ${info.app_version}: ${info.files} files, ${mb(info.bytes)}.`];
-                    if (info.logins === 'unreadable') lines.push('Its site logins couldn\'t be read where it was made, so you\'ll enter them again.');
-                    if (info.here_has_work) lines.push('⚠ This PawPoller already has work in it. Its records will be replaced by the moving file\'s (a safety copy is kept first). Its artwork files are kept.');
-                    lines.push('Your sign-in here stays as it is.', '', 'Bring it in now?');
-                    if (!confirm(lines.join('\n'))) { say(msg, 'Not brought in. The upload is kept for a day if you change your mind — pick the same file again.'); return; }
-                    say(msg, 'Bringing it in…');
-                    await API.moveApply(id, phrase);
-                    $('move-in-phrase').value = '';
-                    let res;
-                    for (;;) {                       // a big library takes minutes; the page asks how it's going
-                        await new Promise(r => setTimeout(r, 2000));
-                        res = await API.moveApplyStatus().catch(() => ({ state: 'gone' }));
-                        if (res.state !== 'applying') break;
+                    if (!(await bringIn(id, phrase, msg, bar))) {
+                        say(msg, 'Not brought in. The upload is kept for a day if you change your mind — pick the same file again.');
+                        return;
                     }
-                    if (res.state === 'failed') throw new Error(res.error || 'Bringing it in stopped.');
-                    bar.value = 100;
-                    if (res.restarting || res.state === 'gone' || res.state === 'idle') return waitForRestart();   // it restarted under us
-                    say(msg, 'Your old PawPoller is in. Close PawPoller and open it again to finish.', 'good');
+                    $('move-in-phrase').value = '';
                 } catch (err) {
                     say(msg, err.message, 'bad');
                 } finally {
@@ -16114,11 +16267,59 @@ const App = {
                 <div class="settings-section" id="move-section">
                     <h3>Moving to another PawPoller</h3>
                     <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
-                        Moving into a hosted seat, or onto a new computer? Make a <strong>moving file</strong> here,
-                        then bring it in on the other PawPoller. Your library, history and site logins all come across;
-                        the other PawPoller keeps its own sign-in.
+                        Moving into a hosted seat? Send it straight there with the seat's <strong>move code</strong>.
+                        Moving somewhere else, or sending doesn't work? Make a <strong>moving file</strong> and bring it
+                        in on the other PawPoller. Your library, history and site logins all come across; the other
+                        PawPoller keeps its own sign-in.
                         <a href="#" data-guide="move">How moving works</a>
                     </div>
+                    <div id="move-receive" hidden>
+                        <div class="settings-row move-row">
+                            <div>
+                                <span class="settings-label">Receive a move</span>
+                                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
+                                    Bringing your old PawPoller here? Show a code, then type it into your old PawPoller
+                                    under Settings &rarr; Data &rarr; Send to my hosted seat. A code works once, for 30 minutes.
+                                </div>
+                            </div>
+                            <button class="btn btn-secondary" id="move-code-btn">Show a code</button>
+                        </div>
+                        <div id="move-code-box" class="move-code" hidden></div>
+                        <progress id="move-recv-progress" class="move-progress" max="100" value="0" hidden></progress>
+                        <span id="move-recv-msg" class="move-msg" role="status" aria-live="polite"></span>
+                        <div id="move-recv-actions" class="move-actions" hidden>
+                            <button class="btn btn-sm btn-primary" id="move-recv-bring">Bring it in</button>
+                            <button class="btn btn-sm btn-outline" id="move-recv-throw">Throw it away</button>
+                        </div>
+                        <hr style="border:none;border-top:1px solid var(--card-border-inner);margin:14px 0">
+                    </div>
+                    <div class="settings-row move-row">
+                        <div>
+                            <span class="settings-label">Send to my hosted seat</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
+                                On your hosted seat, open Settings &rarr; Data &rarr; Receive a move and press Show a code.
+                                Type the code here. Everything is locked with that code on the way.
+                            </div>
+                            <div class="move-fields">
+                                <label>Move code <input type="text" id="move-send-code" class="move-code-input" autocomplete="off"
+                                    autocapitalize="characters" spellcheck="false" placeholder="seatname-XXXX-XXXX-XXXX"></label>
+                                <label class="move-check"><input type="checkbox" id="move-send-pause" checked> Pause this copy afterwards (recommended)</label>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" id="move-send-btn" disabled>Next</button>
+                    </div>
+                    <div id="move-send-confirm" class="move-confirm" hidden>
+                        <span>Is this your seat? <strong id="move-send-address"></strong></span>
+                        <button class="btn btn-sm btn-primary" id="move-send-yes">Yes, send it</button>
+                        <button class="btn btn-sm btn-outline" id="move-send-no">No</button>
+                    </div>
+                    <progress id="move-send-progress" class="move-progress" max="100" value="0" hidden></progress>
+                    <span id="move-send-msg" class="move-msg" role="status" aria-live="polite"></span>
+                    <div id="move-send-actions" class="move-actions" hidden>
+                        <button class="btn btn-sm btn-secondary" id="move-send-resume" hidden>Carry on sending</button>
+                        <button class="btn btn-sm btn-outline" id="move-send-cancel">Cancel</button>
+                    </div>
+                    <hr style="border:none;border-top:1px solid var(--card-border-inner);margin:14px 0">
                     <div class="settings-row move-row">
                         <div>
                             <span class="settings-label">Move to a hosted seat</span>

@@ -2987,6 +2987,13 @@ html[data-mobile="1"] .tgopt input[type="checkbox"] { width: 20px; height: 20px;
 .move-fields input[type=password] { min-width: 220px; }
 .move-progress { width: 100%; height: 10px; margin-top: 8px; accent-color: var(--accent); }
 .move-msg { display: block; font-size: 13px; margin-top: 6px; white-space: pre-line; }
+/* 4.75.0 (spec 036): the seat's move code, read aloud or typed on another screen */
+.move-code { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 22px; letter-spacing: 0.08em;
+    color: var(--text-primary); background: var(--bg-secondary, transparent); overflow-wrap: anywhere; user-select: all; }
+.move-code-input { min-width: 240px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.move-confirm, .move-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; }
+.move-confirm strong { overflow-wrap: anywhere; }
 
 /* The clock (spec 016) */
 .btn-clock { background: transparent; border: 1px solid var(--border); border-radius: 999px; color: var(--text-secondary);

@@ -579,6 +579,15 @@ const API = {
     moveApply(id, phrase) { return this._moveCall('POST', `/api/move/uploads/${id}/apply`, { phrase, confirm: true }); },
     moveApplyStatus() { return this._moveCall('GET', '/api/move/apply'); },
     moveCancel(id) { return this._moveCall('DELETE', `/api/move/uploads/${id}`); },
+    /* 4.75.0 (spec 036): send straight to a seat with its one-time code. */
+    moveCodeGet() { return this._moveCall('GET', '/api/move/code'); },
+    moveCodeShow(replace) { return this._moveCall('POST', '/api/move/code', { replace: !!replace }); },
+    moveCodeCancel() { return this._moveCall('DELETE', '/api/move/code'); },
+    moveSendPreview(code) { return this._moveCall('POST', '/api/move/send/preview', { code }); },
+    moveSend(code, address, pause) { return this._moveCall('POST', '/api/move/send', { code, address, pause }); },
+    moveSendStatus() { return this._moveCall('GET', '/api/move/send'); },
+    moveSendResume() { return this._moveCall('POST', '/api/move/send/resume', {}); },
+    moveSendCancel() { return this._moveCall('POST', '/api/move/send/cancel', {}); },
     /* Send a file in pieces small enough for Cloudflare's 100 MB limit. Picking the same file again
        (same name and size) carries on from where the server says it got to; a dropped piece is
        retried a few times before giving up. onProgress(received, size). Resolves to the upload id. */

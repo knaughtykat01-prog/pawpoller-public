@@ -495,6 +495,10 @@ _PATHS = (
     P("data/move-in/", _SECRET, "A moving file being brought in from your other PawPoller.", backup="derivable"),
     P("data/move-out/", _SECRET, "A moving file made for your other PawPoller, until you download it.",
       backup="derivable"),
+    # 4.75.0 (spec 036): sending straight to a seat. Both hold keys derived from the seat's one-time
+    # code (never the code); move-out/send.json lives inside the folder above.
+    P("data/move-code.json", _SECRET, "The keys from the move code your hosted seat is showing, until the move is in.",
+      backup="derivable"),
     P("data/story-archive/", "Unpublished work", "Your story files (hosted seats and other containers).",
       backup="files"),
     P("data/restore-safety-<stamp>/", _SECRET,

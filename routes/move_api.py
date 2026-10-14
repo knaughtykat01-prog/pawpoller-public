@@ -52,6 +52,7 @@ MOVE_KIND = "pawpoller-move"
 PIECE_BYTES = 32 * 1024 * 1024          # each upload request stays far below Cloudflare's 100 MB
 MIN_PHRASE = 12
 STALE_SECONDS = 24 * 3600
+ARRIVED_KEEP = 7 * 24 * 3600            # 4.75.0 (spec 036): a move that was SENT here waits a week for its owner
 _SCRYPT = {"n": 2 ** 15, "r": 8, "p": 1}   # ~32 MB and ~0.1 s per guess
 _ID_RE = re.compile(r"[0-9a-f]{32}")
 
@@ -412,10 +413,30 @@ def upload_cancel(uid: str):
     d = _upload_dir(uid)
     _busy()
     try:
+        direct = _is_direct(d)
         shutil.rmtree(d, ignore_errors=True)
+        if direct:
+            from routes import move_direct_api
+            move_direct_api.forget_upload(uid)       # thrown away: its code is spent
     finally:
         _APPLY_LOCK.release()
     return {"ok": True}
+
+
+def _is_direct(d: Path) -> bool:
+    try:
+        return bool(json.loads((d / "upload.json").read_text("utf-8")).get("direct"))
+    except (OSError, ValueError):
+        return False
+
+
+def _phrase_for(d: Path, body: dict) -> str:
+    """The phrase that opens an upload's logins: typed for a moving file, derived from the seat's code
+    for one sent straight here (4.75.0, spec 036), so the body's phrase is ignored then."""
+    if _is_direct(d):
+        from routes import move_direct_api
+        return move_direct_api.phrase_for_upload(json.loads((d / "upload.json").read_text("utf-8")))
+    return str(body.get("phrase") or "")
 
 
 def _member_ok(name: str) -> bool:
@@ -531,7 +552,7 @@ def upload_check(uid: str, body: dict):
     _busy()
     try:
         d = _complete_upload(uid)
-        z, manifest, _creds = read_move(d / "file.part", str(body.get("phrase") or ""))
+        z, manifest, _creds = read_move(d / "file.part", _phrase_for(d, body))
         z.close()
     finally:
         _APPLY_LOCK.release()
@@ -694,7 +715,11 @@ def _run_apply(d: Path, phrase: str) -> None:
             safety = apply_move(z, manifest, creds, work)
         finally:
             z.close()
+        direct = _is_direct(d)
         shutil.rmtree(d, ignore_errors=True)
+        if direct:
+            from routes import move_direct_api
+            move_direct_api.forget_upload(d.name)        # brought in: its code is spent
         restarting = _in_container()
         _APPLY.update(state="done", safety_copy=safety, restarting=restarting, logins=_logins_word(manifest))
         logger.info("Move: brought in %d files (%d bytes), logins %s; safety copy %s.",
@@ -723,11 +748,12 @@ def upload_apply(uid: str, body: dict):
     _busy()
     try:
         d = _complete_upload(uid)
-        z, _m, _c = read_move(d / "file.part", str(body.get("phrase") or ""))   # wrong phrase/file: say so now
+        phrase = _phrase_for(d, body)
+        z, _m, _c = read_move(d / "file.part", phrase)   # wrong phrase/file: say so now
         z.close()
         _APPLY.clear()
         _APPLY.update(state="applying")
-        threading.Thread(target=_run_apply, args=(d, str(body.get("phrase") or "")),
+        threading.Thread(target=_run_apply, args=(d, phrase),
                          name="move-apply", daemon=True).start()   # the thread releases the lock
     except BaseException:
         _APPLY_LOCK.release()
@@ -753,8 +779,13 @@ def prune_stale(now: float | None = None) -> int:
             for p in root.iterdir():
                 try:
                     times = [p.stat().st_mtime] + ([c.stat().st_mtime for c in p.iterdir()] if p.is_dir() else [])
-                    if now - max(times) > STALE_SECONDS:
+                    arrived = p.is_dir() and _arrived(p)
+                    if now - max(times) > (ARRIVED_KEEP if arrived else STALE_SECONDS):
+                        direct = p.is_dir() and _is_direct(p)
                         shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)
+                        if direct:
+                            from routes import move_direct_api
+                            move_direct_api.forget_upload(p.name)
                         if root == _out_dir():
                             _EXPORT.clear()
                             _EXPORT.update(state="idle")
@@ -764,3 +795,10 @@ def prune_stale(now: float | None = None) -> int:
     finally:
         _APPLY_LOCK.release()
     return n
+
+
+def _arrived(d: Path) -> bool:
+    try:
+        return bool(json.loads((d / "upload.json").read_text("utf-8")).get("arrived_at"))
+    except (OSError, ValueError):
+        return False
