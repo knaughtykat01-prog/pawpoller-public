@@ -1362,7 +1362,15 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.75.0"
+APP_VERSION = "4.76.0"
+# Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
+# site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
+# releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).
+RELEASE_STAGE = "Beta"
+
+
+def version_label(v: str | None = None) -> str:
+    return f"{v or APP_VERSION} {RELEASE_STAGE}".strip()
 
 
 def _app_commit() -> str:

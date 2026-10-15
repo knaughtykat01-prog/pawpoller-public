@@ -289,6 +289,12 @@ const Utils = {
      * usernames, descriptions) are inserted via innerHTML.  Encodes
      * the four dangerous HTML characters: & < > "
      */
+    // "4.76.0 Beta": the version as people should read it (config.RELEASE_STAGE, via index.html).
+    versionLabel(v) {
+        const stage = document.querySelector('meta[name="pp-release-stage"]')?.content || '';
+        return `${v}${stage && !stage.startsWith('__') ? ' ' + stage : ''}`;
+    },
+
     escapeHtml(str) {
         if (!str) return '';
         return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');

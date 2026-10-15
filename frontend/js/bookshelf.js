@@ -330,6 +330,7 @@ window.Bookshelf = {
         const shelfControls = isDisc ? '' : `
                 ${personaSel}
                 <input id="shelf-search" class="shelf-input" type="search" placeholder="Search — try tag:white_tiger -tag:cum artist:…" title="Bare words match title/name. Fields: tag: platform: artist: persona: rating: type: series: status:  —  prefix with - (or use tag_exclude:) to exclude, comma for or, * for wildcard, quotes for spaces. e.g. tag:white_tiger -tag:cum status:draft" value="${this.esc(this._search)}">
+                <span class="shelf-right">
                 <select id="shelf-sort" class="shelf-input shelf-sort" aria-label="Sort by">
                     <option value="recent">Recently posted</option>
                     <option value="added">Recently added</option>
@@ -351,7 +352,8 @@ window.Bookshelf = {
                     <option value="">Every platform</option>
                     ${(window.visiblePlatforms ? window.visiblePlatforms() : (window.PLATFORMS || []))
                         .map(p => `<option value="${this.esc(p.code)}"${p.code === this._platform ? ' selected' : ''}>${this.esc(p.emoji ? p.emoji + ' ' + p.label : p.label)}</option>`).join('')}
-                </select>`;
+                </select>
+                </span>`;
         // Tools row (4.47.0): the versions/chapters switch, and the Masterpieces
         // grid's tools — they act on artwork, so they show on All and Artwork.
         const arty = this._type === 'all' || this._type === 'artwork';

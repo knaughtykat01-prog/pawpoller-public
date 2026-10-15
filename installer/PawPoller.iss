@@ -23,6 +23,10 @@
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0-dev"
 #endif
+; config.RELEASE_STAGE ("Beta"): the NAME people see only. AppVersion stays plain numbers.
+#ifndef MyAppStage
+  #define MyAppStage ""
+#endif
 
 #define MyAppName       "PawPoller"
 #define MyAppPublisher  "KnaughtyKat"
@@ -34,7 +38,7 @@
 AppId={#MyAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppVerName={#MyAppName} {#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion} {#MyAppStage}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}/issues

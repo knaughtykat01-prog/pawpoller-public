@@ -299,6 +299,9 @@ def test_the_library_filter_bar_floats(browser, app_url):
                 page.wait_for_timeout(200)
                 assert not page.evaluate("document.documentElement.classList.contains('shelf-open')")
             else:
+                # MENUZ (4.76.0): with the top bar it floats just under the bar, not over it.
+                if page.evaluate("document.documentElement.dataset.navmode") == "top":
+                    expect_top = page.evaluate("document.querySelector('.sidebar').getBoundingClientRect().bottom")
                 assert abs(top - expect_top) <= 2, f"{vp['width']}px wide: the filter bar scrolled away (top={top})"
         finally:
             ctx.close()

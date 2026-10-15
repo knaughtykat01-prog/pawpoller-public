@@ -18,12 +18,24 @@ permalink and the handled flag joined on.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 # Platforms the Inbox can reply on natively (routes/inbox_api.py); Facebook since 4.59.0.
 REPLYABLE = frozenset({"bsky", "mast", "e621", "fb"})
+
+# A comment written more than this long ago is handled automatically (4.76.0, operator's rule):
+# a first capture of a big back catalogue otherwise brings years-old comments in as "to answer".
+AUTO_HANDLED_AFTER = timedelta(days=365)
+_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")   # every source stores ISO dates (IB "YYYY-MM-DD hh:mm:ss")
+
+
+def _older_than_cutoff(commented_at, cutoff: str) -> bool:
+    """True if the comment's date is before *cutoff* (YYYY-MM-DD). An unreadable date never is."""
+    m = _DAY.match(str(commented_at or ""))
+    return bool(m) and m.group(0) < cutoff
 
 
 def ensure_inbox_tables(conn: sqlite3.Connection) -> None:
@@ -124,6 +136,17 @@ def set_handled(conn: sqlite3.Connection, platform: str, comment_id: str,
     conn.commit()
 
 
+def set_handled_many(conn: sqlite3.Connection, keys: list[tuple[str, str]]) -> int:
+    """Mark many comments handled in one transaction (Handle all, 4.76.0). Returns how many."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    conn.executemany(
+        """INSERT INTO inbox_state (platform, comment_id, handled_at) VALUES (?, ?, ?)
+           ON CONFLICT(platform, comment_id) DO UPDATE SET handled_at = excluded.handled_at""",
+        [(p, str(c), now) for p, c in keys])
+    conn.commit()
+    return len(keys)
+
+
 def get_inbox(conn: sqlite3.Connection, *, platform: str | None = None,
               unhandled_only: bool = False, limit: int = 200) -> list[dict]:
     """The unified inbox: IB + FA legacy tables ∪ platform_comments, newest
@@ -192,6 +215,7 @@ def get_inbox(conn: sqlite3.Connection, *, platform: str | None = None,
     # Native reply is wired for these (Stage B); everything else is
     # "Reply on site ↗" via the permalink.
     replyable = REPLYABLE
+    cutoff = (datetime.now(timezone.utc) - AUTO_HANDLED_AFTER).strftime("%Y-%m-%d")
 
     out = []
     for r in rows:
@@ -203,7 +227,11 @@ def get_inbox(conn: sqlite3.Connection, *, platform: str | None = None,
         # time is deliberate: it also fixes rows captured BEFORE 2.192.0, and
         # rows the old auto-handle branch could never reach because it only ran
         # inside `if is_new:` and so never retro-handled an existing row.
-        r["handled"] = r["is_own"] or (r["platform"], str(r["comment_id"])) in handled
+        marked = (r["platform"], str(r["comment_id"])) in handled
+        # Older than a year: handled without being marked, so it also covers rows already stored
+        # and needs no write. The page shows why instead of an Unhandle button.
+        r["auto_handled"] = not (r["is_own"] or marked) and _older_than_cutoff(r.get("commented_at"), cutoff)
+        r["handled"] = r["is_own"] or marked or r["auto_handled"]
         if unhandled_only and r["handled"]:
             continue
         r["can_reply"] = r["platform"] in replyable

@@ -66,6 +66,8 @@ jobs:
           $version = $line.Matches[0].Groups[1].Value
           Write-Host "Detected version: $version"
           "version=$version" >> $env:GITHUB_OUTPUT
+          $stage = (Select-String -Path config.py -Pattern '^RELEASE_STAGE\s*=\s*"([^"]*)"' | Select-Object -First 1)
+          "stage=$(if ($stage) { $stage.Matches[0].Groups[1].Value })" >> $env:GITHUB_OUTPUT
 
       # Inno Setup ships pre-installed on github's windows-latest runner
       # (under "C:\Program Files (x86)\Inno Setup 6\" — verified
@@ -79,7 +81,7 @@ jobs:
             choco install innosetup --no-progress -y
             $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           }
-          & "$iscc" /DMyAppVersion="${{ steps.version.outputs.version }}" installer\PawPoller.iss
+          & "$iscc" /DMyAppVersion="${{ steps.version.outputs.version }}" /DMyAppStage="${{ steps.version.outputs.stage }}" installer\PawPoller.iss
           if ($LASTEXITCODE -ne 0) { throw "iscc exited $LASTEXITCODE" }
 
       # A `<asset>.sha256` beside each desktop asset (4.40.2). The in-app updater
@@ -109,6 +111,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
+          # "PawPoller 4.76.0 Beta" (RELEASE_STAGE). Never prerelease: true — releases/latest skips
+          # those, and every updater reads releases/latest.
+          name: PawPoller ${{ steps.version.outputs.version }} ${{ steps.version.outputs.stage }}
           files: |
             dist/PawPoller-windows-x64.zip
             dist/PawPoller-windows-x64.zip.sha256

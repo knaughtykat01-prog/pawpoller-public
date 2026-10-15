@@ -36,14 +36,18 @@
 #shelf-controls {
     position: sticky;
     top: 0;
-    z-index: 30;
+    /* Above the covers' own layers (≤ 3), below the fixed bar/rail (10), so the account menu and the
+       nav it holds stay on top (MENUZ, 4.76.0: at 30 it covered the account menu and slid over the bar). */
+    z-index: 9;
     background: var(--bg-primary);
     margin: 0 -32px;
     padding: .7rem 32px 0;
 }
-#shelf-controls .shelf-controls { margin-bottom: .9rem; padding-right: 64px; }   /* clears the fixed bell */
+#shelf-controls .shelf-controls { margin-bottom: .9rem; }   /* the bell lives in the bar since spec 019: no corner to clear */
 /* WCAG 2.4.11: a focused cover never hides behind the floating bar. */
 html:has(#shelf-controls) { scroll-padding-top: 7rem; }
+/* Top-bar layout: stick just under the 58px bar, not behind it. */
+@media (min-width: 900px) { html[data-navmode="top"]:not([data-mobile="1"]) #shelf-controls { top: 58px; } }
 @media (max-width: 768px) {
     /* Phones (4.56.2, LIBROW): the one sideways-swipe row hid search and every filter off the
        right edge, cut mid-control, and the floating bar it lived in took a third of the screen.
@@ -66,6 +70,7 @@ html:has(#shelf-controls) { scroll-padding-top: 7rem; }
     /* Five tabs fit a 360px phone without swiping; they still swipe if a label grows. */
     #shelf-controls .shelf-seg { flex: 1 0 auto; padding: .5rem .55rem; font-size: .8rem; min-height: 40px; }
     #shelf-controls #shelf-search { grid-column: 1 / -1; }
+    #shelf-controls .shelf-right { display: contents; }   /* its selects stay cells of the 2-up grid */
     #shelf-controls .shelf-input { width: 100%; min-width: 0; max-width: none; }
     html:has(#shelf-controls) { scroll-padding-top: calc(var(--mbar-h, 0px) + 1rem); }
 }
@@ -128,7 +133,10 @@ html[data-mobile="1"].shelf-open #shelf-controls {
     max-width: 220px;
 }
 .shelf-input:focus { outline: none; border-color: var(--accent); }
-.shelf-sort { margin-left: auto; }
+/* Sort + the two filters are one group (4.76.0): pushed right together and wrapping together,
+   never one select at a time. The search takes whatever room is left. */
+.shelf-right { display: flex; gap: .6rem; flex-wrap: wrap; margin-left: auto; }
+#shelf-search { flex: 1 1 160px; max-width: 280px; }   /* one id: the phone rules below still win */
 
 /* ── The shelf ── */
 .shelf-grid {
@@ -434,7 +442,7 @@ html[data-mobile="1"].shelf-open #shelf-controls {
         grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; gap: 1.25rem;
         padding-left: 0; padding-top: 1.1rem; border-left: none; border-top: 1px solid var(--card-border-inner);
     }
-    .shelf-sort { margin-left: 0; }
+    .shelf-right { margin-left: 0; }
 }
 
 /* 4.18.0 (MEDIATYPES): kind + length pill on a video / audio piece's cover. */

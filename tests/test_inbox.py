@@ -143,3 +143,41 @@ def test_reply_refuses_a_never_post_account(monkeypatch):
         "platform": "bsky", "comment_id": "at://did:plc:x/app.bsky.feed.post/r1", "text": "thanks!"})
     assert r.status_code == 403
     assert r.json()["detail"] == accounts_db.NEVER_POST_ERROR
+
+def test_handle_all_clears_everything_or_one_platform():
+    conn = get_connection()
+    try:
+        for n in range(3):
+            _seed_platform_comment(conn, cid=f"at://did:plc:x/app.bsky.feed.post/r{n}")
+        inbox_queries.upsert_platform_comment(conn, "da", "da-1", "d1", author="fan2", body="new one",
+                                              commented_at=_days_ago(3))
+    finally:
+        conn.close()
+    c = _client()
+    assert c.get("/api/inbox").json()["unhandled_count"] == 4
+    r = c.post("/api/inbox/handled-all", json={"platform": "da"})
+    assert r.json() == {"ok": True, "handled": 1}
+    left = c.get("/api/inbox?unhandled=true").json()["items"]
+    assert {i["platform"] for i in left} == {"bsky"} and len(left) == 3
+    assert c.post("/api/inbox/handled-all", json={}).json()["handled"] == 3
+    assert c.get("/api/inbox").json()["unhandled_count"] == 0
+
+def _days_ago(n):
+    from datetime import datetime, timedelta, timezone
+    return (datetime.now(timezone.utc) - timedelta(days=n)).strftime("%Y-%m-%dT%H:%M:%S-0700")
+
+
+def test_comments_older_than_a_year_are_handled_automatically():
+    conn = get_connection()
+    try:
+        for cid, when in (("old", "2017-08-16T00:57:09-0700"), ("year-and-a-day", _days_ago(366)),
+                          ("recent", _days_ago(300)), ("no-date", "")):
+            inbox_queries.upsert_platform_comment(conn, "da", cid, "d1", author="fan", body="b",
+                                                  commented_at=when)
+        items = {i["comment_id"]: i for i in inbox_queries.get_inbox(conn)}
+    finally:
+        conn.close()
+    assert items["old"]["handled"] and items["old"]["auto_handled"]
+    assert items["year-and-a-day"]["auto_handled"]
+    assert not items["recent"]["handled"] and not items["no-date"]["handled"]   # unreadable date: still shown
+    assert _client().get("/api/inbox").json()["unhandled_count"] == 2

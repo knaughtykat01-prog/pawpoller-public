@@ -858,7 +858,7 @@ def _render_index_html() -> str:
     if cached is not None:
         return cached
     raw = (frontend_dir / "index.html").read_text(encoding="utf-8")
-    rendered = raw.replace("__APP_VERSION__", version)
+    rendered = raw.replace("__APP_VERSION__", version).replace("__RELEASE_STAGE__", config.RELEASE_STAGE)
     _index_html_cache[version] = rendered
     return rendered
 

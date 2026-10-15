@@ -6474,7 +6474,7 @@ const App = {
         ov.innerHTML = `
             <div class="wn-modal" role="dialog" aria-modal="true" aria-label="What's new">
                 <div class="wn-top">
-                    <h2>✨ What's new <span class="wn-cur">v${esc(data.current)}</span></h2>
+                    <h2>✨ What's new <span class="wn-cur">v${esc(Utils.versionLabel(data.current))}</span></h2>
                     <button class="wn-x" type="button" aria-label="Close">×</button>
                 </div>
                 <div class="wn-scroll">${items}${more}</div>
@@ -15426,7 +15426,7 @@ const App = {
                         connection: _isServer ? 'server' : (_isPaired ? 'paired' : (_isConnectedPending ? 'restart' : (_setupMode === 'connected' ? 'connected' : 'standalone'))),
                         platforms: `${[faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, r34Auth, scAuth, ngAuth, ytAuth, picAuth, fbAuth].filter(a => a && (a.has_credentials || a.has_cookies || a.has_key)).length + (creds.username ? 1 : 0)} connected`,
                         polling: pollPausedState.polling_paused ? 'paused' : (_pollingOwner === 'local' ? (_isServer ? 'this server' : 'this computer') : 'server'),
-                        about: updateInfo && updateInfo.current && updateInfo.current !== '?' ? updateInfo.current : '',
+                        about: updateInfo && updateInfo.current && updateInfo.current !== '?' ? Utils.versionLabel(updateInfo.current) : '',
                         telegram: telegram.connected ? 'connected' : '',
                     })}
                 </aside>
@@ -16447,7 +16447,7 @@ const App = {
                     <h3>Update Available</h3>
                     <div class="settings-row">
                         <div>
-                            <span class="settings-label">Current: ${Utils.escapeHtml(updateInfo.current)} &rarr; Latest: ${Utils.escapeHtml(updateInfo.latest)}</span>
+                            <span class="settings-label">Current: ${Utils.escapeHtml(Utils.versionLabel(updateInfo.current))} &rarr; Latest: ${Utils.escapeHtml(Utils.versionLabel(updateInfo.latest))}</span>
                             ${_isServer ? '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">This is a server install — run <code>./update.sh</code> on the host, or use the button under <b>Server updates</b> below.</div>' : ''}
                         </div>
                         ${_isServer ? '' : '<div style="display:flex;gap:8px;align-items:center"><button class="btn btn-primary" id="apply-update-btn">Update Now</button><button class="btn btn-secondary" id="skip-update-btn" style="padding:4px 10px;font-size:12px" title="Don\'t offer this version again at startup; the next one will be">Skip this version</button></div>'}
@@ -16456,7 +16456,7 @@ const App = {
                 <div class="settings-section">
                     <h3>Version</h3>
                     <div class="settings-row">
-                        <span class="settings-label">Version ${Utils.escapeHtml(updateInfo.current)}</span>
+                        <span class="settings-label">Version ${Utils.escapeHtml(Utils.versionLabel(updateInfo.current))}</span>
                         <div style="display:flex;align-items:center;gap:10px">
                             <span class="settings-value" style="color:var(--success)" id="update-status-text">Up to date</span>
                             <button class="btn btn-secondary" id="check-update-btn" style="padding:4px 12px;font-size:12px">Check for Updates</button>

@@ -3,6 +3,8 @@
 - ``GET  /api/inbox``          — the cross-platform comment feed (IB + FA legacy
   tables ∪ platform_comments), newest-first, with handled flags.
 - ``POST /api/inbox/handled``  — mark/unmark one comment handled.
+- ``POST /api/inbox/handled-all`` — mark every unhandled comment handled, optionally on one
+  platform (4.76.0: a big back catalogue's first capture can bring hundreds of old comments).
 - ``POST /api/inbox/reply``    — native reply where the platform supports it
   (Stage B: bsky / mast / e621 / fb). Everything else replies on-site via permalink.
 - ``POST /api/inbox/backfill-own`` — re-run own-comment detection (2.192.0).
@@ -91,6 +93,21 @@ def set_handled(body: dict):
     finally:
         conn.close()
     return {"ok": True}
+
+
+@inbox_router.post("/handled-all")
+def set_all_handled(body: dict | None = None):
+    """Everything still to answer (on one platform, if given) becomes handled. Undo is per
+    comment, under "show handled"."""
+    platform = (body or {}).get("platform") or None
+    conn = get_connection()
+    try:
+        items = inbox_queries.get_inbox(conn, platform=platform, unhandled_only=True, limit=10 ** 9)
+        n = inbox_queries.set_handled_many(conn, [(i["platform"], i["comment_id"]) for i in items])
+    finally:
+        conn.close()
+    logger.info("Inbox: %d comment(s) marked handled%s", n, f" on {platform}" if platform else "")
+    return {"ok": True, "handled": n}
 
 
 def _get_platform_comment(platform: str, comment_id: str) -> dict | None:

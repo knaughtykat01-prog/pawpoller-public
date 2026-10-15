@@ -54,6 +54,8 @@ window.Inbox = {
             <div class="page-header">
                 <h1>💬 Inbox <span class="muted" style="font-size:.6em">${data.unhandled_count || 0} to answer</span></h1>
                 <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+                    ${!this._showHandled && items.length ? `<button class="btn btn-sm" id="inbox-handle-all"
+                        title="Mark every comment listed here as handled. You can undo any one under show handled.">✓ Handle all</button>` : ''}
                     <select id="inbox-plat" class="search-input" style="max-width:180px">${platOpts}</select>
                     <label style="font-size:12px;color:var(--text-muted);cursor:pointer">
                         <input type="checkbox" id="inbox-show-handled" ${this._showHandled ? 'checked' : ''}> show handled
@@ -68,10 +70,37 @@ window.Inbox = {
         document.getElementById('inbox-plat')?.addEventListener('change', (e) => {
             this._platform = e.target.value; this.render();
         });
+        document.getElementById('inbox-handle-all')?.addEventListener('click', async (e) => {
+            const n = this._platform ? items.length : (data.unhandled_count || items.length);
+            const where = this._platform ? ' on ' + this._plat(this._platform).label : '';
+            if (!confirm(`Mark all ${n} comments${where} as handled?\n\nYou can bring any one back with "show handled".`)) return;
+            e.currentTarget.disabled = true;
+            try {
+                const r = await fetch('/api/inbox/handled-all', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ platform: this._platform || null }),
+                });
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                this.render();
+            } catch (err) {
+                e.currentTarget.disabled = false;
+                if (window.toast) window.toast.error('Handle all failed: ' + (err.message || err));
+            }
+        });
         document.getElementById('inbox-show-handled')?.addEventListener('change', (e) => {
             this._showHandled = e.target.checked; this.render();
         });
         this._wire();
+    },
+
+    // DeviantArt sends comment bodies as HTML ("<br />", entities). Shown as text: line breaks
+    // kept, tags dropped. DOMParser builds an inert document (no scripts run, nothing loads),
+    // and the result is still escaped by _card.
+    _text(i) {
+        const b = String(i.body || '');
+        if (i.platform !== 'da' || !/<\/?[a-z][^>]*>|&[#a-z0-9]+;/i.test(b)) return b;
+        const doc = new DOMParser().parseFromString(b.replace(/<br\s*\/?>/gi, '\n'), 'text/html');
+        return (doc.body.textContent || '').trim();
     },
 
     _card(i) {
@@ -88,12 +117,13 @@ window.Inbox = {
                     <span style="font-size:13px">${this.esc(i.submission_title || i.submission_id)}</span>
                     <span class="muted" style="font-size:11px;margin-left:auto">${this.esc(when)}</span>
                 </div>
-                <div style="margin:6px 0 8px;white-space:pre-wrap;font-size:14px">${this.esc(i.body || '')}</div>
+                <div style="margin:6px 0 8px;white-space:pre-wrap;font-size:14px">${this.esc(this._text(i))}</div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
                     ${i.can_reply ? `<button class="btn btn-sm btn-primary" data-inbox-reply>Reply</button>` : ''}
                     ${i.permalink ? `<a class="btn btn-sm btn-outline" href="${this.esc(i.permalink)}" target="_blank" rel="noopener">Open ↗${i.can_reply ? '' : ' (reply on-site)'}</a>` : ''}
+                    ${i.auto_handled ? `<span class="muted" style="font-size:12px">Older than a year, so handled automatically</span>` : `
                     <button class="btn btn-sm ${i.handled ? 'btn-outline' : ''}" data-inbox-handled="${i.handled ? '0' : '1'}">
-                        ${i.handled ? '↩ Unhandle' : '✓ Handled'}</button>
+                        ${i.handled ? '↩ Unhandle' : '✓ Handled'}</button>`}
                     <span class="inbox-msg muted" style="font-size:12px"></span>
                 </div>
                 ${i.can_reply ? `

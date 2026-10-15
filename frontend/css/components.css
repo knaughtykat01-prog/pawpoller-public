@@ -2994,6 +2994,7 @@ html[data-mobile="1"] .tgopt input[type="checkbox"] { width: 20px; height: 20px;
 .move-code-input { min-width: 240px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .move-confirm, .move-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; }
 .move-confirm strong { overflow-wrap: anywhere; }
+.move-confirm[hidden], .move-actions[hidden], .move-code[hidden] { display: none; }   /* display:flex above beats [hidden] */
 
 /* The clock (spec 016) */
 .btn-clock { background: transparent; border: 1px solid var(--border); border-radius: 999px; color: var(--text-secondary);
