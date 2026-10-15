@@ -518,7 +518,15 @@ class DAClient:
             # Cold cache: one gallery enumeration fills it for every deviation.
             await self.get_all_deviation_ids()
             cached = self._gallery_cache.get(did)
-        return (cached or {}).get("uuid", "")
+        uuid = (cached or {}).get("uuid", "")
+        if not uuid:
+            # Was returned as "": the edit then went to `/deviation/edit/` with no id and DA
+            # answered "Api endpoint not found" (4.77.0) — true, and no help at all.
+            raise RuntimeError(
+                f"DA: deviation {did} isn't in {self.target_user or '(no username set)'}'s gallery, "
+                "so PawPoller can't look up the id DeviantArt needs to edit it. Check this "
+                "account's DeviantArt username in Accounts, and that the deviation is still up.")
+        return uuid
 
     async def get_all_deviation_ids(self) -> list[dict]:
         """Enumerate the target user's deviations (OAuth primary, cookie fallback)."""

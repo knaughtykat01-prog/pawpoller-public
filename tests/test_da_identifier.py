@@ -145,9 +145,13 @@ def test_a_legacy_guid_row_still_edits(tmp_path):
     assert c.gallery_calls == 0, "a GUID needs no lookup — that would be a wasted fetch"
 
 
-def test_uuid_for_warms_a_cold_cache_once():
+def test_uuid_for_warms_a_cold_cache_once_then_says_what_is_wrong():
+    # A miss used to return "", so the edit hit `/deviation/edit/` and DA said "Api endpoint
+    # not found" (4.77.0). It now names the deviation and the gallery it looked in.
+    import pytest
     c = _FakeClient()
-    assert asyncio.run(c.uuid_for("999")) == ""
+    with pytest.raises(RuntimeError, match="999 isn't in .*gallery"):
+        asyncio.run(c.uuid_for("999"))
     assert c.gallery_calls == 1, "a cold cache must be filled before giving up"
 
 

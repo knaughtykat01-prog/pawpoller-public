@@ -1246,7 +1246,17 @@ window.Masterpieces = {
             const postOnly = this._POST_ONLY.has(l.platform)
                 ? `<span class="mp-role mp-role--postonly" title="This site can't be edited in place — re-post to update">post-only</span>` : '';
             const safe = window.Utils && Utils.safeUrl ? Utils.safeUrl(l.url) : l.url;
-            const link = safe ? `<a class="btn btn-sm" href="${this.esc(safe)}" target="_blank" rel="noopener">open&nbsp;&#8599;</a>` : '<span></span>';
+            const open = safe ? `<a class="btn btn-sm" href="${this.esc(safe)}" target="_blank" rel="noopener">open&nbsp;&#8599;</a>` : '';
+            // Per-site sync (4.77.0, ARTSYNCPICK): the stories' drifted rows, for artwork.
+            // "title differs" is the one drift the polled data can show (descriptions and
+            // tags aren't polled everywhere), so it says exactly that and no more.
+            const editable = !this._POST_ONLY.has(l.platform);
+            const norm = (s) => String(s || '').trim().toLowerCase();
+            const differs = editable && l.title && m.title && norm(l.title) !== norm(m.title)
+                ? `<span class="mp-role mp-role--drift" title="Live title: ${this.esc(l.title)}">title differs</span>` : '';
+            const syncOne = editable ? `<button class="btn btn-sm${differs ? ' btn-primary' : ''}" data-mp-sync data-platform="${this.esc(l.platform)}" type="button"
+                title="Push this record to ${this.esc(p.label)} only (metadata — never re-uploads the image)">Sync</button>` : '';
+            const link = `<span class="loc-acts">${syncOne}${open}</span>`;
             // Which render this upload is (4.34.0, VARSPLIT). A piece can hold several
             // submissions on ONE site now, so the row has to say which is which — the
             // account and title alone no longer identify it.
@@ -1257,7 +1267,7 @@ window.Masterpieces = {
                 <div class="loc-row">
                     ${thumb}
                     <div class="loc-site">
-                        <span class="name">${this._healthDot(l.platform)}${p.emoji || ''} ${this.esc(p.label)} ${role}${postOnly}</span>
+                        <span class="name">${this._healthDot(l.platform)}${p.emoji || ''} ${this.esc(p.label)} ${role}${postOnly}${differs}</span>
                         ${sub ? `<span class="sub">${sub}</span>` : ''}
                     </div>
                     <span class="loc-stats" title="views · favourites · comments">${this._fmt(st.views)} · ${this._fmt(st.favorites)} · ${this._fmt(st.comments)}</span>
@@ -2408,9 +2418,10 @@ window.Masterpieces = {
         // but OVERWRITES title/description/tags/rating on every live upload,
         // so it lists the sites it will rewrite; post-only ones show struck.
         const m = this._detail || {};
+        const only = btn.dataset.platform || '';    // a site's own Sync button (4.77.0)
         const seen = new Set();
         const targets = (m.locations || [])
-            .filter(l => l.platform && !seen.has(l.platform) && seen.add(l.platform))
+            .filter(l => l.platform && (!only || l.platform === only) && !seen.has(l.platform) && seen.add(l.platform))
             .map(l => {
                 const p = this._plat(l.platform);
                 return { code: l.platform, label: p.label, emoji: p.emoji,
@@ -2427,7 +2438,8 @@ window.Masterpieces = {
         try {
             await API.patchMasterpiece(this._current, this._readCanonical());   // save first, then push
             this._msg('Syncing…', false);
-            const res = await API.syncMasterpiece(this._current, { confirm_live: true });
+            const res = await API.syncMasterpiece(this._current, only
+                ? { confirm_live: true, platforms: [only] } : { confirm_live: true });
             const fail = Components.showPublishResults(msg, res.results, { okText: 'Synced' });
             const parts = [`synced ${res.synced}`];
             if (res.skipped) parts.push(`${res.skipped} post-only`);

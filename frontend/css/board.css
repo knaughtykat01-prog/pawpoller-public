@@ -164,6 +164,8 @@
 .loc-site .sub { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .loc-stats { font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; }
 .loc-row .mp-loc-detach { padding: .1rem .3rem; }
+.loc-acts { display: flex; gap: 6px; align-items: center; }
+.mp-role--drift { color: var(--warning); border-color: currentColor; }
 /* The credential dot (§5.5) — the only surface that never showed platform
    health was the detail page, and "why did this site stop growing" is
    answered here. Classes follow PlatformHealth.classify(). */
