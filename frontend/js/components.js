@@ -2693,6 +2693,18 @@ const Components = {
     /**
      * TW-specific poll history table with color-coded status.
      */
+    /** Which X source answered a poll, in words. Anything other than gallery-dl
+     *  answering on its own shows in the warning colour: a quiet fallback used to
+     *  look exactly like a normal poll. */
+    twSourceLabel(code) {
+        if (!code) return '<span style="color:var(--text-muted)">--</span>';
+        const [src, why] = String(code).split(':');
+        const name = { gallerydl: 'gallery-dl', official: 'X API (paid)', graphql: 'Scraper' }[src] || src;
+        const note = { missing: 'gallery-dl not installed', failed: 'gallery-dl failed' }[why];
+        const warn = src !== 'gallerydl';
+        return `<span style="color:${warn ? 'var(--warning)' : 'var(--success)'}">${Utils.escapeHtml(name)}${note ? ` <small>(${note})</small>` : ''}</span>`;
+    },
+
     twPollLogTable(polls) {
         if (!polls || polls.length === 0) {
             return '<p style="color:var(--text-muted)">No TW polls recorded yet.</p>';
@@ -2704,6 +2716,7 @@ const Components = {
                 <td>${p.submissions_found || 0}</td>
                 <td>${p.snapshots_inserted || 0}</td>
                 <td>${p.duration_seconds ? p.duration_seconds.toFixed(1) + 's' : '--'}</td>
+                <td>${Components.twSourceLabel(p.backend)}</td>
                 <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Utils.escapeHtml(p.error_message || '')}</td>
             </tr>
         `).join('');
@@ -2712,7 +2725,7 @@ const Components = {
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Time</th><th>Status</th><th>Subs</th><th>Snaps</th><th>Duration</th><th>Error</th>
+                        <th>Time</th><th>Status</th><th>Subs</th><th>Snaps</th><th>Duration</th><th>Source</th><th>Error</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>

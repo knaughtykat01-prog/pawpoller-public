@@ -54,10 +54,23 @@ def _db_time(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def pressure(conn: sqlite3.Connection, sites, now: datetime | None = None) -> list[dict]:
-    """Per-site counts for the details answer (contracts/details-pressure.md)."""
+def pressure(conn: sqlite3.Connection, sites, now: datetime | None = None,
+             since: str | None = None) -> list[dict]:
+    """Per-site counts for the details answer (contracts/details-pressure.md).
+
+    ``since`` (4.77.3): when a move was brought in. The moved library carries the OLD copy's
+    poll log, and this seat never made those checks: counting them alerted "turned seat
+    away 3 checks in a row" minutes after a move, before the seat had checked anything.
+    """
     now = now or datetime.now(timezone.utc)
     week, day = now - timedelta(days=7), now - timedelta(days=1)
+    try:
+        moved = datetime.fromisoformat(str(since).replace("Z", "+00:00")) if since else None
+    except ValueError:
+        moved = None
+    if moved and moved.tzinfo and moved > week:
+        week = moved
+        day = max(day, moved)
     day_db, day_iso = _db_time(day), day.strftime("%Y-%m-%dT%H:%M:%SZ")
     skipped = skip_times(conn, week.strftime("%Y-%m-%dT%H:%M:%SZ"))
     out = []

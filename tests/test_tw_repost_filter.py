@@ -6,7 +6,7 @@ must skip reposts while keeping the account's own posts, replies, and quotes.
 """
 
 from clients.tw.client import (
-    _is_repost, _user_tagged_in, _repost_original, _snowflake_to_utc, TWClient,
+    _is_repost, _is_own_repost, _repost_original, _snowflake_to_utc, TWClient,
 )
 
 
@@ -43,18 +43,32 @@ def test_missing_or_empty_is_not_repost():
     assert _is_repost(None) is False
 
 
-# ── Tagged-repost handling (keep reposts that @mention the account) ──
+# ── Only reposts of the account's OWN posts are kept ──
 
-def test_repost_that_tags_user_is_kept():
-    r = _repost({"entities": {"user_mentions": [{"screen_name": "TestHandle"}]}})
-    assert _is_repost(r) is True
-    assert _user_tagged_in(r, "TestHandle") is True
-    assert _user_tagged_in(r, "@testhandle") is True   # @ + case-insensitive
+def _repost_by(author_user: dict) -> dict:
+    r = _repost({"full_text": "hi", "favorite_count": 9, "entities": {}})
+    r["legacy"]["retweeted_status_result"]["result"]["core"] = {"user_results": {"result": author_user}}
+    return r
 
 
-def test_repost_without_user_mention_is_not_tagged():
-    r = _repost({"entities": {"user_mentions": [{"screen_name": "someoneelse"}]}})
-    assert _user_tagged_in(r, "TestHandle") is False
+def test_self_repost_is_own():
+    legacy_shape = _repost_by({"legacy": {"screen_name": "TestHandle"}})
+    core_shape = _repost_by({"core": {"screen_name": "TestHandle"}})   # X's newer layout
+    assert _is_own_repost(legacy_shape, "@testhandle") is True          # @ + case-insensitive
+    assert _is_own_repost(core_shape, "TestHandle") is True
+
+
+def test_repost_of_someone_else_is_dropped_even_if_tagged():
+    r = _repost({"entities": {"user_mentions": [{"screen_name": "TestHandle"}]},
+                 "full_text": "look @TestHandle I drew you"})
+    r["legacy"]["retweeted_status_result"]["result"]["core"] = {
+        "user_results": {"result": {"legacy": {"screen_name": "artist"}}}}
+    assert _is_repost(r) and _is_own_repost(r, "TestHandle") is False
+
+
+def test_empty_target_or_missing_author_never_own():
+    assert _is_own_repost(_repost_by({"legacy": {"screen_name": "x"}}), "") is False
+    assert _is_own_repost(_repost({"full_text": "hi"}), "TestHandle") is False
 
 
 def test_repost_original_is_extracted():
@@ -62,14 +76,32 @@ def test_repost_original_is_extracted():
     assert orig and orig.get("rest_id") == "99"
 
 
-def test_mention_in_own_tweet_counts():
-    t = {"rest_id": "5", "legacy": {"entities": {"user_mentions": [{"screen_name": "TestHandle"}]}}}
-    assert _user_tagged_in(t, "testhandle") is True
+def test_timeline_walk_keeps_self_repost_as_the_own_post_and_quote_own_stats():
+    import asyncio
+    own = {"rest_id": "99", "legacy": {"full_text": "my art", "favorite_count": 9, "entities": {}},
+           "core": {"user_results": {"result": {"legacy": {"screen_name": "TestHandle"}}}}}
+    self_rt = {"rest_id": "1", "legacy": {"retweeted_status_result": {"result": own}}}
+    other_rt = {"rest_id": "2", "legacy": {"retweeted_status_result": {"result": {
+        "rest_id": "50", "legacy": {"full_text": "hi @TestHandle", "favorite_count": 500,
+                                    "entities": {"user_mentions": [{"screen_name": "TestHandle"}]}},
+        "core": {"user_results": {"result": {"legacy": {"screen_name": "artist"}}}}}}}}
+    quote = {"rest_id": "3", "legacy": {"full_text": "look", "favorite_count": 4,
+                                        "quoted_status_id_str": "50", "entities": {}},
+             "quoted_status_result": {"result": {"rest_id": "50", "legacy": {"favorite_count": 500}}}}
+    entry = lambda i, r: {"entryId": f"tweet-{i}", "content": {"itemContent": {"tweet_results": {"result": r}}}}
+    page = {"data": {"user": {"result": {"timeline_v2": {"timeline": {"instructions": [
+        {"type": "TimelineAddEntries", "entries": [entry(1, self_rt), entry(2, other_rt),
+                                                   entry(3, quote), entry(4, own)]}]}}}}}}
 
-
-def test_empty_target_never_tagged():
-    t = {"legacy": {"entities": {"user_mentions": [{"screen_name": "x"}]}}}
-    assert _user_tagged_in(t, "") is False
+    c = TWClient("a", "b", "TestHandle")
+    c._user_rest_id = "42"
+    async def fake_get_json(url, params=None):
+        return page
+    c._get_json = fake_get_json
+    got = {d["tweet_id"]: d for d in asyncio.run(c._get_all_tweets_graphql())}
+    assert set(got) == {"99", "3"}                       # self-RT merged with its post; other RT gone
+    assert got["99"]["content_type"] == "tweet" and got["99"]["likes"] == 9
+    assert got["3"]["content_type"] == "quote" and got["3"]["likes"] == 4   # the quote's own stats
 
 
 # ── Core fix: stats parsed straight from the timeline result ──
@@ -109,33 +141,6 @@ def test_snowflake_bad_id_returns_empty():
     assert _snowflake_to_utc("") == ""
     assert _snowflake_to_utc("not-a-number") == ""
     assert _snowflake_to_utc(None) == ""
-
-
-def test_tagged_repost_grabs_original_image_and_stats():
-    # A kept (tagged) repost reports the ORIGINAL post's image + engagement.
-    repost = {
-        "rest_id": "111",
-        "legacy": {
-            "full_text": "RT @artist: look @TestHandle",
-            "retweeted_status_result": {"result": {
-                "rest_id": "999",
-                "legacy": {
-                    "full_text": "look @TestHandle I drew you",
-                    "favorite_count": 50, "retweet_count": 7,
-                    "entities": {"user_mentions": [{"screen_name": "TestHandle"}]},
-                    "extended_entities": {"media": [
-                        {"media_url_https": "https://pbs.twimg.com/media/ABC.jpg"}]},
-                },
-                "core": {"user_results": {"result": {"legacy": {"screen_name": "artist"}}}},
-                "views": {"count": "1234"},
-            }},
-        },
-    }
-    assert _is_repost(repost) and _user_tagged_in(repost, "TestHandle")
-    src = _repost_original(repost)
-    d = TWClient("a", "b", "TestHandle")._extract_tweet_stats(src)
-    assert d["thumbnail_url"] == "https://pbs.twimg.com/media/ABC.jpg"
-    assert d["likes"] == 50 and d["views"] == 1234
 
 
 def test_quote_tweet_grabs_quoted_post_image():

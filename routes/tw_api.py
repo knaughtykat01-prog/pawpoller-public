@@ -41,10 +41,16 @@ def tw_auth_status():
         or settings.get("tw_api_bearer_token")
     )
     has_data = False
+    last_backend = ""
     conn = get_connection()
     try:
         count = conn.execute("SELECT COUNT(*) as c FROM tw_submissions").fetchone()["c"]
         has_data = count > 0
+        # What the newest finished poll actually used, which can differ from the
+        # primary below when gallery-dl failed and a fallback answered.
+        row = conn.execute("SELECT backend FROM tw_poll_log WHERE backend != '' "
+                           "ORDER BY id DESC LIMIT 1").fetchone()
+        last_backend = row["backend"] if row else ""
     except Exception:
         pass
     finally:
@@ -66,6 +72,7 @@ def tw_auth_status():
         "username": settings.get("tw_target_user", ""),
         "poll_backend": backend,
         "gallerydl_available": gallerydl_available,
+        "last_poll_backend": last_backend,
         "has_api_token": bool(settings.get("tw_api_bearer_token")),
     }
 

@@ -157,6 +157,7 @@ class TestNoTokenOnUpdateTraffic:
 
     def test_the_download_sends_no_authorization(self, monkeypatch):
         seen = []
+        monkeypatch.setattr(updater, "_CACHE", {})   # a cached answer would skip the request
         monkeypatch.setattr(config, "get_settings", lambda: {"github_pat": "ghp_secret"})
         _fake_github(monkeypatch, seen=seen)
         updater.download_update(OFFICIAL)
@@ -164,6 +165,7 @@ class TestNoTokenOnUpdateTraffic:
 
     def test_the_check_sends_no_authorization(self, monkeypatch):
         seen = []
+        monkeypatch.setattr(updater, "_CACHE", {})   # a cached answer would skip the request
         monkeypatch.setattr(config, "get_settings", lambda: {"github_pat": "ghp_secret"})
         def handler(request):
             seen.append(request)

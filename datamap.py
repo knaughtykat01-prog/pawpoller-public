@@ -429,6 +429,7 @@ _SETTINGS = (
     )),
     # 4.71.0 (spec 035): this copy made a moving file and stood down; what to put back on Resume.
     S("moved_away_at", _HOUSE, "When this copy moved to another PawPoller and paused itself.", backup="derivable"),
+    S("moved_in_at", _HOUSE, "When a move brought this copy's data in; rate watch counts from here.", backup="derivable"),
     S("moved_away_restore", _HOUSE, "Whether polling, posting and sync were on before the move paused them.",
       backup="derivable"),
 )

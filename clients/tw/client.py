@@ -287,23 +287,18 @@ def _repost_original(result: dict) -> dict | None:
     return orig or None
 
 
-def _user_tagged_in(result: dict, target_user: str) -> bool:
-    """True if *target_user* is @-mentioned in the tweet — or, for a repost, in
-    the original post. Used to keep the reposts that actually tag the account
-    while still dropping the rest.
+def _is_own_repost(result: dict, target_user: str) -> bool:
+    """True if a repost is of the account's OWN post (a self-retweet). Only these
+    are kept: the post and its numbers are the account's. A repost of anyone
+    else's post — even one that tags the account — is their work and their stats.
+    X has moved ``screen_name`` from the user's ``legacy`` into its ``core``; check both.
     """
     tu = (target_user or "").lower().lstrip("@")
-    if not tu:
-        return False
-    for r in (result, _repost_original(result)):
-        if not r:
-            continue
-        mentions = (((r.get("legacy", {}) or {}).get("entities", {}) or {})
-                    .get("user_mentions", []) or [])
-        for m in mentions:
-            if (m.get("screen_name", "") or "").lower() == tu:
-                return True
-    return False
+    user = ((((_repost_original(result) or {}).get("core") or {})
+             .get("user_results") or {}).get("result") or {})
+    name = ((user.get("core") or {}).get("screen_name")
+            or (user.get("legacy") or {}).get("screen_name") or "")
+    return bool(tu) and name.lower() == tu
 
 
 class TWClient:
@@ -324,6 +319,7 @@ class TWClient:
         # Where a cut-short timeline walk stopped, for the poller to store and hand
         # back next cycle. "" means the last walk reached the end.
         self.stopped_cursor: str = ""
+        self.backend_used: str = ""     # which source answered the last get_all_tweets
         self._owners: list[str] | None = None   # whose session (4.6.3), asked once
 
         if proxy_url and proxy_key:
@@ -889,16 +885,34 @@ class TWClient:
         triggers the next backend. Posting is unaffected by all of this.
         """
         # 1. gallery-dl subprocess (free primary — X polls cost nothing here)
+        from clients.tw import gallerydl
+        # Which source actually answered, for the poll log: "gallerydl", "official"
+        # or "graphql", plus ":missing" / ":failed" when gallery-dl should have and
+        # didn't — a quiet fallback used to look exactly like a normal poll.
+        settings = config.get_settings()
+        if gallerydl.find_gallerydl(settings) is None:
+            gdl_state = "missing"
+        elif not gallerydl.is_enabled(settings):
+            gdl_state = ""            # turned off on purpose (tw_polling_backend)
+        else:
+            gdl_state = "failed"      # cleared below if it answers
         try:
-            from clients.tw import gallerydl
             via_gdl = await gallerydl.fetch_tweets(self.auth_token, self.ct0, self.target_user)
         except Exception as e:
             logger.warning("TW: gallery-dl backend error, trying next: %s", e)
             via_gdl = None
         if via_gdl is not None:
+            self.backend_used = "gallerydl"
             if gallerydl.was_rate_limited(self.target_user):
                 self.throttled = True   # it waited a limit out: still a limited check (spec 039)
             return via_gdl
+        suffix = f":{gdl_state}" if gdl_state else ""
+        if gallerydl.was_auth_refused(self.target_user):
+            from clients.tw import official_api
+            if not official_api.is_enabled(config.get_settings()):
+                # Same cookies would fail GraphQL too; say so instead of a silent 0.
+                raise ValueError("X/Twitter credential validation failed -- update the "
+                                 "auth_token/ct0 cookies in Settings")
 
         # 2. Official X API v2 (paid fallback — only reached when gallery-dl fails)
         try:
@@ -908,10 +922,12 @@ class TWClient:
             logger.warning("TW: official-API backend error, using GraphQL: %s", e)
             via_api = None
         if via_api is not None:
+            self.backend_used = "official" + suffix
             return via_api
 
         # 3. GraphQL timeline scrape (always-available last-ditch fallback). Only this
         # backend walks the timeline page by page, so only it can be resumed.
+        self.backend_used = "graphql" + suffix
         return await self._get_all_tweets_graphql(start_cursor)
 
     async def _get_all_tweets_graphql(self, start_cursor: str = "") -> list[dict]:
@@ -923,14 +939,17 @@ class TWClient:
         (that endpoint's GraphQL id rotates and was returning 404 for every
         tweet, leaving everything "(untitled)" with zero stats).
 
-        Reposts are dropped unless the account is tagged in them; a kept repost
-        surfaces the ORIGINAL post's stats. Returns a list of full detail dicts
+        Reposts are dropped unless they are of the account's own post, which is
+        then recorded as that post. Returns a list of full detail dicts
         (same shape as :meth:`_extract_tweet_stats`). Cursor-paginated.
         """
         user_id = await self._get_user_id()
         if not user_id:
+            # Not "no tweets": X wouldn't say who the account is, which with the poller
+            # no longer probing first (4.77.4) is the only sign of dead cookies here.
             logger.error("TW: Could not resolve user ID for %s", self.target_user)
-            return []
+            raise ValueError("X/Twitter credential validation failed -- X would not look up "
+                             f"@{self.target_user}; update the auth_token/ct0 cookies in Settings")
 
         all_tweets: list[dict] = []
         seen_ids: set[str] = set()
@@ -1013,17 +1032,16 @@ class TWClient:
                     if result.get("__typename") == "TweetWithVisibilityResults":
                         result = result.get("tweet", result)
 
-                    # Reposts (retweets of other accounts) are dropped UNLESS the
-                    # account is tagged in them — those are posts about you worth
-                    # keeping. A kept repost reports the original post's stats.
-                    repost = _is_repost(result)
-                    if repost and not _user_tagged_in(result, self.target_user):
-                        continue
-                    source = (_repost_original(result) or result) if repost else result
+                    # Reposts are dropped unless they are of the account's own post.
+                    # A self-repost is recorded AS that own post (its id, its stats,
+                    # its real type), so it merges with the original via seen_ids.
+                    # Quote tweets aren't reposts: they keep their OWN stats.
+                    if _is_repost(result):
+                        if not _is_own_repost(result, self.target_user):
+                            continue
+                        result = _repost_original(result)
 
-                    detail = self._extract_tweet_stats(source)
-                    if repost:
-                        detail["content_type"] = "retweet"
+                    detail = self._extract_tweet_stats(result)
                     tweet_id = detail.get("tweet_id", "")
                     if tweet_id and tweet_id not in seen_ids:
                         seen_ids.add(tweet_id)

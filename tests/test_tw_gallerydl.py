@@ -192,11 +192,35 @@ async def test_fetch_returns_none_on_nonzero_exit(monkeypatch):
     monkeypatch.setattr(gallerydl, "find_gallerydl", lambda *_a, **_k: "/usr/bin/gallery-dl")
 
     async def fake_run(*_a, **_k):
-        return 1, "", "HTTPError 401 AuthRequired"
+        return 1, "", "[twitter][error] HttpError: 401 AuthRequired"
 
     monkeypatch.setattr(gallerydl, "_run", fake_run)
+    monkeypatch.setattr(gallerydl, "_LAST_AUTH_FAILED", {})
     out = await gallerydl.fetch_tweets("a", "b", "TestHandle", settings={})
     assert out is None  # nonzero exit => fall back, not a silent empty success
+    assert gallerydl.was_auth_refused("TestHandle") is True
+
+
+@pytest.mark.asyncio
+async def test_login_refusal_fails_the_poll_instead_of_zero_tweets(monkeypatch):
+    # The poll no longer runs a separate validation probe when gallery-dl is the
+    # backend, so the fetch's own login refusal must surface as a credentials error.
+    from clients.tw import client as tw_client, official_api
+    monkeypatch.setattr(gallerydl, "find_gallerydl", lambda *_a, **_k: "/usr/bin/gallery-dl")
+
+    async def auth_fail(*_a, **_k):
+        return 1, "", "[twitter][error] AuthRequired: authenticated cookies needed"
+
+    monkeypatch.setattr(gallerydl, "_run", auth_fail)
+    monkeypatch.setattr(gallerydl, "_LAST_AUTH_FAILED", {})   # don't leak the verdict
+    monkeypatch.setattr(official_api, "is_enabled", lambda *_a, **_k: False)
+    monkeypatch.setattr(tw_client.config, "get_settings", lambda: {})
+    c = tw_client.TWClient("at", "ct0", "handle")
+    try:
+        with pytest.raises(ValueError, match="credential"):
+            await c.get_all_tweets()
+    finally:
+        await c.close()
 
 
 @pytest.mark.asyncio
@@ -333,7 +357,7 @@ async def test_failed_fetch_invalidates_stale_follower_cache(monkeypatch):
     monkeypatch.setattr(gallerydl, "find_gallerydl", lambda *_a, **_k: "/usr/bin/gallery-dl")
 
     async def fail_run(*_a, **_k):
-        return 1, "", "HTTPError 401 AuthRequired"
+        return 1, "", "[twitter][error] HttpError: 401 AuthRequired"
 
     monkeypatch.setattr(gallerydl, "_run", fail_run)
     out = await gallerydl.fetch_tweets("a", "b", "TestHandle", settings={})
@@ -422,3 +446,97 @@ async def test_fetch_notices_a_rate_limit_wait(monkeypatch):
 def test_only_warnings_and_errors_are_logged():
     err = "[twitter][info] Requesting\n[twitter][error] HttpError: 404\n[twitter][info] more"
     assert gallerydl._problems(err) == "[twitter][error] HttpError: 404"
+
+
+# ── Which source answered is recorded, so a quiet fallback is visible ────────
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("installed, gdl_result, official_result, expected", [
+    (True, [{"tweet_id": "1"}], None, "gallerydl"),
+    (True, None, [{"tweet_id": "1"}], "official:failed"),
+    (True, None, None, "graphql:failed"),
+    (False, None, None, "graphql:missing"),
+])
+async def test_backend_used_names_the_source(monkeypatch, installed, gdl_result,
+                                             official_result, expected):
+    from clients.tw import client as tw_client, official_api
+    monkeypatch.setattr(tw_client.config, "get_settings", lambda: {})
+    monkeypatch.setattr(gallerydl, "find_gallerydl",
+                        lambda *_a, **_k: "/usr/bin/gallery-dl" if installed else None)
+    monkeypatch.setattr(gallerydl, "_LAST_AUTH_FAILED", {})
+
+    async def gdl(*_a, **_k):
+        return gdl_result
+
+    async def official(*_a, **_k):
+        return official_result
+
+    async def graphql(self, cursor=""):
+        return []
+
+    monkeypatch.setattr(gallerydl, "fetch_tweets", gdl)
+    monkeypatch.setattr(official_api, "fetch_tweets", official)
+    monkeypatch.setattr(tw_client.TWClient, "_get_all_tweets_graphql", graphql)
+    c = tw_client.TWClient("at", "ct0", "handle")
+    try:
+        await c.get_all_tweets()
+    finally:
+        await c.close()
+    assert c.backend_used == expected
+
+
+def test_backend_column_added_to_an_old_poll_log():
+    """Upgrade path: a tw_poll_log from before the column existed boots clean."""
+    from database.db import get_connection, init_db
+    from database import tw_queries
+    conn = get_connection()
+    try:
+        conn.executescript("""
+            DROP TABLE IF EXISTS tw_poll_log;
+            CREATE TABLE tw_poll_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TEXT NOT NULL DEFAULT (datetime('now')),
+                finished_at TEXT, status TEXT NOT NULL DEFAULT 'running',
+                submissions_found INTEGER DEFAULT 0, snapshots_inserted INTEGER DEFAULT 0,
+                error_message TEXT, duration_seconds REAL,
+                account_id INTEGER NOT NULL DEFAULT 0);
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+    init_db()
+    conn = get_connection()
+    try:
+        log_id = tw_queries.start_tw_poll_log(conn, 1)
+        tw_queries.finish_tw_poll_log(conn, log_id, "success", backend="graphql:failed")
+        assert tw_queries.get_tw_poll_log(conn, 1)[0]["backend"] == "graphql:failed"
+    finally:
+        conn.close()
+
+
+@pytest.mark.asyncio
+async def test_an_info_line_mentioning_403_is_not_a_login_refusal(monkeypatch):
+    monkeypatch.setattr(gallerydl, "find_gallerydl", lambda *_a, **_k: "/usr/bin/gallery-dl")
+    monkeypatch.setattr(gallerydl, "_LAST_AUTH_FAILED", {})
+
+    async def timeout_with_noise(*_a, **_k):
+        return 1, "", "[twitter][info] https://x.com/h/status/1403 login page\ntimeout"
+
+    monkeypatch.setattr(gallerydl, "_run", timeout_with_noise)
+    assert await gallerydl.fetch_tweets("a", "b", "h", settings={}) is None
+    assert gallerydl.was_auth_refused("h") is False
+
+
+@pytest.mark.asyncio
+async def test_graphql_with_unresolvable_user_is_a_credentials_error_not_zero_tweets():
+    from clients.tw import client as tw_client
+    c = tw_client.TWClient("at", "ct0", "handle")
+
+    async def no_user():
+        return ""
+    c._get_user_id = no_user
+    try:
+        with pytest.raises(ValueError, match="credential"):
+            await c._get_all_tweets_graphql()
+    finally:
+        await c.close()

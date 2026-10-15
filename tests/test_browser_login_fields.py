@@ -134,7 +134,7 @@ class TestTheErrorTellsTheTruth:
         """§55: a check that confirms the wrong thing is worse than one that
         fails. This one sent a user to re-copy working cookies, repeatedly."""
         src = open("polling/tw_poller.py", encoding="utf-8").read()
-        i = src.index("valid = await client.validate_cookies()")
+        i = src.index("valid = _tw_gdl.is_enabled(settings) or await client.validate_cookies()")
         before = src[:i]
         assert "not client.target_user" in before, (
             "the username must be checked BEFORE validation blames the cookies")

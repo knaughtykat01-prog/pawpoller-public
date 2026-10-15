@@ -640,6 +640,8 @@ def apply_move(z: zipfile.ZipFile, manifest: dict, creds: dict, work: Path) -> s
     here = config.get_settings()
     final = {k: v for k, v in moved.items() if not keeps_here(k)}
     final.update({k: v for k, v in here.items() if keeps_here(k)})
+    # 4.77.3: the moved poll log is the old copy's history; rate watch counts from here on.
+    final["moved_in_at"] = datetime.now(timezone.utc).isoformat()
     # A Trello board the old copy owned now belongs to this one (the old copy has stood down).
     trello = final.get("trello")
     if isinstance(trello, dict) and trello.get("owner_tag") and trello.get("owner_tag") == manifest.get("from_tag"):

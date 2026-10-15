@@ -160,13 +160,14 @@ def start_tw_poll_log(conn: sqlite3.Connection, account_id: int = 0) -> int:
 
 def finish_tw_poll_log(conn: sqlite3.Connection, log_id: int, status: str,
                         submissions_found: int = 0, snapshots_inserted: int = 0,
-                        error_message: str | None = None, duration_seconds: float = 0) -> None:
+                        error_message: str | None = None, duration_seconds: float = 0,
+                        backend: str = "") -> None:
     conn.execute(
         """UPDATE tw_poll_log SET finished_at=datetime('now'), status=?, submissions_found=?,
-           snapshots_inserted=?, error_message=?, duration_seconds=?
+           snapshots_inserted=?, error_message=?, duration_seconds=?, backend=?
            WHERE id=?""",
         (status, submissions_found, snapshots_inserted,
-         error_message, duration_seconds, log_id),
+         error_message, duration_seconds, backend or "", log_id),
     )
     conn.commit()
 

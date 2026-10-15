@@ -699,6 +699,13 @@
         { t: 'Sign in again',
           b: 'Your seat restarts by itself, which takes about a minute. Sign in with your <b>seat\'s</b> ' +
              'password. Your library, history and site logins are all there.' },
+        // 4.77.3: what the operator's own move ran into, so testers don't have to.
+        { t: 'Check your sites',
+          b: 'Open <b>Accounts</b> and press <b>Test</b> on each account. A ✓ means it\'s ready. If one says its ' +
+             'cookies or login have expired, copy fresh ones into that account\'s <b>Credentials</b> (each site\'s ' +
+             'guide shows how). <b>DeviantArt</b> needs two extra things on a new address: add your seat\'s ' +
+             'address to your DeviantArt app (see the DeviantArt guide, step 6), then press <b>Authorise posting</b> ' +
+             'again; and to change descriptions, paste a <code>da_cookie</code> (the DeviantArt guide shows how).' },
       ],
       paste: 'Nothing to paste: everything happens in <b>Settings → Moving to another PawPoller</b>, on both PawPollers.',
       renew: { when: 'Nothing to keep alive', how: 'A move is done once. If you change your mind, press <b>Resume this copy</b> on the old PawPoller\'s banner.' },
@@ -973,10 +980,24 @@
         '<div class="guide-hub-card-diff">' + g.difficulty + ' setup &rarr;</div>' +
       '</button>';
     }).join('');
+    // Guides that aren't a site (4.77.3): moving to a hosted seat lived only behind a Settings
+    // link, so a tester looking in Getting Started never found it.
+    const extra = [['move', '📦']].filter(([c]) => GUIDES[c]).map(([c, emoji]) => {
+      const g = GUIDES[c];
+      return '<button class="guide-hub-card" type="button" data-guide="' + c + '">' +
+        '<div class="guide-hub-card-top"><span class="guide-hub-card-emoji" aria-hidden="true">' + emoji + '</span>' +
+          '<span class="guide-hub-card-name">' + g.title + '</span></div>' +
+        '<div class="guide-hub-card-kind">' + g.kind + '</div>' +
+        '<div class="guide-hub-card-sum">' + g.summary + '</div>' +
+        '<div class="guide-hub-card-diff">' + g.difficulty + ' &rarr;</div>' +
+      '</button>';
+    }).join('');
     const html =
       '<div class="guide-hub-head"><h1 class="guide-hub-title">Getting Started</h1></div>' +
       '<p class="guide-hub-intro">Pick a platform to see exactly how to go from nothing to connected — ' +
       'including how to keep it alive when a cookie or token expires.</p>' +
+      (extra ? '<h2 class="guide-hub-sub">Moving your PawPoller</h2><div class="guide-hub-grid">' + extra + '</div>' +
+               '<h2 class="guide-hub-sub">Your sites</h2>' : '') +
       '<div class="guide-hub-grid">' + cards + '</div>';
     const app = document.getElementById('app');
     if (app) app.innerHTML = html;

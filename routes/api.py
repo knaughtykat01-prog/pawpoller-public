@@ -194,7 +194,7 @@ def health_details(request: Request):
                 out["sites"].append(site)
         # 4.74.0 (spec 039): per-site counts of checks turned away; counts only.
         from polling import rate_watch
-        out["pressure"] = rate_watch.pressure(conn, DETAILS_SITES)
+        out["pressure"] = rate_watch.pressure(conn, DETAILS_SITES, since=settings.get("moved_in_at"))
         for status, key in (("pending", "waiting"), ("failed", "failed")):
             out["queue"][key] = conn.execute("SELECT count(*) FROM posting_queue WHERE status = ?",
                                              (status,)).fetchone()[0]

@@ -1042,6 +1042,13 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         if "duplicate column" not in str(e).lower():
             raise
 
+    # Which X source answered each poll (gallery-dl vs a fallback).
+    try:
+        conn.execute("ALTER TABLE tw_poll_log ADD COLUMN backend TEXT DEFAULT ''")
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower() and "no such table" not in str(e).lower():
+            raise
+
     # Add new_comments_found column to IB poll_log
     try:
         conn.execute("ALTER TABLE poll_log ADD COLUMN new_comments_found INTEGER DEFAULT 0")

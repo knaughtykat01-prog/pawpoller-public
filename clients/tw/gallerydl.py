@@ -65,6 +65,11 @@ _LAST_FOLLOWERS: dict[str, int] = {}
 _LAST_THROTTLED: dict[str, bool] = {}
 _RATE_WAIT = re.compile(r"\(rate limit\)|rate limit exceeded", re.I)
 
+# Handles whose last fetch was refused for its login. The poll no longer spends a
+# separate one-tweet validation run (two X requests per account per cycle) before
+# the real fetch; the fetch's own refusal is the credentials verdict instead.
+_LAST_AUTH_FAILED: dict[str, bool] = {}
+
 
 # -- Discovery ---------------------------------------------------------------
 
@@ -359,15 +364,17 @@ async def fetch_tweets(auth_token: str, ct0: str, target_user: str,
         caller should fall back to the GraphQL scrape.
     """
     settings = settings if settings is not None else config.get_settings()
-    if not is_enabled(settings):
-        return None
-    exe = find_gallerydl(settings)
     handle = (target_user or "").lstrip("@")
     # A fresh attempt invalidates any prior cycle's cached follower count, so a
     # failure this cycle can't hand get_follower_count() a stale number — it will
-    # fall through to the paid/scrape path instead.
+    # fall through to the paid/scrape path instead. Cleared before the enabled
+    # check so a since-disabled gallery-dl leaves no stale verdict behind.
     _LAST_FOLLOWERS.pop(handle.lower(), None)
     _LAST_THROTTLED.pop(handle.lower(), None)
+    _LAST_AUTH_FAILED.pop(handle.lower(), None)
+    if not is_enabled(settings):
+        return None
+    exe = find_gallerydl(settings)
     if not exe or not (auth_token and ct0 and handle):
         return None
 
@@ -380,6 +387,11 @@ async def fetch_tweets(auth_token: str, ct0: str, target_user: str,
         if _RATE_WAIT.search(err or ""):
             _LAST_THROTTLED[handle.lower()] = True
         if rc != 0:
+            # Only gallery-dl's own error/warning lines: with -q off, info lines carry
+            # URLs and ids where "401"/"403"/"login" can turn up by chance.
+            problems = _problems(err).lower() if ("][error]" in (err or "") or "][warning]" in (err or "")) else ""
+            if any(marker in problems for marker in _AUTH_ERROR_MARKERS):
+                _LAST_AUTH_FAILED[handle.lower()] = True
             logger.warning("TW: gallery-dl exited %s — falling back to GraphQL: %s",
                            rc, _problems(err)[:300])
             return None
@@ -407,6 +419,11 @@ def _problems(err: str) -> str:
 def was_rate_limited(target_user: str) -> bool:
     """True when this cycle's fetch_tweets for this handle waited out a rate limit."""
     return _LAST_THROTTLED.get((target_user or "").lstrip("@").lower(), False)
+
+
+def was_auth_refused(target_user: str) -> bool:
+    """True when this cycle's fetch_tweets for this handle was refused for its login."""
+    return _LAST_AUTH_FAILED.get((target_user or "").lstrip("@").lower(), False)
 
 
 def get_follower_count(target_user: str, settings: dict | None = None) -> int | None:

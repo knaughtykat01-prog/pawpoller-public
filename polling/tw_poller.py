@@ -153,6 +153,7 @@ async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = Fa
     client = _get_or_create_client(settings, creds.get("tw_auth_token", ""),
                                    creds.get("tw_ct0", ""), creds.get("tw_target_user", ""))
     client.throttled = False   # reset per cycle; set True by the client on a 429
+    client.backend_used = ""   # set by get_all_tweets to the source that answered
     # Resume a timeline walk that ran out of X's budget last time. Starting from the
     # top every cycle re-reads the same first pages and never reaches the tail — an
     # account was seen stopping at the identical count two cycles running, each ending
@@ -182,7 +183,11 @@ async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         if not _official_active and not client.target_user:
             raise ValueError("X/Twitter username is not set — the cookies are saved, but there is "
                              "no account to look up. Set the X username to track in Settings.")
-        valid = await client.validate_cookies()
+        # With gallery-dl present the fetch itself is the check (get_all_tweets
+        # raises on a login refusal): a separate probe cost two X requests per
+        # account per cycle out of the same per-IP budget the poll needs.
+        from clients.tw import gallerydl as _tw_gdl
+        valid = _tw_gdl.is_enabled(settings) or await client.validate_cookies()
         if not valid:
             raise ValueError("X/Twitter credential validation failed -- update the auth_token/ct0 "
                              "cookies or the X API Bearer token in Settings")
@@ -208,7 +213,8 @@ async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = Fa
             _msg = "Rate-limited (429) — tweets may be incomplete" if _throttled else None
             _update_tw_progress("complete", message="Rate-limited — data may be incomplete" if _throttled else "No tweets found.")
             tw_queries.finish_tw_poll_log(conn, log_id, _status, error_message=_msg,
-                                          duration_seconds=time.time() - start_time, **stats)
+                                          duration_seconds=time.time() - start_time,
+                                          backend=client.backend_used, **stats)
             conn.commit()
             return stats
 
@@ -275,7 +281,8 @@ async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = Fa
                             message=(f"Throttled -- {stats['submissions_found']} tweets (may be incomplete)"
                                      if _throttled else f"Done -- {stats['submissions_found']} tweets in {duration:.1f}s"))
         tw_queries.finish_tw_poll_log(conn, log_id, _status, error_message=_msg,
-                                      duration_seconds=duration, **stats)
+                                      duration_seconds=duration,
+                                      backend=client.backend_used, **stats)
         logger.info("TW poll %s in %.1fs -- %d tweets, %d snapshots",
                      _status, duration, stats["submissions_found"], stats["snapshots_inserted"])
 
@@ -304,7 +311,8 @@ async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         if conn and log_id:
             tw_queries.finish_tw_poll_log(conn, log_id, "error",
                                           error_message=describe_error(e),
-                                          duration_seconds=duration, **stats)
+                                          duration_seconds=duration,
+                                          backend=getattr(client, "backend_used", ""), **stats)
             conn.commit()
         from polling.telegram import send_poll_error
         try:

@@ -222,6 +222,8 @@
     margin: 0;
 }
 .guide-hub-intro { color: var(--text-secondary); max-width: 60ch; margin: 0 0 1.5rem; line-height: 1.6; }
+/* Group headings on the hub (4.77.3): "Moving your PawPoller" above "Your sites". */
+.guide-hub-sub { font-size: 1rem; font-weight: 600; color: var(--text-secondary); margin: 1.25rem 0 .6rem; }
 .guide-hub-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

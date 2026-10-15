@@ -57,5 +57,6 @@ CREATE TABLE IF NOT EXISTS tw_poll_log (
     submissions_found INTEGER DEFAULT 0,
     snapshots_inserted INTEGER DEFAULT 0,
     error_message   TEXT,
-    duration_seconds REAL
+    duration_seconds REAL,
+    backend         TEXT DEFAULT ''   -- which source answered: gallerydl / official / graphql[:missing|:failed]
 );

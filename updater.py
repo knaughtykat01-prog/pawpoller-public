@@ -59,11 +59,34 @@ def _remember(latest: str, available: bool) -> None:
         LATEST.update(latest=latest, seen_at=datetime.now(timezone.utc).isoformat())
 
 
+# The last answer and when it may be asked again. GitHub gives 60 anonymous calls
+# an hour PER IP, and every hosted seat on one box shares that IP: a seat's page
+# load fired four checks in the same second and they all came back 403 "rate limit
+# exceeded". A good answer is reused for CHECK_TTL; a refusal waits out GitHub's
+# own reset time (X-RateLimit-Reset) instead of spending more of the budget.
+CHECK_TTL = 900.0
+_CACHE: dict = {}   # {"info": dict, "until": epoch seconds}
+
+
 def check_for_update() -> dict:
-    """Check GitHub releases for a newer version.
+    """Check GitHub releases for a newer version (cached; see CHECK_TTL).
 
     Returns dict with keys: available, current, latest, download_url, release_notes
     """
+    import time
+    now = time.time()
+    if _CACHE and now < _CACHE["until"]:
+        return dict(_CACHE["info"])
+    info = _check_github()
+    if "error" not in info:
+        _CACHE.update(info=info, until=now + CHECK_TTL)
+    elif info.get("retry_at"):
+        _CACHE.update(info=info, until=min(info["retry_at"], now + 3600))
+    return dict(info)
+
+
+def _check_github() -> dict:
+    """One real call to GitHub's /releases/latest."""
     # Early exit when no repo is configured — returns a "no update" response
     # so callers don't need to know whether update checking is enabled.
     if not GITHUB_REPO:
@@ -101,6 +124,13 @@ def check_for_update() -> dict:
                     "download_url": None,
                     "release_notes": "",
                 }
+            if resp.status_code in (403, 429) and resp.headers.get("x-ratelimit-remaining") == "0":
+                reset = resp.headers.get("x-ratelimit-reset", "")
+                logger.warning("Update check: GitHub's hourly limit for this IP is used up; "
+                               "not asking again until it resets")
+                return {"available": False, "current": APP_VERSION, "latest": APP_VERSION,
+                        "download_url": None, "error": "GitHub rate limit",
+                        "retry_at": float(reset) if reset.isdigit() else 0}
             resp.raise_for_status()
             data = resp.json()
 

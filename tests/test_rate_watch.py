@@ -73,6 +73,35 @@ def test_pressure_counts_windows_streak_and_skips():
     assert (a["skips_24h"], a["skips_7d"]) == (1, 2)
 
 
+def test_checks_from_before_a_move_are_not_counted():
+    """A moved library brings the old copy's poll log; the seat never made those checks (4.77.3)."""
+    from database.db import get_connection
+    now = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
+    lim = "Client error '429 Too Many Requests' for url 'x'"
+    conn = get_connection()
+    try:
+        for t in ("tw_poll_log", "turn_skips"):
+            conn.execute(f"DELETE FROM {t}")
+        for h in (5, 4, 3):                                      # the old copy, before the move
+            _log(conn, "tw_poll_log", "error", lim, now - timedelta(hours=h))
+        conn.commit()
+        assert pressure(conn, ("tw",), now)[0]["away_in_a_row"] == 3     # what alerted
+        moved = (now - timedelta(hours=1)).isoformat()
+        assert pressure(conn, ("tw",), now, since=moved) == []           # nothing since the move
+        _log(conn, "tw_poll_log", "success", None, now - timedelta(minutes=10))
+        conn.commit()
+        p = pressure(conn, ("tw",), now, since=moved)[0]
+        assert (p["checks_24h"], p["away_24h"], p["away_in_a_row"]) == (1, 0, 0)
+        assert pressure(conn, ("tw",), now, since="not a date")[0]["away_in_a_row"] == 0
+    finally:
+        conn.close()
+
+
+def test_a_move_records_when_it_was_brought_in():
+    src = open("routes/move_api.py", encoding="utf-8").read()
+    assert 'final["moved_in_at"]' in src
+    assert 'since=settings.get("moved_in_at")' in open("routes/api.py", encoding="utf-8").read()
+
 def test_record_skip_keeps_seven_days():
     from database.db import get_connection
     from polling import last_check

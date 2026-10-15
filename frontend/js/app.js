@@ -17499,7 +17499,8 @@ const App = {
                     <div style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px">
                         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
                             <span class="settings-label">Official X API <span style="color:var(--text-muted);font-weight:normal">(optional)</span></span>
-                            <span class="tag" style="font-size:10px">poll backend: ${Utils.escapeHtml(twAuth.poll_backend || 'graphql')}</span>
+                            <span class="tag" style="font-size:10px">poll backend: ${Utils.escapeHtml(twAuth.poll_backend || 'graphql')}${twAuth.gallerydl_available ? '' : ' (gallery-dl not installed)'}</span>
+                            ${twAuth.last_poll_backend ? `<span class="tag" style="font-size:10px">last poll: ${Components.twSourceLabel(twAuth.last_poll_backend)}</span>` : ''}
                         </div>
                         <div style="font-size:11px;color:var(--text-muted);margin:6px 0 10px">
                             ToS-compliant, IP-agnostic polling via the official X API v2 — sidesteps the datacenter rate-limit the scrapers hit. Bring your own Bearer token from <a href="https://developer.x.com" target="_blank" style="color:var(--accent)">developer.x.com</a> (pay-per-use; owned reads ~$0.001 each, roughly $2–7/month at a normal cadence). One token covers all your X accounts. Unset = free gallery-dl/scrape. Polling only — posting still uses cookies.
