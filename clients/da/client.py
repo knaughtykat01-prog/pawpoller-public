@@ -147,7 +147,9 @@ def description_to_da_html(text: str) -> str:
     if not paras:
         return ""
     return "".join(
-        f'<p style="{_DA_P_STYLE}">{html.escape(p) if p else "<br>"}</p>'
+        # quote=False: text, not an attribute. DA doesn't decode &#x27;, so "isn't" showed as
+        # "isn&#x27;t" on the deviation (4.76.1).
+        f'<p style="{_DA_P_STYLE}">{html.escape(p, quote=False) if p else "<br>"}</p>'
         for p in paras
     )
 
@@ -1151,7 +1153,7 @@ class DAClient:
         err = f"{body.get('error', '')} {body.get('error_description', '')}".strip()
         if "insufficient_scope" in err or "scope" in err.lower():
             raise RuntimeError("DeviantArt needs a fresh go-ahead to post journals: press Authorise posting "
-                               "(Settings → Accounts → DeviantArt), then try again")
+                               "on this account in Accounts, then try again")
         if resp.status_code == 401:
             raise RuntimeError("DA: OAuth token expired or invalid (401)")
         raise RuntimeError(f"DeviantArt refused the journal {what}: "
@@ -1279,7 +1281,7 @@ class DAClient:
             if "refresh_token is invalid" in body or "invalid_grant" in body:
                 raise RuntimeError(
                     "DA: the stored refresh token is no longer valid — re-authorise "
-                    "this account (Settings -> Accounts -> DeviantArt -> Connect). "
+                    "this account (Accounts -> this account's Authorise posting button). "
                     f"DeviantArt said: {body}"
                 )
             raise RuntimeError(f"DA: Token refresh failed — {resp.status_code}: {body}")

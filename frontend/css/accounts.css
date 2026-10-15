@@ -193,6 +193,9 @@ button.acct-stat { font: inherit; line-height: inherit; }
    Posting needs an authorization-code token that only a browser approval can
    produce, so the state is worth showing beside the button rather than making
    the operator click to find out. */
+/* A long Test result wraps instead of pushing Authorise posting off the screen (4.76.1). */
+.acct-actions { flex-wrap: wrap; flex-shrink: 1; min-width: 0; }
+.acct-test-status { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
 .acct-da-status {
     font-size: 11px;
     white-space: nowrap;

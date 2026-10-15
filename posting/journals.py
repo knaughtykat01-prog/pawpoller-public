@@ -90,7 +90,8 @@ _INLINE = re.compile(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)|\*\*([^*\n]+)\*\*|(?
 
 def _inline(text: str, kind: str) -> str:
     out, pos = [], 0
-    esc = html.escape if kind == "html" else (lambda s: s)
+    # Text nodes only (hrefs below keep quote=True): sites that don't decode &#x27; showed it raw.
+    esc = (lambda s: html.escape(s, quote=False)) if kind == "html" else (lambda s: s)
     for m in _INLINE.finditer(text):
         out.append(esc(text[pos:m.start()]))
         link_text, url, bold, ital, bare = m.groups()

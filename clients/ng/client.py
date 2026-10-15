@@ -490,4 +490,4 @@ def _as_paragraphs(text: str) -> str:
     paras = [p.strip() for p in re.split(r"\n\s*\n", text or "") if p.strip()]
     if not paras:
         return "<p><br /></p>"
-    return "".join(f"<p>{_html.escape(p).replace(chr(10), '<br />')}</p>" for p in paras)
+    return "".join(f"<p>{_html.escape(p, quote=False).replace(chr(10), '<br />')}</p>" for p in paras)
