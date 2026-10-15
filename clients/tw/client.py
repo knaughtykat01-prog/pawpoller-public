@@ -907,6 +907,7 @@ class TWClient:
                 self.throttled = True   # it waited a limit out: still a limited check (spec 039)
             return via_gdl
         suffix = f":{gdl_state}" if gdl_state else ""
+        limited = gallerydl.was_rate_limited(self.target_user)
         if gallerydl.was_auth_refused(self.target_user):
             from clients.tw import official_api
             if not official_api.is_enabled(config.get_settings()):
@@ -924,6 +925,13 @@ class TWClient:
         if via_api is not None:
             self.backend_used = "official" + suffix
             return via_api
+
+        if limited:
+            # gallery-dl ran out of time waiting out X's limit. The scrape below draws
+            # on that same exhausted budget: it would 429 on page 2 and save a stub.
+            self.throttled = True
+            self.backend_used = "gallerydl:limited"
+            return []
 
         # 3. GraphQL timeline scrape (always-available last-ditch fallback). Only this
         # backend walks the timeline page by page, so only it can be resumed.

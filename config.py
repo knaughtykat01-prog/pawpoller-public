@@ -687,9 +687,10 @@ TW_REQUEST_DELAY_SECONDS = 2.0  # X GraphQL — aggressive rate limiting, needs 
 # 480s (8 min): from a datacenter IP X often 429s the timeline endpoint and
 # gallery-dl correctly waits for X's reset (~6 min observed) before fetching. The
 # cap must exceed that wait, else we kill gallery-dl mid-wait and fall back to a
-# GraphQL path that 429s on the same rate limit. 8 min rides out a typical reset
-# so gallery-dl succeeds; acceptable to block one account that long at the 12h cadence.
-TW_GALLERYDL_TIMEOUT_SECONDS = 480
+# GraphQL path that 429s on the same rate limit. 4.77.5: 8 min was not enough — a seat
+# killed a wait at 480 s and the fallback saved 11 of 23 tweets. X's window is 15 min,
+# so 16 lets a full wait finish; a timeout still skips the GraphQL fallback (client.py).
+TW_GALLERYDL_TIMEOUT_SECONDS = 960
 # Shared cross-account cap for X requests PawPoller makes directly (GraphQL scrape
 # + official API), enforced as a sliding window by polling/rate_limit.py. X's
 # timeline rate limit is per-IP and shared across accounts, so polling several
@@ -1362,7 +1363,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.77.4"
+APP_VERSION = "4.77.5"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).

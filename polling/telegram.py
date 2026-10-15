@@ -147,8 +147,8 @@ async def send_telegram(text: str) -> bool:
 
 # ── Poll cycle summary ───────────────────────────────────────
 
-PLATFORM_EMOJI = {"ib": "🐾", "fa": "🦊", "ws": "🦎", "sf": "🐺", "sqw": "🦑", "ao3": "📖", "da": "🎨", "wp": "📙", "ik": "🎯", "bsky": "🦋", "tw": "🐦", "mast": "🐘", "tum": "📘", "pix": "🖌", "thr": "🧵", "ig": "📷", "e621": "🐾", "fn": "🌐", "fbr": "🖼", "r34": "🔞", "sc": "🎵", "ng": "🎬", "yt": "📺", "pic": "🎥"}
-PLATFORM_NAME = {"ib": "Inkbunny", "fa": "FurAffinity", "ws": "Weasyl", "sf": "SoFurry", "sqw": "SquidgeWorld", "ao3": "AO3", "da": "DeviantArt", "wp": "Wattpad", "ik": "Itaku", "bsky": "Bluesky", "tw": "X/Twitter", "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads", "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "r34": "Rule34.xxx", "sc": "SoundCloud", "ng": "Newgrounds", "yt": "YouTube", "pic": "Picarto"}
+PLATFORM_EMOJI = {"ib": "🐾", "fa": "🦊", "ws": "🦎", "sf": "🐺", "sqw": "🦑", "ao3": "📖", "da": "🎨", "wp": "📙", "ik": "🎯", "bsky": "🦋", "tw": "🐦", "mast": "🐘", "tum": "📘", "pix": "🖌", "thr": "🧵", "ig": "📷", "e621": "🐾", "fn": "🌐", "fbr": "🖼", "r34": "🔞", "sc": "🎵", "ng": "🎬", "yt": "📺", "pic": "🎥", "tg": "✈️", "fb": "📘"}
+PLATFORM_NAME = {"ib": "Inkbunny", "fa": "FurAffinity", "ws": "Weasyl", "sf": "SoFurry", "sqw": "SquidgeWorld", "ao3": "AO3", "da": "DeviantArt", "wp": "Wattpad", "ik": "Itaku", "bsky": "Bluesky", "tw": "X/Twitter", "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads", "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "r34": "Rule34.xxx", "sc": "SoundCloud", "ng": "Newgrounds", "yt": "YouTube", "pic": "Picarto", "tg": "Telegram", "fb": "Facebook"}
 
 
 # ── Persona / account context (multi-account notification labelling) ─────────
@@ -853,8 +853,8 @@ def _persona_account_lines(conn, accts: list, hours: int, include_watchers: bool
                                  or deltas["comments_delta"] or (watcher or {}).get("new", 0)):
             continue
         had_data = True
-        emoji = PLATFORM_EMOJI[plat]
-        acct_label = a.get("label") or PLATFORM_NAME[plat]
+        emoji = PLATFORM_EMOJI.get(plat, "•")
+        acct_label = a.get("label") or PLATFORM_NAME.get(plat, plat)
         lines.append(f"<b>{emoji} {_esc(acct_label)}</b> ({totals['subs']} subs)")
         lines.append(
             f"  Views: {totals['views']:,} (+{deltas['views_delta']:,})"

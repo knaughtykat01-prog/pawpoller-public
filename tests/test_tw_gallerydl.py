@@ -540,3 +540,32 @@ async def test_graphql_with_unresolvable_user_is_a_credentials_error_not_zero_tw
             await c._get_all_tweets_graphql()
     finally:
         await c.close()
+
+
+@pytest.mark.asyncio
+async def test_a_timed_out_rate_limit_wait_skips_the_graphql_fallback(monkeypatch):
+    # gallery-dl killed mid-wait: the scrape would hit the same exhausted budget.
+    from clients.tw import client as tw_client, official_api
+    monkeypatch.setattr(tw_client.config, "get_settings", lambda: {})
+    monkeypatch.setattr(gallerydl, "find_gallerydl", lambda *_a, **_k: "/usr/bin/gallery-dl")
+    monkeypatch.setattr(gallerydl, "_LAST_AUTH_FAILED", {})
+    monkeypatch.setattr(gallerydl, "_LAST_THROTTLED", {})
+
+    async def timed_out(*_a, **_k):
+        return 1, "", "timeout"
+
+    async def official_none(*_a, **_k):
+        return None
+
+    async def graphql_must_not_run(self, cursor=""):
+        raise AssertionError("GraphQL fallback ran after a rate-limit timeout")
+
+    monkeypatch.setattr(gallerydl, "_run", timed_out)
+    monkeypatch.setattr(official_api, "fetch_tweets", official_none)
+    monkeypatch.setattr(tw_client.TWClient, "_get_all_tweets_graphql", graphql_must_not_run)
+    c = tw_client.TWClient("at", "ct0", "handle")
+    try:
+        assert await c.get_all_tweets() == []
+    finally:
+        await c.close()
+    assert c.throttled is True and c.backend_used == "gallerydl:limited"

@@ -384,7 +384,9 @@ async def fetch_tweets(auth_token: str, ct0: str, target_user: str,
     try:
         _write_cookies(auth_token, ct0, cookie_path)
         rc, out, err = await _run(exe, url, cookie_path, settings, quiet=False)
-        if _RATE_WAIT.search(err or ""):
+        # A timeout is gallery-dl still waiting out X's limit (the wait line is lost
+        # with the killed process): the same budget the GraphQL fallback would use.
+        if _RATE_WAIT.search(err or "") or err == "timeout":
             _LAST_THROTTLED[handle.lower()] = True
         if rc != 0:
             # Only gallery-dl's own error/warning lines: with -q off, info lines carry

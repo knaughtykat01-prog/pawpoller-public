@@ -2700,8 +2700,8 @@ const Components = {
         if (!code) return '<span style="color:var(--text-muted)">--</span>';
         const [src, why] = String(code).split(':');
         const name = { gallerydl: 'gallery-dl', official: 'X API (paid)', graphql: 'Scraper' }[src] || src;
-        const note = { missing: 'gallery-dl not installed', failed: 'gallery-dl failed' }[why];
-        const warn = src !== 'gallerydl';
+        const note = { missing: 'gallery-dl not installed', failed: 'gallery-dl failed', limited: 'X rate limit, skipped' }[why];
+        const warn = src !== 'gallerydl' || !!why;
         return `<span style="color:${warn ? 'var(--warning)' : 'var(--success)'}">${Utils.escapeHtml(name)}${note ? ` <small>(${note})</small>` : ''}</span>`;
     },
 
