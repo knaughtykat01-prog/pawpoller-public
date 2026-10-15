@@ -453,9 +453,12 @@ class DeviantArtPoster(PlatformPoster):
             except Exception as e:
                 logger.warning("DA: metadata updated but description not set for %s: %s",
                                external_id, e)
-                warning = (f"Title, tags and rating updated. Description NOT changed "
-                           f"({e}) — DeviantArt's API has no description field, so that "
-                           f"part needs a valid da_cookie.")
+                code = (DAClient.ERR_COOKIE_MISSING if (DAClient.ERR_COOKIE_MISSING in str(e)
+                                                    or "needs the da_cookie" in str(e))
+                        else DAClient.ERR_COOKIE_EXPIRED)
+                warning = (f"[{code}] Title, tags and rating updated. Description NOT changed"
+                           f": DeviantArt only lets a signed-in browser do that. Paste a fresh "
+                           f"da_cookie in this account's Credentials, then sync again.")
 
         return PostResult(
             success=True,

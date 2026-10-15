@@ -167,7 +167,9 @@
       paste: 'Settings → DeviantArt → client_id + client_secret + username to track',
       renew: { when: 'Posting stops working (tracking keeps going)', how: 'Press Authorise posting again. The app\'s own codes do not expire.' },
       notes: [
-        'No browser cookie any more (since 2.47.0): this uses DeviantArt\'s official API, so there is nothing to copy out of DevTools and nothing that expires every few weeks. If a guide still tells you to fetch an <code>auth</code> cookie, it is out of date.',
+        'Tracking and posting use DeviantArt\'s official API, with no browser cookie. <b>Changing a description</b> is the one exception: DeviantArt only lets a signed-in browser do it. To sync descriptions, open deviantart.com signed in, press <b>F12</b> &rarr; <b>Network</b>, refresh, click the first request, copy the whole <b>Cookie</b> value under Request Headers, and paste it into the account\'s <b>Credentials</b> &rarr; <code>da_cookie</code>. The account\'s <b>Test</b> button checks it.',
+        '<b>DA-COOKIE-MISSING</b>: no <code>da_cookie</code> is saved, so a sync changed the title, tags and rating but not the description. Paste one as above, then sync again.',
+        '<b>DA-COOKIE-EXPIRED</b>: the saved <code>da_cookie</code> no longer signs you in (you signed out, or it aged out after a few weeks). Copy a fresh one the same way and paste it over the old one.',
         'Tracking needs only the app. Posting as you needs the extra approval, which is the only way DeviantArt will issue that permission.',
         'Journals (Posts → <b>New journal</b>) need one more permission. If DeviantArt says so, press <b>Authorise posting</b> again: the new approval includes it.',
         'On a server, DA is polled through the Cloudflare proxy — data-centre addresses are blocked.',

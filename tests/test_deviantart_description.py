@@ -210,4 +210,5 @@ async def test_a_missing_cookie_does_not_fail_the_whole_edit(monkeypatch):
 
     assert result.success is True, "an unreachable description must not fail the edit"
     assert "Description NOT changed" in (result.error or "")
+    assert "[DA-COOKIE-MISSING]" in result.error   # 4.77.2: the code the guide explains
     assert "da_cookie" in (result.error or "")

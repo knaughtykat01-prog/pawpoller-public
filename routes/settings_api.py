@@ -748,6 +748,20 @@ async def test_account_login(account_id: int):
         poster = _mgr._get_poster("da", account_id)
         res = await poster.validate_session()
         if res["ok"]:
+            # Posting works; descriptions also need the browser cookie (4.77.2). Without
+            # this a sync looked fine and quietly left every description alone.
+            from clients.da.client import DAClient
+            probe = DAClient(cookie=creds.get("da_cookie", ""))
+            try:
+                cookie_ok, code = await probe.check_cookie()
+            finally:
+                await probe.close()
+            if not cookie_ok:
+                why = ("no da_cookie is stored" if code == DAClient.ERR_COOKIE_MISSING
+                       else "the da_cookie has expired")
+                return {"status": "partial", "code": code, "username": res.get("username", ""),
+                        "detail": f"[{code}] Posting works, but descriptions won't sync: {why}. "
+                                  "Paste a fresh one in Credentials."}
             return {"status": "ok", "detail": res.get("detail", ""),
                     "username": res.get("username", "")}
         if res["logged_in"] and not res["matches"]:

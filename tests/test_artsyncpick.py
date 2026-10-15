@@ -29,3 +29,9 @@ def test_the_page_sends_only_the_rows_site():
     src = open("frontend/js/masterpieces.js", encoding="utf-8").read()
     assert "platforms: [only]" in src and 'data-mp-sync data-platform=' in src
     assert "title differs" in src
+
+
+def test_a_successful_syncs_note_is_shown():
+    # 4.77.2: a half-done sync (DA description without the cookie) read as fully done.
+    src = open("frontend/js/components.js", encoding="utf-8").read()
+    assert "r.attention || r.note" in src

@@ -711,6 +711,11 @@ window.Accounts = {
                 out.style.color = 'var(--danger)';
                 out.title = r.detail || '';
             }
+            // Logged in and able to post, but one job can't run (DA descriptions need the cookie, 4.77.2).
+            else if (r.status === 'partial') {
+                out.textContent = '⚠ ' + (r.detail || r.code || 'partly working');
+                out.style.color = 'var(--warning)';
+            }
             else if (r.status === 'invalid') { out.textContent = '✗ ' + (r.detail || 'login expired'); out.style.color = 'var(--danger)'; }
             else { out.textContent = r.detail || r.status; out.style.color = 'var(--text-muted)'; }
         } catch (err) {

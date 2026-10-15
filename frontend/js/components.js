@@ -2102,7 +2102,9 @@ const Components = {
             const ok = !!r.success;
             const skipped = !ok && !!r.skipped;   // sync: post-only sites (4.2.0)
             // 4.60.0 (spec 024): on the site but waiting for the owner (Tumblr kept a Mature post as a draft).
-            const attention = ok && r.attention ? String(r.attention) : '';
+            // A soft `note` on a success (sync: DA's description needs the cookie, Weasyl can't swap
+            // the file) was sent but never shown, so a half-done sync read as fully done (4.77.2).
+            const attention = ok && (r.attention || r.note) ? String(r.attention || r.note) : '';
             const url = Utils.safeUrl(r.external_url || r.url || '');   // http(s) only (SECLOW4622)
             const what = attention
                 ? esc(attention) + (url ? ` <a href="${esc(url)}" target="_blank" rel="noopener">Open it ↗</a>` : '')

@@ -1360,6 +1360,34 @@ class DAClient:
                 f"DA: edit failed ({resp.status_code}): {resp.text[:200]}")
         return resp.json() if resp.content else {}
 
+    # Stable error codes for the one DA job that needs the browser cookie (setting a
+    # description). They appear in sync results, the account Test and the log, and the
+    # DeviantArt guide says what to do for each (4.77.2).
+    ERR_COOKIE_MISSING = "DA-COOKIE-MISSING"
+    ERR_COOKIE_EXPIRED = "DA-COOKIE-EXPIRED"
+
+    async def check_cookie(self) -> tuple[bool, str]:
+        """(ok, code): can the stored da_cookie set a description? Read-only."""
+        if not self.cookie_value:
+            return False, self.ERR_COOKIE_MISSING
+        try:
+            await self._eclipse_csrf_token()
+        except Exception:
+            return False, self.ERR_COOKIE_EXPIRED
+        return True, ""
+
+    @staticmethod
+    def _session_from_page(html: str) -> tuple[bool, str]:
+        """(signed_in, csrf) from a page's ``publicSession`` JSON.
+
+        The JSON sits inside a JS string, so its quotes arrive escaped (``\\"csrfToken\\":\\"…``);
+        and a SIGNED-OUT page carries a csrfToken too (checked live 2026-10-15). So the token
+        alone proves nothing: ``isLoggedIn`` decides."""
+        q = r'\\?"'
+        signed_in = bool(re.search(q + r'isLoggedIn' + q + r'\s*:\s*true', html))
+        m = re.search(q + r'csrfToken' + q + r'\s*:\s*' + q + r'([^"\\]+)', html)
+        return signed_in, (m.group(1) if m else "")
+
     async def _eclipse_csrf_token(self) -> str:
         """Scrape a CSRF token for the Eclipse (``_napi``) endpoints.
 
@@ -1368,13 +1396,12 @@ class DAClient:
         any logged-in page's bootstrap JSON.
         """
         resp = await self._http.get("https://www.deviantart.com/", timeout=30.0)
-        m = re.search(r'"csrfToken"\s*:\s*"([^"]+)"', resp.text) or \
-            re.search(r'csrf_token["\'\s:=]+([A-Za-z0-9_.\-]{20,})', resp.text)
-        if not m:
+        signed_in, token = self._session_from_page(resp.text)
+        if not (signed_in and token):
             raise RuntimeError(
-                "DA: could not find a CSRF token — the da_cookie is probably "
-                "expired or not logged in")
-        return m.group(1)
+                f"[{self.ERR_COOKIE_EXPIRED}] DA: the da_cookie is expired or not signed in "
+                "(DeviantArt shows it as signed out)")
+        return token
 
     async def napi_set_description(self, deviation_id: str, text: str,
                                    csrf_token: str = "") -> dict:
@@ -1392,8 +1419,8 @@ class DAClient:
         """
         if not self.cookie_value:
             raise RuntimeError(
-                "DA: setting a description needs the da_cookie (the official API "
-                "has no description field)")
+                f"[{self.ERR_COOKIE_MISSING}] DA: setting a description needs the da_cookie "
+                "(the official API has no description field)")
         token = csrf_token or await self._eclipse_csrf_token()
         payload = {
             "deviationid": str(deviation_id),
