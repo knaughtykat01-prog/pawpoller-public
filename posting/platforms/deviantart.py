@@ -96,14 +96,20 @@ class DeviantArtPoster(PlatformPoster):
 
         target_user = creds.get("da_target_user", "")
         if not self._client:
+            # client_id/secret switch the client to the official API (`_use_oauth`). Without
+            # them every read here (the edit's gallery lookup in `uuid_for`) fell back to the
+            # cookie `_napi` gallery endpoint, which DeviantArt has removed (404), so editing
+            # an image deviation always failed (4.77.1).
             self._client = DAClient(
                 cookie=creds.get("da_cookie", ""),
                 target_user=target_user,
+                client_id=client_id, client_secret=client_secret,
             )
-        elif self._client.target_user != target_user:
+        else:
             # Posters are cached per (platform, account_id) for the life of the
-            # process, so a renamed target would otherwise stay stale forever.
+            # process, so a renamed target or new app creds would otherwise stay stale.
             self._client.target_user = target_user
+            self._client.client_id, self._client.client_secret = client_id, client_secret
 
         # ⚠ Has the stored credential changed under us?
         #
