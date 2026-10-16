@@ -30,6 +30,7 @@ except ImportError:  # pragma: no cover - a build without it falls back (FR-003)
     AsyncCurlTransport = None
 
 import config
+from clients.otw_forms import otw_form
 
 logger = logging.getLogger(__name__)
 
@@ -542,12 +543,12 @@ class AO3Client:
         # Extract authenticity_token
         token_match = re.search(
             r'<input[^>]*name="authenticity_token"[^>]*value="([^"]+)"',
-            html,
+            otw_form(html, r"/users/login"),
         )
         if not token_match:
             token_match = re.search(
                 r'<input[^>]*value="([^"]+)"[^>]*name="authenticity_token"',
-                html,
+                otw_form(html, r"/users/login"),
             )
         if not token_match:
             logger.error("AO3: Could not find authenticity_token on login page")
@@ -910,16 +911,6 @@ class AO3Client:
 
     # ── Posting / Upload ────────────────────────────────────────
 
-    async def _get_authenticity_token(self, url: str) -> str | None:
-        """Fetch a page and extract the Rails authenticity_token."""
-        html = await self._get_page(url)
-        if not html:
-            return None
-        m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', html)
-        if not m:
-            m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', html)
-        return m.group(1) if m else None
-
     async def create_work(
         self,
         *,
@@ -1015,7 +1006,7 @@ class AO3Client:
             )
 
         token_m = re.search(
-            r'name="authenticity_token"[^>]*value="([^"]+)"', form_html
+            r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(form_html, r"/works")
         )
         if not token_m:
             raise RuntimeError("AO3: Could not get CSRF token from /works/new")
@@ -1153,8 +1144,13 @@ class AO3Client:
             logger.error("AO3: response body saved to %s", debug_path)
         except Exception:
             pass
-        errors = re.findall(r'class="[^"]*error[^"]*"[^>]*>(.*?)</', body, re.DOTALL)
-        err_text = "; ".join(re.sub(r'<[^>]+>', '', e).strip()[:200] for e in errors[:5])
+        # AO3 re-renders the form at /works with <div id="error"><h4>Sorry! …</h4><ul><li>reason</li>…: name the reasons.
+        box = re.search(r'<div id="error"[^>]*>(.*?)</div>', body, re.DOTALL)
+        errors = (re.findall(r'<li>(.*?)</li>', box.group(1), re.DOTALL) if box else []) \
+            or re.findall(r'class="[^"]*error[^"]*"[^>]*>(.*?)</', body, re.DOTALL)
+        err_text = "; ".join(unescape(re.sub(r'<[^>]+>', '', e)).strip()[:200] for e in errors[:5])
+        if box and err_text:
+            raise RuntimeError(f"AO3 didn't save the work: {err_text}")
         raise RuntimeError(
             f"AO3: Could not extract work ID from {final_url} "
             f"(status={resp.status_code}, errors={err_text or 'none found'})"
@@ -1425,9 +1421,9 @@ class AO3Client:
                 "AO3: Could not load chapter edit form (transient fetch failure)"
             )
 
-        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', html)
+        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(html, r"/works/\d+/chapters/\d+"))
         if not token_m:
-            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', html)
+            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(html, r"/works/\d+/chapters/\d+"))
         if not token_m:
             raise RuntimeError("AO3: Could not find CSRF token in chapter edit form")
         token = token_m.group(1)
@@ -1634,9 +1630,9 @@ class AO3Client:
                 "published": False,
             }
 
-        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', html)
+        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(html, r"/works/\d+/chapters/\d+/post"))
         if not token_m:
-            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', html)
+            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(html, r"/works/\d+/chapters/\d+/post"))
         if not token_m:
             raise RuntimeError(
                 f"AO3: Could not extract CSRF token from chapter {chapter_id} page"
@@ -1771,9 +1767,9 @@ class AO3Client:
                 "AO3: Could not load chapter form (transient fetch failure)"
             )
 
-        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', html)
+        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(html, r"/works/\d+/chapters"))
         if not token_m:
-            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', html)
+            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(html, r"/works/\d+/chapters"))
         if not token_m:
             raise RuntimeError("AO3: Could not get CSRF token from chapter form")
         token = token_m.group(1)
@@ -1930,9 +1926,9 @@ class AO3Client:
             )
 
         token_m = re.search(
-            r'name="authenticity_token"[^>]*value="([^"]+)"', confirm_resp.text
+            r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(confirm_resp.text, r"/works/\d+")
         ) or re.search(
-            r'value="([^"]+)"[^>]*name="authenticity_token"', confirm_resp.text
+            r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(confirm_resp.text, r"/works/\d+")
         )
         if not token_m:
             raise RuntimeError("AO3: Could not get CSRF token from confirm_delete page")
@@ -2072,11 +2068,11 @@ class AO3Client:
             )
 
         token_m = re.search(
-            r'name="authenticity_token"[^>]*value="([^"]+)"', form_html
+            r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(form_html, r"/skins")
         )
         if not token_m:
             token_m = re.search(
-                r'value="([^"]+)"[^>]*name="authenticity_token"', form_html
+                r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(form_html, r"/skins")
             )
         if not token_m:
             raise RuntimeError("AO3: Could not get CSRF token from skin form")
@@ -2174,11 +2170,11 @@ class AO3Client:
             )
 
         token_m = re.search(
-            r'name="authenticity_token"[^>]*value="([^"]+)"', html
+            r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(html, r"/skins/\d+")
         )
         if not token_m:
             token_m = re.search(
-                r'value="([^"]+)"[^>]*name="authenticity_token"', html
+                r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(html, r"/skins/\d+")
             )
         if not token_m:
             raise RuntimeError("AO3: Could not find CSRF token in skin edit form")
@@ -2289,9 +2285,9 @@ def _extract_work_form_fields(html: str) -> tuple[str, list[tuple[str, str]]]:
     Handles hidden/text inputs, checkboxes (checked only), radios
     (checked only), selects (selected option), and textareas.
     """
-    token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', html)
+    token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(html, r"/works/\d+"))
     if not token_m:
-        token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', html)
+        token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(html, r"/works/\d+"))
     if not token_m:
         raise RuntimeError("AO3: Could not find CSRF token in work edit form")
     token = token_m.group(1)

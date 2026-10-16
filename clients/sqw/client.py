@@ -22,6 +22,7 @@ from html import unescape
 import httpx
 
 import config
+from clients.otw_forms import otw_form
 
 
 def _extract_work_form_fields(html: str) -> tuple[str, list[tuple[str, str]]]:
@@ -38,9 +39,9 @@ def _extract_work_form_fields(html: str) -> tuple[str, list[tuple[str, str]]]:
       - textareas (body content with HTML entities decoded)
     """
     # CSRF token (works in either attribute order)
-    token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', html)
+    token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(html, r"/works/\d+"))
     if not token_m:
-        token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', html)
+        token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(html, r"/works/\d+"))
     if not token_m:
         raise RuntimeError("Could not find CSRF token in work edit form")
     token = token_m.group(1)
@@ -322,13 +323,13 @@ class SquidgeWorldClient:
         # Extract authenticity_token from the login form
         token_match = re.search(
             r'<input[^>]*name="authenticity_token"[^>]*value="([^"]+)"',
-            html,
+            otw_form(html, r"/users/login"),
         )
         if not token_match:
             # Try alternate pattern (value before name)
             token_match = re.search(
                 r'<input[^>]*value="([^"]+)"[^>]*name="authenticity_token"',
-                html,
+                otw_form(html, r"/users/login"),
             )
         if not token_match:
             logger.error("SqW: Could not find authenticity_token on login page")
@@ -725,11 +726,11 @@ class SquidgeWorldClient:
             raise RuntimeError(f"SqW: Could not load skin form (status {form_resp.status_code})")
 
         token_m = re.search(
-            r'name="authenticity_token"[^>]*value="([^"]+)"', form_resp.text
+            r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(form_resp.text, r"/skins")
         )
         if not token_m:
             token_m = re.search(
-                r'value="([^"]+)"[^>]*name="authenticity_token"', form_resp.text
+                r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(form_resp.text, r"/skins")
             )
         if not token_m:
             raise RuntimeError("SqW: Could not get CSRF token from skin form")
@@ -833,9 +834,9 @@ class SquidgeWorldClient:
             raise RuntimeError(f"SqW: Could not load skin edit form (status {form_resp.status_code})")
         html = form_resp.text
 
-        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', html)
+        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(html, r"/skins/\d+"))
         if not token_m:
-            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', html)
+            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(html, r"/skins/\d+"))
         if not token_m:
             raise RuntimeError("SqW: Could not find CSRF token in skin edit form")
         token = token_m.group(1)
@@ -984,9 +985,9 @@ class SquidgeWorldClient:
             raise RuntimeError(f"SqW: Could not load chapter form (status {form_resp.status_code})")
         html = form_resp.text
 
-        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', html)
+        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(html, r"/works/\d+/chapters"))
         if not token_m:
-            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', html)
+            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(html, r"/works/\d+/chapters"))
         if not token_m:
             raise RuntimeError("SqW: Could not get CSRF token from chapter form")
         token = token_m.group(1)
@@ -1079,16 +1080,6 @@ class SquidgeWorldClient:
 
     # ── Posting / Upload ────────────────────────────────────────
 
-    async def _get_authenticity_token(self, url: str) -> str | None:
-        """Fetch a page and extract the Rails authenticity_token."""
-        html = await self._get_page(url)
-        if not html:
-            return None
-        m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', html)
-        if not m:
-            m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', html)
-        return m.group(1) if m else None
-
     async def create_work(
         self,
         *,
@@ -1167,7 +1158,7 @@ class SquidgeWorldClient:
         form_html = form_resp.text
 
         token_m = re.search(
-            r'name="authenticity_token"[^>]*value="([^"]+)"', form_html
+            r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(form_html, r"/works")
         )
         if not token_m:
             raise RuntimeError("SqW: Could not get CSRF token from /works/new")
@@ -1495,9 +1486,9 @@ class SquidgeWorldClient:
             raise RuntimeError(f"SqW: Could not load chapter edit form (status {form_resp.status_code})")
         html = form_resp.text
 
-        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', html)
+        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(html, r"/works/\d+/chapters/\d+"))
         if not token_m:
-            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', html)
+            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(html, r"/works/\d+/chapters/\d+"))
         if not token_m:
             raise RuntimeError("SqW: Could not find CSRF token in chapter edit form")
         token = token_m.group(1)
@@ -1653,9 +1644,9 @@ class SquidgeWorldClient:
         if confirm_resp.status_code != 200:
             raise RuntimeError(f"SqW: Could not load confirm_delete page (status {confirm_resp.status_code})")
 
-        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', confirm_resp.text)
+        token_m = re.search(r'name="authenticity_token"[^>]*value="([^"]+)"', otw_form(confirm_resp.text, r"/works/\d+"))
         if not token_m:
-            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', confirm_resp.text)
+            token_m = re.search(r'value="([^"]+)"[^>]*name="authenticity_token"', otw_form(confirm_resp.text, r"/works/\d+"))
         if not token_m:
             raise RuntimeError("SqW: Could not get CSRF token from confirm_delete page")
 

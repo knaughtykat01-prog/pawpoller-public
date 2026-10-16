@@ -42,6 +42,7 @@ _PERMANENT_ERROR_MARKERS = (
     "press connect again",               # an OAuth sign-in that needs the owner (Tumblr, 4.60.0)
     "cloudflare bot check",              # FA mitigation (4.77.6, spec 040): FA asks tools to stop, and a submit
                                          # can land before the check answers its redirect, so a retry double-posts
+    "didn't save the work",              # AO3 validation (4.78.1): the same form fails the same way
 )
 
 
