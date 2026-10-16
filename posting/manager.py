@@ -40,6 +40,8 @@ _PERMANENT_ERROR_MARKERS = (
     "cookies stored for @",              # X: the session belongs to another account (4.6.3)
     "try again tomorrow",                # a site's DAILY limit (Tumblr, 4.60.0): a retry in minutes re-fails
     "press connect again",               # an OAuth sign-in that needs the owner (Tumblr, 4.60.0)
+    "cloudflare bot check",              # FA mitigation (4.77.6, spec 040): FA asks tools to stop, and a submit
+                                         # can land before the check answers its redirect, so a retry double-posts
 )
 
 

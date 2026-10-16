@@ -124,7 +124,12 @@ class FurAffinityPoster(PlatformPoster):
             return self._client
 
         client = FAClient(username=username, cookie_a=cookie_a, cookie_b=cookie_b)
-        if not await client.validate_cookies():
+        try:
+            valid = await client.validate_cookies()
+        except BaseException:
+            await client.close()   # FA's bot check (spec 040) raises here; don't leak the client
+            raise
+        if not valid:
             raise RuntimeError(
                 f"FurAffinity cookies are invalid or expired for account "
                 f"{acct_id} ({username or 'unknown'})"

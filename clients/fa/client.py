@@ -46,6 +46,46 @@ logger = logging.getLogger(__name__)
 # exactly like "no marker" and would have manufactured a false mismatch.
 _LOGGED_IN_AVATAR_RE = re.compile(
     r'class="[^"]*loggedin_user_avatar[^"]*"[^>]*alt="([^"]+)"', re.I)
+class FAChallenged(RuntimeError):
+    """FurAffinity's Cloudflare bot check answered instead of FA (4.77.6, spec 040).
+
+    Not a login problem: it turns away every scripted request from the address, cookies or not. PawPoller does not
+    try to get past it (constitution VII; FA's policy asks bots to stop during DDoS mitigation). The wording carries
+    "Cloudflare" so rate watch (spec 039) counts the poll as *challenged*.
+    """
+
+    def __init__(self, next_try: str = ""):
+        msg = "FurAffinity's Cloudflare bot check is turning PawPoller away. Your login is fine"
+        super().__init__(msg + (f"; PawPoller will try again by itself around {next_try}." if next_try
+                                else "; try again later."))
+
+
+# Cloudflare's own page: exactly this title AND its challenge script. Title alone is not enough: FA puts the
+# submission's title first, so a piece called "Just a moment..." would read as a bot check (review 4.77.6).
+_CF_TITLE_RE = re.compile(r"<title>\s*Just a moment\.\.\.\s*</title>", re.I)
+_CF_SCRIPT_RE = re.compile(r"challenge-platform|cf_chl_", re.I)
+
+
+def _is_challenge(resp: httpx.Response) -> bool:
+    """Cloudflare's bot check: its header, or its "Just a moment…" page (served with 200 too). A plain 403 is not."""
+    if resp.headers.get("cf-mitigated", "").lower() == "challenge":
+        return True
+    if "html" not in resp.headers.get("content-type", ""):
+        return False
+    head = resp.text[:20000]
+    return bool(_CF_TITLE_RE.search(head) and _CF_SCRIPT_RE.search(head))
+
+
+async def _check_challenge(resp: httpx.Response) -> None:
+    """Every direct FA answer passes here: a bot check raises, a good answer ends any stand-down."""
+    await resp.aread()
+    if _is_challenge(resp):
+        raise FAChallenged()
+    if resp.is_success:
+        from polling import fa_standdown
+        fa_standdown.clear()
+
+
 # Fallback: the same block links the userpage immediately before the avatar.
 _LOGGED_IN_LINK_RE = re.compile(
     r'href="/user/([A-Za-z0-9._~\[\]-]+)/?"[^>]*>\s*<img[^>]*loggedin_user_avatar', re.I)
@@ -182,6 +222,7 @@ class FAClient:
             self._fa_http = httpx.AsyncClient(
                 timeout=30.0,
                 cookies=jar_cookies,
+                event_hooks={"response": [_check_challenge]},
                 follow_redirects=True,
                 # Custom UA to identify our traffic to FA's servers
                 headers={"User-Agent": "PawPoller/1.0"},
@@ -238,6 +279,8 @@ class FAClient:
             logger.info("FA cookie validation: no logged-in marker on "
                         "/controls/submissions/ — session is not authenticated")
             return False
+        except FAChallenged:
+            raise   # a bot check is not "not logged in" (spec 040)
         except Exception as e:
             logger.warning("FA cookie validation failed: %s", e)
             return False
@@ -309,6 +352,8 @@ class FAClient:
                     f"FurAffinity keeps one session per browser — sign in as "
                     f"{self.username} and copy cookies a and b again.")
             return out
+        except FAChallenged:
+            raise
         except Exception as e:
             logger.warning("FA session validation failed: %s", e)
             out["detail"] = f"Could not reach FurAffinity: {e}"
@@ -586,6 +631,8 @@ class FAClient:
         for sid in submission_ids:
             try:
                 out.append(await self.get_submission_detail_direct(sid))
+            except FAChallenged:
+                raise   # the bot check covers every page: stop, don't keep asking (spec 040)
             except Exception as e:  # noqa: BLE001 — one bad page must not abort the cycle
                 logger.warning("FA direct scrape failed for submission %s: %s", sid, e)
             await asyncio.sleep(config.FA_REQUEST_DELAY_SECONDS)

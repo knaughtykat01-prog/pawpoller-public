@@ -540,6 +540,11 @@ window.Accounts = {
                     msg.textContent = 'Saved, but ' + (t.detail || 'these cookies belong to another account.');
                     this._setTestStatus(accountId,
                         '✗ signed in as ' + (t.username || 'someone else'), 'var(--danger)');
+                } else if (t && t.status === 'blocked') {
+                    // FA's bot check answered, not FA (4.77.6): the login is untested, not failed.
+                    msg.style.color = 'var(--warning)';
+                    msg.textContent = "Saved. The login couldn't be checked: " + (t.detail || '');
+                    this._setTestStatus(accountId, '⚠ FurAffinity bot check', 'var(--warning)');
                 } else if (t && t.status === 'invalid') {
                     msg.style.color = 'var(--danger)';
                     msg.textContent = 'Saved, but the login test FAILED: ' + (t.detail || '');
@@ -715,6 +720,11 @@ window.Accounts = {
             else if (r.status === 'partial') {
                 out.textContent = '⚠ ' + (r.detail || r.code || 'partly working');
                 out.style.color = 'var(--warning)';
+            }
+            else if (r.status === 'blocked') {
+                out.textContent = '⚠ FurAffinity bot check';
+                out.style.color = 'var(--warning)';
+                out.title = r.detail || '';
             }
             else if (r.status === 'invalid') { out.textContent = '✗ ' + (r.detail || 'login expired'); out.style.color = 'var(--danger)'; }
             else { out.textContent = r.detail || r.status; out.style.color = 'var(--text-muted)'; }

@@ -34,7 +34,8 @@ from polling.notifications import describe_error
 from polling.site_turns import site_turn
 
 import config
-from clients.fa.client import FAClient
+from clients.fa.client import FAChallenged, FAClient
+from polling import fa_standdown
 from database.db import get_connection
 from database import fa_queries
 
@@ -90,6 +91,8 @@ def _humanize_fa_error(e: BaseException) -> BaseException:
 # Shared mutable dict read by /api/fa/poll/progress -- same pattern as
 # the IB poller's poll_progress.  Prefixed with ``fa_`` so the two dicts
 # can coexist at module level without collision.
+_fa_skip_recorded_until = 0.0   # spec 040: one recorded skip per stand-down window
+
 fa_poll_progress = {
     "active": False,
     "phase": "idle",
@@ -276,6 +279,19 @@ async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = Fa
     is_default = bool(account_row["is_default"]) if account_row else True
     is_first = account_id not in _fa_first_poll_done
 
+    # FurAffinity's bot check turned us away recently (4.77.6, spec 040): no request until the wait is up. Every
+    # account in the round lands here, so the skip is recorded once per stand-down, not once per account.
+    global _fa_skip_recorded_until
+    if fa_standdown.remaining() > 0:
+        reason = f"FurAffinity's Cloudflare bot check is on, next try around {fa_standdown.next_try_text()}"
+        if _fa_skip_recorded_until != fa_standdown.until():
+            _fa_skip_recorded_until = fa_standdown.until()
+            from polling.last_check import record_skip
+            record_skip("fa", reason)
+        logger.info("FA poll skipped (account %s): %s", account_id, reason)
+        _update_fa_progress("complete", message=reason)
+        return {"skipped_reason": reason}
+
     # Concurrency guard -- one FA poll cycle at a time (accounts poll sequentially).
     if not _fa_poll_lock.acquire(blocking=False):
         logger.warning("FA poll already running — skipping (account %s)", account_id)
@@ -350,6 +366,7 @@ async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = Fa
             _update_fa_progress("complete", message="No FA submissions found.")
             fa_queries.finish_fa_poll_log(conn, log_id, "success", duration_seconds=time.time() - start_time, **stats)
             conn.commit()
+            await fa_standdown.reset()
             return stats
 
         # ── Step 2: Fetch details for each submission ──────────
@@ -579,6 +596,7 @@ async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         _update_fa_progress("complete", current=len(details), total=len(details),
                             message=f"Done — {stats['submissions_found']} submissions in {duration:.1f}s")
         fa_queries.finish_fa_poll_log(conn, log_id, "success", duration_seconds=duration, **stats)
+        await fa_standdown.reset()
         logger.info("FA poll complete in %.1fs — %d submissions, %d snapshots, %d new comments, %d new watchers",
                      duration, stats["submissions_found"], stats["snapshots_inserted"],
                      stats["new_comments_found"], stats["new_watchers_found"])
@@ -606,6 +624,10 @@ async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         # Translate known upstream patterns (FAExport 5xx/429/404) into clearer
         # messages before they reach the dashboard / Telegram / poll-log table.
         duration = time.time() - start_time
+        if isinstance(e, FAChallenged):
+            # Stand down (spec 040): the wait doubles per consecutive bot check; the message names the next try.
+            fa_standdown.note_challenge()
+            e = FAChallenged(fa_standdown.next_try_text())
         friendly = _humanize_fa_error(e)
         friendly_msg = describe_error(friendly)
         _update_fa_progress("error", message=friendly_msg)
@@ -619,6 +641,8 @@ async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = Fa
             await send_poll_error("fa", friendly)
         except Exception:
             logger.debug("Error alert send failed", exc_info=True)
+        if isinstance(friendly, FAChallenged):
+            raise friendly from None   # the message with the next try time, not the bare one
         if friendly is e:
             raise
         raise friendly from e

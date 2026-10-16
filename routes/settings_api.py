@@ -714,8 +714,12 @@ async def test_account_login(account_id: int):
         from clients.fa.client import FAClient
         client = FAClient(username=creds.get("fa_username", ""),
                           cookie_a=ca, cookie_b=cb)
+        from clients.fa.client import FAChallenged
         try:
             res = await client.validate_session()
+        except FAChallenged as e:
+            # Not a login answer at all (spec 040): FA's bot check stood in front of it.
+            return {"status": "blocked", "detail": str(e)}
         finally:
             await client.close()
         if res["ok"]:

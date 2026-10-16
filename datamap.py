@@ -470,6 +470,8 @@ _PATHS = (
       backup="derivable"),
     P("data/tech_pending.json", "Error reports", "Error reports waiting to be sent.", backup="derivable"),
     P("data/tech_state.json", _HOUSE, "The install's id and the Tech Centre's last answers.", backup="derivable"),
+    P("data/fa_standdown.json", _HOUSE, "When FurAffinity's bot check last turned PawPoller away, and when to try again.",
+      backup="derivable"),
     P("data/agent_queue.json", _HOUSE, "Jobs waiting for the desktop helper.", backup="derivable"),
     P("data/diagnostics_results.json", _HOUSE, "The last self-test results.", backup="derivable"),
     P("data/.update-request", _HOUSE, "An update asked for from the dashboard.", backup="derivable"),

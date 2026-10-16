@@ -110,8 +110,11 @@ async def fa_connect(body: dict):
     from polling.cf_proxy import proxy_kwargs
     client = FAClient(username=username, cookie_a=cookie_a, cookie_b=cookie_b,
                       **proxy_kwargs(config.get_settings(), "fa"))
+    from clients.fa.client import FAChallenged
     try:
         res = await client.validate_session()
+    except FAChallenged as e:
+        raise HTTPException(503, str(e))
     except Exception as e:
         raise HTTPException(502, f"Failed to validate cookies: {e}")
     finally:

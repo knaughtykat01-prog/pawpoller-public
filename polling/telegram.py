@@ -287,6 +287,7 @@ async def send_poll_summary(platform: str, stats: dict, duration: float,
 
 _ERROR_PATTERNS: list[tuple[str, str, str]] = [
     # (substring to match, short label, hint)
+    ("bot check", "Cloudflare bot check", "Your login is fine; PawPoller is waiting it out"),
     ("login failed", "Login blocked", "Likely Cloudflare/rate-limit, not bad creds"),
     ("Shields are up", "Cloudflare challenge", "AO3 is blocking automated access"),
     ("429 Too Many Requests", "Rate limited", "Will back off automatically"),
