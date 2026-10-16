@@ -1661,6 +1661,8 @@ async def sync_masterpiece(name: str, body: dict | None = None):
     except FileNotFoundError:
         raise HTTPException(404, detail="Masterpiece not found")
     platforms = (body or {}).get("platforms") or None
+    if platforms is not None and not (isinstance(platforms, list) and all(isinstance(p, str) for p in platforms)):
+        raise HTTPException(400, detail="platforms must be a list of site codes")   # REVIEW4770
     # Same live guard as the publish endpoints. Sync creates nothing new but
     # OVERWRITES title/description/tags/rating on every live upload, which is
     # destructive to existing posts rather than additive — a stray call here

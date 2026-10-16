@@ -397,3 +397,17 @@ def test_a_send_the_seat_throws_away_puts_the_old_copy_back(pair):
     s = config.get_settings()
     assert not s.get("moved_away_at") and s.get("posting_enabled") is True and s.get("polling_paused") is False
     assert not (p["old"].data / "move-out").exists()
+
+
+def test_a_second_piece_while_one_is_in_flight_waits(pair, monkeypatch):
+    """REVIEW4750: one 32 MB body in memory at a time; the sender already retries a 425."""
+    from routes import move_direct_api
+
+    class _Busy:
+        def locked(self):
+            return True
+
+    monkeypatch.setattr(move_direct_api, "_PIECE_BUSY", _Busy())
+    p = pair
+    p["use"](p["new"])
+    assert p["c"].put(f"/api/move/direct/{'a' * 32}?offset=0", content=b"x").status_code == 425

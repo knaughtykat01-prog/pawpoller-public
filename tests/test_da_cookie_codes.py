@@ -32,6 +32,9 @@ def test_cookie_check_codes():
     class _Resp:
         text = _OUT
 
+        def raise_for_status(self):
+            pass
+
     async def _get(*a, **k):
         return _Resp()
 
@@ -39,6 +42,22 @@ def test_cookie_check_codes():
     assert asyncio.run(c.check_cookie()) == (False, DAClient.ERR_COOKIE_EXPIRED)
     _Resp.text = _IN
     assert asyncio.run(c.check_cookie()) == (True, "")
+
+
+def test_a_deviantart_that_does_not_answer_is_not_an_expired_cookie():
+    """REVIEW4772: a network error or a block page read as DA-COOKIE-EXPIRED."""
+    import httpx
+    c = DAClient(cookie="userinfo=x")
+    for handler in (lambda r: httpx.Response(503, text="down"),
+                    lambda r: (_ for _ in ()).throw(httpx.ConnectError("no route", request=r))):
+        c._http._transport = httpx.MockTransport(handler)
+        assert asyncio.run(c.check_cookie()) == (False, DAClient.ERR_COOKIE_UNCHECKED)
+
+
+def test_cookies_are_scoped_to_deviantart():
+    c = DAClient(cookie="userinfo=x; auth=y")
+    assert {(k.name, k.domain) for k in c._http.cookies.jar} == {("userinfo", ".deviantart.com"),
+                                                                  ("auth", ".deviantart.com")}
 
 
 def test_the_description_error_carries_its_code():

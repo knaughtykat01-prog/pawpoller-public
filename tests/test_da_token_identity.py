@@ -117,6 +117,9 @@ def _poster(owner, target="SecondFur", token="tok"):
         def __init__(self):
             self.target_user = target
 
+        def update_credentials(self, *, target_user="", **_):
+            self.target_user = target_user
+
         async def whoami(self, tok):
             return {"username": owner} if owner else None
 

@@ -35,3 +35,13 @@ def test_a_successful_syncs_note_is_shown():
     # 4.77.2: a half-done sync (DA description without the cookie) read as fully done.
     src = open("frontend/js/components.js", encoding="utf-8").read()
     assert "r.attention || r.note" in src
+
+
+def test_platforms_must_be_a_list(monkeypatch):
+    """REVIEW4770: a string made `plat not in platforms` a substring match."""
+    import dashboard
+    from routes import masterpieces_api
+    monkeypatch.setattr(masterpieces_api.artwork_reader, "load_artwork", lambda name: {"title": "Sample"})
+    c = TestClient(dashboard.app, client=("127.0.0.1", 50000))
+    r = c.post("/api/masterpieces/Sample/sync", json={"confirm_live": True, "platforms": "fa,da"})
+    assert r.status_code == 400

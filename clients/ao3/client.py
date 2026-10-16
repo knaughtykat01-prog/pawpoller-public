@@ -1145,9 +1145,12 @@ class AO3Client:
         except Exception:
             pass
         # AO3 re-renders the form at /works with <div id="error"><h4>Sorry! …</h4><ul><li>reason</li>…: name the reasons.
-        box = re.search(r'<div id="error"[^>]*>(.*?)</div>', body, re.DOTALL)
-        errors = (re.findall(r'<li>(.*?)</li>', box.group(1), re.DOTALL) if box else []) \
-            or re.findall(r'class="[^"]*error[^"]*"[^>]*>(.*?)</', body, re.DOTALL)
+        # Found by position, not a page-wide lazy regex (quadratic on a hostile page, SECLOW4781).
+        start = body.find('<div id="error"')
+        stop = body.find("</div>", start) if start >= 0 else -1
+        box = body[start:stop][:20000] if stop > start else ""
+        errors = (re.findall(r'<li>([^<]*)</li>', box) if box else []) \
+            or re.findall(r'class="[^"]*error[^"]*"[^>]*>(.*?)</', body[:200000], re.DOTALL)
         err_text = "; ".join(unescape(re.sub(r'<[^>]+>', '', e)).strip()[:200] for e in errors[:5])
         if box and err_text:
             raise RuntimeError(f"AO3 didn't save the work: {err_text}")

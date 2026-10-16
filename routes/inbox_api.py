@@ -57,11 +57,14 @@ def get_inbox(platform: str | None = None, unhandled: bool = False,
         items = inbox_queries.get_inbox(conn, platform=platform or None,
                                         unhandled_only=unhandled,
                                         limit=max(1, min(limit, 500)))
-        unhandled_count = sum(
-            1 for i in inbox_queries.get_inbox(conn, limit=500) if not i["handled"])
+        everything = inbox_queries.get_inbox(conn, limit=500)
+        unhandled_count = sum(1 for i in everything if not i["handled"])
+        # The filter lists every site with something to show, not just the filtered page's
+        # (INBOXFILTER: filtering to one site and handling it hid every other site).
+        platforms = sorted({i["platform"] for i in everything if unhandled is False or not i["handled"]})
     finally:
         conn.close()
-    return {"items": items, "unhandled_count": unhandled_count}
+    return {"items": items, "unhandled_count": unhandled_count, "platforms": platforms}
 
 
 @inbox_router.post("/backfill-own")
@@ -232,6 +235,21 @@ async def reply(body: dict):
         finally:
             await client.close()
         ok, url = True, row.get("permalink", "")
+
+    elif platform == "tw":
+        # Spec 043: the same CreateTweet reply paired comments use, under the person's reply.
+        if not (creds.get("tw_auth_token") and creds.get("tw_ct0")):
+            raise HTTPException(400, "X isn't connected (the reply needs the auth_token + ct0 cookies)")
+        from clients.tw.client import TWClient
+        client = TWClient(auth_token=creds["tw_auth_token"], ct0=creds["tw_ct0"],
+                          target_user=creds.get("tw_target_user", ""))
+        try:
+            r = await client.create_tweet(text, reply_to=comment_id)
+        finally:
+            await client.close()
+        if not (r and r.get("id")):
+            raise HTTPException(502, client.last_error or "X rejected the reply and gave no reason.")
+        ok, url = True, r.get("url", "")
 
     if not ok:
         raise HTTPException(502, f"{platform} rejected the reply — check the logs.")

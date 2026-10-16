@@ -20,6 +20,7 @@ Logs carry events and sizes only: never the code, a key, a signature or a login.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -406,8 +407,18 @@ def direct_status(uid: str, request: Request):
         return move_api._status(move_api._in_dir() / uid)
 
 
+_PIECE_BUSY = asyncio.Lock()   # REVIEW4750: one 32 MB body in memory at a time
+
+
 @direct_router.put("/{uid}")
 async def direct_piece(uid: str, request: Request, offset: int):
+    if _PIECE_BUSY.locked():
+        raise HTTPException(425, detail="One piece at a time; try again.")   # the sender retries a 425
+    async with _PIECE_BUSY:
+        return await _direct_piece(uid, request, offset)
+
+
+async def _direct_piece(uid: str, request: Request, offset: int):
     # Before reading up to a piece into memory: only a send that is under way, for exactly this
     # upload, gets that far. Anyone else is turned away for the cost of a file read.
     with _CODE_LOCK:

@@ -47,6 +47,47 @@ _tw_first_poll_done: set[int] = set()
 # Persistent client — reused across poll cycles
 _tw_client: TWClient | None = None
 
+# Spec 043: replies into the Inbox. X counts replies it won't show (hidden, deleted, blocked
+# accounts), so a post is fetched once per reply count, not every cycle: {(account, tweet): count}.
+_REPLIES_SEEN: dict[tuple[int, str], int] = {}
+_REPLY_CAP = 5   # thread reads per cycle, out of the same X budget the poll uses
+
+
+def _reply_candidates(details: list[dict], account_id: int) -> list[dict]:
+    """The account's own posts with replies not yet read at this count, in timeline (newest-first) order."""
+    out = []
+    for d in details:
+        tid, n = str(d.get("tweet_id") or ""), int(d.get("replies") or 0)
+        if not tid or n <= 0 or d.get("content_type") not in ("tweet", "quote", "reply"):
+            continue
+        if _REPLIES_SEEN.get((account_id, tid)) == n:
+            continue
+        out.append({"submission_id": tid, "fresh_count": n, "title": d.get("title", "")})
+    return out
+
+
+async def _capture_replies(conn, client, details: list[dict], account_id: int, settings: dict) -> None:
+    """Replies to the account's posts → the Inbox (spec 043). Never fails the poll."""
+    from clients.tw import gallerydl as _gdl
+    if getattr(client, "throttled", False) or not _gdl.is_enabled(settings) \
+            or not (client.auth_token and client.ct0 and client.target_user):
+        return
+    try:
+        from polling.inbox_capture import capture as _inbox_capture
+
+        async def _fetch(c):
+            replies = await _gdl.fetch_replies(client.auth_token, client.ct0, client.target_user,
+                                               c["submission_id"], settings)
+            if replies is None:
+                raise RuntimeError("gallery-dl couldn't read the thread")
+            _REPLIES_SEEN[(account_id, c["submission_id"])] = c["fresh_count"]
+            return replies
+
+        await _inbox_capture(conn, "tw", _reply_candidates(details, account_id), _fetch,
+                             account_id=account_id, own_author=client.target_user, cap=_REPLY_CAP)
+    except Exception as e:  # noqa: BLE001 — capture never fails the poll
+        logger.warning("TW inbox capture failed: %s", e)
+
 
 def _cleanup_tw_client():
     if _tw_client is not None:
@@ -251,6 +292,9 @@ async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = Fa
                                detail.get("tweet_id"), e, exc_info=True)
 
         conn.commit()
+
+        # ── Inbox capture: replies (spec 043) ─────────────────
+        await _capture_replies(conn, client, details, account_id, settings)
 
         # ── Notifications ─────────────────────────────────────
         if is_first:

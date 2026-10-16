@@ -296,7 +296,8 @@ def _extract_follower_count(raw: str, handle: str) -> int | None:
 # -- Subprocess --------------------------------------------------------------
 
 async def _run(exe: str, url: str, cookie_path: str, settings: dict,
-               range_spec: str | None = None, quiet: bool = True) -> tuple[int, str, str]:
+               range_spec: str | None = None, quiet: bool = True,
+               extra: tuple[str, ...] = (), timeout: float | None = None) -> tuple[int, str, str]:
     """Run gallery-dl in metadata-dump mode and return (returncode, stdout, stderr).
 
     ``-j`` dumps metadata without downloading media bytes; ``-q`` (``quiet``) drops
@@ -314,6 +315,8 @@ async def _run(exe: str, url: str, cookie_path: str, settings: dict,
         "-o", "extractor.twitter.retweets=false",
         "-o", "extractor.twitter.videos=false",
     ]
+    for opt in extra:
+        args += ["-o", opt]
     if range_spec:
         args += ["--range", range_spec]
     args.append(url)
@@ -328,7 +331,7 @@ async def _run(exe: str, url: str, cookie_path: str, settings: dict,
         logger.warning("TW: could not launch gallery-dl (%s): %s", exe, e)
         return 1, "", str(e)
 
-    timeout = getattr(config, "TW_GALLERYDL_TIMEOUT_SECONDS", 480)
+    timeout = timeout or getattr(config, "TW_GALLERYDL_TIMEOUT_SECONDS", 480)
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
@@ -408,6 +411,77 @@ async def fetch_tweets(auth_token: str, ct0: str, target_user: str,
     except Exception as e:
         logger.warning("TW: gallery-dl fetch failed — falling back to GraphQL: %s", e)
         return None
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# -- Replies (spec 043) -----------------------------------------------------------
+
+_REPLY_RANGE = "1-200"      # a viral thread pages on for ever; the Inbox wants the newest few hundred
+_REPLY_TIMEOUT = 120
+
+
+def _parse_replies(raw: str, focal_id: str) -> list[dict]:
+    """Direct replies to *focal_id* from a ``gallery-dl -j`` conversation dump, in the Inbox's shape.
+
+    Only direct replies: X's ``reply_count`` counts those, and the capture step compares the two counts
+    (a reply to a reply would make the post look caught up while a new direct reply waits).
+    """
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    out, seen = [], set()
+    for el in data if isinstance(data, list) else []:
+        if not (isinstance(el, list) and el and isinstance(el[-1], dict)):
+            continue
+        kw = el[-1]
+        if "error" in kw and "tweet_id" not in kw:
+            # gallery-dl exits 0 and dumps the refusal ({"error": "AuthRequired", ...}): not "no replies".
+            raise ValueError(f"{kw.get('error')}: {kw.get('message', '')}"[:200])
+        tid = str(kw.get("tweet_id") or "")
+        if not tid or tid in seen or str(kw.get("reply_id") or "") != str(focal_id):
+            continue
+        seen.add(tid)
+        author = kw.get("author") if isinstance(kw.get("author"), dict) else {}
+        name = str(author.get("name") or "")
+        out.append({
+            "comment_id": tid,
+            "author": name,
+            "body": kw.get("content") or "",
+            "commented_at": _normalize_date(kw.get("date")) or _snowflake_to_utc(tid),
+            "permalink": f"https://x.com/{name or 'i'}/status/{tid}",
+            "meta": {"nick": str(author.get("nick") or "")},
+        })
+    return out
+
+
+async def fetch_replies(auth_token: str, ct0: str, target_user: str, tweet_id: str,
+                        settings: dict | None = None) -> list[dict] | None:
+    """Direct replies to one of the account's tweets, via gallery-dl's thread reader (TweetDetail).
+
+    ``None`` = couldn't read it (no gallery-dl, no cookies, a failed run); ``[]`` = no visible replies.
+    """
+    settings = settings if settings is not None else config.get_settings()
+    handle = (target_user or "").lstrip("@")
+    exe = find_gallerydl(settings) if is_enabled(settings) else None
+    if not exe or not (auth_token and ct0 and handle and str(tweet_id).isdigit()):
+        return None
+    tmpdir = tempfile.mkdtemp(prefix="pp_tw_gdl_")
+    cookie_path = os.path.join(tmpdir, "cookies.txt")
+    try:
+        _write_cookies(auth_token, ct0, cookie_path)
+        rc, out, err = await _run(exe, f"https://x.com/{handle}/status/{tweet_id}", cookie_path, settings,
+                                  range_spec=_REPLY_RANGE, extra=("extractor.twitter.conversations=true",),
+                                  timeout=_REPLY_TIMEOUT)
+        if rc != 0:
+            logger.warning("TW: reply fetch for %s failed: %s", tweet_id, _problems(err)[:300])
+            return None
+        try:
+            return _parse_replies(out, str(tweet_id))
+        except ValueError as e:
+            logger.warning("TW: reply fetch for %s refused: %s", tweet_id, e)
+            return None
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 

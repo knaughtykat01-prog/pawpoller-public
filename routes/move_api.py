@@ -513,7 +513,7 @@ def _here_has_work() -> bool:
         tables = [r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND (name LIKE '%submissions' OR name = 'masterpieces')")]
         for t in tables:
-            if conn.execute(f'SELECT 1 FROM "{t}" LIMIT 1').fetchone():
+            if conn.execute('SELECT 1 FROM "%s" LIMIT 1' % t.replace('"', '""')).fetchone():   # MOVELOWS
                 return True
     finally:
         conn.close()

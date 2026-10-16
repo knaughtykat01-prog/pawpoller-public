@@ -24,7 +24,7 @@ from datetime import datetime, timedelta, timezone
 
 
 # Platforms the Inbox can reply on natively (routes/inbox_api.py); Facebook since 4.59.0.
-REPLYABLE = frozenset({"bsky", "mast", "e621", "fb"})
+REPLYABLE = frozenset({"bsky", "mast", "e621", "fb", "tw"})
 
 # A comment written more than this long ago is handled automatically (4.76.0, operator's rule):
 # a first capture of a big back catalogue otherwise brings years-old comments in as "to answer".

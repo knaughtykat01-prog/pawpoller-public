@@ -108,8 +108,8 @@ class DeviantArtPoster(PlatformPoster):
         else:
             # Posters are cached per (platform, account_id) for the life of the
             # process, so a renamed target or new app creds would otherwise stay stale.
-            self._client.target_user = target_user
-            self._client.client_id, self._client.client_secret = client_id, client_secret
+            self._client.update_credentials(cookie=creds.get("da_cookie", ""), target_user=target_user,
+                                            client_id=client_id, client_secret=client_secret)
 
         # ⚠ Has the stored credential changed under us?
         #

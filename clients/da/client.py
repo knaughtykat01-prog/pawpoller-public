@@ -244,7 +244,8 @@ class DAClient:
                 if "=" in part:
                     key, val = part.split("=", 1)
                     cookies[key.strip()] = val.strip()
-        self._http.cookies.update(cookies)
+        for k, v in cookies.items():   # scoped to DeviantArt: redirects are followed (REVIEW4772)
+            self._http.cookies.set(k, v, domain=".deviantart.com")
 
     def update_credentials(self, cookie_value: str = "", target_user: str = "", *,
                            client_id: str = "", client_secret: str = "",
@@ -1365,6 +1366,7 @@ class DAClient:
     # DeviantArt guide says what to do for each (4.77.2).
     ERR_COOKIE_MISSING = "DA-COOKIE-MISSING"
     ERR_COOKIE_EXPIRED = "DA-COOKIE-EXPIRED"
+    ERR_COOKIE_UNCHECKED = "DA-COOKIE-UNCHECKED"   # DeviantArt didn't answer (REVIEW4772)
 
     async def check_cookie(self) -> tuple[bool, str]:
         """(ok, code): can the stored da_cookie set a description? Read-only."""
@@ -1372,6 +1374,8 @@ class DAClient:
             return False, self.ERR_COOKIE_MISSING
         try:
             await self._eclipse_csrf_token()
+        except httpx.HTTPError:
+            return False, self.ERR_COOKIE_UNCHECKED
         except Exception:
             return False, self.ERR_COOKIE_EXPIRED
         return True, ""
@@ -1396,6 +1400,7 @@ class DAClient:
         any logged-in page's bootstrap JSON.
         """
         resp = await self._http.get("https://www.deviantart.com/", timeout=30.0)
+        resp.raise_for_status()   # a block page or outage is not "signed out" (REVIEW4772)
         signed_in, token = self._session_from_page(resp.text)
         if not (signed_in and token):
             raise RuntimeError(

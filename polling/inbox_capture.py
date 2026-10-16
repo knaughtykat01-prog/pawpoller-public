@@ -28,7 +28,7 @@ _CAP = 25   # max thread fetches per platform per cycle
 
 
 async def capture(conn, platform: str, candidates: list[dict], fetch, *,
-                  account_id: int | None = None, own_author: str = "") -> int:
+                  account_id: int | None = None, own_author: str = "", cap: int = _CAP) -> int:
     """Capture comment content for submissions that look behind.
 
     Args:
@@ -52,7 +52,7 @@ async def capture(conn, platform: str, candidates: list[dict], fetch, *,
         have = inbox_queries.count_for_submission(conn, platform, c["submission_id"])
         if c["fresh_count"] > have:
             todo.append(c)
-        if len(todo) >= _CAP:
+        if len(todo) >= cap:
             break
     if not todo:
         return 0

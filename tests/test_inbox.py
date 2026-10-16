@@ -181,3 +181,19 @@ def test_comments_older_than_a_year_are_handled_automatically():
     assert items["year-and-a-day"]["auto_handled"]
     assert not items["recent"]["handled"] and not items["no-date"]["handled"]   # unreadable date: still shown
     assert _client().get("/api/inbox").json()["unhandled_count"] == 2
+
+
+def test_the_filter_lists_every_site_not_just_the_filtered_one():
+    """INBOXFILTER: filtering to Bluesky and handling it left no way back to DeviantArt."""
+    conn = get_connection()
+    try:
+        _seed_platform_comment(conn)
+        inbox_queries.upsert_platform_comment(conn, "da", "da-1", "d1", author="fan2", body="new one",
+                                              commented_at=_days_ago(3))
+    finally:
+        conn.close()
+    c = _client()
+    assert c.get("/api/inbox?platform=bsky&unhandled=true").json()["platforms"] == ["bsky", "da"]
+    c.post("/api/inbox/handled-all", json={"platform": "bsky"})
+    assert c.get("/api/inbox?platform=bsky&unhandled=true").json()["platforms"] == ["da"]
+    assert c.get("/api/inbox?platform=bsky").json()["platforms"] == ["bsky", "da"]

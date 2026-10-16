@@ -36,6 +36,9 @@ class _FakeClient:
         self._owner_by_token = owner_by_token
         self.refreshes = 0
 
+    def update_credentials(self, *, target_user="", **_):
+        self.target_user = target_user
+
     async def oauth_refresh_token(self, cid, secret, refresh):
         self.refreshes += 1
         # DA rotates: every refresh returns a NEW refresh token.

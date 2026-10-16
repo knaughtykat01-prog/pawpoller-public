@@ -761,6 +761,10 @@ async def test_account_login(account_id: int):
             finally:
                 await probe.close()
             if not cookie_ok:
+                if code == DAClient.ERR_COOKIE_UNCHECKED:
+                    return {"status": "partial", "code": code, "username": res.get("username", ""),
+                            "detail": f"[{code}] Posting works. The da_cookie couldn't be checked: "
+                                      "DeviantArt didn't answer. Try again later."}
                 why = ("no da_cookie is stored" if code == DAClient.ERR_COOKIE_MISSING
                        else "the da_cookie has expired")
                 return {"status": "partial", "code": code, "username": res.get("username", ""),

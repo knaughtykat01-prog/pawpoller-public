@@ -85,3 +85,17 @@ def test_ao3_validation_errors_are_named_and_not_retried(monkeypatch, tmp_path):
     assert msg == "AO3 didn't save the work: Title can't be blank; Content must be at least 10 characters long."
     from posting.manager import _PERMANENT_ERROR_MARKERS
     assert any(m in msg.lower() for m in _PERMANENT_ERROR_MARKERS)
+
+
+def test_a_hostile_page_stays_fast():
+    """SECLOW4781: the old page-wide regex took ~50 s on 360 KB of unclosed form tags."""
+    import time
+    for page in ('<form action="/x">' * 20000, "<form a" * 20000, "<form " + ' action="a' * 20000 + ">"):
+        t = time.perf_counter()
+        otw_form(page, r"/works")
+        assert time.perf_counter() - t < 1.0
+
+
+def test_data_action_is_not_the_action():
+    page = '<form data-action="/works" action="/users/SecondFur/end_banner">'            '<input name="authenticity_token" value="BANNER"></form>' + _form("/works", "WORK")
+    assert _token(page, r"/works") == "WORK"

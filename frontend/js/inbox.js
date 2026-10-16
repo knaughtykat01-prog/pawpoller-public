@@ -43,7 +43,10 @@ window.Inbox = {
             return;
         }
         const items = data.items || [];
-        const plats = [...new Set(items.map(i => i.platform))].sort();
+        // Every site with comments, plus the chosen one even when it's now empty, so the
+        // filter can always switch back (INBOXFILTER).
+        const plats = [...new Set([...(data.platforms || items.map(i => i.platform)),
+                                   ...(this._platform ? [this._platform] : [])])].sort();
         const platOpts = ['<option value="">All platforms</option>']
             .concat(plats.map(p =>
                 `<option value="${this.esc(p)}" ${p === this._platform ? 'selected' : ''}>${this.esc(this._plat(p).label)}</option>`))
