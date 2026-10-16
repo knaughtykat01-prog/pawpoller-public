@@ -69,6 +69,9 @@ a = Analysis(
         # GIF → MP4 for Threads (spec 030): imported lazily, so name it; the contrib hook
         # (hook-imageio_ffmpeg) then bundles its ffmpeg binary.
         'imageio_ffmpeg',
+        # AO3's current-browser connection (spec 041): imported inside try, so name it.
+        'httpx_curl_cffi',
+        'curl_cffi',
         # Startup update splash (4.9.0) — imported inside a function, so the
         # static scan misses it; without these the packaged app updates silently.
         'tkinter',

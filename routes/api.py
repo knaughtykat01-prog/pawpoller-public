@@ -2664,6 +2664,7 @@ def _csv_response(rows: list[dict], filename: str) -> StreamingResponse:
     injection before writing.  The result is wrapped in a StreamingResponse
     with a Content-Disposition attachment header so browsers trigger a download.
     """
+    filename = re.sub(r"[^A-Za-z0-9_.-]", "_", filename)   # SECLOW466: a query id reaches this header
     if not rows:
         return StreamingResponse(iter(["No data"]), media_type="text/csv",
                                  headers={"Content-Disposition": f'attachment; filename="{filename}"'})

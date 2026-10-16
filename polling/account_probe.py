@@ -17,6 +17,7 @@ temporarily-blocked site is never misreported as an expired credential.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import config
@@ -212,7 +213,7 @@ def _b_ib(c, pk):
 #   kind: how to read the validator's result
 #   rotates: refresh token rotates on use -> persist after a successful test
 PROBES = {
-    "ao3":  (lambda c: bool((c.get("ao3_username") and c.get("ao3_password")) or c.get("ao3_session_cookie")), _b_ao3, "session_str", False),
+    "ao3":  (lambda c: bool((c.get("ao3_username") and c.get("ao3_password")) or c.get("ao3_session_cookie")), _b_ao3, "ao3", False),
     "sqw":  (lambda c: bool(c.get("sqw_username") and c.get("sqw_password")), _b_sqw, "session_str", False),
     "sf":   (lambda c: bool(c.get("sf_api_token")), _b_sf, "session_str", False),
     "e621": (lambda c: bool(c.get("e621_username") and c.get("e621_api_key")), _b_e621, "session_str", False),
@@ -238,8 +239,16 @@ PROBES = {
 }
 
 
+# A Test on a hosted seat goes through Cloudflare's tunnel, which gives up at 100 s with a raw 524 page. AO3's
+# retries could run longer than that, so its Test stops well inside it (spec 041).
+_TEST_CAP = {"ao3": 45}
+
+
 async def _run(kind, client, creds) -> dict:
     """Call the validator and normalise. Exceptions propagate to probe_account for classification."""
+    if kind == "ao3":                              # strict: a page AO3 never sent is not "logged in" (spec 041)
+        name = await client.validate_session(strict=True)
+        return _ok(name) if name else _invalid("Not logged in — re-enter this account's credentials.")
     if kind == "session_str":
         name = await client.validate_session()
         return _ok(name) if name else _invalid("Not logged in — re-enter this account's credentials.")
@@ -310,7 +319,10 @@ async def probe_account(platform: str, creds: dict, account_id: int, is_default:
         return _unconfigured(f"No credentials stored for this {_LABELS.get(platform, platform)} account.")
     client = build(creds, proxy_kwargs(settings, platform))
     try:
-        verdict = await _run(kind, client, creds)
+        try:
+            verdict = await asyncio.wait_for(_run(kind, client, creds), _TEST_CAP.get(platform))
+        except asyncio.TimeoutError:
+            return _error(f"{_LABELS.get(platform, platform)} isn't responding right now. Try again in a few minutes.")
         if rotates and verdict.get("status") == "ok":
             _persist_rotation(platform, client, account_id, is_default)
         return verdict

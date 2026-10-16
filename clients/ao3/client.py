@@ -21,6 +21,14 @@ from html import unescape
 
 import httpx
 
+try:    # spec 041: AO3 challenges outdated browsers; curl presents as current Chrome
+    from httpx_curl_cffi import AsyncCurlTransport
+    import warnings
+    # Windows' default loop lacks add_reader; curl_cffi adds a selector thread itself and says so on every loop.
+    warnings.filterwarnings("ignore", message=r"\s*Proactor event loop does not implement add_reader")
+except ImportError:  # pragma: no cover - a build without it falls back (FR-003)
+    AsyncCurlTransport = None
+
 import config
 
 logger = logging.getLogger(__name__)
@@ -80,11 +88,8 @@ class AO3ThrottledError(RuntimeError):
             f"AO3 throttled on {url}, window expires in {retry_after}s"
         )
 
-# Realistic browser headers — Chrome 131 on Windows 10. Full Sec-Fetch +
-# Sec-Ch-Ua set is required to get past AO3's "Shields are up!" page when
-# hitting from residential IPs. Without these AO3 flags the client as bot
-# traffic and returns 403 on /users/login even though the same IP works
-# fine in a real browser.
+# Fallback and relay paths only (spec 041). The direct path uses curl's own current-Chrome headers: AO3's Cloudflare
+# now challenges an outdated Chrome, so these hard-coded Chrome 131 headers are what it blocks.
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -109,6 +114,25 @@ _HEADERS = {
     "Sec-Ch-Ua-Platform": '"Windows"',
     "Priority": "u=0, i",
 }
+
+
+_warned_no_curl = False
+
+
+def _direct_transport():
+    """The direct AO3 transport and the default headers to go with it (spec 041).
+
+    curl_cffi's "chrome" presents the newest Chrome it knows, in both the connection fingerprint and the headers,
+    so the client adds none of its own. httpx stays the API: its cookie jar is the only one (research R2).
+    """
+    global _warned_no_curl
+    if AsyncCurlTransport is not None:
+        return AsyncCurlTransport(impersonate="chrome", default_headers=True), {}
+    if not _warned_no_curl:
+        _warned_no_curl = True
+        logger.warning("AO3: the current-browser connection (curl_cffi) is missing from this install; "
+                       "AO3's bot check may turn PawPoller away")
+    return httpx.AsyncHTTPTransport(retries=2), _HEADERS
 
 
 SESSION_COOKIE = "_otwarchive_session"
@@ -138,14 +162,15 @@ class AO3Client:
         if proxy_url and proxy_key:
             from polling.cf_proxy import CloudflareProxyTransport
             transport = CloudflareProxyTransport(proxy_url, proxy_key)
+            self._headers = _HEADERS
             logger.info("AO3 client using CF proxy: %s", proxy_url)
         else:
-            transport = httpx.AsyncHTTPTransport(retries=2)
+            transport, self._headers = _direct_transport()
 
         self._http = httpx.AsyncClient(
             timeout=60.0,
             follow_redirects=True,
-            headers=_HEADERS,
+            headers=self._headers,
             transport=transport,
         )
         # 2.22.10: wrap _http.get/post so EVERY request gets pre-flight
@@ -438,14 +463,14 @@ class AO3Client:
         # get past the "Shields are up!" 403 that residential IPs hit when
         # going straight to /users/login.
         try:
-            await self._http.get(_BASE + "/", headers=_HEADERS)
+            await self._http.get(_BASE + "/", headers=self._headers)
         except Exception as e:
             logger.debug("AO3: homepage warmup failed (non-fatal): %s", e)
 
         # For the login page request, include navigation-style headers
         # (Referer from homepage, Sec-Fetch-Site=same-origin).
         login_nav_headers = {
-            **_HEADERS,
+            **self._headers,
             "Referer": _BASE + "/",
             "Sec-Fetch-Site": "same-origin",
         }
@@ -543,7 +568,7 @@ class AO3Client:
                 f"{_BASE}/users/login",
                 data=login_data,
                 headers={
-                    **_HEADERS,
+                    **self._headers,
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Referer": f"{_BASE}/users/login",
                 },
@@ -637,7 +662,7 @@ class AO3Client:
             self._logged_in = False
         return await self.login()
 
-    async def validate_session(self) -> str | None:
+    async def validate_session(self, strict: bool = False) -> str | None:
         # Cookie mode: do an actual fetch of the target user's drafts
         # page (or fall back to the public profile page) so we can
         # confirm the cookie is alive. Only used by /auth/connect —
@@ -648,6 +673,10 @@ class AO3Client:
             )
             if html and "Log Out" in html:
                 return self.target_user or self.username
+            if html is None and strict:
+                # The Test button: AO3 didn't answer, so say that, not "logged in" (spec 041).
+                raise RuntimeError("AO3 isn't responding right now. Your login wasn't checked; "
+                                   "try again in a few minutes.")
             if html is None:
                 # Rate-limited or transient — trust the cookie was
                 # accepted on the way in (the user just pasted it).

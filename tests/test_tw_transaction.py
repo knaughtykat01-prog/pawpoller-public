@@ -182,4 +182,5 @@ class TestSources:
     def test_no_new_dependency(self):
         for f in ("requirements.txt", "requirements-server.txt"):
             src = open(f, encoding="utf-8").read().lower()
-            assert "beautifulsoup" not in src and "xclienttransaction" not in src and "curl_cffi" not in src
+            # curl_cffi is a dependency since 4.78.0, for AO3 only (spec 041); X still doesn't use it.
+            assert "beautifulsoup" not in src and "xclienttransaction" not in src

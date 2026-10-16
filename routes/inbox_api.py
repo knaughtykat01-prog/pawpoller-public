@@ -16,6 +16,7 @@ our accounts owns the submission it sits under.
 from __future__ import annotations
 
 import logging
+import re
 
 from fastapi import APIRouter, HTTPException
 
@@ -80,12 +81,17 @@ def backfill_own():
             "total": sum(flagged.values()) if flagged else 0}
 
 
+_PLATFORM_RE = re.compile(r"[a-z0-9]{1,16}")
+
+
 @inbox_router.post("/handled")
 def set_handled(body: dict):
     platform = (body or {}).get("platform") or ""
     comment_id = str((body or {}).get("comment_id") or "")
     if not (platform and comment_id):
         raise HTTPException(400, "platform and comment_id are required")
+    if not _PLATFORM_RE.fullmatch(str(platform)):
+        raise HTTPException(400, "Unknown platform")
     conn = get_connection()
     try:
         inbox_queries.set_handled(conn, platform, comment_id,
@@ -100,6 +106,8 @@ def set_all_handled(body: dict | None = None):
     """Everything still to answer (on one platform, if given) becomes handled. Undo is per
     comment, under "show handled"."""
     platform = (body or {}).get("platform") or None
+    if platform is not None and not _PLATFORM_RE.fullmatch(str(platform)):
+        raise HTTPException(400, "Unknown platform")   # it reaches the log line below (REVIEW4760)
     conn = get_connection()
     try:
         items = inbox_queries.get_inbox(conn, platform=platform, unhandled_only=True, limit=10 ** 9)

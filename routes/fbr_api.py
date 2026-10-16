@@ -9,6 +9,7 @@ Furbooru's CDN is hotlinkable, so — unlike Pixiv — no thumbnail proxy is nee
 """
 
 from __future__ import annotations
+import re
 import csv
 import io
 import logging
@@ -335,6 +336,7 @@ def _sanitize_csv_value(val):
 
 
 def _csv_response(rows: list[dict], filename: str) -> StreamingResponse:
+    filename = re.sub(r"[^A-Za-z0-9_.-]", "_", filename)   # SECLOW466: a query id reaches this header
     if not rows:
         return StreamingResponse(iter(["No data"]), media_type="text/csv",
                                  headers={"Content-Disposition": f'attachment; filename="{filename}"'})

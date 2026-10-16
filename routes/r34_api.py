@@ -5,6 +5,7 @@ Credentials; required on every request since August 2025). Metrics: score and co
 """
 
 from __future__ import annotations
+import re
 import csv
 import io
 import logging
@@ -58,7 +59,8 @@ async def r34_connect(body: dict):
         try:
             name = await client.validate_session()
         except Exception as e:
-            raise HTTPException(502, f"Couldn't reach Rule34: {e}")
+            logger.warning("Rule34 connect check failed: %s", type(e).__name__)   # SECLOW466: no text (its URL carries the key)
+            raise HTTPException(502, "Couldn't reach Rule34. Try again in a few minutes.")
     if not name:
         raise HTTPException(401, "Rule34 refused that API key and user id. Copy both again from Rule34: "
                                  "My Account → Options → API Access Credentials.")
@@ -315,6 +317,7 @@ def _sanitize_csv_value(val):
 
 
 def _csv_response(rows: list[dict], filename: str) -> StreamingResponse:
+    filename = re.sub(r"[^A-Za-z0-9_.-]", "_", filename)   # SECLOW466: a query id reaches this header
     if not rows:
         return StreamingResponse(iter(["No data"]), media_type="text/csv",
                                  headers={"Content-Disposition": f'attachment; filename="{filename}"'})

@@ -20,9 +20,12 @@ def _iso(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def record_skip(code: str, reason: str) -> None:
+def record_skip(code: str, reason: str, count: bool = True) -> None:
+    """*count* False: show the reason, but leave rate watch's skip totals alone (an operator pause, spec 042)."""
     now = datetime.now(timezone.utc)
     _skips[code] = (_iso(now), reason)
+    if not count:
+        return
     try:
         from database.db import get_connection
         conn = get_connection()

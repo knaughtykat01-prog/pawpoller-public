@@ -17,6 +17,7 @@ the same component patterns for IB and FA dashboards, just swapping the
 """
 
 from __future__ import annotations
+import re
 import csv
 import io
 import logging
@@ -457,6 +458,7 @@ def _csv_response(rows: list[dict], filename: str) -> StreamingResponse:
     Same DictWriter -> StreamingResponse pattern as the IB module.
     Values are sanitised against CSV formula injection before writing.
     """
+    filename = re.sub(r"[^A-Za-z0-9_.-]", "_", filename)   # SECLOW466: a query id reaches this header
     if not rows:
         return StreamingResponse(iter(["No data"]), media_type="text/csv",
                                  headers={"Content-Disposition": f'attachment; filename="{filename}"'})

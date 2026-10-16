@@ -2,6 +2,8 @@ fastapi>=0.109.0
 python-multipart>=0.0.6
 uvicorn[standard]>=0.30.2   # CIDR in forwarded_allow_ips (PAWPOLLER_FORWARDED_IPS) needs _TrustedHosts
 httpx>=0.27.0
+curl_cffi==0.16.3          # AO3 connects as current Chrome (spec 041); MIT. Exact: AO3 logins pass through it
+httpx-curl-cffi==0.1.5     # httpx transport over curl_cffi (spec 041); BSD-3. Exact (review 4.78.0)
 apscheduler>=3.10.4
 python-dotenv>=1.0.0
 pywebview>=5.0

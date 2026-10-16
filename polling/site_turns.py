@@ -19,6 +19,7 @@ import asyncio
 import functools
 import logging
 import os
+import re
 import stat
 import time
 from pathlib import Path
@@ -43,6 +44,41 @@ class TurnTimeout(Exception):
         record_skip(code, "waited 10 minutes for its turn")
         super().__init__(f"Skipped: another PawPoller on this server was checking {_site_name(code)} for too long. "
                          "It runs next round.")
+
+
+class SitePaused(TurnTimeout):
+    """The box operator paused this site on every seat (spec 042). A TurnTimeout, so every caller skips it alike."""
+    def __init__(self, code: str):
+        self.code = code
+        from polling.last_check import record_skip
+        record_skip(code, "paused by the server operator", count=False)
+        Exception.__init__(self, f"Skipped: the server operator has paused {_site_name(code)} on every PawPoller "
+                                 "on this server.")
+
+
+_CODE_RE = re.compile(r"[a-z0-9]{1,16}")
+
+
+def operator_paused() -> set[str]:
+    """Sites the box operator paused (``homebox.sh pause``), read fresh every call; empty off the box.
+
+    The folder is mounted read-only into every seat, so no seat can change it (unlike the turn folder). Still read
+    defensively: never through a link, at most 4 KB, only code-shaped lines.
+    """
+    raw = (os.environ.get("PAWPOLLER_OPERATOR_DIR") or "").strip()
+    if not raw:
+        return set()
+    try:
+        fd = os.open(Path(raw) / "paused", os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    except OSError:
+        return set()
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return set()
+        text = os.read(fd, 4096).decode("ascii", "ignore")
+    finally:
+        os.close(fd)
+    return {s for s in (line.strip() for line in text.splitlines()) if _CODE_RE.fullmatch(s)}
 
 
 def _site_name(code: str) -> str:
@@ -171,6 +207,8 @@ def site_turn(code: str):
     def deco(fn):
         @functools.wraps(fn)
         async def wrapper(*args, **kwargs):
+            if code in operator_paused():
+                raise SitePaused(code)
             folder = enabled()
             if folder is None or code in _held:
                 # Off the box, or this seat is already checking the site: the poller's own lock decides

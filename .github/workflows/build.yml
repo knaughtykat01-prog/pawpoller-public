@@ -75,13 +75,17 @@ jobs:
       # image drops it.
       - name: Build installer
         shell: powershell
+        # Through env, never pasted into the script: the stage is read from config.py (REVIEW4760).
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          APP_STAGE: ${{ steps.version.outputs.stage }}
         run: |
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) {
             choco install innosetup --no-progress -y
             $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           }
-          & "$iscc" /DMyAppVersion="${{ steps.version.outputs.version }}" /DMyAppStage="${{ steps.version.outputs.stage }}" installer\PawPoller.iss
+          & "$iscc" "/DMyAppVersion=$env:APP_VERSION" "/DMyAppStage=$env:APP_STAGE" installer\PawPoller.iss
           if ($LASTEXITCODE -ne 0) { throw "iscc exited $LASTEXITCODE" }
 
       # A `<asset>.sha256` beside each desktop asset (4.40.2). The in-app updater

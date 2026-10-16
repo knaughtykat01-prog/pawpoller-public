@@ -38,7 +38,11 @@
 AppId={#MyAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+#if MyAppStage == ""
+AppVerName={#MyAppName} {#MyAppVersion}
+#else
 AppVerName={#MyAppName} {#MyAppVersion} {#MyAppStage}
+#endif
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}/issues

@@ -21,7 +21,7 @@ class _FakeStr:
     result = "someuser"        # str, None, or an Exception instance to raise
     def __init__(self, **kw):
         self.closed = False
-    async def validate_session(self):
+    async def validate_session(self, **kw):      # AO3's Test passes strict=True (spec 041)
         r = type(self).result
         if isinstance(r, Exception):
             raise r
