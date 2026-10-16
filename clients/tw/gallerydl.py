@@ -465,7 +465,7 @@ async def fetch_replies(auth_token: str, ct0: str, target_user: str, tweet_id: s
     settings = settings if settings is not None else config.get_settings()
     handle = (target_user or "").lstrip("@")
     exe = find_gallerydl(settings) if is_enabled(settings) else None
-    if not exe or not (auth_token and ct0 and handle and str(tweet_id).isdigit()):
+    if not exe or not (auth_token and ct0 and handle and str(tweet_id).isascii() and str(tweet_id).isdigit()):
         return None
     tmpdir = tempfile.mkdtemp(prefix="pp_tw_gdl_")
     cookie_path = os.path.join(tmpdir, "cookies.txt")

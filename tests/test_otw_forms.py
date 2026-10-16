@@ -99,3 +99,15 @@ def test_a_hostile_page_stays_fast():
 def test_data_action_is_not_the_action():
     page = '<form data-action="/works" action="/users/SecondFur/end_banner">'            '<input name="authenticity_token" value="BANNER"></form>' + _form("/works", "WORK")
     assert _token(page, r"/works") == "WORK"
+
+
+def test_ao3_error_fallback_reads_error_texts_and_stays_fast():
+    """SECLOW4790: the create_work fallback regex took ~26 s on unclosed class="error"> tags."""
+    import time
+    from clients.ao3.client import _error_texts
+    page = '<p class="flash error">Title is too long</p><div class="notice">ok</div><span class="error"></span>'
+    assert _error_texts(page) == ["Title is too long"]
+    for hostile in ('class="error">' * 14000, 'class="error ' + "error " * 40000, 'class="x' * 30000):
+        t = time.perf_counter()
+        _error_texts(hostile)
+        assert time.perf_counter() - t < 1.0

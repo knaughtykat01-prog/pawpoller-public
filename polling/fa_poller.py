@@ -282,7 +282,13 @@ async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = Fa
     # FurAffinity's bot check turned us away recently (4.77.6, spec 040): no request until the wait is up. Every
     # account in the round lands here, so the skip is recorded once per stand-down, not once per account.
     global _fa_skip_recorded_until
-    if fa_standdown.remaining() > 0:
+    # FARELAY (4.79.1): with the FA relay switch on, polls go through the Cloudflare relay. The stand-down was earned
+    # on the home address, so it doesn't hold a relayed poll back.
+    # ponytail: a relay that is challenged too retries once a cycle; give it its own stand-down if that persists.
+    from polling.cf_proxy import proxy_kwargs, proxy_kwargs_fallback
+    settings = config.get_settings()
+    _relay = proxy_kwargs(settings, "fa") or proxy_kwargs_fallback(settings, "fa")
+    if fa_standdown.remaining() > 0 and not _relay:
         reason = f"FurAffinity's Cloudflare bot check is on, next try around {fa_standdown.next_try_text()}"
         if _fa_skip_recorded_until != fa_standdown.until():
             _fa_skip_recorded_until = fa_standdown.until()
@@ -314,14 +320,14 @@ async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = Fa
     # FA authentication uses cookie_a / cookie_b rather than a session ID.
     # Resolve this account's credentials (default → legacy flat keys; extra
     # accounts → namespaced keys) and pass them to the FAClient.
-    settings = config.get_settings()
     creds = config.resolve_account_credentials("fa", account_id, is_default, settings)
-    from polling.cf_proxy import proxy_kwargs
+    if _relay:
+        logger.info("FA: polling through the Cloudflare relay (fa_use_cf_proxy)")
     client = FAClient(
         username=creds.get("fa_username", ""),
         cookie_a=creds.get("fa_cookie_a", ""),
         cookie_b=creds.get("fa_cookie_b", ""),
-        **proxy_kwargs(settings, "fa"),
+        **_relay,
     )
     # Our own handle(s), for excluding self-comments from "new comment" counts
     # (2.192.0). FA has always known its username — it just never used it here.
@@ -343,7 +349,8 @@ async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         if not await client.validate_cookies():
             raise ValueError("FA cookies expired — update cookie_a and cookie_b in Settings")
 
-        use_direct = bool(settings.get("fa_direct_polling", False))
+        # Through the relay, FAExport is off the Worker's allowlist (a wasted 403 per poll): straight to FA.
+        use_direct = bool(settings.get("fa_direct_polling", False)) or bool(_relay)
         if use_direct:
             _update_fa_progress("searching", message="Scraping gallery directly from FA...")
             gallery = await client.get_all_gallery_ids_direct()

@@ -94,3 +94,15 @@ def test_the_guide_explains_each_code():
     src = open("frontend/js/platform_guides.js", encoding="utf-8").read()
     for code in (DAClient.ERR_COOKIE_MISSING, DAClient.ERR_COOKIE_EXPIRED):
         assert code in src, code
+
+
+def test_a_changed_cookie_drops_the_old_session():
+    """SECLOW4790: the jar only gained cookies, so a removed da_cookie kept the old session."""
+    c = DAClient(cookie="userinfo=x; auth=y")
+    c._http.cookies.set("csrf", "z", domain=".deviantart.com")
+    c.update_credentials(cookie="userinfo=x; auth=y")              # unchanged: mid-session cookies stay
+    assert {k.name for k in c._http.cookies.jar} == {"userinfo", "auth", "csrf"}
+    c.update_credentials(cookie="userinfo=new")
+    assert {k.name for k in c._http.cookies.jar} == {"userinfo"}
+    c.update_credentials(cookie="")
+    assert not list(c._http.cookies.jar)

@@ -211,3 +211,33 @@ def test_a_challenged_post_is_not_retried_automatically():
     from posting.manager import _PERMANENT_ERROR_MARKERS
     msg = str(FAChallenged()).lower()
     assert any(m in msg for m in _PERMANENT_ERROR_MARKERS)
+
+
+def test_with_the_relay_on_a_poll_goes_through_it_despite_the_stand_down(monkeypatch):
+    """FARELAY: the stand-down was earned on the home address; the relay switch sends FA polls via the Worker."""
+    from polling import fa_poller
+    _fa_settings()
+    fa_standdown.note_challenge()
+    made = {}
+
+    class _Stop(Exception):
+        pass
+
+    def _fa(**kw):
+        made.update(kw)
+        raise _Stop()
+
+    monkeypatch.setattr(fa_poller, "FAClient", _fa)
+    config.save_settings({"cf_worker_url": "https://relay.example.workers.dev", "cf_worker_key": "k"})
+    out = asyncio.run(fa_poller.run_fa_poll_cycle())               # switch off: still standing down
+    assert "bot check" in out["skipped_reason"] and not made
+
+    config.save_settings({"fa_use_cf_proxy": True})
+    try:
+        with pytest.raises(_Stop):
+            asyncio.run(fa_poller.run_fa_poll_cycle())
+    finally:   # the stub fails before the cycle's own try/finally, so the lock is still held
+        if fa_poller._fa_poll_lock.locked():
+            fa_poller._fa_poll_lock.release()
+        fa_poller._fa_poll_running = False
+    assert made["proxy_url"] == "https://relay.example.workers.dev" and made["proxy_key"] == "k"

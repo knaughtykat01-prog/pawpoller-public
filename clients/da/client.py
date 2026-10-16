@@ -251,7 +251,13 @@ class DAClient:
                            client_id: str = "", client_secret: str = "",
                            cookie: str = "") -> None:
         """Re-point the persistent client at another account's credentials."""
-        self.cookie_value = cookie_value or cookie
+        new_cookie = cookie_value or cookie
+        if new_cookie != self.cookie_value:
+            # The jar only ever gained cookies: a removed or shorter da_cookie kept the old
+            # session until restart (SECLOW4790). Cleared on a change only, so the cookies
+            # DeviantArt sets mid-session survive the per-post re-point.
+            self._http.cookies.clear()
+        self.cookie_value = new_cookie
         self.target_user = target_user
         # If the app credentials changed, drop the cached token so the next call
         # mints a fresh one for the new app.

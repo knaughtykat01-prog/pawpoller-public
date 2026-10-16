@@ -1149,8 +1149,7 @@ class AO3Client:
         start = body.find('<div id="error"')
         stop = body.find("</div>", start) if start >= 0 else -1
         box = body[start:stop][:20000] if stop > start else ""
-        errors = (re.findall(r'<li>([^<]*)</li>', box) if box else []) \
-            or re.findall(r'class="[^"]*error[^"]*"[^>]*>(.*?)</', body[:200000], re.DOTALL)
+        errors = (re.findall(r'<li>([^<]*)</li>', box) if box else []) or _error_texts(body)
         err_text = "; ".join(unescape(re.sub(r'<[^>]+>', '', e)).strip()[:200] for e in errors[:5])
         if box and err_text:
             raise RuntimeError(f"AO3 didn't save the work: {err_text}")
@@ -2275,6 +2274,34 @@ class AO3Client:
 
         logger.info("AO3: Updated Work Skin %s", skin_id)
         return {"skin_id": skin_id, "url": f"{_BASE}/skins/{skin_id}"}
+
+
+def _error_texts(page: str, limit: int = 5) -> list[str]:
+    """Text of elements whose class mentions "error", by a forward ``str.find`` scan (SECLOW4790).
+
+    The lazy regex this replaced took ~26 s on a page of unclosed ``class="error">`` (event loop).
+    """
+    out, i = [], 0
+    while len(out) < limit:
+        i = page.find('class="', i)
+        if i < 0:
+            break
+        i += len('class="')
+        q = page.find('"', i)
+        if q < 0:
+            break
+        cls, i = page[i:q], q + 1
+        if "error" not in cls:
+            continue
+        gt = page.find(">", i)
+        if gt < 0:
+            break
+        lt = page.find("<", gt + 1)
+        text = page[gt + 1:lt if lt >= 0 else len(page)]
+        i = gt + 1
+        if text.strip():
+            out.append(text)
+    return out
 
 
 def _extract_work_form_fields(html: str) -> tuple[str, list[tuple[str, str]]]:
