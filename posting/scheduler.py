@@ -305,7 +305,8 @@ async def _process_queue_item_core(item: dict) -> None:
 
             # Send Telegram notification
             await _notify_completion(notify_name, chapter_index, platform, action, True,
-                                     content_type=content_type)
+                                     content_type=content_type,
+                                     url=results[0].get("external_url") or results[0].get("url") or "")
         else:
             error = results[0].get("error", "Unknown error") if results else "No results"
             # 2.22.10c: manager.post_story / update_story already call
@@ -482,31 +483,73 @@ async def _maybe_batch_announce(item) -> None:
         logger.debug("batch announce skipped (%s)", type(e).__name__)
 
 
+# Spec 044: one message per piece + chapter + action, however many sites it went to. The scheduler runs queue rows
+# one at a time and doesn't know which rows belong together, so results gather here for a short window first.
+# ponytail: in-memory; a restart inside the window loses that batch's notice (never the posts themselves).
+_NOTICE_WINDOW_S = 60
+_pending_notices: dict[tuple, dict] = {}
+
+
+def _notice_title(story_name: str, chapter_index: int, content_type: str) -> str:
+    """The piece's own title for a posting alert, never its folder name (spec 044); a post's snippet as-is."""
+    from polling.telegram import alert_title
+    if content_type == "post":
+        return alert_title(story_name)
+    try:
+        if content_type == "artwork":
+            from posting import artwork_reader
+            title = artwork_reader.load_artwork(story_name).title
+        else:
+            title = story_reader.load_story(story_name).title
+    except Exception:  # noqa: BLE001 — a missing piece still gets a readable label
+        title = ""
+    title = alert_title(title or story_name.replace("_", " "))
+    if content_type != "artwork" and chapter_index > 0:
+        title += f" · Ch {chapter_index}"
+    return title
+
+
 async def _notify_completion(
     story_name: str, chapter_index: int, platform: str,
     action: str, success: bool, error: str | None = None,
-    content_type: str = "story",
+    content_type: str = "story", url: str = "",
 ) -> None:
-    """Send a Telegram notification about queue item completion."""
+    """Add one site's result to its piece's pending notice; the first result starts the send timer."""
     try:
-        settings = config.get_settings()
-        if not settings.get("telegram_enabled"):
+        if not config.get_settings().get("telegram_enabled"):
             return
-
-        from polling.telegram import send_telegram
-        emoji = manager.PLATFORM_EMOJIS.get(platform, "📦")
-        if content_type == "post":
-            # story_name is already a readable snippet; a post has no chapter.
-            label = story_name
-        else:
-            ch_label = f"Ch{chapter_index}" if chapter_index > 0 else "Full"
-            label = f"{story_name.replace('_', ' ')} {ch_label}"
-
-        if success:
-            text = f"✅ {action.title()} complete: {emoji} {platform.upper()} {label}"
-        else:
-            text = f"❌ {action.title()} failed: {emoji} {platform.upper()} {label}\n{error or ''}"
-
-        await send_telegram(text)
+        key = (story_name, chapter_index, action, content_type)
+        batch = _pending_notices.get(key)
+        if batch is None:
+            batch = _pending_notices[key] = {"results": []}
+            batch["task"] = asyncio.create_task(_flush_notice(key))
+        batch["results"].append((platform, success, url or "", error or ""))
     except Exception:
         pass  # Don't let notification failures break the scheduler
+
+
+async def _flush_notice(key: tuple) -> None:
+    """Send one batch: a heading with the piece, then each site's outcome (contracts/alert-format.md)."""
+    await asyncio.sleep(_NOTICE_WINDOW_S)
+    batch = _pending_notices.pop(key, None)
+    if not batch:
+        return
+    try:
+        from html import escape
+        from polling.telegram import PLATFORM_EMOJI, PLATFORM_NAME, send_telegram
+        story_name, chapter_index, action, content_type = key
+        results = batch["results"]
+        if any(ok for _, ok, _, _ in results):
+            head = "✅ " + {"post": "Posted", "update": "Updated"}.get(action, action.title())
+        else:
+            head = "❌ " + ("Post" if action == "post" else action.title()) + " failed"
+        lines = [f"<b>{head}: {escape(_notice_title(story_name, chapter_index, content_type))}</b>"]
+        for platform, ok, url, error in results:
+            site = escape(f"{PLATFORM_EMOJI.get(platform, '')} {PLATFORM_NAME.get(platform, platform.upper())}".strip())
+            if ok:
+                lines.append(f"  ✅ {site}" + (f": {escape(url)}" if url else ""))
+            else:
+                lines.append(f"  ❌ {site}: {escape(error[:200])}")
+        await send_telegram("\n".join(lines))
+    except Exception:
+        logger.debug("posting notice failed", exc_info=True)

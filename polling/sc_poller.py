@@ -17,7 +17,6 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from html import escape as _esc
 
 import config
 from polling import loop_bound
@@ -57,22 +56,9 @@ def _update_sc_progress(phase: str, current: int = 0, total: int = 0, message: s
                             phase=phase, current=current, total=total, message=message)
 
 
-def _send_sc_notifications(new_details: list[dict]) -> None:
-    settings = config.get_settings()
-    n = len(new_details)
-    notifications.maybe_show_toast(
-        settings, "sc_notifications_enabled",
-        f"SoundCloud: {n} Track{'s' if n != 1 else ''} Updated",
-        [f"{d['title'][:50]} gained activity" for d in new_details])
-
-
 async def _send_sc_telegram(new_details: list[dict]) -> None:
-    settings = config.get_settings()
-    n = len(new_details)
-    await notifications.maybe_send_telegram_summary(
-        settings,
-        f"<b>\U0001f3b5 SoundCloud: {n} Track{'s' if n != 1 else ''} Updated</b>",
-        [_esc(d['title'][:50]) for d in new_details], log_label="SoundCloud")
+    """Toast + Telegram for posts that gained activity: the shared layout (spec 044)."""
+    await notifications.send_activity_alert("sc", new_details, settings_key="sc_notifications_enabled")
 
 
 def client_from_creds(creds: dict) -> ScClient:
@@ -186,7 +172,8 @@ async def run_sc_poll_cycle(account_id: int | None = None, force_full: bool = Fa
                 prev = sc_queries.get_sc_submission(conn, sid)
                 if prev and (faves > prev.get("favorites_count", 0)
                              or comments > prev.get("comments_count", 0)):
-                    new_activity_details.append({"title": detail.get("title", "")})
+                    new_activity_details.append(notifications.activity_item(
+                        sid, detail.get("title", ""), faves=faves - (prev.get("favorites_count", 0) or 0), comments=comments - (prev.get("comments_count", 0) or 0)))
                 sc_queries.upsert_sc_submission(conn, detail, account_id)
                 sc_queries.insert_sc_snapshot(conn, account_id, sid, views, faves, comments, polled_at=poll_ts)
                 stats["snapshots_inserted"] += 1
@@ -201,10 +188,6 @@ async def run_sc_poll_cycle(account_id: int | None = None, force_full: bool = Fa
             logger.info("First sc poll for account %s -- suppressing %d activity notifications",
                         account_id, len(new_activity_details))
         else:
-            try:
-                _send_sc_notifications(new_activity_details)
-            except Exception as ne:
-                logger.warning("Failed to send sc notifications: %s", ne, exc_info=True)
             try:
                 await _send_sc_telegram(new_activity_details)
             except Exception as te:

@@ -440,17 +440,9 @@ def _looks_like_deletion(error: str | None) -> bool:
     return any(p in low for p in DELETION_ERROR_PATTERNS)
 
 
-PLATFORM_EMOJIS = {
-    "ib": "🐾",
-    "fa": "🦊",
-    "ws": "🦎",
-    "sf": "🐺",
-    "sqw": "🦑",
-    "ao3": "📖",
-    "ik": "🎯",
-    "da": "🎨",
-    "bsky": "🦋",
-}
+# One emoji per site, from the one table every alert uses (spec 044); this copy covered 9 sites and the rest
+# showed a 📦.
+from polling.telegram import PLATFORM_EMOJI as PLATFORM_EMOJIS  # noqa: E402,F401 — re-exported
 
 
 def _log_validation_failure(platform: str, name: str, chapter_index: int,

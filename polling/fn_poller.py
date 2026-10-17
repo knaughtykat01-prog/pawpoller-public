@@ -12,7 +12,6 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from html import escape as _esc
 
 import config
 from polling import loop_bound
@@ -50,22 +49,9 @@ def _update_fn_progress(phase: str, current: int = 0, total: int = 0, message: s
                             phase=phase, current=current, total=total, message=message)
 
 
-def _send_fn_notifications(new_details: list[dict]) -> None:
-    settings = config.get_settings()
-    n = len(new_details)
-    notifications.maybe_show_toast(
-        settings, "fn_notifications_enabled",
-        f"FurryNetwork: {n} Submission{'s' if n != 1 else ''} Updated",
-        [f"{d['title'][:50]} gained activity" for d in new_details])
-
-
 async def _send_fn_telegram(new_details: list[dict]) -> None:
-    settings = config.get_settings()
-    n = len(new_details)
-    await notifications.maybe_send_telegram_summary(
-        settings,
-        f"<b>\U0001f43e FurryNetwork: {n} Submission{'s' if n != 1 else ''} Updated</b>",
-        [_esc(d['title'][:50]) for d in new_details], log_label="FurryNetwork")
+    """Toast + Telegram for posts that gained activity: the shared layout (spec 044)."""
+    await notifications.send_activity_alert("fn", new_details, settings_key="fn_notifications_enabled")
 
 
 def _get_or_create_client(creds: dict) -> FnClient:
@@ -170,7 +156,8 @@ async def run_fn_poll_cycle(account_id: int | None = None, force_full: bool = Fa
                 prev = fn_queries.get_fn_submission(conn, uri)
                 if prev and (faves > prev.get("favorites_count", 0)
                              or comments > prev.get("comments_count", 0)):
-                    new_activity_details.append({"title": detail.get("title", "")})
+                    new_activity_details.append(notifications.activity_item(
+                        uri, detail.get("title", ""), faves=faves - (prev.get("favorites_count", 0) or 0), comments=comments - (prev.get("comments_count", 0) or 0)))
                 fn_queries.upsert_fn_submission(conn, detail, account_id)
                 fn_queries.insert_fn_snapshot(conn, account_id, uri, views, faves,
                                               comments, polled_at=poll_ts)
@@ -186,10 +173,6 @@ async def run_fn_poll_cycle(account_id: int | None = None, force_full: bool = Fa
             logger.info("First fn poll for account %s -- suppressing %d activity notifications",
                         account_id, len(new_activity_details))
         else:
-            try:
-                _send_fn_notifications(new_activity_details)
-            except Exception as ne:
-                logger.warning("Failed to send fn notifications: %s", ne, exc_info=True)
             try:
                 await _send_fn_telegram(new_activity_details)
             except Exception as te:

@@ -212,27 +212,26 @@ async def _send_fa_telegram(new_comment_details: list[dict],
     if not new_comment_details and not new_watcher_names:
         return
 
+    from polling.telegram import alert_header, alert_title
+    titles = notifications.canonical_title_map("fa", [d.get("id") for d in new_comment_details])
     sections: list[str] = []
     if new_comment_details:
         sections.append(notifications.format_telegram_summary(
-            f"<b>🦊 FA: {len(new_comment_details)} New Comment"
+            f"<b>💬 {len(new_comment_details)} new comment"
             f"{'s' if len(new_comment_details) != 1 else ''}</b>",
-            [f"<b>{_esc(d['username'])}</b> commented on {_esc(d['title'])}"
+            [f"<b>{_esc(d['username'])}</b> commented on "
+             f"{_esc(alert_title(titles.get(str(d.get('id'))) or d['title']))}"
              for d in new_comment_details],
         ))
     if new_watcher_names and settings.get("fa_watcher_notifications_enabled", True):
         sections.append(notifications.format_telegram_summary(
-            f"<b>🦊 FA: {len(new_watcher_names)} New Watcher"
+            f"<b>👀 {len(new_watcher_names)} new watcher"
             f"{'s' if len(new_watcher_names) != 1 else ''}</b>",
             [f"<b>{_esc(name)}</b> started watching" for name in new_watcher_names],
         ))
     if not sections:
         return
-    body = "\n\n".join(sections)
-    from polling.telegram import account_alert_prefix
-    prefix = account_alert_prefix("fa", account_id)
-    if prefix:
-        body = f"🦊 <b>{prefix[:-3]}</b>\n\n{body}"   # strip the trailing " — "
+    body = alert_header("fa", account_id) + "\n" + "\n\n".join(sections)   # spec 044
     await notifications.send_telegram(
         token, chat_id, body, log_label="FA",
     )
@@ -465,6 +464,7 @@ async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = Fa
                             stats["new_comments_found"] += 1
                             new_comment_details.append({
                                 "username": c.get("username", ""),
+                                "id": sub_id,
                                 "title": detail.get("title", ""),
                             })
                     except Exception as ce:

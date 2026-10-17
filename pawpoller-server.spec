@@ -21,7 +21,7 @@ _DB_SCHEMAS = sorted(
     (path, 'database')
     for path in glob.glob(os.path.join(SPECPATH, 'database', '*.sql'))
 )
-_CHANGELOG = [('CHANGELOG.md', '.')] if Path('CHANGELOG.md').is_file() else []
+_CHANGELOG = [(n, '.') for n in ('CHANGELOG.md', 'WHATSNEW.md') if Path(n).is_file()]   # WHATSNEW: public builds
 
 a = Analysis(
     ['server.py'],

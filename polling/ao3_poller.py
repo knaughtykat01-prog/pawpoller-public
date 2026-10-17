@@ -66,30 +66,6 @@ def _update_ao3_progress(phase: str, current: int = 0, total: int = 0, message: 
     ao3_poll_progress["message"] = message
 
 
-def _send_ao3_notifications(new_details: list[dict]) -> None:
-    """Send Windows toast notifications for AO3 activity."""
-    settings = config.get_settings()
-    n = len(new_details)
-    notifications.maybe_show_toast(
-        settings,
-        "ao3_notifications_enabled",
-        f"AO3: {n} Work{'s' if n != 1 else ''} Updated",
-        [f"{d['title']} gained activity" for d in new_details],
-    )
-
-
-async def _send_ao3_telegram(new_details: list[dict]) -> None:
-    """Send Telegram notification for AO3 activity."""
-    settings = config.get_settings()
-    n = len(new_details)
-    await notifications.maybe_send_telegram_summary(
-        settings,
-        f"<b>AO3: {n} Work{'s' if n != 1 else ''} Updated</b>",
-        [_esc(d['title']) for d in new_details],
-        log_label="AO3",
-    )
-
-
 def _send_ao3_kudos_notifications(new_kudos: list[dict]) -> None:
     """Send Windows toast notifications for new kudos."""
     settings = config.get_settings()
@@ -106,11 +82,15 @@ async def _send_ao3_kudos_telegram(new_kudos: list[dict]) -> None:
     """Send Telegram notification for new kudos."""
     settings = config.get_settings()
     n = len(new_kudos)
+    titles = notifications.canonical_title_map("ao3", [d.get("id") for d in new_kudos])
+    from polling.telegram import alert_title
     await notifications.maybe_send_telegram_summary(
         settings,
-        f"<b>📖 AO3: {n} New Kudo{'s' if n != 1 else ''}</b>",
-        [f"{_esc(d['username'])} → {_esc(d['title'])}" for d in new_kudos],
+        f"<b>{n} new kudos</b>",
+        [f"{_esc(d['username'])} → {_esc(alert_title(titles.get(str(d.get('id'))) or d['title']))}"
+         for d in new_kudos],
         log_label="AO3 kudos",
+        platform="ao3",
     )
 
 
@@ -313,6 +293,7 @@ async def run_ao3_poll_cycle(account_id: int | None = None, force_full: bool = F
                         if ku not in existing_usernames:
                             new_kudos_details.append({
                                 "username": ku,
+                                "id": wid,
                                 "title": detail.get("title", ""),
                             })
                 except Exception as ke:

@@ -24,7 +24,9 @@ Three layers, smallest first:
 from __future__ import annotations
 
 import contextvars
+import html
 import logging
+import re
 import subprocess
 import sys
 from typing import Any
@@ -45,6 +47,7 @@ logger = logging.getLogger(__name__)
 TOAST_DEFAULT_VISIBLE = 3
 TELEGRAM_DEFAULT_VISIBLE = 5
 TELEGRAM_HTTP_TIMEOUT = 10.0
+TELEGRAM_MESSAGE_LIMIT = 4096
 
 
 def describe_error(e: BaseException) -> str:
@@ -177,13 +180,28 @@ async def send_telegram(
     poll cycle. The bool return lets callers branch on success when
     they have follow-up state to update (e.g. the FA watcher digest's
     "mark watchers notified" step that must NOT run if delivery failed).
+
+    Telegram answers every send with ``{"ok": …}``; until 4.79.2 the answer was never read, so a message it
+    refused (too long, a stray ``<`` in a title, the bot blocked) counted as sent and left no trace (TGSEND).
     """
+    if len(text) > TELEGRAM_MESSAGE_LIMIT:
+        # Telegram refuses an over-long message outright (400 "message is too long"); cut on a line
+        # boundary so no HTML tag is left open (each line closes its own).
+        text = text[:TELEGRAM_MESSAGE_LIMIT - 40].rsplit("\n", 1)[0] + "\n\n(trimmed)"
     try:
         async with httpx.AsyncClient(timeout=TELEGRAM_HTTP_TIMEOUT) as client:
-            await client.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
-            )
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+            resp = await client.post(url, json=payload)
+            why = _refusal(resp)
+            if why and "parse" in why.lower():
+                # Markup Telegram can't read (a title's unescaped "<"): send it as plain text rather than lose it.
+                plain = html.unescape(re.sub(r"<[^>]+>", "", text))
+                resp = await client.post(url, json={"chat_id": chat_id, "text": plain})
+                why = _refusal(resp)
+        if why:
+            logger.warning("Telegram refused the %s message: %s", log_label, why)
+            return False
         return True
     except Exception as e:
         logger.warning(
@@ -191,6 +209,95 @@ async def send_telegram(
             log_label, e, exc_info=True,
         )
         return False
+
+
+def _refusal(resp: httpx.Response) -> str:
+    """Telegram's reason for refusing a send, or "" when it took it."""
+    try:
+        data = resp.json()
+    except ValueError:
+        data = {}
+    if data.get("ok") is True:
+        return ""
+    return str(data.get("description") or f"HTTP {resp.status_code}")[:200]
+
+
+# ── Activity alerts: one layout for every site (spec 044) ────────────────────
+
+_SINGULAR = {"replies": "reply", "kudos": "kudos", "watchers": "watcher"}
+
+
+def activity_item(submission_id, title: str | None, **deltas: int) -> dict:
+    """One post that gained activity this cycle: its id (for the canonical title), the site's title, and what
+    went up, e.g. ``activity_item(sid, title, faves=2, comments=1)``. Zero and negative changes are dropped."""
+    return {"id": str(submission_id), "title": title or "",
+            "deltas": {k: int(v) for k, v in deltas.items() if v and int(v) > 0}}
+
+
+def format_deltas(deltas: dict[str, int]) -> str:
+    """``{"faves": 2, "comments": 1}`` → ``"+2 faves, +1 comment"``."""
+    out = []
+    for word, n in deltas.items():
+        if n == 1:
+            word = _SINGULAR.get(word, word[:-1] if word.endswith("s") else word)
+        out.append(f"+{n:,} {word}")
+    return ", ".join(out)
+
+
+def canonical_title_map(platform: str, ids: list) -> dict[str, str]:
+    """``{submission_id: linked piece's title}`` for the ids that are linked; {} on any failure (spec 044)."""
+    try:
+        from database import masterpiece_queries
+        from database.db import get_connection
+        conn = get_connection()
+        try:
+            return masterpiece_queries.canonical_titles(conn, platform, [str(i) for i in ids if i is not None])
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 — the site's own title is a fine fallback
+        return {}
+
+
+def _item_lines(platform: str, items: list[dict]) -> list[str]:
+    """Plain (unescaped) ``"<title>: +2 faves"`` lines, titled by the linked piece where there is one."""
+    titles = canonical_title_map(platform, [i["id"] for i in items])
+    from polling.telegram import alert_title
+    lines = []
+    for i in items:
+        title = alert_title(titles.get(i["id"]) or i["title"])
+        what = format_deltas(i.get("deltas") or {})
+        lines.append(f"{title}: {what}" if what else title)
+    return lines
+
+
+async def send_activity_alert(platform: str, items: list[dict], *, settings_key: str,
+                              default_enabled: bool = True, account_id: int | None = None) -> None:
+    """The toast and the Telegram alert for posts that gained activity, the same on every site (spec 044).
+
+    ``🎨 DeviantArt · <account>`` then ``• <canonical title>: +2 faves, +1 comment`` per post. *settings_key* is the
+    site's toast toggle (``da_notifications_enabled``), as before; Telegram follows ``telegram_enabled``.
+    """
+    if not items:
+        return
+    from polling.telegram import PLATFORM_NAME, alert_header
+    lines = _item_lines(platform, items)
+    import config
+    settings = config.get_settings()
+    maybe_show_toast(settings, settings_key, PLATFORM_NAME.get(platform, platform.upper()), lines,
+                     default_enabled=default_enabled)
+    target = _telegram_target(settings)
+    if not target:
+        return
+    text = format_telegram_summary(alert_header(platform, account_id), [html.escape(x) for x in lines],
+                                   TELEGRAM_DEFAULT_VISIBLE)
+    await send_telegram(*target, text, log_label=platform.upper())
+
+
+def _telegram_target(settings: dict[str, Any]):
+    if not settings.get("telegram_enabled", False):
+        return None
+    from polling.telegram import notification_target
+    return notification_target(settings)
 
 
 # ── Convenience layer ─────────────────────────────────────────────────
@@ -225,8 +332,12 @@ async def maybe_send_telegram_summary(
     *,
     max_visible: int = TELEGRAM_DEFAULT_VISIBLE,
     log_label: str = "notification",
+    platform: str | None = None,
 ) -> None:
     """Send a Telegram summary iff Telegram is enabled, configured, and items present.
+
+    With *platform*, the message opens with the shared first line (``telegram.alert_header``: site, then the
+    account) and *header_html* becomes the heading under it, e.g. ``<b>2 new kudos</b>`` (spec 044).
 
     The shared filter chain — ``telegram_enabled`` flag, bot token +
     chat id presence, non-empty items — runs here so callers stay
@@ -242,16 +353,8 @@ async def maybe_send_telegram_summary(
     if not _target:
         return
     token, chat_id = _target
-    # Prefix the header with the persona/account when the active poll cycle set a
-    # multi-account context. No-op on single-account installs (prefix == "").
-    platform, account_id = current_alert_account.get()
-    if account_id is not None and header_html.startswith("<b>"):
-        try:
-            from polling.telegram import account_alert_prefix
-            prefix = account_alert_prefix(platform, account_id)
-            if prefix:
-                header_html = "<b>" + prefix + header_html[3:]
-        except Exception:
-            pass
+    if platform:
+        from polling.telegram import alert_header
+        header_html = alert_header(platform) + "\n" + header_html
     text = format_telegram_summary(header_html, items, max_visible)
     await send_telegram(token, chat_id, text, log_label=log_label)

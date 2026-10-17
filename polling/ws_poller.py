@@ -23,7 +23,6 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from html import escape as _esc
 
 import config
 from clients.weasyl.client import WeasylClient
@@ -67,42 +66,11 @@ def _update_ws_progress(phase: str, current: int = 0, total: int = 0, message: s
     ws_poll_progress["message"] = message
 
 
-def _send_ws_notifications(new_details: list[dict], detail_type: str = "activity") -> None:
-    """Send Windows toast notifications for Weasyl activity.
-
-    Generic "submission gained activity" alerts (Weasyl's API doesn't
-    expose *who* faved or commented). ``ws_notification_comments_only``
-    suppresses these entirely since WS activity is fave-count-driven and
-    has no separate comment-alert path.
-    """
-    settings = config.get_settings()
-    if settings.get("ws_notification_comments_only", False):
-        return
-    n = len(new_details)
-    notifications.maybe_show_toast(
-        settings,
-        "ws_notifications_enabled",
-        f"WS: {n} Submission{'s' if n != 1 else ''} Updated",
-        [f"{d['title']} gained activity" for d in new_details],
-    )
-
-
 async def _send_ws_telegram(new_details: list[dict]) -> None:
-    """Send Telegram notification for Weasyl activity.
-
-    Title-only bullets since WS API doesn't expose per-user interaction
-    data. Same comments_only filter as the toast path.
-    """
-    settings = config.get_settings()
-    if settings.get("ws_notification_comments_only", False):
-        return
-    n = len(new_details)
-    await notifications.maybe_send_telegram_summary(
-        settings,
-        f"<b>🦎 WS: {n} Submission{'s' if n != 1 else ''} Updated</b>",
-        [_esc(d['title']) for d in new_details],
-        log_label="WS",
-    )
+    """Toast + Telegram for posts that gained activity: the shared layout (spec 044)."""
+    if config.get_settings().get("ws_notification_comments_only", False):
+        return   # Weasyl activity is fave-count only, so "comments only" silences it
+    await notifications.send_activity_alert("ws", new_details, settings_key="ws_notifications_enabled")
 
 
 @site_turn("ws")
@@ -218,7 +186,8 @@ async def run_ws_poll_cycle(account_id: int | None = None, force_full: bool = Fa
                 # Check for stat increases to drive notifications.
                 prev_faves = ws_queries.get_ws_previous_favorites_count(conn, sub_id)
                 if prev_faves is not None and faves > prev_faves:
-                    new_activity_details.append({"title": detail.get("title", "")})
+                    new_activity_details.append(notifications.activity_item(
+                        sub_id, detail.get("title", ""), faves=faves - (prev_faves or 0)))
 
                 ws_queries.upsert_ws_submission(conn, detail, account_id)
                 ws_queries.insert_ws_snapshot(conn, account_id, sub_id, views, faves, comments, polled_at=poll_timestamp)
@@ -236,10 +205,6 @@ async def run_ws_poll_cycle(account_id: int | None = None, force_full: bool = Fa
             logger.info("First WS poll for account %s — suppressing %d activity notifications",
                         account_id, len(new_activity_details))
         else:
-            try:
-                _send_ws_notifications(new_activity_details)
-            except Exception as ne:
-                logger.warning("Failed to send WS notifications: %s", ne, exc_info=True)
             try:
                 await _send_ws_telegram(new_activity_details)
             except Exception as te:

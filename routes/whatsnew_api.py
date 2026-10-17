@@ -109,11 +109,19 @@ def _parse_changelog(text: str) -> list[dict]:
 
 
 def _load_changelog() -> str:
-    try:
-        return config.resource_path("CHANGELOG.md").read_text(encoding="utf-8")
-    except Exception as e:  # bundled in the desktop build; present at /app on server
-        logger.warning("Could not read CHANGELOG.md for /api/whatsnew: %s", e)
-        return ""
+    """CHANGELOG.md in a private build; WHATSNEW.md (headers + summaries only) in one built from the public copy.
+
+    The public copy leaves CHANGELOG.md out (it is the engineering record), so until 4.79.2 every hosted seat and
+    public download showed an empty popup and logged this warning. ``deploy/make_public.py`` writes WHATSNEW.md
+    in its place, in the same format, so the parser below reads either (WHATSNEW).
+    """
+    for name in ("CHANGELOG.md", "WHATSNEW.md"):
+        try:
+            return config.resource_path(name).read_text(encoding="utf-8")
+        except Exception:  # noqa: BLE001 — try the next
+            continue
+    logger.warning("No CHANGELOG.md or WHATSNEW.md for /api/whatsnew: the What's-new popup will be empty")
+    return ""
 
 
 @whatsnew_router.get("/whatsnew")

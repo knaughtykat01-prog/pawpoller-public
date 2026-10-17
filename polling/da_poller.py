@@ -20,7 +20,6 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from html import escape as _esc
 
 from polling import notifications
 
@@ -73,28 +72,9 @@ def _update_da_progress(phase: str, current: int = 0, total: int = 0, message: s
     da_poll_progress["message"] = message
 
 
-def _send_da_notifications(new_details: list[dict]) -> None:
-    """Send Windows toast notifications for DA activity."""
-    settings = config.get_settings()
-    n = len(new_details)
-    notifications.maybe_show_toast(
-        settings,
-        "da_notifications_enabled",
-        f"DA: {n} Deviation{'s' if n != 1 else ''} Updated",
-        [f"{d['title']} gained activity" for d in new_details],
-    )
-
-
 async def _send_da_telegram(new_details: list[dict]) -> None:
-    """Send Telegram notification for DA activity."""
-    settings = config.get_settings()
-    n = len(new_details)
-    await notifications.maybe_send_telegram_summary(
-        settings,
-        f"<b>🎨 DA: {n} Deviation{'s' if n != 1 else ''} Updated</b>",
-        [_esc(d['title']) for d in new_details],
-        log_label="DA",
-    )
+    """Toast + Telegram for posts that gained activity: the shared layout (spec 044)."""
+    await notifications.send_activity_alert("da", new_details, settings_key="da_notifications_enabled")
 
 
 def _get_or_create_client(settings: dict, client_id: str, client_secret: str,
@@ -226,7 +206,8 @@ async def run_da_poll_cycle(account_id: int | None = None, force_full: bool = Fa
                 prev = da_queries.get_da_submission(conn, dev_id)
                 if prev and (faves > prev.get("favorites_count", 0)
                              or comments > prev.get("comments_count", 0)):
-                    new_activity_details.append({"title": detail.get("title", "")})
+                    new_activity_details.append(notifications.activity_item(
+                        dev_id, detail.get("title", ""), faves=faves - (prev.get("favorites_count", 0) or 0), comments=comments - (prev.get("comments_count", 0) or 0)))
 
                 da_queries.upsert_da_submission(conn, detail, account_id)
                 da_queries.insert_da_snapshot(conn, account_id, dev_id, views, faves, comments,
@@ -270,10 +251,6 @@ async def run_da_poll_cycle(account_id: int | None = None, force_full: bool = Fa
             logger.info("First DA poll for account %s -- suppressing %d activity notifications",
                         account_id, len(new_activity_details))
         else:
-            try:
-                _send_da_notifications(new_activity_details)
-            except Exception as ne:
-                logger.warning("Failed to send DA notifications: %s", ne, exc_info=True)
             try:
                 await _send_da_telegram(new_activity_details)
             except Exception as te:

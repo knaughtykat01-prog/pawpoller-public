@@ -68,43 +68,6 @@ def _update_sf_progress(phase: str, current: int = 0, total: int = 0, message: s
     sf_poll_progress["message"] = message
 
 
-def _send_sf_notifications(new_details: list[dict]) -> None:
-    """Send Windows toast notifications for SoFurry activity.
-
-    SF tracks aggregate stat changes (views, faves, comments combined)
-    without distinguishing the change type, so ``sf_notification_comments_only``
-    suppresses these generic alerts entirely. Follower notifications are
-    unaffected — they use a separate code path.
-    """
-    settings = config.get_settings()
-    if settings.get("sf_notification_comments_only", False):
-        return
-    n = len(new_details)
-    notifications.maybe_show_toast(
-        settings,
-        "sf_notifications_enabled",
-        f"SF: {n} Submission{'s' if n != 1 else ''} Updated",
-        [f"{d['title']} gained activity" for d in new_details],
-    )
-
-
-async def _send_sf_telegram(new_details: list[dict]) -> None:
-    """Send Telegram notification for SoFurry activity.
-
-    Same ``sf_notification_comments_only`` filter as the toast path.
-    """
-    settings = config.get_settings()
-    if settings.get("sf_notification_comments_only", False):
-        return
-    n = len(new_details)
-    await notifications.maybe_send_telegram_summary(
-        settings,
-        f"<b>SF: {n} Submission{'s' if n != 1 else ''} Updated</b>",
-        [_esc(d['title']) for d in new_details],
-        log_label="SF",
-    )
-
-
 def _send_sf_follower_notifications(new_follower_names: list[str]) -> None:
     """Send Windows toast notifications for new SF followers."""
     settings = config.get_settings()
@@ -123,9 +86,10 @@ async def _send_sf_follower_telegram(new_follower_names: list[str]) -> None:
     n = len(new_follower_names)
     await notifications.maybe_send_telegram_summary(
         settings,
-        f"<b>🐾 SF: {n} New Follower{'s' if n != 1 else ''}</b>",
+        f"<b>{n} new follower{'s' if n != 1 else ''}</b>",
         [_esc(name) for name in new_follower_names],
         log_label="SF follower",
+        platform="sf",
     )
 
 

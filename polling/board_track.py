@@ -235,7 +235,7 @@ async def notify(code: str, found: list[dict]) -> None:
     lines = [escape(describe({"platform": code, **f})) for f in found]
     await notifications.maybe_send_telegram_summary(
         s, f"<b>\U0001f50e Found {len(found)} new post{'s' if len(found) != 1 else ''}</b>", lines,
-        log_label=f"{code} found")
+        log_label=f"{code} found", platform=code)
 
 
 def inbox_wanted(result: dict) -> bool:

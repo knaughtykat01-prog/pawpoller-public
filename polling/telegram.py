@@ -133,21 +133,13 @@ async def send_telegram(text: str) -> bool:
     if not target:
         return False
     token, chat_id = target
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
-            )
-        return True
-    except Exception as e:
-        logger.warning("Failed to send Telegram message: %s", e)
-        return False
+    from polling import notifications
+    return await notifications.send_telegram(token, chat_id, text, log_label="Telegram")
 
 
 # ── Poll cycle summary ───────────────────────────────────────
 
-PLATFORM_EMOJI = {"ib": "🐾", "fa": "🦊", "ws": "🦎", "sf": "🐺", "sqw": "🦑", "ao3": "📖", "da": "🎨", "wp": "📙", "ik": "🎯", "bsky": "🦋", "tw": "🐦", "mast": "🐘", "tum": "📘", "pix": "🖌", "thr": "🧵", "ig": "📷", "e621": "🐾", "fn": "🌐", "fbr": "🖼", "r34": "🔞", "sc": "🎵", "ng": "🎬", "yt": "📺", "pic": "🎥", "tg": "✈️", "fb": "📘"}
+PLATFORM_EMOJI = {"ib": "🐾", "fa": "🦊", "ws": "🦎", "sf": "🐺", "sqw": "🦑", "ao3": "📖", "da": "🎨", "wp": "📙", "ik": "🎯", "bsky": "🦋", "tw": "🐦", "mast": "🐘", "tum": "📘", "pix": "🖌", "thr": "🧵", "ig": "📷", "e621": "🐉", "fn": "🌐", "fbr": "🖼", "r34": "🔞", "sc": "🎵", "ng": "🎬", "yt": "📺", "pic": "🎥", "tg": "✈️", "fb": "👥"}
 PLATFORM_NAME = {"ib": "Inkbunny", "fa": "FurAffinity", "ws": "Weasyl", "sf": "SoFurry", "sqw": "SquidgeWorld", "ao3": "AO3", "da": "DeviantArt", "wp": "Wattpad", "ik": "Itaku", "bsky": "Bluesky", "tw": "X/Twitter", "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads", "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "r34": "Rule34.xxx", "sc": "SoundCloud", "ng": "Newgrounds", "yt": "YouTube", "pic": "Picarto", "tg": "Telegram", "fb": "Facebook"}
 
 
@@ -206,31 +198,61 @@ def _account_who(conn, platform: str, account_id: int | None) -> str:
     label, persona_name = _account_context(conn, account_id)
     if not label:
         return ""
-    who = f"{persona_name} · {label}" if persona_name else label
+    # "KnaughtyKat · KnaughtyKat" said the same name twice (spec 044).
+    same = persona_name and persona_name.strip().lower() == label.strip().lower()
+    who = f"{persona_name} · {label}" if persona_name and not same else label
     return _esc(who)
 
 
-def _account_header_prefix(conn, platform: str, account_id: int | None) -> str:
-    """A ``"Who — "`` header prefix for per-cycle activity alerts, or ``""``."""
-    who = _account_who(conn, platform, account_id)
-    return f"{who} — " if who else ""
+def alert_header(platform: str, account_id: int | None = None) -> str:
+    """The first line of every alert (spec 044): ``<b>🎨 DeviantArt · Persona · Account</b>``.
 
-
-def account_alert_prefix(platform: str, account_id: int | None) -> str:
-    """Public, connection-managing wrapper around :func:`_account_header_prefix`.
-
-    Pollers call this to get a ``"Persona · Account — "`` prefix (already escaped)
-    to splice into an instant-alert header, or ``""`` when the platform has a
-    single unassigned account. Opens + closes its own short-lived connection.
+    Site emoji and full name from the one table above, then the account once, and only when the site has more
+    than one account to tell apart. ``account_id`` None reads the poll cycle's account context.
     """
+    if account_id is None:
+        from polling.notifications import current_alert_account
+        ctx_platform, ctx_id = current_alert_account.get()
+        if ctx_platform == platform:
+            account_id = ctx_id
+    who = ""
+    if account_id is not None:
+        try:
+            conn = get_connection()
+            try:
+                who = _account_who(conn, platform, account_id)
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001 — a label never stops an alert
+            who = ""
+    site = f"{PLATFORM_EMOJI.get(platform, '')} {_esc(PLATFORM_NAME.get(platform, platform.upper()))}".strip()
+    return f"<b>{site} · {who}</b>" if who else f"<b>{site}</b>"
+
+
+def _canonical_title(platform: str, submission_id, fallback: str | None) -> str:
+    """The linked piece's title for one post, else *fallback* (spec 044)."""
     try:
+        from database import masterpiece_queries
         conn = get_connection()
         try:
-            return _account_header_prefix(conn, platform, account_id)
+            return masterpiece_queries.canonical_titles(conn, platform, [str(submission_id)]).get(
+                str(submission_id)) or (fallback or "")
         finally:
             conn.close()
-    except Exception:
-        return ""
+    except Exception:  # noqa: BLE001
+        return fallback or ""
+
+
+def alert_title(title: str | None, limit: int = 60) -> str:
+    """A title fit for an alert line: cut on a word with an ellipsis, never blank. Not escaped."""
+    t = " ".join(str(title or "").split())
+    if not t:
+        return "(untitled)"
+    if len(t) <= limit:
+        return t
+    cut = t[:limit].rsplit(" ", 1)[0] or t[:limit]
+    return cut.rstrip(" ,.;:—-") + "…"
+
 
 # When True, individual per-platform summaries and error alerts are
 # suppressed.  Set by the unified poll orchestrator in server.py so it
@@ -338,12 +360,10 @@ async def send_poll_error(platform: str, error: Exception) -> None:
     if not settings.get("telegram_error_alerts", True):
         return
 
-    emoji = PLATFORM_EMOJI.get(platform, "")
-    name = PLATFORM_NAME.get(platform, platform.upper())
     from polling.notifications import describe_error
     error_str = describe_error(error)[:200]
     label, hint = _classify_error(error_str)
-    lines = [f"<b>{emoji} {name} Poll Failed</b>"]
+    lines = [alert_header(platform), "<b>⚠️ Poll failed</b>"]
     lines.append(f"  {_esc(label)}")
     if hint:
         lines.append(f"  <i>{_esc(hint)}</i>")
@@ -473,18 +493,16 @@ def _crossed_milestone(current: int, previous: int, milestones: list[int]) -> in
 async def check_milestones(platform: str, submission_id: int, title: str,
                            current_views: int, current_faves: int, current_comments: int,
                            prev_views: int, prev_faves: int, prev_comments: int,
-                           who: str = "", current_score: int = 0, prev_score: int = 0) -> None:
+                           account_id: int | None = None, current_score: int = 0, prev_score: int = 0) -> None:
     """Check if a submission crossed any milestone thresholds and notify.
 
-    *who* is an already-escaped "Persona · Account" label appended to the header
-    when the platform has multiple accounts (empty on single-account installs).
+    The header is :func:`alert_header` (site, then the account when it needs telling apart); the title is the
+    linked piece's canonical title when there is one (spec 044).
     """
     settings = config.get_settings()
     if not settings.get("telegram_milestones", True):
         return
 
-    emoji = PLATFORM_EMOJI.get(platform, "")
-    name = PLATFORM_NAME.get(platform, platform.upper())
     lines = []
 
     ms = _get_milestones()
@@ -505,8 +523,8 @@ async def check_milestones(platform: str, submission_id: int, title: str,
         lines.append(f"  💬 {current_comments:,} comments (passed {comment_m:,})")
 
     if lines:
-        suffix = f" · {who}" if who else ""
-        header = f"<b>{emoji} {name} Milestone!{suffix}</b>\n<b>{_esc(title)}</b>"
+        title = _canonical_title(platform, submission_id, title)
+        header = f"{alert_header(platform, account_id)}\n🏆 <b>{_esc(alert_title(title))}</b>"
         await send_telegram(header + "\n" + "\n".join(lines))
 
 
@@ -550,36 +568,42 @@ async def check_milestones_batch(platform: str, snap_table: str, sub_table: str,
 
     conn = get_connection()
     try:
-        who = _account_who(conn, platform, account_id)
         where, wparams = account_clause(account_id)
         subs = conn.execute(
             f"SELECT submission_id, title FROM {sub_table}" + (f" WHERE {where}" if where else ""),
             wparams,
         ).fetchall()
-        for sub in subs:
-            sid = sub["submission_id"]
-            rows = conn.execute(
-                f"SELECT {', '.join(select_cols)} FROM {snap_table} "
-                f"WHERE submission_id = ? ORDER BY polled_at DESC LIMIT 2",
-                (sid,),
-            ).fetchall()
-            if len(rows) < 2:
-                continue
-            curr, prev = dict(rows[0]), dict(rows[1])
-            await check_milestones(
-                platform, sid, sub["title"],
-                curr.get(views_col, 0) if views_col else 0,
-                curr.get(faves_col, 0) if faves_col else 0,
-                curr.get(comments_col, 0) if comments_col else 0,
-                prev.get(views_col, 0) if views_col else 0,
-                prev.get(faves_col, 0) if faves_col else 0,
-                prev.get(comments_col, 0) if comments_col else 0,
-                who=who,
-                current_score=(curr.get(score_col) or 0) if score_col else 0,
-                prev_score=(prev.get(score_col) or 0) if score_col else 0,
-            )
+        # The newest two snapshots of every submission in ONE query (spec 044): it was one query per submission
+        # per poll, hundreds on a large gallery.
+        inner = f"SELECT submission_id FROM {sub_table}" + (f" WHERE {where}" if where else "")
+        latest: dict = {}
+        for r in conn.execute(
+                f"SELECT submission_id, {', '.join(select_cols)} FROM ("
+                f"SELECT submission_id, {', '.join(select_cols)}, ROW_NUMBER() OVER "
+                f"(PARTITION BY submission_id ORDER BY polled_at DESC) AS rn FROM {snap_table} "
+                f"WHERE submission_id IN ({inner})) WHERE rn <= 2 ORDER BY submission_id, rn",
+                wparams).fetchall():
+            latest.setdefault(r["submission_id"], []).append(dict(r))
     finally:
         conn.close()
+    for sub in subs:
+        sid = sub["submission_id"]
+        rows = latest.get(sid, [])
+        if len(rows) < 2:
+            continue
+        curr, prev = rows[0], rows[1]
+        await check_milestones(
+            platform, sid, sub["title"],
+            curr.get(views_col, 0) if views_col else 0,
+            curr.get(faves_col, 0) if faves_col else 0,
+            curr.get(comments_col, 0) if comments_col else 0,
+            prev.get(views_col, 0) if views_col else 0,
+            prev.get(faves_col, 0) if faves_col else 0,
+            prev.get(comments_col, 0) if comments_col else 0,
+            account_id=account_id,
+            current_score=(curr.get(score_col) or 0) if score_col else 0,
+            prev_score=(prev.get(score_col) or 0) if score_col else 0,
+        )
 
 
 # ── Goal Completion Check ─────────────────────────────────────
@@ -736,6 +760,8 @@ def _get_digest_deltas(conn, snap_table: str, sub_table: str, platform: str, hou
 
     for r in rows:
         r = dict(r)
+        if old_select_cols and all(r.get(k) is None for k in ("old_views", "old_faves", "old_comments")):
+            continue   # first seen inside the window: no baseline, so no growth to report (spec 044 FR-009)
         old_v = r.get("old_views") or 0
         old_f = r.get("old_faves") or 0
         old_c = r.get("old_comments") or 0
@@ -746,7 +772,8 @@ def _get_digest_deltas(conn, snap_table: str, sub_table: str, platform: str, hou
         total_faves_delta += max(df, 0)
         total_comments_delta += max(dc, 0)
         if dv > 0 or df > 0:
-            gainers.append({"title": r["title"], "views": dv, "faves": df, "comments": dc})
+            gainers.append({"title": r["title"], "views": dv, "faves": df, "comments": dc,
+                            "submission_id": r["submission_id"], "platform": platform})
 
     gainers.sort(key=lambda x: x["views"], reverse=True)
 
@@ -861,7 +888,8 @@ def _persona_account_lines(conn, accts: list, hours: int, include_watchers: bool
             f"  Views: {totals['views']:,} (+{deltas['views_delta']:,})"
             f"  Faves: {totals['faves']:,} (+{deltas['faves_delta']:,})"
         )
-        lines.append(f"  Comments: {totals['comments']:,} (+{deltas['comments_delta']:,})")
+        if totals['comments'] or deltas['comments_delta']:
+            lines.append(f"  Comments: {totals['comments']:,} (+{deltas['comments_delta']:,})")
         if watcher:
             wlabel = "Followers" if plat == "sf" else "Watchers"
             lines.append(f"  {wlabel}: {watcher['total']:,} (+{watcher['new']:,})")
@@ -878,6 +906,14 @@ def _persona_account_lines(conn, accts: list, hours: int, include_watchers: bool
     return lines, combined, gainers, had_data
 
 
+def _gainer_title(g: dict, limit: int) -> str:
+    """A top gainer's canonical title, cut on a word, escaped (spec 044)."""
+    title = g["title"]
+    if g.get("submission_id") is not None and g.get("platform"):
+        title = _canonical_title(g["platform"], g["submission_id"], title)
+    return _esc(alert_title(title, limit))
+
+
 def _append_top_gainers(lines: list, gainers: list, limit: int = 3) -> None:
     """Append up to *limit* cross-account top-gainer lines to *lines*."""
     for g in sorted(gainers, key=lambda x: x["views"], reverse=True)[:limit]:
@@ -887,7 +923,7 @@ def _append_top_gainers(lines: list, gainers: list, limit: int = 3) -> None:
         if g["faves"] > 0:
             parts.append(f"+{g['faves']} faves")
         if parts:
-            lines.append(f"  🔥 {g.get('emoji', '')} {_esc(g['title'][:30])}: {', '.join(parts)}")
+            lines.append(f"  🔥 {g.get('emoji', '')} {_gainer_title(g, 30)}: {', '.join(parts)}")
 
 
 async def send_digest_report() -> None:
@@ -923,7 +959,8 @@ async def send_digest_report() -> None:
                 f"  Views: {combined['t_views']:,} (+{combined['views']:,})"
                 f"  Faves: {combined['t_faves']:,} (+{combined['faves']:,})"
             )
-            lines.append(f"  Comments: {combined['t_comments']:,} (+{combined['comments']:,})")
+            if combined['t_comments'] or combined['comments']:
+                lines.append(f"  Comments: {combined['t_comments']:,} (+{combined['comments']:,})")
             _append_top_gainers(lines, gainers)
             await send_telegram("\n".join(lines))
             any_sent = True
@@ -1031,7 +1068,7 @@ async def send_weekly_digest_report() -> None:
                     if g["faves"] > 0:
                         parts.append(f"+{g['faves']:,} faves")
                     if parts:
-                        lines.append(f"  {g.get('emoji', '')} {_esc(g['title'][:35])}: {', '.join(parts)}")
+                        lines.append(f"  {g.get('emoji', '')} {_gainer_title(g, 35)}: {', '.join(parts)}")
                 lines.append("")
 
             lines.append("<b>📈 Weekly Combined</b>")
@@ -1039,7 +1076,8 @@ async def send_weekly_digest_report() -> None:
                 f"  Views: {combined['t_views']:,} (+{combined['views']:,})"
                 f"  Faves: {combined['t_faves']:,} (+{combined['faves']:,})"
             )
-            lines.append(f"  Comments: {combined['t_comments']:,} (+{combined['comments']:,})")
+            if combined['t_comments'] or combined['comments']:
+                lines.append(f"  Comments: {combined['t_comments']:,} (+{combined['comments']:,})")
             await send_telegram("\n".join(lines))
             any_sent = True
 

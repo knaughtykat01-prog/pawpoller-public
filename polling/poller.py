@@ -156,37 +156,39 @@ async def _send_telegram(new_fave_details: list[dict], new_comment_details: list
     if min_faves > 0 and len(new_fave_details) < min_faves:
         new_fave_details = []
 
+    from polling.telegram import alert_header, alert_title
+    titles = notifications.canonical_title_map(
+        "ib", [d.get("id") for d in new_fave_details + new_comment_details])
+
+    def _t(d: dict) -> str:       # the linked piece's title, else IB's (spec 044)
+        return _esc(alert_title(titles.get(str(d.get("id"))) or d["title"]))
+
     sections: list[str] = []
     if new_fave_details:
         sections.append(notifications.format_telegram_summary(
-            f"<b>❤️ {len(new_fave_details)} New Fave"
+            f"<b>❤️ {len(new_fave_details)} new fave"
             f"{'s' if len(new_fave_details) != 1 else ''}</b>",
-            [f"<b>{_esc(d['username'])}</b> faved {_esc(d['title'])}"
+            [f"<b>{_esc(d['username'])}</b> faved {_t(d)}"
              for d in new_fave_details],
         ))
     if new_comment_details:
         sections.append(notifications.format_telegram_summary(
-            f"<b>💬 {len(new_comment_details)} New Comment"
+            f"<b>💬 {len(new_comment_details)} new comment"
             f"{'s' if len(new_comment_details) != 1 else ''}</b>",
-            [f"<b>{_esc(d['username'])}</b> commented on {_esc(d['title'])}"
+            [f"<b>{_esc(d['username'])}</b> commented on {_t(d)}"
              for d in new_comment_details],
         ))
     if new_watcher_details:
         sections.append(notifications.format_telegram_summary(
-            f"<b>👀 {len(new_watcher_details)} New Watcher"
+            f"<b>👀 {len(new_watcher_details)} new watcher"
             f"{'s' if len(new_watcher_details) != 1 else ''}</b>",
             [f"<b>{_esc(d['username'])}</b> started watching"
              for d in new_watcher_details],
         ))
     if not sections:
         return
-    body = "\n\n".join(sections)
-    # Lead with the persona/account identity when IB has multiple accounts, so
-    # each account's pings are attributable (empty on single-account installs).
-    from polling.telegram import account_alert_prefix
-    prefix = account_alert_prefix("ib", account_id)
-    if prefix:
-        body = f"🐾 <b>{prefix[:-3]}</b>\n\n{body}"   # strip the trailing " — "
+    # The shared first line: site, then the account when IB has several (spec 044).
+    body = alert_header("ib", account_id) + "\n" + "\n\n".join(sections)
     await notifications.send_telegram(
         token, chat_id, body, log_label="IB",
     )
@@ -379,7 +381,7 @@ async def run_poll_cycle(account_id: int | None = None, force_full: bool = False
                     stats["new_faves_found"] += new_count
                     for user in faving_users:
                         if user["user_id"] not in existing_ids:
-                            new_fave_details.append({"username": user["username"], "title": db_dict.get("title", "")})
+                            new_fave_details.append({"username": user["username"], "id": sub_id, "title": db_dict.get("title", "")})
 
                 # ── Step 6: Scrape comments (conditional) ──────
                 # Same delta-based logic as faves: only scrape when the
@@ -405,7 +407,7 @@ async def run_poll_cycle(account_id: int | None = None, force_full: bool = False
                             is_new = queries.upsert_comment(conn, c, is_own=mine)
                             if is_new and not mine:
                                 stats["new_comments_found"] += 1
-                                new_comment_details.append({"username": c.get("username", ""), "title": db_dict.get("title", "")})
+                                new_comment_details.append({"username": c.get("username", ""), "id": sub_id, "title": db_dict.get("title", "")})
                         # Release the write lock before the next iteration's awaits.
                         conn.commit()
                     except Exception as ce:

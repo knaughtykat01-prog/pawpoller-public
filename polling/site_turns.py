@@ -208,7 +208,23 @@ def site_turn(code: str):
         @functools.wraps(fn)
         async def wrapper(*args, **kwargs):
             if code in operator_paused():
-                raise SitePaused(code)
+                raise SitePaused(code)          # before the label: a paused site does no account work at all
+            # POLLLOGS: every line this cycle writes says whose account it is (polling/log_context.py).
+            from polling import log_context
+            from polling.notifications import current_alert_account
+            log_context.install()
+            account_id = args[0] if args else kwargs.get("account_id")
+            token = log_context.current.set(log_context.label(code, account_id))
+            # Spec 044: alerts this cycle sends name the account (telegram.alert_header).
+            alert_token = current_alert_account.set((code, account_id)) if account_id is not None else None
+            try:
+                return await _turn(fn, args, kwargs)
+            finally:
+                log_context.current.reset(token)
+                if alert_token is not None:
+                    current_alert_account.reset(alert_token)
+
+        async def _turn(fn, args, kwargs):
             folder = enabled()
             if folder is None or code in _held:
                 # Off the box, or this seat is already checking the site: the poller's own lock decides

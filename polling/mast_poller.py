@@ -17,7 +17,6 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from html import escape as _esc
 
 import config
 from polling import loop_bound
@@ -68,28 +67,9 @@ def _update_mast_progress(phase: str, current: int = 0, total: int = 0, message:
     mast_poll_progress["message"] = message
 
 
-def _send_mast_notifications(new_details: list[dict]) -> None:
-    """Send Windows toast notifications for Mastodon activity."""
-    settings = config.get_settings()
-    n = len(new_details)
-    notifications.maybe_show_toast(
-        settings,
-        "mast_notifications_enabled",
-        f"MAST: {n} Post{'s' if n != 1 else ''} Updated",
-        [f"{d['title'][:50]} gained activity" for d in new_details],
-    )
-
-
 async def _send_mast_telegram(new_details: list[dict]) -> None:
-    """Send Telegram notification for Mastodon activity."""
-    settings = config.get_settings()
-    n = len(new_details)
-    await notifications.maybe_send_telegram_summary(
-        settings,
-        f"<b>\U0001f418 MAST: {n} Post{'s' if n != 1 else ''} Updated</b>",
-        [_esc(d['title'][:50]) for d in new_details],
-        log_label="MAST",
-    )
+    """Toast + Telegram for posts that gained activity: the shared layout (spec 044)."""
+    await notifications.send_activity_alert("mast", new_details, settings_key="mast_notifications_enabled")
 
 
 def _get_or_create_client(settings: dict, mast_instance_url: str, mast_access_token: str) -> MastClient:
@@ -199,7 +179,8 @@ async def run_mast_poll_cycle(account_id: int | None = None, force_full: bool = 
                 prev = mast_queries.get_mast_submission(conn, uri)
                 if prev and (likes > prev.get("likes", 0)
                              or reposts > prev.get("reposts", 0)):
-                    new_activity_details.append({"title": detail.get("title", "")})
+                    new_activity_details.append(notifications.activity_item(
+                        uri, detail.get("title", ""), likes=likes - (prev.get("likes", 0) or 0), reposts=reposts - (prev.get("reposts", 0) or 0)))
 
                 mast_queries.upsert_mast_submission(conn, detail, account_id)
                 mast_queries.insert_mast_snapshot(conn, account_id, uri, likes, reposts,
@@ -239,10 +220,6 @@ async def run_mast_poll_cycle(account_id: int | None = None, force_full: bool = 
             logger.info("First MAST poll for account %s -- suppressing %d activity notifications",
                         account_id, len(new_activity_details))
         else:
-            try:
-                _send_mast_notifications(new_activity_details)
-            except Exception as ne:
-                logger.warning("Failed to send MAST notifications: %s", ne, exc_info=True)
             try:
                 await _send_mast_telegram(new_activity_details)
             except Exception as te:

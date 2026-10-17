@@ -128,24 +128,24 @@ async def _poll_updates(token: str, allowed: str = _ALLOWED_UPDATES) -> list[dic
                         # while unsubscribed: they are gone, with no backfill.
                         "allowed_updates": allowed},
             )
-            # 409 Conflict = another bot instance is polling the same token.
-            # Back off exponentially (30s → 60s → 120s, cap 300s) to avoid
-            # flooding the logs.  Resets to 0 on a successful poll.
-            if resp.status_code == 409:
-                _conflict_backoff[token] = min(max(_conflict_backoff.get(token, 0) * 2, 30), 300)
-                logger.warning("Bot getUpdates 409 Conflict — another instance is polling this token. "
-                               "Backing off %ds.", _conflict_backoff[token])
-                return []
+            # Refused: 409 = another copy is polling this token, 401 = the token was revoked. Back off
+            # exponentially (30s → 60s → 120s, cap 300s) and say why; a refusal used to return
+            # silently and the loop asked again every second (TGSEND). Resets on a good poll.
             data = resp.json()
             if not data.get("ok"):
+                _conflict_backoff[token] = min(max(_conflict_backoff.get(token, 0) * 2, 30), 300)
+                logger.warning("Bot getUpdates refused (HTTP %s): %s. Backing off %ds.", resp.status_code,
+                               str(data.get("description") or "")[:200], _conflict_backoff[token])
                 return []
             _conflict_backoff[token] = 0  # Successful poll — reset backoff
             results = data.get("result", [])
             if results:
                 _last_update_ids[token] = results[-1]["update_id"]
             return results
+    except httpx.TimeoutException:
+        return []   # the long poll outlived its window: nothing new, not a failure (it logged a blank warning)
     except Exception as e:
-        logger.warning("Bot getUpdates failed: %s", e)
+        logger.warning("Bot getUpdates failed: %s: %s", type(e).__name__, e)
         return []
 
 

@@ -16,7 +16,6 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from html import escape as _esc
 
 import config
 from polling import loop_bound
@@ -67,28 +66,9 @@ def _update_bsky_progress(phase: str, current: int = 0, total: int = 0, message:
     bsky_poll_progress["message"] = message
 
 
-def _send_bsky_notifications(new_details: list[dict]) -> None:
-    """Send Windows toast notifications for Bluesky activity."""
-    settings = config.get_settings()
-    n = len(new_details)
-    notifications.maybe_show_toast(
-        settings,
-        "bsky_notifications_enabled",
-        f"BSKY: {n} Post{'s' if n != 1 else ''} Updated",
-        [f"{d['title'][:50]} gained activity" for d in new_details],
-    )
-
-
 async def _send_bsky_telegram(new_details: list[dict]) -> None:
-    """Send Telegram notification for Bluesky activity."""
-    settings = config.get_settings()
-    n = len(new_details)
-    await notifications.maybe_send_telegram_summary(
-        settings,
-        f"<b>\U0001f98b BSKY: {n} Post{'s' if n != 1 else ''} Updated</b>",
-        [_esc(d['title'][:50]) for d in new_details],
-        log_label="BSKY",
-    )
+    """Toast + Telegram for posts that gained activity: the shared layout (spec 044)."""
+    await notifications.send_activity_alert("bsky", new_details, settings_key="bsky_notifications_enabled")
 
 
 def _get_or_create_client(settings: dict, bsky_identifier: str, bsky_app_password: str) -> BskyClient:
@@ -198,7 +178,8 @@ async def run_bsky_poll_cycle(account_id: int | None = None, force_full: bool = 
                 prev = bsky_queries.get_bsky_submission(conn, uri)
                 if prev and (likes > prev.get("likes", 0)
                              or reposts > prev.get("reposts", 0)):
-                    new_activity_details.append({"title": detail.get("title", "")})
+                    new_activity_details.append(notifications.activity_item(
+                        uri, detail.get("title", ""), likes=likes - (prev.get("likes", 0) or 0), reposts=reposts - (prev.get("reposts", 0) or 0)))
 
                 bsky_queries.upsert_bsky_submission(conn, detail, account_id)
                 bsky_queries.insert_bsky_snapshot(conn, account_id, uri, likes, reposts,
@@ -240,10 +221,6 @@ async def run_bsky_poll_cycle(account_id: int | None = None, force_full: bool = 
             logger.info("First BSKY poll for account %s -- suppressing %d activity notifications",
                         account_id, len(new_activity_details))
         else:
-            try:
-                _send_bsky_notifications(new_activity_details)
-            except Exception as ne:
-                logger.warning("Failed to send BSKY notifications: %s", ne, exc_info=True)
             try:
                 await _send_bsky_telegram(new_activity_details)
             except Exception as te:

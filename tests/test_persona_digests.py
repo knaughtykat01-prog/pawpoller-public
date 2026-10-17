@@ -60,6 +60,9 @@ def conn():
     c.close()
 
 
+_BEFORE = "2020-01-01 00:00:00"
+
+
 def _seed(conn):
     """Two personas (Alpha→IB, Beta→FA) + one Unassigned WS account, each with
     a submission so every digest unit has data."""
@@ -74,6 +77,11 @@ def _seed(conn):
     queries.upsert_submission(conn, {"submission_id": 1, "title": "Alpha IB Story", "views": 500, "favorites_count": 20, "comments_count": 3}, ib)
     fa_queries.upsert_fa_submission(conn, {"submission_id": 9001, "title": "Beta FA Story", "views": 800, "favorites_count": 40, "comments_count": 5}, fa)
     ws_queries.upsert_ws_submission(conn, {"submission_id": 7001, "title": "Loose WS Story", "views": 120, "favorites_count": 6, "comments_count": 1}, ws)
+    # A reading from before the window, so each unit has real growth to report (a piece with no earlier
+    # reading has no baseline and reports none: spec 044 FR-009).
+    queries.insert_snapshot(conn, ib, 1, 400, 18, 3, polled_at=_BEFORE)
+    fa_queries.insert_fa_snapshot(conn, fa, 9001, 700, 38, 5, polled_at=_BEFORE)
+    ws_queries.insert_ws_snapshot(conn, ws, 7001, 100, 5, 1, polled_at=_BEFORE)
     conn.commit()
     return alpha, beta, ib, fa, ws
 
@@ -122,11 +130,13 @@ def test_no_personas_falls_back_to_single_digest(conn, monkeypatch):
     """With no personas defined, one combined digest goes out (back-compat)."""
     ib = accounts.create_account(conn, "ib", "IB-Main")
     queries.upsert_submission(conn, {"submission_id": 1, "title": "S", "views": 10, "favorites_count": 1, "comments_count": 0}, ib)
+    queries.insert_snapshot(conn, ib, 1, 5, 1, 0, polled_at=_BEFORE)
     conn.commit()
 
     msgs = _run_digest(monkeypatch)
     assert len(msgs) == 1
     assert "PawPoller" in msgs[0] and "Unassigned" not in msgs[0]
+    assert "Comments" not in msgs[0], "a line with nothing in it is left out (spec 044)"
 
 
 def test_digest_skips_when_no_data(conn, monkeypatch):
@@ -168,8 +178,9 @@ def test_periodic_digest_skips_unchanged_but_weekly_keeps_them(conn, monkeypatch
     # Alpha/IB: stats UNCHANGED vs a snapshot from well before the window → 0 delta.
     queries.upsert_submission(conn, {"submission_id": 1, "title": "Quiet", "views": 500, "favorites_count": 20, "comments_count": 3}, ib)
     queries.insert_snapshot(conn, ib, 1, 500, 20, 3, polled_at="2020-01-01 00:00:00")
-    # Beta/FA: fresh submission, no prior snapshot → full value is the delta (non-zero).
+    # Beta/FA: grew since a snapshot from before the window (non-zero delta).
     fa_queries.upsert_fa_submission(conn, {"submission_id": 9001, "title": "Active", "views": 800, "favorites_count": 40, "comments_count": 5}, fa)
+    fa_queries.insert_fa_snapshot(conn, fa, 9001, 700, 38, 5, polled_at=_BEFORE)
     conn.commit()
 
     # Periodic digest: Alpha (unchanged) is skipped; only Beta goes out.

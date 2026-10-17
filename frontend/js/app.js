@@ -18034,7 +18034,7 @@ const App = {
                     <summary>CF Proxy Backup <span class="summary-meta">— retry through Cloudflare Worker only when a direct call fails</span></summary>
                     <div class="accordion-body">
                         <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
-                            DeviantArt and SoFurry always use the configured CF Worker proxy — they need it from datacenter IPs. The platforms below run direct by default, with the proxy as a <em>fallback</em>: when toggled on, a poll/import/connect that hits a block-like failure (403, 429, "Retry later", Cloudflare challenge, persistent timeout) is automatically retried once through the Worker. Direct stays the happy path; the Worker quota only burns on actual failures. Requires <code>cf_worker_url</code> + <code>cf_worker_key</code> to be set.
+                            SoFurry always goes through the configured CF Worker relay. The sites below connect directly; ticking one sends it through the relay when a direct connection is blocked (403, 429, "Retry later", a Cloudflare bot check, repeated timeouts): imports and connecting retry once through the relay. <strong>FurAffinity is different:</strong> with it ticked, every FurAffinity poll goes through the relay, for when FA's bot check turns away your own connection. Requires <code>cf_worker_url</code> + <code>cf_worker_key</code>.
                         </p>
                         <div id="cf-proxy-toggles">
                             <div style="text-align:center;padding:20px;color:var(--text-muted)">Loading…</div>

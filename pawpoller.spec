@@ -43,7 +43,7 @@ _PLATFORM_HIDDEN_IMPORTS = {
 _platform_key = 'linux' if sys.platform.startswith('linux') else sys.platform
 _platform_hidden = _PLATFORM_HIDDEN_IMPORTS.get(_platform_key, [])
 
-_CHANGELOG = [('CHANGELOG.md', '.')] if Path('CHANGELOG.md').is_file() else []
+_CHANGELOG = [(n, '.') for n in ('CHANGELOG.md', 'WHATSNEW.md') if Path(n).is_file()]   # WHATSNEW: public builds
 
 a = Analysis(
     ['main.py'],

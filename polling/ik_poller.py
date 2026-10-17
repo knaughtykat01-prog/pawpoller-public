@@ -20,7 +20,6 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from html import escape as _esc
 
 import config
 from polling import loop_bound
@@ -71,28 +70,9 @@ def _update_ik_progress(phase: str, current: int = 0, total: int = 0, message: s
     ik_poll_progress["message"] = message
 
 
-def _send_ik_notifications(new_details: list[dict]) -> None:
-    """Send Windows toast notifications for Itaku activity."""
-    settings = config.get_settings()
-    n = len(new_details)
-    notifications.maybe_show_toast(
-        settings,
-        "ik_notifications_enabled",
-        f"IK: {n} Item{'s' if n != 1 else ''} Updated",
-        [f"{d['title']} gained activity" for d in new_details],
-    )
-
-
 async def _send_ik_telegram(new_details: list[dict]) -> None:
-    """Send Telegram notification for Itaku activity."""
-    settings = config.get_settings()
-    n = len(new_details)
-    await notifications.maybe_send_telegram_summary(
-        settings,
-        f"<b>\U0001f3af IK: {n} Item{'s' if n != 1 else ''} Updated</b>",
-        [_esc(d['title']) for d in new_details],
-        log_label="IK",
-    )
+    """Toast + Telegram for posts that gained activity: the shared layout (spec 044)."""
+    await notifications.send_activity_alert("ik", new_details, settings_key="ik_notifications_enabled")
 
 
 def _get_or_create_client(settings: dict, ik_target: str) -> IKClient:
@@ -195,7 +175,8 @@ async def run_ik_poll_cycle(account_id: int | None = None, force_full: bool = Fa
                 prev = ik_queries.get_ik_submission(conn, sid)
                 if prev and (likes > prev.get("likes", 0)
                              or comments > prev.get("comments_count", 0)):
-                    new_activity_details.append({"title": detail.get("title", "")})
+                    new_activity_details.append(notifications.activity_item(
+                        sid, detail.get("title", ""), likes=likes - (prev.get("likes", 0) or 0), comments=comments - (prev.get("comments_count", 0) or 0)))
 
                 ik_queries.upsert_ik_submission(conn, detail, account_id)
                 ik_queries.insert_ik_snapshot(conn, account_id, sid, likes, comments,
@@ -213,10 +194,6 @@ async def run_ik_poll_cycle(account_id: int | None = None, force_full: bool = Fa
             logger.info("First IK poll for account %s -- suppressing %d activity notifications",
                         account_id, len(new_activity_details))
         else:
-            try:
-                _send_ik_notifications(new_activity_details)
-            except Exception as ne:
-                logger.warning("Failed to send IK notifications: %s", ne, exc_info=True)
             try:
                 await _send_ik_telegram(new_activity_details)
             except Exception as te:

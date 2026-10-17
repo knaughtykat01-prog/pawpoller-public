@@ -83,3 +83,21 @@ def test_whatsnew_truncates(monkeypatch):
     r = wn.whatsnew(since="1.0.1")               # 1.0.2..1.0.20 = 19 → capped at 12
     assert len(r["entries"]) == wn._MAX_ENTRIES
     assert r["truncated"] is True
+
+
+def test_a_public_build_reads_the_summaries_file(monkeypatch, tmp_path):
+    """WHATSNEW: the public copy has no CHANGELOG.md, so every seat's popup was empty until 4.79.2."""
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "deploy"))
+    import make_public
+    changelog = ("# Changelog\n\n## [2.0.0] - 2026-10-16 - Two\n\n> - Plain point.\n\nEngineering `detail()`.\n\n"
+                 "## [1.5.0] - 2026-10-01 - Old\n\nNo summary here.\n\n## [1.0.0] - 2026-09-01 - One\n\n> - First.\n")
+    text = make_public.whatsnew_text(changelog)
+    assert "Engineering" not in text and "No summary" not in text and "[1.5.0]" not in text
+    assert "> - Plain point." in text and "## [1.0.0]" in text
+    assert make_public.whatsnew_text(changelog, limit=1).count("## [") == 1
+    (tmp_path / "WHATSNEW.md").write_text(text, encoding="utf-8")
+    monkeypatch.setattr(config, "resource_path", lambda name: tmp_path / name)
+    monkeypatch.setattr(config, "APP_VERSION", "2.0.0")
+    r = wn.whatsnew(since="1.0.0")
+    assert [e["version"] for e in r["entries"]] == ["2.0.0"] and r["entries"][0]["summary"] == "- Plain point."
