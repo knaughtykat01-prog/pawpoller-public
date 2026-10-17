@@ -89,7 +89,8 @@ def test_a_public_build_reads_the_summaries_file(monkeypatch, tmp_path):
     """WHATSNEW: the public copy has no CHANGELOG.md, so every seat's popup was empty until 4.79.2."""
     import sys
     sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "deploy"))
-    import make_public
+    import pytest
+    make_public = pytest.importorskip("make_public")   # deploy/make_public.py stays out of the public copy
     changelog = ("# Changelog\n\n## [2.0.0] - 2026-10-16 - Two\n\n> - Plain point.\n\nEngineering `detail()`.\n\n"
                  "## [1.5.0] - 2026-10-01 - Old\n\nNo summary here.\n\n## [1.0.0] - 2026-09-01 - One\n\n> - First.\n")
     text = make_public.whatsnew_text(changelog)

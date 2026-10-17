@@ -2,6 +2,11 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.80.1] - 2026-10-18 - Tidy alerts
+
+> - This is the release that brings you the 4.80.0 alert changes below.
+> - Fixed a check that stopped the 4.80.0 downloads from being built.
+
 ## [4.80.0] - 2026-10-17 - Tidy alerts
 
 > - Every alert opens with the site's name and the account, in the same order, with each name shown once.
@@ -130,8 +135,3 @@ Generated from the release notes: each version's plain-language summary.
 
 > - An invite link that's been replaced or has expired now says so as soon as it opens, instead of after the form is filled in.
 > - Hosted seats: deleting a seat for good can now remove its web address too.
-
-## [4.73.0] - 2026-10-14 - The PawPoller area in the Tech Centre
-
-> - Nothing changes in the app itself.
-> - Hosted seats can now report how they're doing, so the operator can look after them from one page.
