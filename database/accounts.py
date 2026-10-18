@@ -55,6 +55,8 @@ PLATFORMS = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky",
              "yt",
              # 4.46.0 (spec 013): Picarto — poll only, public API, the channel name is the credential.
              "pic",
+             # spec 045: Twitch — watched, never posted to; go-live posts go to the other sites.
+             "ttv",
              # 4.57.0 (spec 022): Facebook Pages — post only for now (stats are phase 2).
              "fb"]
 
@@ -87,6 +89,7 @@ PLATFORM_NAMES = {
     "ng": "Newgrounds",
     "yt": "YouTube",
     "pic": "Picarto",
+    "ttv": "Twitch",
     "fb": "Facebook",
 }
 
@@ -136,6 +139,8 @@ DEFAULT_CRED_CHECKS = {
     "yt": lambda s: bool(s.get("yt_refresh_token")),
     # Picarto: the channel name is all it needs — the public API reads it with no login (4.46.0).
     "pic": lambda s: bool(s.get("pic_channel")),
+    # Twitch: the channel (its permanent id) — the app key may come from the environment on a seat (spec 045).
+    "ttv": lambda s: bool(s.get("ttv_user_id")),
     # Facebook: the Page token + which Page (4.57.0).
     "fb": lambda s: bool(s.get("fb_page_token") and s.get("fb_page_id")),
 }
@@ -179,6 +184,7 @@ _HANDLE_KEYS = {
     "ng": ["ng_username"],
     "yt": ["yt_username"],
     "pic": ["pic_channel"],
+    "ttv": ["ttv_channel", "ttv_user_id"],
     "fb": ["fb_page_name", "fb_page_id"],
 }
 

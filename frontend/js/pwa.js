@@ -43,6 +43,85 @@
         });
     }
 
+    /* Fresh copy (4.81.1, SWSTUCK). A phone kept a tester on an old app: an old worker plus its saved
+     * copy, with the page's requests dying on the phone while the server answered fine (Incognito
+     * worked). Two triggers lead to one cure (drop every worker + saved copy, reload once):
+     *
+     *  - Version watch: on load, and when the tab comes back after 5 minutes or more, ask
+     *    /api/health which version the server runs. A different one means this page is old → refresh.
+     *    That's the cache busting. It runs once per version (sessionStorage), so a stale edge copy
+     *    can't loop it, and it waits while someone is typing.
+     *  - Stuck requests: 3 network failures inside 30 s while /api/health answers means the server
+     *    is fine and this page isn't → refresh, at most once per 10 minutes. A real outage fails the
+     *    health check too, so nothing reloads into an offline page. */
+    var _ss = {
+        get: function (k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
+        set: function (k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* private mode */ } },
+    };
+
+    function _health() {
+        var ctl = 'AbortController' in window ? new AbortController() : null;
+        var t = ctl && setTimeout(function () { ctl.abort(); }, 8000);
+        return fetch('/api/health?t=' + Date.now(), { cache: 'no-store', signal: ctl && ctl.signal })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .catch(function () { return null; })
+            .finally(function () { if (t) clearTimeout(t); });
+    }
+
+    function _editing() {
+        var a = document.activeElement;
+        return !!a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+    }
+
+    function freshCopy() {
+        var jobs = [];
+        if ('serviceWorker' in navigator) {
+            jobs.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+                return Promise.all(regs.map(function (r) { return r.unregister(); }));
+            }));
+        }
+        if ('caches' in window) {
+            jobs.push(caches.keys().then(function (keys) {
+                return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+            }));
+        }
+        return Promise.all(jobs).catch(function () {}).then(function () { location.reload(); });
+    }
+
+    var _lastCheck = 0;
+    function checkVersion() {
+        if (!_appVer || _editing()) return;
+        _lastCheck = Date.now();
+        _health().then(function (h) {
+            if (!h || !h.version || h.version === _appVer) return;
+            if (_ss.get('pp-fresh-for') === h.version) return;        // already tried for this version
+            _ss.set('pp-fresh-for', h.version);
+            freshCopy();
+        });
+    }
+
+    var _fails = [];
+    var _healing = false;
+    function networkError() {
+        var now = Date.now();
+        _fails = _fails.filter(function (t) { return now - t < 30000; });
+        _fails.push(now);
+        if (_fails.length < 3 || _healing) return;
+        if (now - Number(_ss.get('pp-healed-at') || 0) < 600000) return;
+        _healing = true;
+        _health().then(function (h) {
+            if (!h) { _healing = false; return; }                     // the server is down, not us
+            _ss.set('pp-healed-at', String(Date.now()));
+            freshCopy();
+        });
+    }
+
+    window.PawFresh = { networkError: networkError, freshCopy: freshCopy };
+    window.addEventListener('load', checkVersion);
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible' && Date.now() - _lastCheck > 300000) checkVersion();
+    });
+
     // Keep the status-bar / task-switcher tint matching the resolved theme's
     // paper colour (so a dark theme gets a dark bar, quill gets warm paper).
     try {

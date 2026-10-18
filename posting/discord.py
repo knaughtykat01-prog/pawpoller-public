@@ -241,6 +241,42 @@ async def _send(webhook_url: str, message: dict) -> bool:
         return False
 
 
+# ── Plain text, sent and edited (go-live posts, spec 045) ─────────────────────
+
+async def send_text(text: str, settings: dict | None = None) -> str:
+    """Send a plain message to the announce channel; returns its message id ('' on failure).
+    ``?wait=true`` makes Discord answer with the message, so it can be edited later."""
+    url = _webhook_url(settings)
+    if not url:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, params={"wait": "true"},
+                                     json={"content": text[:2000], "allowed_mentions": {"parse": []}})
+        if resp.status_code >= 300:
+            logger.warning("Discord webhook returned %s", resp.status_code)
+            return ""
+        return str((resp.json() or {}).get("id") or "")
+    except Exception as e:  # noqa: BLE001 — never the URL: it carries the webhook's token
+        logger.warning("Discord webhook post failed (%s)", type(e).__name__)
+        return ""
+
+
+async def edit_text(message_id: str, text: str, settings: dict | None = None) -> bool:
+    """Change a message this webhook sent (PATCH …/messages/{id})."""
+    url = _webhook_url(settings)
+    if not (url and message_id and str(message_id).isdigit()):
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.patch(f"{url.split('?', 1)[0]}/messages/{message_id}",
+                                      json={"content": text[:2000], "allowed_mentions": {"parse": []}})
+        return resp.status_code < 300
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Discord webhook edit failed (%s)", type(e).__name__)
+        return False
+
+
 # ── Entry points ─────────────────────────────────────────────────────────────
 
 async def announce(kind: str, title: str, *, image_path: str | Path | None = None,

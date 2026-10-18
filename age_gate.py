@@ -58,6 +58,8 @@ SITE_AGES: dict[str, dict] = {
     "pic":  {"min": 18, "adult_only": False, "checked": False,
              "note": "Check Picarto's terms (reported 18+, younger streamers supervised)"},
     "pod":  {"min": 0,  "adult_only": False, "checked": True, "note": "Your own podcast feed"},
+    # Spec 045: watched, never posted to — the gate never blocks a post here, but every site has an age.
+    "ttv":  {"min": 13, "adult_only": False, "checked": False, "note": "Check Twitch's terms (13+; older in some countries)"},
 }
 
 

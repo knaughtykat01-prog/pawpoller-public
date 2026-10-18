@@ -49,7 +49,8 @@ def test_class_counts_match_the_spec(conn):
     # +3 in 4.59.0: Facebook's trio via PLATFORM_PREFIXES (spec 029).
     # +4 in 4.64.0: e621/Furbooru found + found_snapshots (spec 028).
     # +5 in 4.65.0: Rule34's trio via PLATFORM_PREFIXES + r34_found / r34_found_snapshots (spec 028 US6).
-    assert counts["SRV"] == 95
+    # +4 in spec 045: Twitch's trio via PLATFORM_PREFIXES + ttv_channel_snapshots.
+    assert counts["SRV"] == 99
     # The spec's §1 says 25 but enumerates 26; two of those (posting_queue,
     # posting_log) are reclassified HANDOFF here for the reasons in the module
     # docstring, leaving 24 that actually travel as shared rows.
@@ -70,7 +71,7 @@ def test_class_counts_match_the_spec(conn):
     # labels, checklists, check items, comments, covers, outbox, conflicts.
     # +1 in 4.56.0: paired_comments (spec 021) -- keyed by this box's own post_id.
     # +1 in 4.74.0: turn_skips (spec 039) -- this box's own skipped turns.
-    assert counts["LOC"] == 22  # + this stage's own outbox, + promos (4.16.0), + podcast feeds / episodes (4.21.1)
+    assert counts["LOC"] == 28  # + spec 045: the six golive_* tables, + this stage's own outbox, + promos (4.16.0), + podcast feeds / episodes (4.21.1)
 
 
 def test_unregistered_table_raises_rather_than_defaulting():

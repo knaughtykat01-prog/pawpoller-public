@@ -51,6 +51,8 @@ _SC_SCHEMA_PATH = config.resource_path("database/sc_schema.sql")      # SoundClo
 _NG_SCHEMA_PATH = config.resource_path("database/ng_schema.sql")      # Newgrounds tables (4.23.0)
 _YT_SCHEMA_PATH = config.resource_path("database/yt_schema.sql")      # YouTube tables (4.24.0)
 _PIC_SCHEMA_PATH = config.resource_path("database/pic_schema.sql")    # Picarto tables (4.46.0, spec 013)
+_TTV_SCHEMA_PATH = config.resource_path("database/ttv_schema.sql")    # Twitch tables (spec 045)
+_GOLIVE_SCHEMA_PATH = config.resource_path("database/golive_schema.sql")  # Go-live posts (spec 045)
 _FB_SCHEMA_PATH = config.resource_path("database/fb_schema.sql")      # Facebook stats (4.59.0, spec 029)
 _FBR_SCHEMA_PATH = config.resource_path("database/fbr_schema.sql")    # Furbooru tables
 _R34_SCHEMA_PATH = config.resource_path("database/r34_schema.sql")    # Rule34.xxx tables (spec 028 US6)
@@ -172,6 +174,8 @@ def init_db() -> None:
         yt_schema_sql = _YT_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(yt_schema_sql)
         conn.executescript(_PIC_SCHEMA_PATH.read_text(encoding="utf-8"))
+        conn.executescript(_TTV_SCHEMA_PATH.read_text(encoding="utf-8"))
+        conn.executescript(_GOLIVE_SCHEMA_PATH.read_text(encoding="utf-8"))
         conn.executescript(_FB_SCHEMA_PATH.read_text(encoding="utf-8"))
         fbr_schema_sql = _FBR_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(fbr_schema_sql)

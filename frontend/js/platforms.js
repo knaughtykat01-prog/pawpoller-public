@@ -45,6 +45,9 @@
         // 4.46.0 (spec 013): Picarto — art livestreams; channel name only, no login. Lifetime channel
         // views / followers / subscribers + recorded streams. Nothing to post to.
         { code: 'pic',  label: 'Picarto',      emoji: '\u{1F3A5}', color: '#2c9dd8'  },
+        // Spec 045: Twitch — watched, never posted to. Live state, past broadcasts + clips; followers /
+        // subscribers / Bits with Connect. Its go-live posts go out to the other sites.
+        { code: 'ttv',  label: 'Twitch',       emoji: '\u{1F7E3}', color: '#9146ff'  },
         // 4.57.0 (spec 022): Facebook Pages — photo / GIF / video / text posts to a Page. Polled for views,
         // reactions, comments and shares since 4.59.0 (spec 029).
         { code: 'fb',   label: 'Facebook',     emoji: '\u{1F4D8}', color: '#0866FF' },
@@ -101,6 +104,8 @@
         yt:   V({ faves: 'Likes' }),
         // Picarto: views = lifetime CHANNEL views (aggregate rows carry `views`); no faves/comments.
         pic:  M('views', 'total_views', null, null, 'views', 'views'),
+        // Twitch: views = past broadcasts' + clips' own view counts; no faves/comments.
+        ttv:  M('views', 'total_views', null, null, 'views', 'views'),
         // Facebook (4.59.0): views are Page insights (post_media_view); NULL when read_insights is missing.
         fb:   M('views', 'total_views', 'total_reactions', 'total_comments',
                 'views', 'views', { faves: 'Reactions' }),
@@ -154,7 +159,7 @@
     const _svgLogos = ['ik', 'ws', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'tg', 'fb'];
     // Platforms with no bundled logo asset fall back to their emoji (the tile
     // renderer treats a null logo that way). Keeps a broken <img> off the hub.
-    const _noLogo = ['fn', 'fbr', 'r34', 'pod', 'sc', 'ng', 'yt', 'pic'];
+    const _noLogo = ['fn', 'fbr', 'r34', 'pod', 'sc', 'ng', 'yt', 'pic', 'ttv'];
     PLATFORMS.forEach(p => {
         p.logo = _noLogo.includes(p.code)
             ? null

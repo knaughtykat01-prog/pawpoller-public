@@ -63,7 +63,7 @@ from dataclasses import dataclass, field
 # tables kept their original names.
 PLATFORM_PREFIXES = (
     "", "ao3_", "bsky_", "da_", "e621_", "fa_", "fb_", "fbr_", "fn_", "ig_", "ik_", "r34_",
-    "mast_", "ng_", "pic_", "pix_", "sc_", "sf_", "sqw_", "thr_", "tum_", "tw_", "wp_", "ws_", "yt_",
+    "mast_", "ng_", "pic_", "pix_", "sc_", "sf_", "sqw_", "thr_", "ttv_", "tum_", "tw_", "wp_", "ws_", "yt_",
 )
 
 SRV = "SRV"
@@ -155,6 +155,7 @@ _RULES += [
     _srv("sqw_kudos_users", "Poll output (SquidgeWorld)."),
     _srv("fa_profile_stats", "Poll output (FurAffinity profile counters)."),
     _srv("pic_channel_snapshots", "Poll output (Picarto channel counters, 4.46.0)."),
+    _srv("ttv_channel_snapshots", "Poll output (Twitch channel state + counters, spec 045)."),
     _srv("account_follower_snapshots", "Time series; same reasoning as *_snapshots."),
     # Spec 028: board posts someone else uploaded, kept out of the totals; mirrors of the main tables.
     _srv("e621_found", "Poll output (e621 posts by other uploaders, kept apart)."),
@@ -428,6 +429,12 @@ _RULES += [
         "installs, and its outcome belongs to the box that sent the reply — shipping it "
         "would hang a comment under the wrong post.",
     ),
+    # Spec 045: go-live posts belong to the ONE install that watches the channel and sends them. Its runs
+    # point at its own post ids, and a second copy holding the same targets would announce every stream twice.
+    *(TableRule(t, LOC, "Spec 045. Go-live posts are sent by the one install watching the channel; a copy "
+                        "elsewhere would hold run rows keyed by another box's post ids, or announce twice.")
+      for t in ("golive_channels", "golive_targets", "golive_streams", "golive_runs", "golive_run_targets",
+                "golive_signals")),
     TableRule(
         "pp_meta", LOC,
         "Migration guards. Syncing one either suppresses a backfill this install "

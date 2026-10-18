@@ -38,14 +38,14 @@ _lock = threading.Lock()
 # Platforms with a real validate_session() network check. Order = check order.
 CHECKABLE: tuple[str, ...] = ("ao3", "sf", "sqw", "bsky", "mast", "tum", "pix",
                               "thr", "ig", "e621", "fn", "fbr", "r34", "tg", "sc", "ng", "yt",
-                              "pic", "tw", "fb")
+                              "pic", "ttv", "tw", "fb")
 
 # Human labels for log/UI fallback (the frontend has its own map too).
 LABELS = {
     "ao3": "AO3", "sf": "SoFurry", "sqw": "SquidgeWorld", "bsky": "Bluesky",
     "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads",
     "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "r34": "Rule34.xxx", "sc": "SoundCloud",
-    "ng": "Newgrounds", "yt": "YouTube", "pic": "Picarto",
+    "ng": "Newgrounds", "yt": "YouTube", "pic": "Picarto", "ttv": "Twitch",
     "tg": "Telegram", "tw": "X/Twitter", "fb": "Facebook",
 }
 
@@ -59,6 +59,8 @@ _EXPIRED_DETAIL = {
     "tg": "Telegram refused the channel — check the bot is still an admin of it.",
     # Picarto has no login to expire; a failed check means the channel name stopped resolving (4.46.0).
     "pic": "Picarto has no channel by that name any more — check the channel name in Settings.",
+    # Twitch: the app key was refused, or the channel's id stopped resolving (spec 045).
+    "ttv": "Twitch refused the app key, or the channel is gone — check Settings → Platforms → Twitch.",
 }
 _DEFAULT_EXPIRED_DETAIL = "Session/cookie is no longer valid — re-enter credentials."
 
@@ -111,6 +113,8 @@ def _configured(code: str, s: dict) -> bool:
         return bool(s.get("r34_api_key") and s.get("r34_user_id"))
     if code == "pic":
         return bool(s.get("pic_channel"))    # public read API — the channel name is enough (4.46.0)
+    if code == "ttv":
+        return bool(s.get("ttv_user_id"))    # the channel; the app key may be the seat's (spec 045)
     if code == "tg":
         # 4.8.0: only the posting bot counts — the notification bot is never
         # borrowed for channels. A channel is mandatory because there is nothing
@@ -221,6 +225,14 @@ async def _validate(code: str, s: dict):
         # No login to expire: "valid" means the channel still exists under that name.
         from clients.pic.client import PicClient
         c = PicClient(s.get("pic_channel", ""))
+        try:
+            return bool(await c.validate_session())
+        finally:
+            await c.close()
+    elif code == "ttv":
+        # "Valid" = the app key works and the channel's id still resolves (spec 045).
+        from polling.ttv_poller import make_client
+        c = make_client(s)
         try:
             return bool(await c.validate_session())
         finally:

@@ -749,11 +749,14 @@ async def _publish_thread_parts(parts: list[dict], platform: str,
 async def publish_post(post_id: int, platforms: list[str],
                        account_ids: dict[str, int] | None = None,
                        settings: dict | None = None,
-                       persona_id: int | None = None) -> list[dict[str, Any]]:
+                       persona_id: int | None = None,
+                       announce: bool = True) -> list[dict[str, Any]]:
     """Publish a composed post to each platform, recording every outcome.
 
     Returns one result dict per platform. Each publication row is upserted so a
-    re-publish of a failed platform overwrites its prior failure.
+    re-publish of a failed platform overwrites its prior failure. ``announce=False``
+    skips the Discord announce line (spec 045: a go-live post has Discord as its
+    own target, so announcing it too would say it twice).
     """
     account_ids = account_ids or {}
     conn = get_connection()
@@ -882,7 +885,7 @@ async def publish_post(post_id: int, platforms: list[str],
     # Discord announce (gap G4) — fire once per publish if any platform succeeded.
     # Best-effort; announce_publish self-gates on config + never raises.
     succeeded = [platforms[i] for i, r in enumerate(results) if r.get("success")]
-    if succeeded:
+    if succeeded and announce:
         from posting import discord
         # 4.41.0 (spec 008): the first image travels with the message, the body is
         # the description, the sites are named links. The title stays the short line.

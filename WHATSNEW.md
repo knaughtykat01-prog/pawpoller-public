@@ -2,6 +2,21 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.81.1] - 2026-10-19 - Fresh copy
+
+> - After an update, PawPoller now replaces the old copy saved on your phone or computer by itself, so you don't get stuck on an old version.
+> - If the app can't reach the server even though the server is fine, it clears its saved copy and reloads once.
+> - "Server unreachable" messages now offer "Refresh PawPoller on this device". It keeps you signed in.
+
+## [4.81.0] - 2026-10-19 - Twitch
+
+> - Twitch is a new site to watch: see when you're live, your past broadcasts and clips, and, once you connect Twitch, your followers, subscribers and Bits.
+> - Go-live posts: when you go live on Twitch, PawPoller can post your own words to Bluesky, Mastodon, X, Threads, Tumblr, Instagram, Telegram, Facebook and your Discord channel.
+> - "Show me first" is on to begin with. You get a Telegram message with Post and Skip buttons, plus a note in the bell, and nothing posts until you say so.
+> - A dropped stream that restarts within the cool-down counts as the same stream, so nothing posts twice.
+> - When the stream ends, PawPoller can change the Discord, Mastodon and Telegram posts to your "it's over" words.
+> - Go-live posts are new and still being tested on real streams.
+
 ## [4.80.1] - 2026-10-18 - Tidy alerts
 
 > - This is the release that brings you the 4.80.0 alert changes below.
@@ -124,14 +139,3 @@ Generated from the release notes: each version's plain-language summary.
 
 > - The first-run setup on a hosted seat no longer says "Every 1 hours".
 > - A small privacy tidy-up in what a hosted seat reports to the Tech Centre.
-
-## [4.74.0] - 2026-10-14 - Rate watch, and poll choices for hosted seats
-
-> - Hosted seats check your sites every 4, 6, 8, 12 or 24 hours. Seats share one internet connection, so this keeps every seat within each site's limits.
-> - If your interval was faster, it moves to the nearest choice and Settings tells you once.
-> - PawPoller now notices when X makes it wait, and AO3 errors say when AO3 refused the sign-in rather than blaming your password.
-
-## [4.73.1] - 2026-10-14 - Invite links say when they've run out
-
-> - An invite link that's been replaced or has expired now says so as soon as it opens, instead of after the form is filled in.
-> - Hosted seats: deleting a seat for good can now remove its web address too.

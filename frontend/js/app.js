@@ -99,6 +99,8 @@ const App = {
     _ngCompareMetric: 'views',
     _ytSortState: { field: 'views', order: 'desc' },
     _picSortState: { field: 'posted_at', order: 'desc' },
+    _ttvSortState: { field: 'posted_at', order: 'desc' },
+    _ttvKind: '',
     _ytCompareIds: new Set(),
     _ytCompareMetric: 'views',
     _fbrSortState: { field: 'score', order: 'desc' },
@@ -1367,6 +1369,12 @@ const App = {
             this.renderYTDetail(parts[2]);
         } else if (parts[0] === 'yt' && parts[1] === 'compare') {
             this.renderYTCompare();
+        } else if (parts[0] === 'ttv' && (!parts[1] || parts[1] === '')) {
+            this.renderTTVDashboard();
+        } else if (parts[0] === 'ttv' && parts[1] === 'submissions' && !parts[2]) {
+            this.renderTTVSubmissions();
+        } else if (parts[0] === 'ttv' && parts[1] === 'submission' && parts[2]) {
+            this.renderTTVDetail(parts[2]);
         } else if (parts[0] === 'pic' && (!parts[1] || parts[1] === '')) {
             this.renderPICDashboard();
         } else if (parts[0] === 'pic' && parts[1] === 'submissions' && !parts[2]) {
@@ -1663,10 +1671,12 @@ const App = {
         const color = plat ? plat.color : 'var(--accent)';
         const route = window.platformRoute || ((c, s) => s ? '#/' + c + '/' + s : '#/' + c);
         // Picarto's "submissions" are recorded streams, with no stats to compare (4.46.0).
-        const isPic = code === 'pic';
-        const subName = sub === 'subs' ? (isPic ? 'Recordings' : 'Submissions')
+        // Twitch's are past broadcasts and clips (spec 045) — no compare page either.
+        const isPic = code === 'pic' || code === 'ttv';
+        const subsWord = code === 'ttv' ? 'Broadcasts' : 'Recordings';
+        const subName = sub === 'subs' ? (isPic ? subsWord : 'Submissions')
             : sub === 'compare' ? 'Compare'
-            : sub === 'detail' ? (isPic ? 'Recording' : 'Submission') : 'Dashboard';
+            : sub === 'detail' ? (isPic ? (code === 'ttv' ? 'Broadcast' : 'Recording') : 'Submission') : 'Dashboard';
 
         const crumb = '<a href="#/platforms">Platforms</a> <span class="sep">›</span> '
             + '<a href="' + route(code) + '">' + label + '</a> '
@@ -1676,7 +1686,7 @@ const App = {
             '<a href="' + route(code, sname) + '" class="' + (sub === key ? 'active' : '') + '">' + name + '</a>';
         const subtabs = '<div class="ctx-subtabs">'
             + tab('dash', 'Dashboard', '')
-            + tab('subs', isPic ? 'Recordings' : 'Submissions', 'submissions')
+            + tab('subs', isPic ? subsWord : 'Submissions', 'submissions')
             + (isPic ? '' : tab('compare', 'Compare', 'compare'))
             + '</div>';
 
@@ -1908,6 +1918,7 @@ const App = {
                 { key: 'ng', auth: auth.ngAuth?.has_credentials, name: 'Newgrounds', statusFn: 'getNGStatus', logFn: 'getNGPollLog', tableFn: 'ngPollLogTable' },
                 { key: 'yt', auth: auth.ytAuth?.has_credentials, name: 'YouTube', statusFn: 'getYTStatus', logFn: 'getYTPollLog', tableFn: 'ytPollLogTable' },
                 { key: 'pic', auth: auth.picAuth?.has_credentials, name: 'Picarto', statusFn: 'getPICStatus', logFn: 'getPICPollLog', tableFn: 'picPollLogTable' },
+                { key: 'ttv', auth: auth.ttvAuth?.has_credentials, name: 'Twitch', statusFn: 'getTTVStatus', logFn: 'getTTVPollLog', tableFn: 'ttvPollLogTable' },
                 { key: 'fb', auth: auth.fbAuth?.has_credentials, name: 'Facebook', statusFn: 'getFBStatus', logFn: 'getFBPollLog', tableFn: 'ytPollLogTable' },
                 { key: 'fbr', auth: auth.fbrAuth?.has_credentials, name: 'Furbooru', statusFn: 'getFBRStatus', logFn: 'getFBRPollLog', tableFn: 'fbrPollLogTable' },
                 { key: 'r34', auth: auth.r34Auth?.has_credentials, name: 'Rule34.xxx', statusFn: 'getR34Status', logFn: 'getR34PollLog', tableFn: 'r34PollLogTable' },
@@ -2080,7 +2091,7 @@ const App = {
     _platformLabels: {
         ib: 'Inkbunny', fa: 'FurAffinity', ws: 'Weasyl', sf: 'SoFurry',
         sqw: 'SquidgeWorld', ao3: 'AO3', da: 'DeviantArt', wp: 'Wattpad',
-        ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon', tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram', e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru', r34: 'Rule34.xxx', sc: 'SoundCloud', ng: 'Newgrounds', yt: 'YouTube', pic: 'Picarto',
+        ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon', tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram', e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru', r34: 'Rule34.xxx', sc: 'SoundCloud', ng: 'Newgrounds', yt: 'YouTube', pic: 'Picarto', ttv: 'Twitch',
         tg: 'Telegram',
     },
 
@@ -2092,7 +2103,7 @@ const App = {
         // Mirrors polling/session_check.py::CHECKABLE. Telegram's bot token
         // does not expire, but the bot can be removed from the channel — the
         // check catches that, which is otherwise invisible until a post fails.
-        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'r34', 'tg', 'sc', 'ng', 'yt', 'pic', 'fb'];
+        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'r34', 'tg', 'sc', 'ng', 'yt', 'pic', 'ttv', 'fb'];
         const LABELS = (window.PlatformHealth && window.PlatformHealth.LABELS) || {};
         const DOT = { valid: 'connected', expired: 'disconnected', error: 'warn', unconfigured: 'muted' };
         const WORD = { valid: 'Valid', expired: 'Expired', error: 'Unverified', unconfigured: 'Not configured' };
@@ -2192,7 +2203,7 @@ const App = {
      * Falls back to the cached snapshot only if the health fetch fails/empty. */
     async _configuredPollCodes() {
         const ALL = ['ib', 'fa', 'ws', 'sf', 'sqw', 'ao3', 'da', 'wp', 'ik',
-            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'r34', 'tg', 'sc', 'ng', 'yt', 'pic', 'fb'];
+            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'r34', 'tg', 'sc', 'ng', 'yt', 'pic', 'ttv', 'fb'];
         try {
             const health = await API.getPlatformsHealth();
             if (health && typeof health === 'object') {
@@ -2207,7 +2218,7 @@ const App = {
             bsky: a.bskyAuth?.has_credentials, tw: a.twAuth?.has_credentials, mast: a.mastAuth?.has_credentials,
             tum: a.tumAuth?.has_credentials, pix: a.pixAuth?.has_credentials, thr: a.thrAuth?.has_credentials,
             ig: a.igAuth?.has_credentials, e621: a.e621Auth?.has_credentials,
-            fn: a.fnAuth?.has_credentials, fbr: a.fbrAuth?.has_credentials, r34: a.r34Auth?.has_credentials, sc: a.scAuth?.has_credentials, ng: a.ngAuth?.has_credentials, yt: a.ytAuth?.has_credentials, pic: a.picAuth?.has_credentials, fb: a.fbAuth?.has_credentials,
+            fn: a.fnAuth?.has_credentials, fbr: a.fbrAuth?.has_credentials, r34: a.r34Auth?.has_credentials, sc: a.scAuth?.has_credentials, ng: a.ngAuth?.has_credentials, yt: a.ytAuth?.has_credentials, pic: a.picAuth?.has_credentials, ttv: a.ttvAuth?.has_credentials, fb: a.fbAuth?.has_credentials,
             // No tgAuth snapshot exists — Telegram is configured through the
             // channel settings rather than an /auth route — so this fallback
             // asks PlatformHealth, which reads the same server-side gate.
@@ -2305,7 +2316,7 @@ const App = {
         if (!confirm(`Full resync re-fetches every ${label} submission from scratch. This can take several minutes and will hit ${label}'s rate limits hard. Continue?`)) return;
         btn.disabled = true;
         btn.textContent = 'Syncing...';
-        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', r34: 'fullR34Resync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync', fb: 'fullFBResync' };
+        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', r34: 'fullR34Resync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync', ttv: 'fullTTVResync', fb: 'fullFBResync' };
         try {
             await API[fns[platform]]();
             btn.textContent = 'Done!';
@@ -3495,6 +3506,7 @@ const App = {
             { key: 'ng', name: 'Newgrounds', emoji: '&#127916;', color: '#f5a623', url: 'https://www.newgrounds.com/login' },
             { key: 'yt', name: 'YouTube', emoji: '&#128250;', color: '#ff0000', url: 'https://console.cloud.google.com/apis/library/youtube.googleapis.com' },
             { key: 'pic', name: 'Picarto', emoji: '&#127909;', color: '#2c9dd8', url: 'https://picarto.tv/' },
+            { key: 'ttv', name: 'Twitch', emoji: '&#128995;', color: '#9146ff', url: 'https://dev.twitch.tv/console/apps' },
             { key: 'fb', name: 'Facebook', emoji: '&#128101;', color: '#1877f2', url: 'https://www.facebook.com/' },
             { key: 'r34', name: 'Rule34.xxx', emoji: '&#128286;', color: '#aae5a3', url: 'https://rule34.xxx/' },
         ];
@@ -3503,10 +3515,10 @@ const App = {
         const MAKE_SITES = {
             art: ['fa', 'ib', 'da', 'e621', 'ws', 'fbr', 'r34', 'fn', 'pix', 'ik'],
             stories: ['ao3', 'sf', 'sqw', 'wp', 'fa', 'ib', 'da', 'ws'],
-            media: ['yt', 'sc', 'ng', 'pic', 'pod'],
+            media: ['yt', 'sc', 'ng', 'pic', 'ttv', 'pod'],
         };
         const EVERYONE = ['bsky', 'tw', 'mast', 'thr', 'tum', 'ig', 'fb', 'tg'];
-        const TRACK_ONLY = ['pix', 'wp', 'r34', 'pic'];   // PawPoller reads these, never posts there
+        const TRACK_ONLY = ['pix', 'wp', 'r34', 'pic', 'ttv'];   // PawPoller reads these, never posts there
         let prefs = {};
         let postingDefaults = {};
         try { [prefs, postingDefaults] = await Promise.all([API.getPreferences(), API.getPostingSettings()]); }
@@ -12417,6 +12429,310 @@ const App = {
         }
     },
 
+    // ── Twitch Dashboard / Broadcasts / detail + Go-live posts (spec 045) ──
+    // Twitch is watched, never posted to. The headline is the channel's live state; followers,
+    // subscribers and Bits show only once the streamer connects Twitch (Twitch keeps them private).
+
+    _ttvDuration(s) {
+        const t = Math.round(Number(s) || 0);
+        if (!t) return '';
+        const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+        return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+    },
+
+    _ttvLiveLine(summary) {
+        const live = (summary.channels || []).find(c => c.live);
+        if (live) {
+            return `<span class="telegram-status connected">&#9679; Live now</span> ${Utils.escapeHtml(live.title || '')}`
+                + (live.game ? ` <span class="muted">· ${Utils.escapeHtml(live.game)}</span>` : '')
+                + ` <span class="muted">· ${Utils.formatNumber(live.viewers || 0)} watching</span>`;
+        }
+        return '<span class="muted">Offline</span>';
+    },
+
+    async renderTTVDashboard() {
+        const token = this._routeToken();
+        this._loading();
+        try {
+            const aid = this._acctId('ttv');
+            const [summary, agg] = await Promise.all([
+                API.getTTVSummary({ account_id: aid }),
+                API.getTTVAggregate({ ...Utils.getDateRange(this._dateRange), account_id: aid }),
+            ]);
+            const snaps = agg.snapshots || [];
+            const health = window.PlatformHealth && window.PlatformHealth.get('ttv');
+            const isUnconfigured = health && health.configured === false;
+            if (isUnconfigured || !(summary.channels || []).length) {
+                if (this._stale(token)) return;
+                this._setContent(`
+                    ${this._refreshIndicatorHtml()}
+                    <div class="page-header"><h1>Twitch Dashboard</h1></div>
+                    ${Components.platformEmptyState('ttv', isUnconfigured ? {} : { reason: 'Twitch is set up but the channel has not been polled yet. The first poll may still be running.' })}
+                    <div id="ttv-golive"></div>
+                `);
+                this._renderTTVGolive(aid);
+                return;
+            }
+            const locked = 'Connect Twitch in Settings to see this';
+            const num = (v) => v === null || v === undefined ? null : v;
+            // Twitch keeps these private until the streamer connects: say so rather than show a 0.
+            const lockedCard = (label) => `<div class="stat-card"><div class="label">${Utils.escapeHtml(label)}</div>`
+                + `<div class="value">—</div><div style="font-size:11px;color:var(--text-muted)">${locked}</div></div>`;
+            if (this._stale(token)) return;
+            this._setContent(`
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h1>Twitch Dashboard</h1>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" data-poll="ttv">Poll Now</button>
+                        <button class="btn btn-secondary" data-resync="ttv">Full Resync</button>
+                        <button class="btn btn-secondary" data-export="ttv">Export CSV</button>
+                    </div>
+                </div>
+                <p style="margin:0 0 12px">${this._ttvLiveLine(summary)}</p>
+                <div class="stats-grid">
+                    ${num(summary.followers) !== null ? Components.statCard('Followers', summary.followers) : lockedCard('Followers')}
+                    ${num(summary.subscribers) !== null ? Components.statCard('Subscribers', summary.subscribers) : lockedCard('Subscribers')}
+                    ${Components.statCard('Past broadcasts', summary.broadcasts || 0, null, '#/ttv/submissions')}
+                    ${Components.statCard('Clips', summary.clips || 0, null, '#/ttv/submissions')}
+                    ${num(summary.bits_top) !== null ? Components.statCard('Bits (top 100 cheerers)', summary.bits_top) : ''}
+                </div>
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-row">
+                    <div class="chart-container"><h3>Followers Over Time</h3><div class="chart-wrap"><canvas id="chart-agg-followers"></canvas></div>
+                        ${summary.connected ? '' : `<p class="muted" style="font-size:12px">${locked}.</p>`}</div>
+                    <div class="chart-container"><h3>Viewers when polled</h3><div class="chart-wrap"><canvas id="chart-agg-viewers"></canvas></div></div>
+                </div>
+                <div id="ttv-golive"></div>
+            `);
+            if (snaps.length) {
+                if (summary.connected) Charts.aggregateLine('chart-agg-followers', snaps, ['followers']);
+                Charts.aggregateLine('chart-agg-viewers', snaps, ['viewers']);
+            }
+            this._renderTTVGolive(aid);
+            this._bindDateRange(() => this.renderTTVDashboard());
+            this._startAutoRefresh(() => this.renderTTVDashboard());
+        } catch (err) {
+            if (this._stale(token)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading Twitch dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    /* The Go-live posts panel: the switch, where to post and the words for each, then the recent go-lives
+       with Post / Skip on one that is waiting. Nothing here posts except the Post button. */
+    async _renderTTVGolive(aid) {
+        const box = document.getElementById('ttv-golive');
+        if (!box) return;
+        const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
+        let cfg, runs;
+        try {
+            [cfg, runs] = await Promise.all([API.getTTVGolive(aid), API.getTTVGoliveRuns(10)]);
+        } catch (err) {
+            box.innerHTML = `<div class="chart-container"><h3>Go-live posts</h3><p class="muted">${esc(err.message)}</p></div>`;
+            return;
+        }
+        const ch = cfg.channel || {};
+        const chosen = {};
+        (cfg.targets || []).forEach(t => { chosen[`${t.platform}:${t.target_account_id}`] = t; });
+        const listening = cfg.listening === 'webhook'
+            ? 'Twitch tells PawPoller the moment you go live.'
+            : 'PawPoller checks every minute while it is running — leave it open while you stream.';
+        const editable = new Set(cfg.editable || []);
+        const rows = (cfg.available || []).map(a => {
+            const k = `${a.platform}:${a.account_id}`;
+            const t = chosen[k];
+            return `
+                <div class="settings-row ttv-gl-target" data-key="${esc(k)}" style="flex-direction:column;align-items:stretch;gap:6px">
+                    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" class="ttv-gl-on" ${t ? 'checked' : ''}> <b>${esc(a.label)}</b>
+                        ${a.general_only ? '<span class="muted" style="font-size:12px">— general posts only</span>' : ''}</label>
+                    <div class="ttv-gl-words" style="${t ? '' : 'display:none;'}display:flex;flex-direction:column;gap:4px;margin-left:24px">
+                        <label class="settings-label" for="gl-live-${esc(k)}">When you go live</label>
+                        <textarea id="gl-live-${esc(k)}" class="search-input ttv-gl-live" rows="2" maxlength="2000">${esc(t ? t.live_template : cfg.defaults.live)}</textarea>
+                        <label class="settings-label" for="gl-ended-${esc(k)}">When it ends ${editable.has(a.platform) ? '' : '<span class="muted">(this site can\'t be edited, so this is never used)</span>'}</label>
+                        <textarea id="gl-ended-${esc(k)}" class="search-input ttv-gl-ended" rows="2" maxlength="2000">${esc(t ? t.ended_template : cfg.defaults.ended)}</textarea>
+                        ${a.general_only ? `<label style="font-size:12px"><input type="checkbox" class="ttv-gl-mature" ${t && t.allow_mature ? 'checked' : ''}> Post here even when the stream is marked mature</label>` : ''}
+                    </div>
+                </div>`;
+        }).join('') || '<p class="muted">Connect a site to post to first (Bluesky, Mastodon, X, Threads, Tumblr, Instagram, Telegram, Facebook — or set a Discord announce webhook).</p>';
+        const STATE = { waiting: 'Waiting for you', posting: 'Posting…', posted: 'Posted', partial: 'Partly posted',
+            failed: 'Not posted', skipped: 'Skipped', expired: 'Lapsed', held: 'Held' };
+        const runRows = (runs.runs || []).map(r => `
+            <tr>
+                <td data-label="Stream">${esc(r.title || '(untitled)')}${r.game ? ` <span class="muted">· ${esc(r.game)}</span>` : ''}</td>
+                <td data-label="When">${Utils.formatDate(r.created_at)}</td>
+                <td data-label="What happened">${esc(STATE[r.state] || r.state)}${r.reason ? `<div class="muted" style="font-size:12px">${esc(r.reason)}</div>` : ''}
+                    ${(r.targets || []).filter(t => t.status !== 'posted').map(t => `<div class="muted" style="font-size:12px">${esc(t.platform)}: ${esc(t.error || t.status)}</div>`).join('')}</td>
+                <td data-label="">${r.state === 'waiting' ? `<button class="btn btn-primary btn-sm ttv-gl-post" data-run="${r.id}">Post</button>
+                    <button class="btn btn-secondary btn-sm ttv-gl-skip" data-run="${r.id}">Skip</button>` : ''}</td>
+            </tr>`).join('');
+        box.innerHTML = `
+            <div class="chart-container">
+                <h3>Go-live posts <span class="card-type-badge" title="Not yet proven on a real stream">being tested</span></h3>
+                <p class="muted" style="font-size:13px;margin:0 0 10px">When you go live on Twitch, PawPoller posts your own words to the sites you tick. ${esc(listening)}</p>
+                <div class="settings-row"><div><span class="settings-label">Post when I go live</span></div>
+                    <label class="toggle-switch"><input type="checkbox" id="ttv-gl-enabled" aria-label="Post when I go live" ${ch.enabled ? 'checked' : ''}><span class="toggle-slider"></span></label></div>
+                <div class="settings-row"><div><span class="settings-label">Show me first</span>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Ask before posting — a Telegram message with Post / Skip, and a note in the bell</div></div>
+                    <label class="toggle-switch"><input type="checkbox" id="ttv-gl-approve" aria-label="Show me first" ${ch.approve_first !== 0 ? 'checked' : ''}><span class="toggle-slider"></span></label></div>
+                <div class="settings-row"><div><label class="settings-label" for="ttv-gl-cooldown">If the stream drops, wait this many minutes before treating a restart as a new stream</label></div>
+                    <input type="number" id="ttv-gl-cooldown" class="search-input" min="0" max="60" style="width:80px" value="${esc(ch.cooldown_min ?? 15)}"></div>
+                <div class="settings-row"><div><label class="settings-label" for="ttv-gl-end">When the stream ends</label></div>
+                    <select id="ttv-gl-end" class="filter-select"><option value="leave" ${ch.end_action !== 'edit' ? 'selected' : ''}>Leave the posts as they are</option>
+                        <option value="edit" ${ch.end_action === 'edit' ? 'selected' : ''}>Change them to the "when it ends" words (Discord, Mastodon, Telegram)</option></select></div>
+                <p class="muted" style="font-size:12px;margin:10px 0 4px">Words can include {title}, {game}, {link} and {name} — PawPoller fills them in from the stream.</p>
+                ${rows}
+                <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <button class="btn btn-primary" id="ttv-gl-save">Save</button>
+                    <button class="btn btn-secondary" id="ttv-gl-preview">Preview</button>
+                    <span id="ttv-gl-msg" role="status" aria-live="polite" style="font-size:13px"></span>
+                </div>
+                <div id="ttv-gl-previews"></div>
+                ${runRows ? `<h3 style="margin-top:16px">Recent go-lives</h3>
+                <table class="data-table"><thead><tr><th>Stream</th><th>When</th><th>What happened</th><th></th></tr></thead><tbody>${runRows}</tbody></table>` : ''}
+            </div>`;
+        box.querySelectorAll('.ttv-gl-on').forEach(cb => cb.addEventListener('change', () => {
+            cb.closest('.ttv-gl-target').querySelector('.ttv-gl-words').style.display = cb.checked ? 'flex' : 'none';
+        }));
+        const msg = document.getElementById('ttv-gl-msg');
+        const say = (text, ok) => { msg.textContent = text; msg.style.color = ok ? 'var(--success)' : 'var(--danger)'; };
+        const detail = (err) => { let d = err.message.replace(/^API \d+:\s*/, ''); try { const j = JSON.parse(d); d = (j.detail && j.detail.detail) || j.detail || d; } catch {} return d; };
+        document.getElementById('ttv-gl-save').addEventListener('click', async () => {
+            const targets = [...box.querySelectorAll('.ttv-gl-target')].filter(r => r.querySelector('.ttv-gl-on').checked).map(r => {
+                const [platform, acct] = r.dataset.key.split(':');
+                return { platform, target_account_id: Number(acct), live_template: r.querySelector('.ttv-gl-live').value,
+                    ended_template: r.querySelector('.ttv-gl-ended').value, allow_mature: !!(r.querySelector('.ttv-gl-mature') || {}).checked };
+            });
+            try {
+                await API.saveTTVGolive({ account_id: cfg.account_id, enabled: document.getElementById('ttv-gl-enabled').checked,
+                    approve_first: document.getElementById('ttv-gl-approve').checked,
+                    cooldown_min: Number(document.getElementById('ttv-gl-cooldown').value), end_action: document.getElementById('ttv-gl-end').value, targets });
+                say('Saved', true);
+            } catch (err) { say(detail(err), false); }
+        });
+        document.getElementById('ttv-gl-preview').addEventListener('click', async () => {
+            try {
+                const r = await API.ttvGoliveTest(cfg.account_id);
+                document.getElementById('ttv-gl-previews').innerHTML = (r.posts || []).map(p =>
+                    `<div class="settings-row" style="flex-direction:column;align-items:stretch"><b>${esc(p.platform)}</b><div>${esc(p.live)}</div></div>`).join('')
+                    || '<p class="muted">Save some sites first — the preview uses what is saved.</p>';
+            } catch (err) { say(detail(err), false); }
+        });
+        box.querySelectorAll('.ttv-gl-post, .ttv-gl-skip').forEach(b => b.addEventListener('click', async () => {
+            const post = b.classList.contains('ttv-gl-post');
+            if (post && !confirm('Post your go-live to the ticked sites now?')) return;
+            b.disabled = true;
+            try {
+                const r = await (post ? API.ttvGolivePost(b.dataset.run) : API.ttvGoliveSkip(b.dataset.run));
+                say(r.state === 'skipped' ? 'Skipped' : `Done: ${r.state}`, true);
+            } catch (err) { say(detail(err), false); }
+            this._renderTTVGolive(aid);
+        }));
+    },
+
+    async renderTTVSubmissions() {
+        const _rt = this._routeToken();
+        this._loading();
+        try {
+            const data = await API.getTTVSubmissions({
+                sort_by: this._ttvSortState.field, order: this._ttvSortState.order, kind: this._ttvKind,
+                account_id: this._acctId('ttv'),
+            });
+            const all = data.submissions || [];
+            const grid = (subs) => {
+                if (!subs.length) return '<div class="empty-state"><p>Nothing matches.</p></div>';
+                return `<div class="submission-card-grid">${subs.map(s => {
+                    const thumb = Utils.safeUrl(s.thumbnail_url);
+                    const dur = this._ttvDuration(s.duration_s);
+                    return `
+                    <a href="#/ttv/submission/${encodeURIComponent(s.submission_id)}" class="submission-card">
+                        ${thumb ? `<div class="submission-card-thumb"><img src="${Utils.escapeHtml(thumb)}" loading="lazy" alt=""></div>` : ''}
+                        <div class="submission-card-body">
+                            <span class="card-type-badge">${s.kind === 'clip' ? 'Clip' : 'Broadcast'}</span>
+                            <div class="submission-card-title">${Utils.escapeHtml(s.title || '(untitled)')}</div>
+                            <div class="submission-card-stats"><span class="submission-card-stat">${Utils.formatNumber(s.views || 0)} <small>views</small></span>
+                                ${dur ? `<span class="submission-card-stat">${dur} <small>long</small></span>` : ''}</div>
+                            ${s.posted_at ? `<div class="submission-card-date">${Utils.formatDate(s.posted_at)}</div>` : ''}
+                        </div>
+                    </a>`;
+                }).join('')}</div>`;
+            };
+            const sortKey = `${this._ttvSortState.field}:${this._ttvSortState.order}`;
+            const opt = (v, label, cur) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${label}</option>`;
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header"><h1>Twitch Broadcasts &amp; Clips</h1></div>
+                <div class="toolbar">
+                    <input type="text" class="search-input" id="search-input" placeholder="Search..." aria-label="Search broadcasts and clips">
+                    <select class="filter-select" id="ttv-kind" aria-label="Show">
+                        ${opt('', 'Broadcasts and clips', this._ttvKind)}${opt('vod', 'Past broadcasts', this._ttvKind)}${opt('clip', 'Clips', this._ttvKind)}
+                    </select>
+                    <select class="filter-select" id="ttv-sort" aria-label="Sort">
+                        ${opt('posted_at:desc', 'Newest', sortKey)}${opt('views:desc', 'Most viewed', sortKey)}${opt('duration_s:desc', 'Longest', sortKey)}${opt('title:asc', 'Title', sortKey)}
+                    </select>
+                </div>
+                <div id="grid-container">${all.length ? grid(all) : `<div class="empty-state"><h3>Nothing yet</h3>
+                    <p>Past broadcasts appear here if Twitch keeps them for your channel (Settings → Stream → Store past broadcasts on twitch.tv), and clips once someone makes one.</p></div>`}</div>
+            `;
+            if (this._stale(_rt)) return;
+            this._setContent(html);
+            document.getElementById('ttv-kind').addEventListener('change', (e) => { this._ttvKind = e.target.value; this.renderTTVSubmissions(); });
+            document.getElementById('ttv-sort').addEventListener('change', (e) => {
+                const [field, order] = e.target.value.split(':');
+                this._ttvSortState = { field, order };
+                this.renderTTVSubmissions();
+            });
+            document.getElementById('search-input').addEventListener('input', (e) => {
+                const q = e.target.value.toLowerCase();
+                document.getElementById('grid-container').innerHTML = grid(all.filter(s => (s.title || '').toLowerCase().includes(q)));
+            });
+            this._startAutoRefresh(() => this.renderTTVSubmissions());
+        } catch (err) {
+            if (this._stale(_rt)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading Twitch broadcasts</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderTTVDetail(postId) {
+        const _rt = this._routeToken();
+        this._loading();
+        try {
+            const [data, pins, allTags] = await Promise.all([
+                API.getTTVSubmission(postId),
+                API.getPins().catch(() => ({ pins: [] })),
+                API.getTags().catch(() => ({ tags: [] })),
+            ]);
+            const sub = data.submission;
+            const fullId = String(sub.submission_id);
+            const isPinned = (pins.pins || []).some(p => p.platform === 'ttv' && String(p.submission_id) === fullId);
+            const thumb = Utils.safeUrl(sub.thumbnail_url);
+            const dur = this._ttvDuration(sub.duration_s);
+            const link = Utils.safeUrl(sub.link);
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <a href="#/ttv/submissions" class="back-link">&larr; Back to Twitch Broadcasts &amp; Clips</a>
+                <div class="detail-header">
+                    ${thumb ? `<img class="detail-thumb" src="${Utils.escapeHtml(thumb)}" alt="" style="max-width:240px;border-radius:8px;margin-right:16px">` : ''}
+                    <div class="detail-info">
+                        <h2>${Utils.escapeHtml(sub.title || '(untitled)')}</h2>
+                        <div class="detail-meta">${sub.kind === 'clip' ? 'Clip' : 'Past broadcast'} &middot; ${Utils.formatDate(sub.posted_at)}${dur ? ' &middot; ' + dur + ' long' : ''} &middot; ${Utils.formatNumber(sub.views || 0)} views</div>
+                        ${link ? `<div class="detail-meta"><a href="${Utils.escapeHtml(link)}" target="_blank" rel="noopener">Watch on Twitch</a></div>` : ''}
+                        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <button class="btn ${isPinned ? 'btn-danger' : 'btn-secondary'} btn-pin" data-platform="ttv" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">${isPinned ? 'Unpin' : 'Pin'}</button>
+                            ${(Array.isArray(sub.tags) ? sub.tags : []).map(t => Components.tagBadge(t)).join('')}
+                            <button class="btn btn-secondary btn-add-tag" data-platform="ttv" data-id="${Utils.escapeHtml(fullId)}" style="padding:4px 10px;font-size:12px">+ Tag</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            if (this._stale(_rt)) return;
+            this._setContent(html);
+            this._bindDetailPinTag('ttv', fullId, allTags.tags || [], () => this.renderTTVDetail(postId));
+        } catch (err) {
+            if (this._stale(_rt)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading Twitch broadcast</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
     async renderE621Dashboard() {
         const token = this._routeToken();
         this._loading();
@@ -14796,7 +15112,7 @@ const App = {
                 // Determine platform badge colour and the correct hash route prefix
                 const badgeMap = { fa: '<span class="platform-badge fa">FA</span>', ws: '<span class="platform-badge ws">WS</span>', sf: '<span class="platform-badge sf">SF</span>', sqw: '<span class="platform-badge sqw">SqW</span>', ao3: '<span class="platform-badge ao3">AO3</span>', da: '<span class="platform-badge da">DA</span>', wp: '<span class="platform-badge wp">WP</span>', ik: '<span class="platform-badge ik">IK</span>', bsky: '<span class="platform-badge bsky">BSKY</span>', tw: '<span class="platform-badge tw">TW</span>', ib: '<span class="platform-badge ib">IB</span>' };
                 const badge = badgeMap[m.platform] || badgeMap.ib;
-                const prefixMap = { fa: '/fa/submission/', ws: '/ws/submission/', sf: '/sf/submission/', sqw: '/sqw/submission/', ao3: '/ao3/submission/', da: '/da/submission/', wp: '/wp/submission/', ik: '/ik/submission/', bsky: '/bsky/submission/', tw: '/tw/submission/', mast: '/mast/submission/', tum: '/tum/submission/', pix: '/pix/submission/', thr: '/thr/submission/', ig: '/ig/submission/', e621: '/e621/submission/', fn: '/fn/submission/', fbr: '/fbr/submission/', sc: '/sc/submission/', ng: '/ng/submission/', yt: '/yt/submission/', pic: '/pic/submission/', fb: '/fb/submission/', ib: '/submission/' };
+                const prefixMap = { fa: '/fa/submission/', ws: '/ws/submission/', sf: '/sf/submission/', sqw: '/sqw/submission/', ao3: '/ao3/submission/', da: '/da/submission/', wp: '/wp/submission/', ik: '/ik/submission/', bsky: '/bsky/submission/', tw: '/tw/submission/', mast: '/mast/submission/', tum: '/tum/submission/', pix: '/pix/submission/', thr: '/thr/submission/', ig: '/ig/submission/', e621: '/e621/submission/', fn: '/fn/submission/', fbr: '/fbr/submission/', sc: '/sc/submission/', ng: '/ng/submission/', yt: '/yt/submission/', pic: '/pic/submission/', ttv: '/ttv/submission/', fb: '/fb/submission/', ib: '/submission/' };
                 const prefix = prefixMap[m.platform] || prefixMap.ib;
                 return `
                     <tr>
@@ -15346,7 +15662,7 @@ const App = {
         try {
             // Core settings: only fetch what General/Platforms/Telegram/Data/About tabs need.
             // Polling tab data is loaded lazily when the user clicks into it.
-            const [creds, prefs, telegram, tgFeatures, pollPausedState, faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, updateInfo, postingSettings, browserLoginInfo, setupStatus, digest, tgChannel, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth, serverUpdate, fbAuth, r34Auth] = await Promise.all([
+            const [creds, prefs, telegram, tgFeatures, pollPausedState, faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, updateInfo, postingSettings, browserLoginInfo, setupStatus, digest, tgChannel, fnAuth, fbrAuth, scAuth, ngAuth, ytAuth, picAuth, serverUpdate, fbAuth, r34Auth, ttvAuth] = await Promise.all([
                 API.getCredentials(),
                 API.getPreferences(),
                 API.getTelegram(),
@@ -15383,6 +15699,7 @@ const App = {
                 API.getServerUpdateStatus().catch(() => ({ applicable: false, host_agent_installed: false, available: false, in_progress: false })),
                 API.getFBAuthStatus().catch(() => ({ has_credentials: false, username: '' })),
                 API.getR34AuthStatus().catch(() => ({ has_credentials: false, username: '' })),
+                API.getTTVChannelStatus().catch(() => ({ has_credentials: false, channel: '', has_app: false, connected: false })),
             ]);
 
             // Resolve effective mode for hide/show logic. Falls back to inferred
@@ -15399,7 +15716,7 @@ const App = {
             const _pollingOwner = setupStatus.polling_owner || (_isServer ? 'local' : (_isPaired ? 'server' : 'local'));
 
             // Store auth state for lazy-loaded polling tab
-            this._pollingAuth = { faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, r34Auth, scAuth, ngAuth, ytAuth, picAuth, fbAuth };
+            this._pollingAuth = { faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, r34Auth, scAuth, ngAuth, ytAuth, picAuth, ttvAuth, fbAuth };
 
             // Store browser login availability for platform connect forms
             const _browserLoginAvailable = browserLoginInfo.available;
@@ -15424,7 +15741,7 @@ const App = {
                     </div>
                     ${App._settingsRailHtml(_settingsPage, {
                         connection: _isServer ? 'server' : (_isPaired ? 'paired' : (_isConnectedPending ? 'restart' : (_setupMode === 'connected' ? 'connected' : 'standalone'))),
-                        platforms: `${[faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, r34Auth, scAuth, ngAuth, ytAuth, picAuth, fbAuth].filter(a => a && (a.has_credentials || a.has_cookies || a.has_key)).length + (creds.username ? 1 : 0)} connected`,
+                        platforms: `${[faAuth, wsAuth, sfAuth, sqwAuth, ao3Auth, daAuth, wpAuth, ikAuth, bskyAuth, twAuth, mastAuth, tumAuth, pixAuth, thrAuth, igAuth, e621Auth, fnAuth, fbrAuth, r34Auth, scAuth, ngAuth, ytAuth, picAuth, ttvAuth, fbAuth].filter(a => a && (a.has_credentials || a.has_cookies || a.has_key)).length + (creds.username ? 1 : 0)} connected`,
                         polling: pollPausedState.polling_paused ? 'paused' : (_pollingOwner === 'local' ? (_isServer ? 'this server' : 'this computer') : 'server'),
                         about: updateInfo && updateInfo.current && updateInfo.current !== '?' ? Utils.versionLabel(updateInfo.current) : '',
                         telegram: telegram.connected ? 'connected' : '',
@@ -17914,6 +18231,41 @@ const App = {
                     </div>
                 </details>
 
+                <details class="settings-accordion" data-platform="ttv">
+                    <summary><span class="status-dot ${ttvAuth.has_credentials ? this._credStatus('ttv', ttvAuth.channel).cls : 'disconnected'}"></span>Twitch${ttvAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(ttvAuth.channel || '')}</span>` : ''}</summary>
+                    <div class="accordion-body">
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">PawPoller watches your Twitch channel — when you're live, your past broadcasts and clips — and can post to your other sites when you go live (on the Twitch page). It never posts to Twitch. It needs a free Twitch app key; the guide shows where to get one.</p>
+                    ${ttvAuth.has_credentials ? `
+                    <div class="settings-row">
+                        <div><span class="settings-label">Status</span></div>
+                        ${this._credStatus('ttv', ttvAuth.channel).html}
+                    </div>
+                    <div class="settings-row" style="margin-top:8px">
+                        <div><span class="settings-label">Followers, subscribers and Bits</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${ttvAuth.connected ? 'Connected' + (ttvAuth.login ? ' as ' + Utils.escapeHtml(ttvAuth.login) : '') : 'Twitch shows these only to you — connect to see them'}</div></div>
+                        ${ttvAuth.connected ? '<button class="btn btn-secondary" id="ttv-disconnect-btn">Disconnect</button>' : '<button class="btn btn-secondary" id="ttv-connect-btn">Connect Twitch</button>'}
+                    </div>
+                    ` : ''}
+                    <div style="display:flex;flex-direction:column;gap:4px;max-width:400px;margin-top:12px">
+                        ${ttvAuth.app_from_env ? '<p class="muted" style="font-size:12px;margin:0">This PawPoller already has a Twitch app key — you only need your channel name.</p>' : `
+                        <label for="ttv-client-id" class="settings-label">Twitch app Client ID</label>
+                        <input type="text" id="ttv-client-id" class="search-input" autocomplete="off" spellcheck="false" value="${Utils.escapeHtml(ttvAuth.client_id || '')}">
+                        <label for="ttv-client-secret" class="settings-label">Twitch app Client Secret</label>
+                        <input type="password" id="ttv-client-secret" class="search-input" autocomplete="off" placeholder="${ttvAuth.has_app ? 'Saved — leave blank to keep it' : ''}">`}
+                        <label for="ttv-channel" class="settings-label">Channel name</label>
+                        <input type="text" id="ttv-channel" class="search-input" placeholder="Your Twitch channel name" autocomplete="off" spellcheck="false" value="${Utils.escapeHtml(ttvAuth.channel || '')}">
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="ttv-save-btn">Save</button>
+                        ${ttvAuth.has_credentials ? `
+                        <button class="btn btn-secondary" id="ttv-poll-btn">Twitch Poll Now</button>
+                        <a class="btn btn-secondary" href="#/ttv">Go-live posts</a>
+                        ` : ''}
+                        <span id="ttv-msg" role="status" aria-live="polite" style="font-size:13px"></span>
+                    </div>
+                    </div>
+                </details>
+
                 <details class="settings-accordion" data-platform="fbr">
                     <summary><span class="status-dot ${fbrAuth.has_credentials ? this._credStatus('fbr', fbrAuth.username).cls : 'disconnected'}"></span>Furbooru${fbrAuth.has_credentials ? ` <span class="summary-meta">— ${Utils.escapeHtml(fbrAuth.username || '')}</span>` : ''}</summary>
                     <div class="accordion-body">
@@ -18245,7 +18597,7 @@ const App = {
                         wp: 'triggerWPPoll', ik: 'triggerIKPoll', bsky: 'triggerBSKYPoll', tw: 'triggerTWPoll',
                         mast: 'triggerMASTPoll', tum: 'triggerTUMPoll', pix: 'triggerPIXPoll',
                         thr: 'triggerTHRPoll', ig: 'triggerIGPoll', e621: 'triggerE621Poll',
-                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', r34: 'triggerR34Poll', tg: 'triggerTGPoll', sc: 'triggerSCPoll', ng: 'triggerNGPoll', yt: 'triggerYTPoll', pic: 'triggerPICPoll', fb: 'triggerFBPoll' };
+                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', r34: 'triggerR34Poll', tg: 'triggerTGPoll', sc: 'triggerSCPoll', ng: 'triggerNGPoll', yt: 'triggerYTPoll', pic: 'triggerPICPoll', ttv: 'triggerTTVPoll', fb: 'triggerFBPoll' };
                     const codes = await this._configuredPollCodes();
                     const triggers = codes.map(c => API[TRIGGERS[c]]());
                     const results = await Promise.allSettled(triggers);
@@ -18282,7 +18634,7 @@ const App = {
                         wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync',
                         mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync',
                         thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync',
-                        fn: 'fullFNResync', fbr: 'fullFBRResync', r34: 'fullR34Resync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync', fb: 'fullFBResync' };
+                        fn: 'fullFNResync', fbr: 'fullFBRResync', r34: 'fullR34Resync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync', ttv: 'fullTTVResync', fb: 'fullFBResync' };
                     const codes = await this._configuredPollCodes();
                     const resyncs = codes.map(c => API[RESYNCS[c]]());
                     const results = await Promise.allSettled(resyncs);
@@ -20705,6 +21057,59 @@ const App = {
                     await API.fbDisconnect();
                     this.renderSettings();
                 });
+            }
+            // ── Twitch (spec 045): app key + channel, Connect for the private numbers, poll. ──
+            const ttvSaveBtn = document.getElementById('ttv-save-btn');
+            if (ttvSaveBtn) {
+                ttvSaveBtn.addEventListener('click', async () => {
+                    const msg = document.getElementById('ttv-msg');
+                    const val = (id) => ((document.getElementById(id) || {}).value || '').trim();
+                    const channel = val('ttv-channel');
+                    if (!channel) {
+                        msg.textContent = 'Type your channel name first';
+                        msg.style.color = 'var(--danger)';
+                        return;
+                    }
+                    ttvSaveBtn.disabled = true;
+                    ttvSaveBtn.textContent = 'Checking...';
+                    msg.textContent = '';
+                    try {
+                        const r = await API.saveTTVChannel({ channel, client_id: val('ttv-client-id'), client_secret: val('ttv-client-secret') });
+                        msg.textContent = `Saved — found the channel ${r.display_name || r.channel}`;
+                        msg.style.color = 'var(--success)';
+                        setTimeout(() => this.renderSettings(), 1500);
+                    } catch (err) {
+                        let detail = err.message.replace(/^API \d+:\s*/, '');
+                        try { detail = JSON.parse(detail).detail || detail; } catch {}
+                        msg.textContent = detail;
+                        msg.style.color = 'var(--danger)';
+                        ttvSaveBtn.textContent = 'Save';
+                        ttvSaveBtn.disabled = false;
+                    }
+                });
+            }
+            document.getElementById('ttv-connect-btn')?.addEventListener('click', async () => {
+                const msg = document.getElementById('ttv-msg');
+                try {
+                    const r = await API.getTTVAuthorizeUrl();
+                    window.open(r.url, '_blank', 'noopener');
+                    msg.textContent = 'Approve in the Twitch tab, then come back and reopen Settings.';
+                    msg.style.color = 'var(--text-muted)';
+                } catch (err) {
+                    msg.textContent = err.message.replace(/^API \d+:\s*/, '');
+                    msg.style.color = 'var(--danger)';
+                }
+            });
+            document.getElementById('ttv-disconnect-btn')?.addEventListener('click', async () => {
+                if (!confirm('Disconnect Twitch? The channel stays watched; followers, subscribers and Bits stop updating.')) return;
+                await API.ttvDisconnect();
+                this.renderSettings();
+            });
+            const ttvPollBtn = document.getElementById('ttv-poll-btn');
+            if (ttvPollBtn) {
+                ttvPollBtn.addEventListener('click', () => this._pollingTabPoll({
+                    btn: ttvPollBtn, msgId: 'ttv-msg', platform: 'ttv', apiMethod: 'triggerTTVPoll',
+                }));
             }
             // ── Picarto (spec 013): save + verify a channel name, poll, resync. No login. ──
             const picConnectBtn = document.getElementById('pic-connect-btn');

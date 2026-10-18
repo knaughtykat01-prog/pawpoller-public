@@ -44,7 +44,8 @@ logger = logging.getLogger(__name__)
 #
 # Serialised as JSON because httpx would otherwise encode a Python list as
 # repeated query parameters, which Telegram rejects.
-_ALLOWED_UPDATES = '["message", "channel_post", "message_reaction_count"]'
+# callback_query (spec 045): the Post / Skip buttons on a go-live message.
+_ALLOWED_UPDATES = '["message", "channel_post", "message_reaction_count", "callback_query"]'
 
 # Reactions-only subscription for channel bots (4.8.0): they answer no commands.
 _REACTIONS_ONLY = '["message_reaction_count"]'
@@ -1190,6 +1191,15 @@ async def _poll_notification_bot(token: str, chat_id: str) -> None:
             continue
         if not private:
             continue          # never answer commands anywhere public (4.8.0)
+
+        if "callback_query" in update:
+            # A button tap (spec 045). golive checks it came from this private chat itself.
+            from polling import golive
+            try:
+                await golive.handle_callback(token, chat_id, update["callback_query"])
+            except Exception as e:  # noqa: BLE001 — one bad tap never stops the listener
+                logger.warning("Telegram button tap failed: %s", e)
+            continue
 
         msg = update.get("message", {})
         text = msg.get("text", "")

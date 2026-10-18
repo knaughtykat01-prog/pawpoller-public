@@ -33,6 +33,7 @@ FOLLOWER_PLATFORMS = {"ws", "da", "wp", "ik", "bsky", "tw", "mast", "pix", "fn",
                       # per-channel number the Bot API exposes.
                       "tg",
                       "pic",  # Picarto: the channel's public follower count (4.46.0)
+                      "ttv",  # Twitch: followers once the streamer connects Twitch (spec 045)
                       "fb"}   # Facebook: the Page's followers_count (4.59.0, spec 029)
 
 

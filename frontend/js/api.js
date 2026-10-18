@@ -86,6 +86,7 @@ const API = {
             resp = await fetch(url);
         } catch (err) {
             console.error('[API] Network error:', err);
+            if (window.PawFresh) window.PawFresh.networkError();   // SWSTUCK: a page stuck on old pipes heals itself
             throw new Error(`Network error: ${err.message}`);
         }
         if (!resp.ok) {
@@ -115,6 +116,7 @@ const API = {
             });
         } catch (err) {
             console.error('[API] Network error:', err);
+            if (window.PawFresh) window.PawFresh.networkError();
             _popError('POST', path, 0, err.message);
             throw new Error(`Network error: ${err.message}`);
         }
@@ -943,6 +945,27 @@ const API = {
     triggerPICPoll() { return this.post('/api/pic/poll/trigger'); },
     fullPICResync() { return this.post('/api/pic/poll/full-resync'); },
     getPICPollProgress() { return this.get('/api/pic/poll/progress'); },
+    /* ── Twitch (spec 045) — watched, never posted to; go-live posts go to the other sites ─── */
+    getTTVStatus() { return this.get('/api/ttv/status'); },
+    getTTVSummary(params) { return this.get('/api/ttv/summary', params); },
+    getTTVSubmissions(params) { return this.get('/api/ttv/submissions', params); },
+    getTTVSubmission(id) { return this.get(`/api/ttv/submissions/${encodeURIComponent(id)}`); },
+    getTTVAggregate(params) { return this.get('/api/ttv/aggregate', params); },
+    getTTVPollLog(limit) { return this.get('/api/ttv/poll_log', { limit }); },
+    triggerTTVPoll() { return this.post('/api/ttv/poll/trigger'); },
+    fullTTVResync() { return this.post('/api/ttv/poll/full-resync'); },
+    getTTVPollProgress() { return this.get('/api/ttv/poll/progress'); },
+    /* { channel, client_id?, client_secret?, account_id? } → saved once Twitch finds the channel; 400 if not. */
+    saveTTVChannel(data) { return this.post('/api/ttv/channel', data); },
+    getTTVChannelStatus(accountId) { return this.get('/api/ttv/channel/status', accountId ? { account_id: accountId } : undefined); },
+    getTTVAuthorizeUrl(accountId) { return this.get('/api/ttv/auth/authorize-url', accountId ? { account_id: accountId } : undefined); },
+    ttvDisconnect(accountId) { return this.post('/api/ttv/auth/disconnect' + (accountId ? `?account_id=${accountId}` : '')); },
+    getTTVGolive(accountId) { return this.get('/api/ttv/golive', accountId ? { account_id: accountId } : undefined); },
+    saveTTVGolive(data) { return this.put('/api/ttv/golive', data); },
+    getTTVGoliveRuns(limit) { return this.get('/api/ttv/golive/runs', { limit: limit || 10 }); },
+    ttvGolivePost(runId) { return this.post(`/api/ttv/golive/runs/${encodeURIComponent(runId)}/post`); },
+    ttvGoliveSkip(runId) { return this.post(`/api/ttv/golive/runs/${encodeURIComponent(runId)}/skip`); },
+    ttvGoliveTest(accountId) { return this.post('/api/ttv/golive/test', { account_id: accountId }); },
     /* ── Facebook stats (spec 029, 4.59.0) — null figures mean "not available" ─── */
     getFBStatus() { return this.get('/api/fb/status'); },
     getFBSummary(params) { return this.get('/api/fb/summary', params); },

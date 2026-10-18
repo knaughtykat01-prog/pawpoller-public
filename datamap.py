@@ -233,7 +233,7 @@ def P(name, group, why="", backup="", obsolete=False):
 # uses the bare names. A test checks this matches what init_db actually creates.
 PLATFORM_PREFIXES = (
     "ao3", "bsky", "da", "e621", "fa", "fb", "fbr", "fn", "ig", "ik", "mast", "ng", "pix",
-    "pic", "r34", "sc", "sf", "sqw", "tg", "thr", "tum", "tw", "wp", "ws", "yt",
+    "pic", "r34", "sc", "sf", "sqw", "tg", "thr", "tum", "ttv", "tw", "wp", "ws", "yt",
 )
 
 # ── Tables ────────────────────────────────────────────────────────────────────
@@ -287,6 +287,15 @@ _TABLES = (
     T("<P>_found_snapshots", "Numbers over time", "Numbers per poll for posts other people uploaded."),
     T("fa_profile_stats", "Numbers over time", "FurAffinity profile views per poll."),
     T("pic_channel_snapshots", "Numbers over time", "Picarto channel views, followers and subscribers per poll."),
+    T("ttv_channel_snapshots", "Numbers over time", "Twitch live state, viewers, and followers / subscribers / Bits per poll."),
+    # Go-live posts (spec 045): your settings and what was sent; the posts themselves are in `posts`.
+    T("golive_channels", "Polling and posting history", "Which watched channels announce going live, and how."),
+    T("golive_targets", "Unpublished work", "Where a go-live is announced, and the wording for each site."),
+    T("golive_streams", "Polling and posting history", "Each stream seen: when, its title and game."),
+    T("golive_runs", "Polling and posting history", "Each go-live announcement: waiting, posted, skipped or expired."),
+    T("golive_run_targets", "Polling and posting history", "What each go-live announcement sent where."),
+    T("golive_signals", "Polling and posting history", "Twitch messages already handled, so a replay is ignored (kept 2 days).",
+      backup="derivable"),
     T("account_follower_snapshots", "Numbers over time", "Follower counts per poll."),
     T("goals", "Numbers over time", "Milestones you set."),
     # internal — history
@@ -354,6 +363,8 @@ _SETTINGS = (
         "tum_oauth2_access_token", "tum_oauth2_refresh_token",   # the Connect sign-in (4.60.0, spec 024)
         "pix_refresh_token", "thr_access_token", "ig_access_token", "fb_page_token", "ng_cookie", "sc_access_token",
         "sc_client_secret", "sc_refresh_token", "yt_access_token", "yt_client_secret", "yt_refresh_token",
+        "ttv_client_secret", "ttv_access_token", "ttv_refresh_token",   # Twitch app + Connect (spec 045)
+        "ttv_eventsub_secret",   # signs Twitch's go-live webhook deliveries (spec 045)
         "trello_api_key", "trello_secret", "trello_token", "github_pat", "cf_worker_key",
         "posting_server_api_key",
     )),
@@ -377,7 +388,7 @@ _SETTINGS = (
     # Your handles, in the settings file.
     *(S(k, _HANDLE, identity=True) for k in (
         "fa_username", "ws_username", "e621_username", "fbr_username", "r34_username", "r34_user_id", "fn_username", "ng_username",
-        "sc_username", "yt_username", "pic_channel", "ig_username", "thr_username", "sf_display_name", "mast_handle",
+        "sc_username", "yt_username", "pic_channel", "ttv_channel", "ttv_user_id", "ttv_login", "ig_username", "thr_username", "sf_display_name", "mast_handle",
         "mast_instance_url", "tum_blog", "tum_oauth2_user", "ig_user_id", "fb_page_id", "fb_page_name", "pix_user_id", "thr_user_id", "tg_channel",
         "ao3_target_user", "da_target_user", "ik_target_user", "sqw_target_user", "tw_target_user",
         "wp_target_user", "auth_username", "default_author", "smtp_username", "smtp_from",
@@ -387,7 +398,7 @@ _SETTINGS = (
     *(S(k, _PREF) for k in (
         "announce_defaults", "comment_templates", "comment_defaults", "journal_templates", "auto_backup_dir", "auto_backup_enabled", "auto_backup_interval_hours",
         "auto_backup_keep", "auto_sync_enabled", "auto_update", "board_track", "credits", "credential_mode",
-        "da_client_id", "sc_client_id", "yt_client_id", "dashboard_layout", "discord_announce_on_publish",
+        "da_client_id", "sc_client_id", "yt_client_id", "ttv_client_id", "dashboard_layout", "discord_announce_on_publish",
         "display_timezone", "email_digest_enabled", "overnight_show_after", "email_digest_interval_days", "hidden_platforms",
         "logs_panel_enabled", "minimize_to_tray", "mirror_auto_check", "mirror_check_interval_minutes",
         "mobile_mode", "muted_session_codes", "never_post_account_ids", "notification_comments_only", "notification_min_faves_delta",
@@ -425,7 +436,7 @@ _SETTINGS = (
         "last_poll_completed_at", "last_session_check_at", "last_snapshot_prune_at",
         "last_tg_channel_digest_sent_at", "last_weekly_digest_sent_at", "mirror_last_sync",
         "mirror_seeded_at", "notifications_cleared_at", "notifications_last_read_at", "overnight_last_seen_at", "setup_complete",
-        "sc_token_expires_at", "yt_token_expires_at", "tum_oauth2_expires_at",
+        "sc_token_expires_at", "yt_token_expires_at", "ttv_token_expires_at", "tum_oauth2_expires_at",
     )),
     # 4.71.0 (spec 035): this copy made a moving file and stood down; what to put back on Resume.
     S("moved_away_at", _HOUSE, "When this copy moved to another PawPoller and paused itself.", backup="derivable"),

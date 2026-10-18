@@ -97,3 +97,7 @@ html[data-mode="brut"] .ep-card {
     box-shadow: 6px 6px 0 var(--brut-shadow, rgba(0,0,0,.8));
 }
 html[data-mode="brut"] .ep-btn, html[data-mode="brut"] .ep-pre { border-radius: 4px; }
+
+/* SWSTUCK: the "refresh on this device" way out, shown only for Server unreachable. */
+.ep-fresh { text-transform: none; letter-spacing: 0; font-size: .8rem; }
+.ep-fresh a { color: inherit; text-decoration: underline; }

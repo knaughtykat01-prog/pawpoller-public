@@ -570,11 +570,15 @@ def _start_telegram_bot():
     """Run Telegram bot command listener in its own daemon thread."""
     import asyncio
     from polling.telegram_bot import run_bot
+    from polling.golive import run_loop as run_golive   # spec 045: go-live checks share the bot's loop
+
+    async def _both():
+        await asyncio.gather(run_bot(), run_golive())
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(run_bot())
+        loop.run_until_complete(_both())
     except Exception as e:
         logger.debug("Telegram bot thread exiting: %s", e)  # Daemon teardown
 

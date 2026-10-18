@@ -255,6 +255,12 @@ _REGISTRY: tuple[PlatformMetrics, ...] = (
         code="pic", label="Picarto", table="pic_submissions", snapshots="pic_snapshots",
         family="views", views="views",
     ),
+    # Twitch (spec 045): past broadcasts and clips, each with Twitch's own view count. The channel's numbers
+    # (live, followers, subscribers) are ttv_channel_snapshots, served by /api/ttv/summary.
+    PlatformMetrics(
+        code="ttv", label="Twitch", table="ttv_submissions", snapshots="ttv_snapshots",
+        family="views", views="views",
+    ),
     # Facebook Pages (4.59.0, spec 029): views are Meta's "media views" (impressions were retired
     # in 2025-26); reactions (every kind, summed) sit with likes and favourites. A figure Facebook
     # didn't give is stored NULL, so it adds nothing rather than a made-up 0.

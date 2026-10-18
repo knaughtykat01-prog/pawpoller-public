@@ -43,6 +43,7 @@ from routes.sc_api import sc_router
 from routes.ng_api import ng_router
 from routes.yt_api import yt_router
 from routes.pic_api import pic_router
+from routes.ttv_api import ttv_router, ttv_hooks_router
 from routes.fb_api import fb_router
 from routes.fbr_api import fbr_router
 from routes.r34_api import r34_router
@@ -506,6 +507,7 @@ _AUTH_EXEMPT_PATHS = frozenset({
     # any private data (static manifest + a cache-only worker script).
     "/manifest.webmanifest",
     "/sw.js",
+    "/app-reset",                # 4.81.1 SWSTUCK: clears this device's saved app; must work when it can't load
     # 4.7.0: the open Instagram image relay — a desktop with no public address
     # hands an image to this server to host for Meta. Gated in the route itself
     # by `ig_relay_open`, a size cap, an image check and a per-address rate limit.
@@ -518,6 +520,10 @@ _AUTH_EXEMPT_PATHS = frozenset({
     # the route verifies Trello's HMAC signature (app Secret), caps the body,
     # rate-limits per address, and can only mark a board for re-reading.
     "/hooks/trello",
+    # Spec 045: Twitch's EventSub webhook. Twitch carries no session; the route verifies the HMAC
+    # signature (this install's secret), a 10-minute timestamp window and the message id against
+    # replays, caps the body, answers 404 without a public https address, and can only record a stream.
+    "/hooks/twitch",
 })
 _AUTH_EXEMPT_PREFIXES = ("/css/", "/js/", "/vendor/", "/img/", "/api/ig/pubmedia/", "/share/", "/feed/",
                          "/legal/",   # 4.67.0: the bundled Terms + Privacy text, shown before sign-in
@@ -599,6 +605,8 @@ _SENSITIVE_WHEN_OPEN_PREFIXES = (
 _PUBLISH_WHEN_OPEN = re.compile(
     r"^/api/(artwork/(publish|batch|schedule)|posting/(post|update)|posting/queue$|posting/queue/\d+/reschedule"
     r"|discord/(announce|test)"
+    # Spec 045: Post on a go-live run puts words live; saving go-live targets decides what goes out.
+    r"|ttv/golive(/runs/\d+/post)?$"
     r"|editor/stories/.+/(publish|schedule|drip)|posts/[^/]+/(publish|schedule)|promos/[^/]+/announce"
     # 4.43.2 (release review): these put words live too — a masterpiece sync rewrites
     # title/description/tags on every live upload; a podcast episode goes out on the
@@ -734,6 +742,8 @@ app.include_router(sc_router)    # SoundCloud routes (/api/sc/*), MEDIAPLATS (4.
 app.include_router(ng_router)    # Newgrounds routes (/api/ng/*), MEDIAPLATS (4.23.0)
 app.include_router(yt_router)    # YouTube routes (/api/yt/*), MEDIAPLATS (4.24.0)
 app.include_router(pic_router)   # Picarto routes (/api/pic/*), spec 013 (4.46.0)
+app.include_router(ttv_router)   # Twitch routes (/api/ttv/*), spec 045
+app.include_router(ttv_hooks_router)  # Twitch's go-live webhook (/hooks/twitch, auth-exempt), spec 045
 app.include_router(fb_router)    # Facebook Page connect (/api/fb/*), spec 022 (4.57.0)
 app.include_router(fbr_router)   # Furbooru routes (/api/fbr/*)
 app.include_router(r34_router)   # Rule34.xxx routes (/api/r34/*), tracking only (spec 028 US6)
@@ -865,7 +875,33 @@ def _render_index_html() -> str:
 
 @app.get("/")
 async def serve_index(request: Request):
-    return Response(content=_render_index_html(), media_type="text/html")
+    # no-cache: the page names this release's asset URLs, so a phone must check for a newer one
+    # every time (it had no Cache-Control at all, leaving it to browser heuristics — SWSTUCK).
+    return Response(content=_render_index_html(), media_type="text/html", headers={"Cache-Control": "no-cache"})
+
+
+# SWSTUCK (4.81.1): the manual way out when this device's copy of the app is stuck. Clear-Site-Data
+# drops every saved copy and the service worker here; the sign-in cookie stays, so no sign-in again.
+# Exempt from sign-in: it reveals nothing and must work when the app can't load.
+_APP_RESET_HTML = (
+    "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+    "<meta name='robots' content='noindex, nofollow'><title>PawPoller refreshed</title>"
+    "<style>body{font-family:system-ui,Arial,sans-serif;background:#f4ece0;color:#241d17;"
+    "display:flex;min-height:100vh;margin:0;align-items:center;justify-content:center;text-align:center}"
+    "div{max-width:22rem;padding:1rem}h1{font-size:1.3rem;margin:0 0 .5rem}p{line-height:1.6}"
+    "a{display:inline-block;margin-top:.5rem;padding:.6rem 1.2rem;border-radius:8px;background:#9a5b34;"
+    "color:#fff8f0;text-decoration:none}</style>"
+    "</head><body><div><h1>PawPoller is refreshed on this device</h1>"
+    "<p>The saved copy of the app on this device has been cleared. You're still signed in.</p>"
+    "<a href='/'>Open PawPoller</a></div></body></html>"
+)
+
+
+@app.get("/app-reset", include_in_schema=False)
+async def app_reset():
+    return Response(content=_APP_RESET_HTML, media_type="text/html",
+                    headers={"Clear-Site-Data": '"cache", "storage"', "Cache-Control": "no-store"})
 
 
 @app.get("/epub-viewer.html")

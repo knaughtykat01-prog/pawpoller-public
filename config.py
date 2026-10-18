@@ -903,6 +903,10 @@ PLATFORM_CREDENTIAL_FIELDS = {
     "r34": ["r34_username", "r34_api_key", "r34_user_id"],
     # Picarto (4.46.0, spec 013; poll-only). The public channel name — an identity, not a secret.
     "pic": ["pic_channel"],
+    # Twitch (spec 045; watched, never posted to). The channel + its permanent id are identity; the app secret and
+    # the streamer's Connect tokens are secrets. The app pair may instead come from the environment (ttv_app_creds).
+    "ttv": ["ttv_channel", "ttv_user_id", "ttv_client_id", "ttv_client_secret", "ttv_access_token",
+            "ttv_refresh_token", "ttv_token_expires_at", "ttv_login"],
 }
 
 # ── Proactive credential-age tracking (backlog W) ──────────────────
@@ -1025,6 +1029,7 @@ def account_setting_key(account_id: int, field: str, is_default: bool) -> str:
 # only the authorise route fell back).
 SHARED_APP_FIELDS = {
     "da": ("da_client_id", "da_client_secret"),
+    "ttv": ("ttv_client_id", "ttv_client_secret"),   # spec 045: one Twitch app serves every channel
 }
 
 
@@ -1363,7 +1368,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.80.1"
+APP_VERSION = "4.81.1"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).

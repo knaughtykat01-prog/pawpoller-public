@@ -661,6 +661,37 @@
       ],
     },
 
+    // ── Twitch (spec 045) ────────────────────────────────────
+    ttv: {
+      kind: 'Analytics', difficulty: 'Medium',
+      summary: 'Watch your Twitch channel — when you are live, your past broadcasts and clips — and post to your other sites the moment you go live. PawPoller never posts to Twitch itself.',
+      need: ['A Twitch account with two-step sign-in turned on (Twitch asks for it before you can make an app key)',
+             'About five minutes'],
+      steps: [
+        { t: 'Open the Twitch developer page', b: 'Sign in with your Twitch account. Twitch calls the key PawPoller needs an <b>application</b>; making one is free.',
+          link: { label: 'dev.twitch.tv/console/apps', url: 'https://dev.twitch.tv/console/apps' } },
+        { t: 'Click Register Your Application', b: 'A short form opens.' },
+        { t: 'Fill in the form', b: '<b>Name</b>: anything, for example <code>PawPoller for YourName</code>. <b>OAuth Redirect URLs</b>: the address you open PawPoller at, followed by <code>/api/ttv/auth/callback</code> — on this computer that is usually <code>http://localhost:8420/api/ttv/auth/callback</code>. <b>Category</b>: Analytics Tool. <b>Client Type</b>: Confidential.' },
+        { t: 'Click Create, then Manage', b: 'You will see your new app\'s page.' },
+        { t: 'Copy the Client ID', b: 'Paste it into <b>Settings → Platforms → Twitch → Twitch app Client ID</b>.' },
+        { t: 'Click New Secret and copy it', b: 'Paste it into <b>Twitch app Client Secret</b>. Twitch shows the secret only once — if you lose it, click New Secret again.' },
+        { t: 'Type your channel name and click Save', b: 'Your channel name is the last part of your address: in <code>twitch.tv/yourname</code> it is <b>yourname</b>. You will see <b>Saved — found the channel …</b>.' },
+        { t: 'Optional: click Connect Twitch', b: 'Twitch keeps your followers, subscribers and Bits private. Connecting lets PawPoller read them (it cannot post or change anything). Approve in the Twitch tab that opens.' },
+        { t: 'Set up go-live posts', b: 'Open the <b>Twitch</b> page. Under <b>Go-live posts</b>, switch on <b>Post when I go live</b>, tick the sites to post to, write what each should say, and click <b>Save</b>.' },
+      ],
+      paste: 'Settings → Platforms → Twitch → Client ID, Client Secret, Channel name, then Save',
+      renew: { when: 'Nothing expires on its own', how: 'If Twitch stops accepting the key (you made a new secret, or deleted the app), paste the new secret into Settings and click <b>Save</b>. If followers stop updating, click <b>Connect Twitch</b> again.' },
+      notes: [
+        '<b>Show me first</b> is on to begin with: when you go live, PawPoller sends you a Telegram message with <b>Post</b> and <b>Skip</b> buttons (if Telegram is set up), and a note in the bell. Nothing is posted until you tap Post. It lapses when the stream ends, or after two hours.',
+        'Your words can include <code>{title}</code>, <code>{game}</code>, <code>{link}</code> and <code>{name}</code>. PawPoller fills them in from the stream — it never writes anything for you.',
+        'If your stream drops and you restart within the cool-down (15 minutes to begin with), it counts as the same stream, so nothing is posted twice.',
+        'On a hosted PawPoller, Twitch tells it the moment you go live. On your own computer, PawPoller checks every minute while it is open — leave it running while you stream.',
+        'A stream Twitch marks as mature is not posted to Facebook, Threads or Instagram unless you tick that site\'s "Post here even when the stream is marked mature".',
+        'When the stream ends, PawPoller can change the post to your "when it ends" words on Discord, Mastodon and Telegram. The other sites can\'t be edited this way, so their posts stay as they were. It never deletes a post.',
+        'Go-live posts are new and still being tested on real streams.',
+      ],
+    },
+
     // ── Trello (commissions board, spec 005) ─────────────────
     // Not a publishing platform, so it has no entry in PLATFORMS and does not
     // appear on the Getting Started hub. Reached from Settings → Trello and from

@@ -111,12 +111,15 @@
                     <button type="button" class="ep-btn" data-ep="copy">📋 Copy report</button>
                     <button type="button" class="ep-btn ep-btn-send" data-ep="send">📨 Send to dev</button>
                 </div>
+                <div class="ep-hint ep-fresh" hidden>Keeps happening? <a href="/app-reset">Refresh PawPoller on this device</a></div>
                 <div class="ep-hint">esc or tap outside to dismiss</div>
             </div>`;
         el.querySelector('.ep-name').textContent = r.title || 'Unexpected error';
         el.querySelector('.ep-desc').textContent =
             r.message || 'The app hit an error it didn’t expect.';
         el.querySelector('.ep-pre').textContent = _reportText(r);
+        // "Server unreachable" while the page itself loaded: offer the clean copy (SWSTUCK).
+        if (r.title === 'Server unreachable') el.querySelector('.ep-fresh').hidden = false;
 
         el.addEventListener('click', (e) => {
             if (!e.target.closest('.ep-card')) _dismiss();

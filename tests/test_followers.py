@@ -148,6 +148,7 @@ class TestClientContract:
             "ng",   # Newgrounds: the profile's FANS count (4.23.0)
             "yt",   # YouTube: the channel's subscriberCount (4.24.0)
             "pic",  # Picarto: the channel's public follower count (4.46.0)
+            "ttv",  # Twitch: followers once the streamer connects Twitch (spec 045)
             "fb"}   # Facebook: the Page's followers_count (4.59.0)
 
 
