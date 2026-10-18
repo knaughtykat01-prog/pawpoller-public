@@ -27,6 +27,7 @@ from typing import Any
 import httpx
 
 import config
+from posting import video_media
 from clients.tw import transaction as _txn
 
 logger = logging.getLogger(__name__)
@@ -1200,6 +1201,8 @@ class TWClient:
             "link": link,
             "thumbnail_url": thumbnail_url,
             "media_urls": media_urls,
+            # Spec 047: this post's own videos/GIFs (never the quoted post's — that's someone else's).
+            "video_media": video_media.from_x_graphql(media),
             "views": views,
             "likes": likes,
             "retweets": retweets,

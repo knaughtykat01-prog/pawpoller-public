@@ -35,6 +35,7 @@ from typing import Any
 import httpx
 
 import config
+from posting import video_media
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +178,10 @@ def _build_detail(tweet: dict, handle: str, media_by_key: dict) -> dict:
             if url and url not in media_urls:
                 media_urls.append(url)
 
+    # Spec 047: videos/GIFs, each with X's own preview picture as its poster.
+    videos = video_media.from_x_v2(
+        [media_by_key.get(k) or {} for k in ((tweet.get("attachments") or {}).get("media_keys") or [])])
+
     return {
         "tweet_id": tid,
         "title": (text[:80] + "...") if len(text) > 80 else text,
@@ -187,8 +192,9 @@ def _build_detail(tweet: dict, handle: str, media_by_key: dict) -> dict:
         "description": text,
         "keywords": keywords,
         "link": f"https://x.com/{handle}/status/{tid}",
-        "thumbnail_url": media_urls[0] if media_urls else "",
+        "thumbnail_url": media_urls[0] if media_urls else (videos[0]["poster"] if videos else ""),
         "media_urls": media_urls,
+        "video_media": videos,
         "views": _safe_int(pm.get("impression_count")),
         "likes": _safe_int(pm.get("like_count")),
         "retweets": _safe_int(pm.get("retweet_count")),
@@ -210,7 +216,7 @@ def _parse_page(body: dict, handle: str, media_by_key: dict) -> list[dict]:
 
 _TWEET_FIELDS = "public_metrics,created_at,entities,referenced_tweets,attachments"
 _EXPANSIONS = "attachments.media_keys"
-_MEDIA_FIELDS = "url,type,preview_image_url"
+_MEDIA_FIELDS = "url,type,preview_image_url,variants,duration_ms,width,height"  # spec 047: videos
 
 
 async def fetch_tweets(bearer: str | None, handle: str,

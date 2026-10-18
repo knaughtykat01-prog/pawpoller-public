@@ -1414,6 +1414,10 @@ const API = {
         return this.post(`/api/artwork/import/${platform}/${encodeURIComponent(submissionId)}`);
     },
     importBulk(platform) { return this.post(`/api/artwork/import/bulk/${platform}`); },
+    /* Spec 047: a piece imported as a still from a video post takes the real video. */
+    importSourceVideo(platform, submissionId) {
+        return this.post(`/api/artwork/import/${platform}/${encodeURIComponent(submissionId)}/video`);
+    },
     importDiscoveredArt() { return this.post('/api/artwork/import/discovered-art'); },
     /* Discovered TEXT posts → the Posts module (2.157.0). The artwork import
        above downloads an image; these have none — a tweet is a post. */

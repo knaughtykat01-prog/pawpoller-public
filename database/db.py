@@ -1184,6 +1184,17 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
                 if "duplicate column" not in str(e).lower():
                     raise
 
+    # Migration (spec 047, 4.82.0): 'video_media' — a JSON array of the videos/GIFs on the
+    # account's own posts (download link + the site's preview picture), so the artwork importer can
+    # bring the real file in. Existing rows stay '' until re-polled (a Full Resync backfills them).
+    for _mt in ("bsky_submissions", "tw_submissions", "ig_submissions"):
+        if _mt in tables:
+            try:
+                conn.execute(f"ALTER TABLE {_mt} ADD COLUMN video_media TEXT DEFAULT ''")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
+
     # Migration (2.96.0): ONE-TIME backfill of publications.account_id from the
     # source submission. Imports/links used to drop the account, so every work
     # landed on the platform's default account, burying the other personas'

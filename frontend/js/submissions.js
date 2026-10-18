@@ -155,13 +155,21 @@ window.Submissions = {
         try {
             const res = await API.importArtwork(d.platform, d.submission_id);
             this._toast('success', res.status === 'already_imported'
-                ? `Already imported as ${res.name}` : `Imported as ${res.name}`);
+                ? `Already imported as ${res.name}${res.video_available ? '. Open it to bring in the video.' : ''}`
+                : `Imported as ${res.name}`);
             this._discItems.splice(i, 1);
             this._paintDiscovered();
         } catch (err) {
             this._toast('error', `Import failed: ${err.message}`);
             if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
         }
+    },
+
+    /* Spec 047: a found post with a video or GIF imports the real file, not its cover. */
+    _mediaBadge(d) {
+        if (d.media === 'gif') return ` &middot; <span class="pill" title="Imports as a looping video">GIF</span>`;
+        if (d.media === 'video') return ` &middot; <span class="pill" title="Imports the video itself, with the site's cover picture">🎬 Video</span>`;
+        return '';
     },
 
     _discRow(d, i) {
@@ -175,13 +183,13 @@ window.Submissions = {
                 <div style="flex:1;min-width:160px;">
                     <div style="font-weight:600;">${this.esc(d.title)}</div>
                     <div class="muted" style="font-size:.8rem;">
-                        <span title="${this.esc(plat.label)}">${plat.emoji || ''} ${this.esc(plat.label)}</span>${d.type ? ` &middot; ${this.esc(d.type)}` : ''}
+                        <span title="${this.esc(plat.label)}">${plat.emoji || ''} ${this.esc(plat.label)}</span>${d.type ? ` &middot; ${this.esc(d.type)}` : ''}${this._mediaBadge(d)}
                         &middot; <a href="${this.esc(Utils.safeUrl(d.url) || '#')}" target="_blank" rel="noopener">view &#8599;</a>
                     </div>
                 </div>
                 <button class="btn btn-primary" id="disc-link-btn-${i}"
                     title="Link this to one of your works — opens the visual picker">🔗 Link to work…</button>
-                ${this._canImportArt(d) ? `<button class="btn" id="disc-import-btn-${i}" title="Download the image + metadata as a new artwork">Import</button>` : ''}
+                ${this._canImportArt(d) ? `<button class="btn" id="disc-import-btn-${i}" title="Download the ${d.media ? 'video' : 'image'} + metadata as a new artwork">Import</button>` : ''}
                 ${this._canImportPost(d) ? `<button class="btn" id="disc-post-btn-${i}" title="Bring this in as a post — it's a microblog post with no image, so there's no artwork to make">→ Posts</button>` : ''}
                 ${this._canMaster(d) ? `<button class="btn" id="disc-master-btn-${i}" title="Promote to a Masterpiece — the master record for this image">★ Master</button>` : ''}
                 <button class="btn" id="disc-ignore-btn-${i}" title="Hide this — not something you want here (e.g. an image from a tweet). Reversible from the Ignored view.">🚫 Ignore</button>
@@ -466,7 +474,7 @@ window.Submissions = {
                     ${hero}
                     <div style="font-weight:700;font-size:1.1rem;margin-top:.7rem;">${this.esc(d.title || d.submission_id)}</div>
                     <div class="muted" style="font-size:.85rem;margin-top:.2rem;">
-                        ${plat.emoji || ''} ${this.esc(plat.label)}${d.type ? ` · ${this.esc(d.type)}` : ''}
+                        ${plat.emoji || ''} ${this.esc(plat.label)}${d.type ? ` · ${this.esc(d.type)}` : ''}${this._mediaBadge(d)}
                         · <a href="${this.esc(Utils.safeUrl(d.url) || '#')}" target="_blank" rel="noopener">view ↗</a></div>
                     ${writingFlag}
                 </div>

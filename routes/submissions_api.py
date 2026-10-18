@@ -27,6 +27,7 @@ from database import accounts as accounts_db
 from database import personas as personas_db
 from database import masterpiece_queries
 from database import platform_metrics
+from posting import video_media
 from database import posting_queries
 
 logger = logging.getLogger(__name__)
@@ -767,6 +768,8 @@ def build_discovered(platform_rows: list[tuple], linked: set) -> list[dict]:
                 "thumbnail_url": d.get("thumbnail_url") or d.get("thumb_url") or "",
                 "type": stype,
                 "kind": classify_kind(platform, stype, has_image=bool(thumb)),
+                # Spec 047: "video" / "gif" when the post carries one (the found list badges it).
+                "media": video_media.summary_kind(d.get("video_media")),
                 # Prefer the poller-stored permalink; the url_template is only a
                 # fallback (and can't be right for instance-scoped mast/tum URLs).
                 "url": d.get("link") or cfg["url_template"].format(id=sid),

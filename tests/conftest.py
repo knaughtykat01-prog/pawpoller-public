@@ -269,3 +269,12 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if item.get_closest_marker("repo_only"):
             item.add_marker(skip)
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Always print the "N passed, M failed" line. pytest.ini already has `addopts = -q`, so one more
+    `-q` on the command line makes it -qq, and at that level pytest drops the line that every commit
+    is gated on. Below -1 we write it ourselves (above it pytest's own line is already there)."""
+    if config.get_verbosity() < -1:
+        parts, _ = terminalreporter.build_summary_stats_line()
+        terminalreporter.write_line(", ".join(text for text, _markup in parts))

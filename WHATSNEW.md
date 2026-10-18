@@ -2,6 +2,14 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.82.0] - 2026-10-19 - Videos come in
+
+> - Videos and GIFs you posted on X now show up in the Library's found posts, marked Video or GIF, and import as the video itself.
+> - Instagram videos and Reels now import as the video, not just their cover picture.
+> - Bluesky video posts are now found and import as the video.
+> - GIFs play on a loop in the Library, the way you posted them.
+> - A video you imported earlier as a still picture can now bring in its video: open it and press "Bring in the video". The picture stays as its cover.
+
 ## [4.81.1] - 2026-10-19 - Fresh copy
 
 > - After an update, PawPoller now replaces the old copy saved on your phone or computer by itself, so you don't get stuck on an old version.
@@ -134,8 +142,3 @@ Generated from the release notes: each version's plain-language summary.
 > - If your internet drops, sending carries on by itself; if PawPoller was closed, press Carry on sending.
 > - The moving file still works when you're moving somewhere that isn't a seat.
 > - Also from 4.74.1: the first-run setup on a hosted seat no longer says "Every 1 hours", and a small privacy tidy-up in what a hosted seat reports to the Tech Centre.
-
-## [4.74.1] - 2026-10-15 - Two small fixes from the 4.74.0 review
-
-> - The first-run setup on a hosted seat no longer says "Every 1 hours".
-> - A small privacy tidy-up in what a hosted seat reports to the Tech Centre.

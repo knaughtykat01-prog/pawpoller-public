@@ -19,6 +19,9 @@ from typing import Any
 import httpx
 
 import config
+from urllib.parse import quote
+
+from posting import video_media
 
 logger = logging.getLogger(__name__)
 
@@ -562,6 +565,22 @@ class BskyClient:
                           for im in img_list]
             media_urls = [u for u in media_urls if u]
 
+        # Spec 047: a video (alone, or under a quote-with-media). The view only offers an HLS
+        # playlist; the ORIGINAL upload is a blob on the author's own PDS, so it is fetched only
+        # for the polled account's own posts (whose PDS we know from login).
+        vid = embed if embed_type == "app.bsky.embed.video#view" else (
+            (embed.get("media") or {}) if embed_type == "app.bsky.embed.recordWithMedia#view" else {})
+        videos = []
+        if vid.get("$type", embed_type) == "app.bsky.embed.video#view" and vid.get("cid")                 and self._did and author.get("did") == self._did:
+            ratio = vid.get("aspectRatio") or {}
+            e = video_media.entry(
+                f"https://{self._pds_host}/xrpc/com.atproto.sync.getBlob?"
+                f"did={quote(self._did, safe=':')}&cid={quote(str(vid['cid']), safe='')}",
+                vid.get("thumbnail"), width=ratio.get("width"), height=ratio.get("height"))
+            if e:
+                videos.append(e)
+                thumbnail_url = thumbnail_url or e["poster"]
+
         return {
             "post_uri": uri,
             "title": text[:80] + ("..." if len(text) > 80 else "") if text else "",
@@ -575,6 +594,7 @@ class BskyClient:
             "link": link,
             "thumbnail_url": thumbnail_url,
             "media_urls": media_urls,
+            "video_media": videos,
             "likes": likes,
             "reposts": reposts,
             "replies": replies,

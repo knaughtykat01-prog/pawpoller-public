@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS bsky_submissions (
     link            TEXT DEFAULT '',
     thumbnail_url   TEXT DEFAULT '',
     media_urls      TEXT DEFAULT '',
+    video_media     TEXT DEFAULT '',   -- spec 047: JSON videos/GIFs (posting/video_media.py)
     likes           INTEGER DEFAULT 0,
     reposts         INTEGER DEFAULT 0,
     replies         INTEGER DEFAULT 0,

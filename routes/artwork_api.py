@@ -464,6 +464,22 @@ def import_all_discovered_art():
     }
 
 
+@artwork_router.post("/import/{platform}/{submission_id}/video")
+def import_source_video(platform: str, submission_id: str):
+    """Spec 047: bring the real video into a piece first imported from this post as its cover
+    still. The video becomes the main file; the still stays in the folder as its poster."""
+    from posting import artwork_importer
+    try:
+        return artwork_importer.attach_source_video(platform, submission_id)
+    except LookupError as e:
+        raise HTTPException(404, detail=str(e))
+    except artwork_importer.AlreadyVideo as e:
+        raise HTTPException(409, detail=str(e))
+    except Exception as e:
+        logger.error("Video attach failed for %s/%s: %s", platform, submission_id, e)
+        raise HTTPException(400, detail=str(e))
+
+
 # Generic single-item import — declared LAST so its two-segment path pattern
 # doesn't shadow the specific `/import/bulk/{platform}` route above.
 @artwork_router.post("/import/{platform}/{submission_id}")

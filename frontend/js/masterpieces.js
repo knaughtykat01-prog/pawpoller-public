@@ -935,7 +935,9 @@ window.Masterpieces = {
         let hero, tile;
         if (v.kind === 'video') {
             // 4.18.0: the file plays in place; the poster is what the shelf / publish thumb read.
-            hero = `<video class="mp-hero-video" id="mp-hero-video" controls preload="metadata" playsinline data-rating="${v.rating}"
+            // Spec 047: a GIF the site turned into a video loops silently, the way it was posted.
+            const loop = (m.media || {}).loop ? ' loop muted autoplay' : '';
+            hero = `<video class="mp-hero-video" id="mp-hero-video" controls preload="metadata" playsinline${loop} data-rating="${v.rating}"
                         poster="${this.esc(v.posterUrl)}" src="${this.esc(v.mediaUrl)}"></video>
                     <img class="mp-hero-img" id="mp-hero-img" data-rating="${v.rating}" src="${this.esc(v.heroUrl)}" alt="${alt}" hidden>`;
             tile = `<div class="board-hero-tile board-hero-tile--video">${hero}</div>`;
@@ -981,6 +983,10 @@ window.Masterpieces = {
                 ? 'Matched to a site upload by its title — link the upload to confirm'
                 : 'The date the Library sorts this piece by'}">First posted ${m.first_posted_source === 'title' ? '≈ ' : ''}${Utils.formatDate(m.first_posted)}</div>`
             : `<div class="mp-firstposted muted" title="No site upload linked, so no post date — the Library sorts it by when it was added">Not posted anywhere PawPoller knows of</div>`;
+        // Spec 047: imported as its cover still from a post that has a video → offer the real file.
+        const videoBtn = m.source_video
+            ? `<button class="btn btn-sm btn-primary" data-mp-source-video type="button"
+                title="Download the video from the site. This picture stays as its cover.">🎬 Bring in the video</button>` : '';
         return `
             <div class="board-hero">
                 ${v.heroUrl ? `<img class="mp-stage-bg board-hero-bg" id="mp-stage-bg" src="${this.esc(v.heroUrl)}" alt="" aria-hidden="true">` : ''}
@@ -1008,7 +1014,7 @@ window.Masterpieces = {
                     <button class="btn btn-sm" data-add-collection data-mtype="masterpiece"
                         data-mref="${this.esc(name)}" data-label="${this.esc(m.title || name)}"
                         title="Bundle this piece (with its companion story / announcement posts) into a Collection">＋ Add to Collection</button>
-                    <div class="pair">${junkBtn}<button class="btn btn-sm btn-danger" data-mp-delete type="button"
+                    <div class="pair">${videoBtn}${junkBtn}<button class="btn btn-sm btn-danger" data-mp-delete type="button"
                         title="Delete this piece from your library. Already-published posts stay live on each platform. Prefer 🗑 Junk if you only want it out of the grid.">Delete</button></div>
                 </div>
             </div>`;
@@ -1772,6 +1778,19 @@ window.Masterpieces = {
         this._loadScheduled(name);
     },
 
+    async _bringInVideo(btn) {
+        const src = ((this._detail || {}).import_source) || {};
+        btn.disabled = true; btn.textContent = 'Downloading…';
+        try {
+            await API.importSourceVideo(src.platform, src.submission_id);
+            this._toast('success', 'The video is in. Its picture stays as the cover.');
+            await this.renderDetail(this._current);
+        } catch (err) {
+            this._toast('error', err.message);
+            btn.disabled = false; btn.textContent = '🎬 Bring in the video';
+        }
+    },
+
     async _loadScheduled(name) {
         const box = document.getElementById('mp-scheduled-list');
         if (!box) return;
@@ -1923,6 +1942,8 @@ window.Masterpieces = {
             if (aedit) { e.preventDefault(); this._openArtistPicker(); return; }
             const padd = e.target.closest('[data-mp-people-add]');
             if (padd) { e.preventDefault(); this._openPeoplePicker(); return; }
+            const svid = e.target.closest('[data-mp-source-video]');
+            if (svid) { e.preventDefault(); this._bringInVideo(svid); return; }
             const px = e.target.closest('[data-mp-people-x]');
             if (px) {
                 e.preventDefault();

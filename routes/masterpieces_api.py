@@ -1117,9 +1117,13 @@ def get_masterpiece(name: str):
              "import_source": getattr(art, "import_source", None) or {},
              "original_posted_at": getattr(art, "original_posted_at", "") or ""})
         _pv = _people_view(conn, art)
+        from posting.artwork_importer import source_video_available
         return {
             "name": art.name,
             "status": mq.get_status(conn, name),
+            # Spec 047: imported as a still from a post that carries a video → offer the real file.
+            "source_video": source_video_available(name),
+            "import_source": getattr(art, "import_source", None) or {},
             "images": images,
             "variants": variants,
             "title": art.title,

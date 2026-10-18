@@ -39,12 +39,16 @@ from datetime import datetime, timezone
 from typing import Any
 
 import config
+from posting import video_media
 
 logger = logging.getLogger(__name__)
 
-# Only photo attachments feed the artwork importer; videos/GIFs give a still
-# preview, not an importable image, so we key off the file extension.
+# Photo attachments feed `media_urls` (images, by extension). Videos and GIFs arrive as
+# their own entries (`type` video / animated_gif, an mp4 URL), each followed by a `preview`
+# entry (the still) — spec 047 pairs them into `video_media` so the importer can bring the
+# real file in, with X's own picture as its poster.
 _IMAGE_EXTS = {"jpg", "jpeg", "png", "webp"}
+_VIDEO_TYPES = {"video": "video", "animated_gif": "gif"}
 
 # Snowflake epoch (2010-11-04T01:42:54.657Z) — X tweet ids encode creation time
 # in their high bits; used as a fallback when gallery-dl's `date` is missing.
@@ -199,6 +203,7 @@ def _build_detail(kw: dict, target_user: str) -> dict:
         "link": f"https://x.com/{username}/status/{tid}",
         "thumbnail_url": "",
         "media_urls": [],
+        "video_media": [],
         "views": _safe_int(kw.get("view_count")),
         "likes": _safe_int(kw.get("favorite_count")),
         "retweets": _safe_int(kw.get("retweet_count")),
@@ -230,6 +235,7 @@ def _parse_dump_json(raw: str, target_user: str) -> list[dict]:
 
     tweets: dict[str, dict] = {}
     order: list[str] = []
+    pending: dict[str, list[dict]] = {}   # tweet id -> its videos, posters paired as they arrive
 
     for el in data:
         if not (isinstance(el, list) and el and isinstance(el[-1], dict)):
@@ -249,14 +255,31 @@ def _parse_dump_json(raw: str, target_user: str) -> list[dict]:
             order.append(tid)
 
         if url:
+            mtype = str(kw.get("type") or "")
             ext = str(kw.get("extension") or url.rsplit(".", 1)[-1].split("?")[0]).lower()
-            if ext in _IMAGE_EXTS and url not in detail["media_urls"]:
+            videos = pending.setdefault(tid, [])
+            if mtype in _VIDEO_TYPES:
+                videos.append({"url": url, "kind": _VIDEO_TYPES[mtype], "poster": "",
+                               "width": kw.get("width"), "height": kw.get("height"),
+                               "duration_s": kw.get("duration"), "bitrate": kw.get("bitrate")})
+            elif mtype == "preview":
+                # The still gallery-dl yields right after its video (previews=true).
+                waiting = [v for v in videos if not v["poster"]]
+                if waiting:
+                    waiting[0]["poster"] = url
+            elif ext in _IMAGE_EXTS and url not in detail["media_urls"]:
                 detail["media_urls"].append(url)
 
     result = [tweets[t] for t in order]
     for detail in result:
+        detail["video_media"] = [e for e in (
+            video_media.entry(v["url"], v["poster"], v["kind"], width=v["width"], height=v["height"],
+                              duration_s=v["duration_s"], bitrate=v["bitrate"])
+            for v in pending.get(detail["tweet_id"], [])) if e]
         if detail["media_urls"] and not detail["thumbnail_url"]:
             detail["thumbnail_url"] = detail["media_urls"][0]
+        elif detail["video_media"] and not detail["thumbnail_url"]:
+            detail["thumbnail_url"] = detail["video_media"][0]["poster"]
     return result
 
 
@@ -303,8 +326,9 @@ async def _run(exe: str, url: str, cookie_path: str, settings: dict,
     ``-j`` dumps metadata without downloading media bytes; ``-q`` (``quiet``) drops
     gallery-dl's info lines (they go to stderr either way, so stdout stays pure JSON); ``--sleep-request`` throttles politely; ``text-tweets`` includes
     text-only posts; ``retweets=false`` keeps the account's own posts (a pure
-    retweet's engagement belongs to the original author). ``videos=false`` avoids
-    resolving video variants we'd discard anyway.
+    retweet's engagement belongs to the original author). ``videos=true`` +
+    ``previews=true`` (spec 047) add an entry per video and per its still — metadata
+    only in ``-j`` mode, from the tweet JSON already fetched, so no extra request.
     """
     delay = getattr(config, "TW_REQUEST_DELAY_SECONDS", 2.0)
     args = [
@@ -313,7 +337,8 @@ async def _run(exe: str, url: str, cookie_path: str, settings: dict,
         "--sleep-request", str(delay),
         "-o", "extractor.twitter.text-tweets=true",
         "-o", "extractor.twitter.retweets=false",
-        "-o", "extractor.twitter.videos=false",
+        "-o", "extractor.twitter.videos=true",
+        "-o", "extractor.twitter.previews=true",
     ]
     for opt in extra:
         args += ["-o", opt]

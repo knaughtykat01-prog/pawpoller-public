@@ -27,7 +27,7 @@ import config
 from database.db import get_connection
 from database import posting_queries
 from database import platform_metrics
-from posting import artwork_reader
+from posting import artwork_reader, video_media
 from posting.sync import PLATFORM_TABLES
 
 logger = logging.getLogger(__name__)
@@ -213,7 +213,10 @@ def import_artwork(platform: str, submission_id: str) -> dict:
 
     existing = find_existing(platform, submission_id)
     if existing:
-        return {"status": "already_imported", "name": existing}
+        out = {"status": "already_imported", "name": existing}
+        if source_video_available(existing):
+            out["video_available"] = True        # spec 047: "Bring in the video" on the piece's page
+        return out
 
     conn = get_connection()
     try:
@@ -245,7 +248,12 @@ def import_artwork(platform: str, submission_id: str) -> dict:
         except Exception as e:
             logger.warning("IB full-res resolve failed for %s (%s); using stored image",
                            submission_id, e)
-    if not urls:
+    # Spec 047: the post's own videos/GIFs. When the post has no photos of its own, the stored
+    # thumbnail IS a video's poster: it comes in as that video's cover, not as a separate still.
+    videos = video_media.parse(d.get("video_media"))
+    if videos and not _own_media_urls(d):
+        urls = []
+    if not urls and not videos:
         raise ValueError("No image URL stored for this submission")
 
     title = d.get(cfg["title_col"]) or f"{platform}_{submission_id}"
@@ -258,10 +266,11 @@ def import_artwork(platform: str, submission_id: str) -> dict:
     # One artwork per image. A multi-image post (e.g. a 4-image skeet) becomes
     # N separate artworks titled "… (i/N)". Per-image failures are collected, not
     # fatal — a single bad image doesn't sink the rest of the set.
-    multi = len(urls) > 1
+    total = len(urls) + len(videos)
+    multi = total > 1
     created: list[str] = []
     errors: list[dict] = []
-    with httpx.Client(follow_redirects=True, timeout=60.0) as client:
+    with video_media.public_client() as client:   # every hop must be a public address
         for i, u in enumerate(urls):
             try:
                 resp = client.get(u)
@@ -273,7 +282,7 @@ def import_artwork(platform: str, submission_id: str) -> dict:
                 if not is_image(content_type, image_bytes):
                     raise ValueError(
                         f"URL did not return an image (content-type: {content_type or 'unknown'})")
-                piece_title = f"{title} ({i + 1}/{len(urls)})" if multi else title
+                piece_title = f"{title} ({i + 1}/{total})" if multi else title
                 name = artwork_reader.create_artwork(
                     title=piece_title,
                     image_filename=f"image{pick_ext(u, content_type, image_bytes)}",
@@ -296,7 +305,23 @@ def import_artwork(platform: str, submission_id: str) -> dict:
                 errors.append({"index": i, "url": u, "error": str(e)[:160]})
                 logger.warning("Artwork image %d/%d import failed for %s/%s: %s",
                                i + 1, len(urls), platform, submission_id, e)
+        for j, v in enumerate(videos):
+            n = len(urls) + j
+            try:
+                created.append(_create_video_piece(
+                    client, v, title=f"{title} ({n + 1}/{total})" if multi else title,
+                    description=d.get("description", "") or "", tags=tags, rating=rating,
+                    platform=platform, posted_at=platform_metrics.normalize_posted(
+                        d.get("posted_at") or d.get("create_datetime") or d.get("created_at") or ""),
+                    source={"platform": platform, "submission_id": str(submission_id),
+                            "url": external_url, "video_index": j}))
+            except Exception as e:  # one bad video mustn't abort the set
+                errors.append({"index": n, "url": v.get("url", ""), "error": str(e)[:200]})
+                logger.warning("Video %d/%d import failed for %s/%s: %s",
+                               j + 1, len(videos), platform, submission_id, e)
 
+    if not created and videos:
+        raise ValueError(errors[0]["error"] if errors else "Nothing could be imported from this post.")
     if not created:
         detail = errors[0]["error"] if errors else "no importable image"
         raise ValueError(
@@ -331,4 +356,98 @@ def import_artwork(platform: str, submission_id: str) -> dict:
     logger.info("Imported %d image(s) as artwork from %s/%s (%s)",
                 len(created), platform, submission_id, ", ".join(created))
     return {"status": "imported", "name": created[0], "platform": platform,
-            "images": len(created), "names": created, "failed_images": len(errors)}
+            "images": len(created), "names": created, "failed_images": len(errors),
+            "videos": len(videos), "errors": errors}
+
+
+# -- Videos and GIFs (spec 047) ------------------------------------------------
+
+def _own_media_urls(row: dict) -> list[str]:
+    """The post's stored photo URLs only, with no thumbnail fallback (that may be a video's poster)."""
+    raw = row.get("media_urls")
+    try:
+        v = raw if isinstance(raw, list) else (json.loads(raw) if raw else [])
+    except (TypeError, ValueError):
+        return []
+    return [str(u) for u in v if str(u).strip()] if isinstance(v, list) else []
+
+
+def _poster(client: httpx.Client, url: str) -> tuple[bytes, str]:
+    data = video_media.download(client, url, video_media.POSTER_CAP, video=False)
+    if not is_image("", data):              # by its bytes alone; a server's Content-Type can lie
+        raise ValueError("The site's preview picture for this video isn't an image.")
+    return data, pick_ext(url, "", data)
+
+
+def _video_media_block(v: dict) -> dict:
+    media = {k: v[k] for k in ("width", "height", "duration_s") if k in v}
+    if v.get("kind") == "gif":
+        media["loop"] = True                 # the site turned a GIF into a video: loop it silently
+    return media
+
+
+def _create_video_piece(client: httpx.Client, v: dict, *, title: str, description: str, tags: list,
+                        rating: str, platform: str, posted_at: str, source: dict) -> str:
+    """Download one video + its poster and make a Library video piece. Nothing is written
+    unless both arrive whole (create_artwork writes only after its checks)."""
+    if not v.get("poster"):
+        raise ValueError("The site gave no preview picture for this video. Add it to the Library by hand.")
+    poster, pext = _poster(client, v["poster"])
+    data = video_media.download(client, v["url"])
+    return artwork_reader.create_artwork(
+        title=title, image_filename=f"video{video_media.video_ext(data)}", image_bytes=data,
+        thumbnail_filename=f"poster{pext}", thumbnail_bytes=poster, description=description,
+        rating=rating, tags={"default": tags} if tags else {}, platforms=[platform],
+        original_posted_at=posted_at, source=source, media=_video_media_block(v))
+
+
+def _source_row(platform: str, submission_id: str) -> dict | None:
+    cfg = PLATFORM_TABLES.get(platform)
+    if not cfg:
+        return None
+    conn = get_connection()
+    try:
+        row = conn.execute(f"SELECT * FROM {cfg['table']} WHERE {cfg['id_col']} = ?",
+                           (submission_id,)).fetchone()
+    finally:
+        conn.close()
+    return dict(row) if row else None
+
+
+def _is_image_piece(art) -> bool:
+    from posting import media_kinds
+    return media_kinds.kind_of(art.image) == "image"
+
+
+def source_video_available(name: str) -> bool:
+    """True when an IMAGE piece came from a post that carries a video (it can take the real file)."""
+    try:
+        meta = artwork_reader.read_raw_metadata(name)
+    except Exception:
+        return False
+    src = meta.get("import_source") or {}
+    from posting import media_kinds
+    if src.get("platform") not in ("tw", "ig", "bsky") or media_kinds.kind_of(meta.get("image")) != "image":
+        return False
+    row = _source_row(src["platform"], str(src.get("submission_id", "")))
+    return bool(row and video_media.parse(row.get("video_media")))
+
+
+class AlreadyVideo(Exception):
+    """The piece is already a video (409)."""
+
+
+def attach_source_video(platform: str, submission_id: str) -> dict:
+    """Bring the real video into the piece first imported from this post as a still (spec 047)."""
+    name = find_existing(platform, submission_id)
+    if not name:
+        raise LookupError("Nothing has been imported from this post yet.")
+    if not _is_image_piece(artwork_reader.load_artwork(name)):
+        raise AlreadyVideo("This piece is already a video.")
+    videos = video_media.parse((_source_row(platform, submission_id) or {}).get("video_media"))
+    if not videos:
+        raise ValueError("This post has no video PawPoller knows of. Poll the site again, then try.")
+    with video_media.public_client() as client:   # every hop must be a public address
+        data = video_media.download(client, videos[0]["url"])
+    artwork_reader.attach_video(name, data, video_media.video_ext(data), _video_media_block(videos[0]))
+    return {"status": "attached", "name": name}

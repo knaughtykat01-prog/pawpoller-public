@@ -27,19 +27,20 @@ def upsert_tw_submission(conn: sqlite3.Connection, sub: dict, account_id: int) -
     # Full-res URL for every attached photo (multi-image tweets) as a JSON array;
     # '' when none. Powers all-images artwork import.
     media_urls_json = json.dumps(sub.get("media_urls", []) or [])
+    video_media_json = json.dumps(sub.get("video_media") or []) if sub.get("video_media") else ''
     # account_id set on INSERT only; the ON CONFLICT UPDATE leaves it alone.
     conn.execute(
         """INSERT INTO tw_submissions
            (submission_id, account_id, title, username, posted_at, content_type, rating,
-            description, keywords, link, thumbnail_url, media_urls,
+            description, keywords, link, thumbnail_url, media_urls, video_media,
             views, likes, retweets, replies, quotes, bookmarks, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
            ON CONFLICT(submission_id) DO UPDATE SET
             title=excluded.title, username=excluded.username,
             content_type=excluded.content_type, rating=excluded.rating,
             description=excluded.description, keywords=excluded.keywords,
             link=excluded.link, thumbnail_url=excluded.thumbnail_url,
-            media_urls=excluded.media_urls,
+            media_urls=excluded.media_urls, video_media=excluded.video_media,
             views=excluded.views, likes=excluded.likes,
             retweets=excluded.retweets, replies=excluded.replies,
             quotes=excluded.quotes, bookmarks=excluded.bookmarks,
@@ -50,7 +51,7 @@ def upsert_tw_submission(conn: sqlite3.Connection, sub: dict, account_id: int) -
             sub.get("posted_at"), sub.get("content_type", "tweet"),
             sub.get("rating", ""), sub.get("description", ""),
             keywords_json, sub.get("link", ""),
-            sub.get("thumbnail_url", ""), media_urls_json,
+            sub.get("thumbnail_url", ""), media_urls_json, video_media_json,
             sub.get("views", 0), sub.get("likes", 0),
             sub.get("retweets", 0), sub.get("replies", 0),
             sub.get("quotes", 0), sub.get("bookmarks", 0),

@@ -33,6 +33,7 @@ from typing import Any
 import httpx
 
 import config
+from posting import video_media
 from clients.meta_graph import graph_4xx_message, numeric_id
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ _MEDIA_FIELDS = (
     "thumbnail_url,media_url,like_count,comments_count,username,"
     # Carousel children — each image/video in an album — so all-images import
     # can bring in the whole set (field is simply absent for single-media posts).
-    "children{media_url,media_type}"
+    "children{media_url,media_type,thumbnail_url}"
 )
 
 
@@ -372,6 +373,12 @@ class IgClient:
         if children:
             media_urls = [c.get("media_url", "") for c in children
                           if (c.get("media_type") or "").upper() == "IMAGE" and c.get("media_url")]
+        # Spec 047: the videos (a Reel, a single video, or a carousel's video children), each with
+        # Instagram's own cover as its poster. The mp4 links are signed and expire; an expired one
+        # gets a "poll again" reason at import time.
+        sources = children if children else [post]
+        videos = [e for e in (video_media.entry(c.get("media_url"), c.get("thumbnail_url"))
+                              for c in sources if (c.get("media_type") or "").upper() == "VIDEO") if e]
 
         return {
             "post_uri": uri,
@@ -386,6 +393,7 @@ class IgClient:
             "link": post.get("permalink", ""),
             "thumbnail_url": thumbnail_url,
             "media_urls": media_urls,
+            "video_media": videos,
             "views": _safe_int(insights.get("views", 0)),
             "reach": _safe_int(insights.get("reach", 0)),
             "likes": _safe_int(post.get("like_count", 0)),

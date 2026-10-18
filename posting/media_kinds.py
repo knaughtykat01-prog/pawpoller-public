@@ -95,6 +95,8 @@ def normalise_media(meta, kind: str, nbytes: int) -> dict:
             out["duration_s"] = round(dur, 3)
     except (TypeError, ValueError):
         pass
+    if meta.get("loop") is True:            # spec 047: a GIF the site turned into a video loops silently
+        out["loop"] = True
     for key in ("width", "height"):
         try:
             v = int(meta.get(key))

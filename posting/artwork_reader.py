@@ -1092,6 +1092,33 @@ def create_artwork(
     return folder.name
 
 
+def attach_video(name: str, video_bytes: bytes, ext: str, media: dict | None = None) -> str:
+    """Turn an image piece into a video piece in place (spec 047: a site video first imported as its
+    cover still). The video becomes the primary file; the old image stays in the folder and becomes
+    the poster (unless one is already set). Nothing is deleted. Returns the video's filename."""
+    art = load_artwork(name)                 # re-anchors + validates the name
+    src = _meta_path(art.path)
+    if src is None:
+        raise FileNotFoundError(name)
+    meta = json.loads(src.read_text(encoding="utf-8"))
+    if media_kinds.kind_of(meta.get("image")) != "image":
+        raise ValueError("This piece is already a video.")
+    if media_kinds.kind_of("x" + ext) != "video":
+        raise ValueError("Not a video file.")
+    stem, n = "video", 1
+    while (art.path / f"{stem}{ext}").exists():
+        stem, n = f"video_{n}", n + 1
+    vname = f"{stem}{ext}"
+    (art.path / vname).write_bytes(video_bytes)
+    if not meta.get("thumbnail"):
+        meta["thumbnail"] = meta.get("image") or ""
+    meta["image"] = vname
+    meta["media"] = media_kinds.normalise_media(media, "video", len(video_bytes))
+    src.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    logger.info("Attached video %s to %s", vname, name)
+    return vname
+
+
 def read_raw_metadata(name: str) -> dict:
     """The raw parsed ``masterpiece.json`` for a folder — no tag cascade applied.
 
