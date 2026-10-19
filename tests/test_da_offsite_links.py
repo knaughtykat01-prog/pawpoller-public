@@ -117,7 +117,7 @@ def test_the_attribution_line_drops_its_domain_on_da():
 
 
 def test_the_attribution_line_keeps_its_domain_everywhere_else():
-    for platform in ("fa", "ib", "ws", "sf", "ao3"):
+    for platform in ("ib", "ws", "sf", "ao3"):
         assert "pawpoller.com" in attribution.maybe_append("blurb", platform, {})
 
 

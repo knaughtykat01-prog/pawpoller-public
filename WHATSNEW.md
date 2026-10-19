@@ -2,6 +2,11 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.82.1] - 2026-10-19 - FurAffinity credit line off
+
+> - Posts to FurAffinity no longer get the "Posted via PawPoller" line. FA's staff count a link to PawPoller as against their rules, so it's left off there to keep your account safe.
+> - The printable guide PDFs no longer contain links to a file on the computer that made them.
+
 ## [4.82.0] - 2026-10-19 - Videos come in
 
 > - Videos and GIFs you posted on X now show up in the Library's found posts, marked Video or GIF, and import as the video itself.
@@ -134,11 +139,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Comments more than a year old no longer count as "to answer" in the Inbox.
 > - DeviantArt comments in the Inbox no longer show bits of web code like <br />.
 > - PawPoller now says it's a beta next to its version number, for example "4.76.0 Beta".
-
-## [4.75.0] - 2026-10-15 - Send straight to your hosted seat
-
-> - Moving into a hosted seat no longer needs a file: your seat shows a one-time code, you type it into your old PawPoller, and it sends everything straight there.
-> - Everything on the way is locked with that code, and the code itself never leaves either PawPoller.
-> - If your internet drops, sending carries on by itself; if PawPoller was closed, press Carry on sending.
-> - The moving file still works when you're moving somewhere that isn't a seat.
-> - Also from 4.74.1: the first-run setup on a hosted seat no longer says "Every 1 hours", and a small privacy tidy-up in what a hosted seat reports to the Tech Centre.

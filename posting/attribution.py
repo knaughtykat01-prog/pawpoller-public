@@ -29,8 +29,13 @@ ATTRIBUTION_LINE = "🐾 Posted via PawPoller — pawpoller.com"
 ATTRIBUTION_LINE_NO_URL = "🐾 Posted via PawPoller"
 _NO_URL_PLATFORMS = {"da"}
 
-# Platforms whose package "description" is really a microblog announcement.
-_SKIP_PLATFORMS = {"bsky"}
+# Platforms that never get the line. bsky: the "description" is really a
+# microblog announcement. fa: FA staff removed the line from the operator's
+# submissions as a Code of Conduct 3.3 warning (2026-10-18), calling
+# pawpoller.com a link to software made with AI; a repeat stacks into a
+# suspension for every account the uploader owns, so FA gets no line at all,
+# with or without the URL.
+_SKIP_PLATFORMS = {"bsky", "fa"}
 
 # Idempotency marker — never double-append (edit/update re-builds, or a user
 # who typed their own credit line).

@@ -26,6 +26,11 @@ def test_bsky_is_skipped():
     assert attribution.maybe_append("Announcement text", "bsky") == "Announcement text"
 
 
+def test_fa_is_skipped():
+    # FA warns uploaders under CoC 3.3 for the line (2026-10-18).
+    assert attribution.maybe_append("Description", "fa") == "Description"
+
+
 def test_never_double_appends():
     once = attribution.maybe_append("Desc", "fa")
     twice = attribution.maybe_append(once, "fa")
