@@ -22,6 +22,7 @@ from database import ig_queries
 from polling.ig_poller import run_ig_poll_cycle, ig_poll_progress
 from polling.background import spawn_poll
 import config
+import legal
 
 logger = logging.getLogger(__name__)
 ig_router = APIRouter(prefix="/api/ig")
@@ -206,7 +207,9 @@ async def ig_relay(request: Request, file: UploadFile = File(...)):
     URL can only ever serve pixels.
     """
     s = config.get_settings()
-    if not s.get("ig_relay_open", False):
+    # A hosted seat never relays for strangers (IGSEAT review, 4.82.2): seats share one home box's
+    # disk and the brand's domain, and the relay keeps a "video" byte-for-byte.
+    if not s.get("ig_relay_open", False) or legal.hosted():
         raise HTTPException(403, "This PawPoller server does not host Instagram images for other installs.")
     base = s.get("ig_public_base_url", "").strip()
     if not base:
@@ -253,7 +256,7 @@ def _host_status() -> dict:
         "paired": bool((s.get("posting_server_url") or "").strip()),
         "relay": {"enabled": ig_host.relay_on(s), "url": relay_url(s),
                   "record": consent_records.get("ig_relay", s),
-                  "default_url": config.IG_RELAY_DEFAULT_URL, "open": bool(s.get("ig_relay_open", False))},
+                  "default_url": config.IG_RELAY_DEFAULT_URL, "open": bool(s.get("ig_relay_open", False)) and not legal.hosted()},
         "tunnel": {"enabled": on("ig_tunnel_enabled"), **ig_tunnel.helper_status()},
     }
 

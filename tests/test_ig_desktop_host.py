@@ -195,6 +195,13 @@ class TestRelayRoute:
         r = c.post("/api/ig/relay", files={"file": ("a.png", _png_bytes(), "image/png")})
         assert r.status_code == 403 and "does not host" in r.json()["detail"]
 
+    def test_a_hosted_seat_never_relays(self, relay_client, monkeypatch):
+        c, _ = relay_client
+        monkeypatch.setenv("PAWPOLLER_HOSTED", "1")
+        r = c.post("/api/ig/relay", files={"file": ("a.png", _png_bytes(), "image/png")})
+        assert r.status_code == 403
+        assert c.get("/api/ig/host-status").json()["relay"]["open"] is False
+
     def test_refuses_without_a_public_base(self, relay_client):
         c, state = relay_client
         state["ig_public_base_url"] = ""

@@ -152,6 +152,10 @@ def _seed_settings_from_env():
     updates = {}
     for env_key, settings_key in _ENV_TO_SETTINGS.items():
         val = os.environ.get(env_key)
+        if not val and env_key == "IG_PUBLIC_BASE_URL":
+            # Hosted seats only get the general public address (homebox.sh); it's the same
+            # host, and without it Instagram skipped rung 1 and fell to the relay (IGSEAT).
+            val = os.environ.get("PAWPOLLER_PUBLIC_BASE_URL")
         if not val:
             continue
         existing = settings.get(settings_key)

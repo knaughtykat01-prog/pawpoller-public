@@ -2,6 +2,11 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.82.2] - 2026-10-20 - Instagram on hosted seats
+
+> - Instagram posts from a hosted seat work again: the seat now hosts the picture for Instagram itself.
+> - A hosted seat no longer offers its Instagram relay to other people's PawPoller apps.
+
 ## [4.82.1] - 2026-10-19 - FurAffinity credit line off
 
 > - Posts to FurAffinity no longer get the "Posted via PawPoller" line. FA's staff count a link to PawPoller as against their rules, so it's left off there to keep your account safe.
@@ -129,13 +134,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Fixed apostrophes and quotes showing as code (like isn&amp;#x27;t) in descriptions posted to DeviantArt, Newgrounds and journals.
 > - A long Test message on the Accounts page now wraps, so it no longer pushes the Authorise posting button off the screen.
 > - DeviantArt's "re-authorise" message now points at the right button.
-
-## [4.76.0] - 2026-10-15 - Inbox clean-up
-
-> - Fixed the Send to my hosted seat card showing its "Is this your seat?" and "Carry on sending" buttons when they didn't apply.
-> - Fixed the account menu opening behind the Library's filter bar, and the filter bar sliding over the top bar when you scroll.
-> - The Library's filter row is tidier: the sort and filter boxes stay together on the right, and the search box takes the spare room.
-> - The Inbox has a Handle all button, for clearing a big pile of old comments in one go.
-> - Comments more than a year old no longer count as "to answer" in the Inbox.
-> - DeviantArt comments in the Inbox no longer show bits of web code like <br />.
-> - PawPoller now says it's a beta next to its version number, for example "4.76.0 Beta".

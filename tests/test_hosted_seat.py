@@ -125,6 +125,14 @@ def test_backup_keep_seeds_from_env(monkeypatch):
     assert config.get_settings()["auto_backup_keep"] == 14
 
 
+def test_seat_public_address_hosts_instagram_images(monkeypatch):
+    import server
+    monkeypatch.delenv("IG_PUBLIC_BASE_URL", raising=False)
+    monkeypatch.setenv("PAWPOLLER_PUBLIC_BASE_URL", "https://paw-abc123.pawpoller.com")
+    server._seed_settings_from_env()
+    assert config.get_settings()["ig_public_base_url"] == "https://paw-abc123.pawpoller.com"
+
+
 @pytest.mark.parametrize("raw, want", [(None, 0), ("12", 12), ("-3", 0), ("75", 59), ("soon", 0)])
 def test_poll_offset(monkeypatch, raw, want):
     import server
