@@ -155,6 +155,7 @@ def test_story_card_fields_default_when_absent():
 def test_thumb_and_detail_routes():
     works = {w["name"]: w for w in _run(type="all")["works"]}
     assert works["My_Story"]["thumb_url"].startswith("/api/posting/image?story=My_Story")
+    assert works["My_Story"]["thumb_url"].endswith("&w=400")
     assert works["My_Story"]["detail_route"] == "#/posting/story/My_Story"
     assert works["My_Art"]["thumb_url"].startswith("/api/artwork/image?name=My_Art")
     assert works["My_Art"]["detail_route"] == "#/artwork/image/My_Art"

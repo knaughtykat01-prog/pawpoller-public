@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 
@@ -163,6 +164,12 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+# Compress responses (OVERVIEWSPEED). A hosted seat's answers cross the owner's home upload before
+# Cloudflare compresses them, so the Overview's ~8 MB of JSON took seconds to leave the box.
+# Starlette >= 1.5 (pinned) skips images, audio, video, zips, event streams and 206 ranges,
+# and compresses big bodies off the event loop.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 # Global exception handler — catches any unhandled exception that escapes a route

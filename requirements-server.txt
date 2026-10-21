@@ -2,6 +2,7 @@
 # but blocks minor/major bumps that could introduce breaking changes or vulns.
 # To update: check changelogs, then bump the version here and rebuild.
 fastapi~=0.135.1
+starlette~=1.9
 python-multipart~=0.0.22
 uvicorn[standard]~=0.41.0
 httpx~=0.28.1

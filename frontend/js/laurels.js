@@ -56,8 +56,20 @@ window.Laurels = {
      * Fetches the 6 read-only endpoints and derives the full model the page
      * renders from — totals, ladders, rhythm and the complete medal set.
      * SHARED by render() and the app-wide achievement watcher so both compute
-     * the exact same medal ids from one code path (no drift, one seen-baseline). */
-    async _load() {
+     * the exact same medal ids from one code path (no drift, one seen-baseline).
+     * A load from the last 30 s is reused (OVERVIEWSPEED): the watcher's catch-up 4 s after
+     * sign-in re-downloaded everything the page had just fetched. Post-poll checks come
+     * minutes apart, so they still read fresh numbers. */
+    _load() {
+        const now = Date.now();
+        if (this._loaded && now - this._loaded.at < 30000) return this._loaded.p;
+        const p = this._loadFresh();
+        this._loaded = { at: now, p };
+        p.catch(() => { this._loaded = null; });
+        return p;
+    },
+
+    async _loadFresh() {
         const safe = (p, fallback) => p.then(r => r).catch(() => fallback);
         const [personasResp, prefs, worksResp, summary, agg, postLog] = await Promise.all([
             safe(API.getPersonas(), { personas: [], unassigned: [] }),

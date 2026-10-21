@@ -2,6 +2,13 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.83.1] - 2026-10-21 - Faster Overview and Laurels on hosted seats
+
+> - The Overview loads several times faster on a hosted seat: PawPoller now compresses what it sends.
+> - Laurels loads faster, and no longer downloads all its numbers twice after you sign in.
+> - Story covers in the Library now load as small card-sized pictures, like artwork already did.
+> - Other pages full of numbers and lists load faster from a seat too.
+
 ## [4.83.0] - 2026-10-21 - Texture
 
 > - New: optional sounds, off until you turn them on in Settings → Appearance → Sounds. Each device keeps its own setting and volume.
@@ -133,9 +140,3 @@ Generated from the release notes: each version's plain-language summary.
 
 > - Fixed editing artwork on DeviantArt: it always failed with "isn't in … gallery", whatever the username.
 > - DeviantArt edits now go through DeviantArt's official connection, the same one polling already uses.
-
-## [4.77.0] - 2026-10-15 - Sync one site at a time
-
-> - Each site under an artwork's "Published to" list has its own Sync button, so you can update one site without touching the others.
-> - Sites whose live title no longer matches your record are flagged "title differs".
-> - When PawPoller can't find a deviation to edit, it now says which one and whose gallery it looked in, instead of DeviantArt's "Api endpoint not found".

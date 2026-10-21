@@ -405,7 +405,7 @@ def assemble_works(
                 "persona_ids": pids,
                 "persona_names": [personas[i]["name"] for i in pids if i in personas],
                 "thumb_url": (
-                    f"/api/posting/image?story={quote(s['name'])}&file={quote(cover)}"
+                    f"/api/posting/image?story={quote(s['name'])}&file={quote(cover)}&w=400"
                     if cover else ""
                 ),
                 "detail_route": f"#/posting/story/{quote(s['name'])}",

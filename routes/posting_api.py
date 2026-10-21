@@ -390,7 +390,7 @@ def link_story_by_url(story_name: str, body: dict):
 
 
 @posting_router.get("/image")
-def get_story_image(story: str = Query(...), file: str = Query(...)):
+def get_story_image(story: str = Query(...), file: str = Query(...), w: int | None = Query(None)):
     """Serve a cover/thumbnail image from a story folder.
 
     Query params (not path segments) so sub-stories like
@@ -427,6 +427,14 @@ def get_story_image(story: str = Query(...), file: str = Query(...)):
 
     if requested.suffix.lower() not in story_reader.COVER_EXTENSIONS:
         raise HTTPException(415, detail="Unsupported image type")
+
+    # Card-sized WebP for grids (OVERVIEWSPEED), as artwork images do; covers were sent full size.
+    if w:
+        import thumbs
+        small = thumbs.thumbnail(requested, w)
+        if small is not None:
+            return FileResponse(path=str(small), media_type="image/webp",
+                                headers={"Cache-Control": "private, max-age=86400"})
 
     media_types = {
         ".png": "image/png",
