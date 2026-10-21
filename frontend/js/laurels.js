@@ -326,6 +326,7 @@ window.Laurels = {
         const medal = (this._celebQ || []).shift();
         if (!medal) return;
         this._celebBusy = true;
+        if (window.Sound) Sound.play('medal');
 
         const cols = ['#c9822f', '#9a5b34', '#2f8f5b', '#4d6b8a', '#b7791f', '#c0453b'];
         const conf = Array.from({ length: 28 }, (_, i) => {

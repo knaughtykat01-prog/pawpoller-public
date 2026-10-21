@@ -139,6 +139,7 @@ window.Submissions = {
             const res = await API.importBulk(platform);
             this._toast('success',
                 `${platform.toUpperCase()}: imported ${res.imported}, skipped ${res.skipped}, failed ${res.failed}`);
+            if (res.imported && window.Sound) Sound.play('batch_done');
             const disc = await API.getDiscovered();
             this._discItems = (disc && disc.discovered) || [];
             this._paintDiscovered();
@@ -157,6 +158,7 @@ window.Submissions = {
             this._toast('success', res.status === 'already_imported'
                 ? `Already imported as ${res.name}${res.video_available ? '. Open it to bring in the video.' : ''}`
                 : `Imported as ${res.name}`);
+            if (res.status !== 'already_imported' && window.Sound) Sound.play('job_done');
             this._discItems.splice(i, 1);
             this._paintDiscovered();
         } catch (err) {
@@ -231,6 +233,7 @@ window.Submissions = {
             if (r.failed) bits.push(`${r.failed} failed`);
             this._toast(r.imported ? 'success' : (r.failed ? 'warn' : 'info'),
                 `Posts: ${bits.join(', ')}`);
+            if (r.imported && window.Sound) Sound.play('batch_done');
             const disc = await API.getDiscovered();
             this._discItems = (disc && disc.discovered) || [];
             this._paintDiscovered();
@@ -497,7 +500,7 @@ window.Submissions = {
         try {
             if (kind === 'ignore') { await API.ignoreDiscovered(d.platform, d.submission_id); this._toast('success', 'Ignored'); }
             else if (kind === 'post') { await API.importDiscoveredPost(d.platform, d.submission_id); this._toast('success', 'Sent to Posts'); }
-            else if (kind === 'art') { const r = await API.importArtwork(d.platform, d.submission_id); this._toast('success', `Imported as ${r.name}`); }
+            else if (kind === 'art') { const r = await API.importArtwork(d.platform, d.submission_id); this._toast('success', `Imported as ${r.name}`); if (window.Sound) Sound.play('job_done'); }
             // 'skip' does nothing server-side.
             if (kind !== 'skip') this._triageCount++;
             this._triageIdx++;

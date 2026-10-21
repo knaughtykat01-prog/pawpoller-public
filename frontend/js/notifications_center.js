@@ -23,6 +23,7 @@
     let _unread = 0;
     let _open = false;
     let _seeded = false;
+    let _lost = false;              // the server stopped answering (spec 049)
     const _seen = new Set();
     let _bell = null, _panel = null, _badge = null, _timer = null;
 
@@ -229,6 +230,7 @@
             // throttle) are live state, not a window, so they keep toasting as before.
             if (!LIVE_KINDS.has(it.kind) && normTs(it.timestamp) <= since) return;     // old row scrolled into the window
             if (it.muted) return;                                                      // muted → quiet, no toast
+            if (it.news && window.Sound) Sound.play('news');                           // faves or comments rose (spec 049)
             // A throttled poll already has its own warning (kind 'throttle'); its poll
             // row would be a second, red one.
             if (it.kind === 'poll' && it.status === 'partial') return;
@@ -251,7 +253,22 @@
             maybeToast(_items);
             renderBadge();
             if (_open) renderPanel();
-        } catch (e) { /* retry next tick */ }
+            if (_lost) {
+                _lost = false;
+                if (window.Sound) Sound.play('connection_back');
+                if (window.toast) window.toast.info('Connected to PawPoller again.');
+            }
+        } catch (e) {
+            // Retry next tick. A sign-in or server error isn't a dropped connection, so ask
+            // /api/health (which needs no sign-in): only no answer at all counts (spec 049).
+            if (_lost) return;
+            let up = false;
+            try { up = (await fetch('/api/health?t=' + Date.now(), { cache: 'no-store' })).ok; } catch (e2) { up = false; }
+            if (up || _lost) return;
+            _lost = true;
+            if (window.Sound) Sound.play('connection_lost');
+            if (window.toast) window.toast.warn('Lost the connection to PawPoller. Trying again every minute.');
+        }
     }
 
     function toggle() { _open ? close() : open(); }

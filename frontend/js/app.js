@@ -15863,6 +15863,24 @@ const App = {
                     </div>
                 </div>
 
+                <div class="settings-section">
+                    <h3>Sounds</h3>
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
+                        A short, quiet sound when a post goes up or fails, a poll brings news, a medal is earned and a few other key moments. Set on each device separately.
+                    </p>
+                    <div class="settings-row">
+                        <label class="settings-label" for="pref-sound-mode">Sounds</label>
+                        <select id="pref-sound-mode">
+                            <option value="off" ${window.Sound && Sound.get().mode === 'off' ? 'selected' : ''}>Off</option>
+                            <option value="key" ${window.Sound && Sound.get().mode === 'key' ? 'selected' : ''}>Key moments</option>
+                        </select>
+                    </div>
+                    <div class="settings-row">
+                        <label class="settings-label" for="pref-sound-vol">Volume</label>
+                        <input type="range" id="pref-sound-vol" min="0" max="100" step="5" value="${window.Sound ? Sound.get().volume : 60}">
+                    </div>
+                </div>
+
                 <div class="settings-section" data-page="connection">
                     <h3>Sync</h3>
                     <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
@@ -18524,6 +18542,16 @@ const App = {
                     this.applyMode(card.dataset.modeId);
                 });
             }
+
+            // ── Sounds (Appearance tab, spec 049) — per device; the slider previews on release ──
+            document.getElementById('pref-sound-mode')?.addEventListener('change', (e) => {
+                Sound.set({ mode: e.target.value });
+                if (e.target.value !== 'off') Sound.preview();
+            });
+            document.getElementById('pref-sound-vol')?.addEventListener('change', (e) => {
+                Sound.set({ volume: Number(e.target.value) });
+                Sound.preview();
+            });
 
             // Log tab event handlers
             document.getElementById('log-refresh-btn')?.addEventListener('click', () => this._loadLogs());

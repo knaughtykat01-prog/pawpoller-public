@@ -618,6 +618,7 @@ a.stat-card:hover {
 }
 
 .btn:hover { border-color: var(--accent); }
+.btn:not(:disabled):active { transform: translateY(1px) scale(0.98); }   /* press (spec 049) */
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-primary {

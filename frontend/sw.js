@@ -61,7 +61,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     // Versioned static assets: cache-first (URLs change per release → never stale).
-    if (/\.(?:css|js|png|jpe?g|svg|gif|webp|ico|woff2?|ttf|webmanifest)$/i.test(url.pathname)) {
+    if (/\.(?:css|js|png|jpe?g|svg|gif|webp|ico|woff2?|ttf|webmanifest|mp3)$/i.test(url.pathname)) {
         event.respondWith((async () => {
             const cache = await caches.open(CACHE);
             const hit = await cache.match(req);

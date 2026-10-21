@@ -135,6 +135,7 @@ window.Reconnect = (function () {
             try { await API.post(`/api/${code}/poll/trigger`, {}); } catch (e) { /* best effort */ }
             try { await API.triggerSessionCheck(); } catch (e) { /* best effort */ }
             if (window.toast) window.toast.success(`${spec.label} reconnected — syncing…`);
+            if (window.Sound) Sound.play('connected');
             setTimeout(() => {
                 close();
                 if (window.NotificationCenter && NotificationCenter.poll) NotificationCenter.poll();

@@ -451,6 +451,7 @@ window.Commissions = {
         }, async (vals) => {
             const r = await API.createCommission(vals);
             this._toast('success', 'Commission created');
+            if (window.Sound) Sound.play('commission');
             location.hash = `#/commissions/${r.id}`;
         });
     },

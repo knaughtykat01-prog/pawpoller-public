@@ -26,6 +26,7 @@
     let _timer = null, _pill = null, _tray = null, _open = false;
     const _watched = new Set();     // jobs this tab saw running → toast when they finish
     const _toasted = new Set();
+    const _sounded = new Set();     // a screen that shows the result itself still gets the sound (spec 049)
     const _grids = new Map();       // element → job id (publish screens)
     const _log = new Map();         // job id → [{t, text, cls}] (the grid's running log)
     const _lastStep = new Map();    // `${job}|${key}` → step text (to log transitions)
@@ -89,6 +90,10 @@
                     L.unshift({ t: now, text: `${lineLabel(ln)} · ${txt}`, cls: ln.state === 'done' ? 'ok' : ln.state === 'failed' ? 'bad' : '' });
                     _log.set(j.id, L.slice(0, 40));
                 }
+            }
+            if (j.finished && _watched.has(j.id) && !_sounded.has(j.id)) {
+                _sounded.add(j.id);
+                if (j.state !== 'cancelled' && window.Sound) Sound.play(j.state === 'done' ? 'post_up' : 'post_failed');
             }
             if (j.finished && _watched.has(j.id) && !_toasted.has(j.id)) {
                 _toasted.add(j.id);
@@ -294,7 +299,8 @@
         const el = document.createElement('div');
         el.className = `act-toast ${j.state === 'done' ? '' : 'fail'}`;
         el.setAttribute('role', j.state === 'failed' ? 'alert' : 'status');
-        el.innerHTML = `<b>${esc(head)}</b><span class="act-sub">${esc(why || (took ? `Took ${took >= 60 ? `${Math.floor(took / 60)} m ` : ''}${took % 60} s` : ''))}</span>
+        const check = j.state === 'done' ? '<svg class="act-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5"/></svg>' : '';
+        el.innerHTML = `<b>${check}${esc(head)}</b><span class="act-sub">${esc(why || (took ? `Took ${took >= 60 ? `${Math.floor(took / 60)} m ` : ''}${took % 60} s` : ''))}</span>
             <div class="act-chips">${j.lines.map(l => {
                 const inner = `${l.state === 'done' ? '✓' : l.state === 'failed' ? '✗' : '–'} ${esc(lineLabel(l))}`;
                 return l.url ? `<a class="act-chip ${l.state === 'failed' ? 'bad' : ''}" href="${esc(Utils.safeUrl(l.url))}" target="_blank" rel="noopener">${inner}</a>`
@@ -381,6 +387,7 @@
     async function run(send, host) {
         const r = await send({ background: true });
         if (!r || !r.job_id) return r;
+        _watched.add(r.job_id);     // a fast job can finish before a poll sees it running
         const box = document.createElement('div');
         if (host && host.parentNode) host.insertAdjacentElement('afterend', box);
         renderGrid(box, r.job_id);

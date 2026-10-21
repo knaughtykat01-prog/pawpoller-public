@@ -477,6 +477,7 @@ window.ImageTool = {
             const r = await API.uploadArtwork(file, { title, tags: {} }, null);
             this._msg('');
             if (window.toast && toast.success) toast.success('Saved to your library');
+            if (window.Sound) Sound.play('job_done');
             window.location.hash = `#/artwork/image/${encodeURIComponent(r.name)}`;
         } catch (err) {
             this._msg('Save failed: ' + (err.message || err));

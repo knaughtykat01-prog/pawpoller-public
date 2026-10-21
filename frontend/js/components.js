@@ -31,9 +31,16 @@ const Components = {
         if (delta !== null && delta !== undefined) {
             deltaHtml = Utils.formatDelta(delta);
         }
+        // Spec 049: a number that changed since this card last rendered (a poll landed) counts up to it.
+        // First render has nothing remembered, so it never animates.
+        const key = location.hash.split('?')[0] + '|' + label;
+        const prev = this._lastStat[key], n = Number(value);
+        this._lastStat[key] = n;
+        const count = Number.isFinite(prev) && Number.isFinite(n) && prev !== n;
+        if (count) this._queueCountUp();
         const inner = `
                 <div class="label">${Utils.escapeHtml(label)}</div>
-                <div class="value">${Utils.formatNumber(value)}</div>
+                <div class="value"${count ? ` data-count-from="${prev}" data-count-to="${n}"` : ''}>${Utils.formatNumber(value)}</div>
                 ${deltaHtml ? `<div>${deltaHtml} <span style="font-size:11px;color:var(--text-muted)">24h</span></div>` : ''}
         `;
         // With an href the card becomes a link (e.g. "Total Tweets" → the tweets
@@ -42,6 +49,29 @@ const Components = {
             return `<a class="stat-card" href="${href}" style="text-decoration:none;color:inherit;cursor:pointer">${inner}</a>`;
         }
         return `<div class="stat-card">${inner}</div>`;
+    },
+
+    _lastStat: {},
+    /* Next frame, after the caller has put the cards on the page: count each changed value up over
+     * 600 ms. Reduced motion shows the new number at once (it is already the rendered text). */
+    _queueCountUp() {
+        if (this._countQueued) return;
+        this._countQueued = true;
+        requestAnimationFrame(() => {
+            this._countQueued = false;
+            const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+            document.querySelectorAll('.value[data-count-from]').forEach(el => {
+                const from = Number(el.dataset.countFrom), to = Number(el.dataset.countTo), t0 = performance.now();
+                el.removeAttribute('data-count-from');
+                if (still) return;
+                const step = (t) => {
+                    const k = Math.min(1, (t - t0) / 600), e = 1 - Math.pow(1 - k, 3);
+                    el.textContent = Utils.formatNumber(Math.round(from + (to - from) * e));
+                    if (k < 1) requestAnimationFrame(step);
+                };
+                requestAnimationFrame(step);
+            });
+        });
     },
 
     /**

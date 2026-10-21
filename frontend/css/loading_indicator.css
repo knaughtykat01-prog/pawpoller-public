@@ -804,6 +804,14 @@ a.pp-notif-reconnect { text-decoration: none; text-align: center; }   /* the upd
   background: var(--bg-card); color: var(--text-primary); border: 1px solid color-mix(in srgb, var(--success) 45%, var(--border));
   box-shadow: 0 8px 24px rgba(0,0,0,.25); }
 .act-toast.fail { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+/* Spec 049: the result slides in like the other toasts, and a post that went up draws its check. */
+.act-toast { animation: actIn 180ms ease-out both; }
+@keyframes actIn { from { opacity: 0; transform: translateX(20px); } }
+.act-check { width: 16px; height: 16px; margin-right: 6px; vertical-align: -3px; fill: none; stroke: var(--success);
+  stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 16; stroke-dashoffset: 16;
+  animation: actCheck 360ms 160ms ease-out forwards; }
+@keyframes actCheck { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .act-toast, .act-check { animation: none; } .act-check { stroke-dashoffset: 0; } }
 .act-toast b { display: block; margin-bottom: 2px; }
 .act-toast .act-close { position: absolute; top: 6px; right: 6px; }
 .act-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }

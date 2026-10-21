@@ -219,6 +219,13 @@
     transition: transform .4s cubic-bezier(.2, 1.35, .4, 1), opacity .3s ease;
 }
 .lr-celebrate.show .lr-celebrate-card { transform: scale(1) translateY(0); opacity: 1; }
+/* Spec 049: one light sweep across a newly earned medal's card. */
+.lr-celebrate-card::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; transform: translateX(-120%);
+    background: linear-gradient(105deg, transparent 35%, color-mix(in srgb, #fff 35%, transparent) 50%, transparent 65%);
+}
+.lr-celebrate.show .lr-celebrate-card::after { animation: lrShine 900ms 350ms ease-out forwards; }
+@keyframes lrShine { to { transform: translateX(120%); } }
 .lr-celebrate-rays {
     position: absolute; inset: 0; pointer-events: none;
     background: radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 62%);
@@ -252,6 +259,7 @@
     .lr-celebrate-card { transition: opacity .2s ease; transform: none; }
     .lr-celebrate.show .lr-celebrate-card { transform: none; }
     .lr-celebrate-ico { animation: none; }
+    .lr-celebrate-card::after { display: none; }
     .lr-conf { display: none; }
 }
 /* Brut: square the popup + medals */

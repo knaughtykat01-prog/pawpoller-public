@@ -338,6 +338,7 @@ window.Masterpieces = {
                 this._selMode = false; this._sel.clear();
                 this._repaintHost();
                 this._toast('success', `Queued ${data.pieces} piece${data.pieces === 1 ? '' : 's'} (${data.rows} posts) — see Queue & Schedule`);
+                if (window.Sound) Sound.play('scheduled');
             } catch (err) {
                 $('#bp-queue').disabled = false;
                 msg('Could not queue: ' + (err.message || err), true);

@@ -800,6 +800,7 @@ app.mount("/vendor", StaticFiles(directory=str(frontend_dir / "vendor")), name="
 app.mount("/img", StaticFiles(directory=str(frontend_dir / "img")), name="img")
 app.mount("/fonts", StaticFiles(directory=str(frontend_dir / "fonts")), name="fonts")   # Lora for the Promo Maker (4.15.0)
 app.mount("/legal", StaticFiles(directory=str(frontend_dir / "legal")), name="legal")   # Terms + Privacy (4.67.0)
+app.mount("/sounds", StaticFiles(directory=str(frontend_dir / "sounds")), name="sounds")   # spec 049
 
 
 # Browsers request /favicon.ico at the document root regardless of <link> tags;

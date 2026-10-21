@@ -550,6 +550,7 @@ const Posting = {
             // The picker is wall time in the saved zone; toUtc made it a UTC instant.
             await API.reschedulePostingQueue(queueId, { scheduled_at: when.toISOString() });
             if (window.toast) window.toast.success(`Rescheduled for ${Utils.time.fmt.dateTime(when)}`);
+            if (window.Sound) Sound.play('scheduled');
             this.renderQueue();
         } catch (err) {
             alert('Reschedule failed: ' + err.message);

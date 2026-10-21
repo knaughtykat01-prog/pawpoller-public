@@ -2,6 +2,17 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.83.0] - 2026-10-21 - Texture
+
+> - New: optional sounds, off until you turn them on in Settings → Appearance → Sounds. Each device keeps its own setting and volume.
+> - A short, quiet sound plays when a post goes up or fails, new faves or comments come in, or you earn a medal.
+> - Sounds also play when an account connects, a post is scheduled, an import finishes, or the connection drops.
+> - A post that goes up draws a check in its result note.
+> - Numbers on the dashboards count up to their new value after a check.
+> - A newly earned medal gets a shine, result notes slide in, and buttons press down when clicked.
+> - If your computer is set to reduce motion, all of these change at once with no animation.
+> - You now get a note when PawPoller loses its connection to the server, and another when it's back.
+
 ## [4.82.2] - 2026-10-20 - Instagram on hosted seats
 
 > - Instagram posts from a hosted seat work again: the seat now hosts the picture for Instagram itself.
@@ -128,9 +139,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Each site under an artwork's "Published to" list has its own Sync button, so you can update one site without touching the others.
 > - Sites whose live title no longer matches your record are flagged "title differs".
 > - When PawPoller can't find a deviation to edit, it now says which one and whose gallery it looked in, instead of DeviantArt's "Api endpoint not found".
-
-## [4.76.1] - 2026-10-15 - Apostrophes on DeviantArt, and the account Test message
-
-> - Fixed apostrophes and quotes showing as code (like isn&amp;#x27;t) in descriptions posted to DeviantArt, Newgrounds and journals.
-> - A long Test message on the Accounts page now wraps, so it no longer pushes the Authorise posting button off the screen.
-> - DeviantArt's "re-authorise" message now points at the right button.

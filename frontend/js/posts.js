@@ -1765,7 +1765,7 @@ window.Posts = {
                     platforms, account_ids: this._accountIds(platforms), scheduled_at: scheduledIso,
                     persona_id: this._personaId(),
                 });
-                this._toast('success', `Scheduled for ${Utils.time.fmt.dateTime(scheduledIso)}`);
+                this._toast('success', `Scheduled for ${Utils.time.fmt.dateTime(scheduledIso)}`); if (window.Sound) Sound.play('scheduled');
                 msg.textContent = '';
                 const sf = document.getElementById('post-schedule-form');
                 if (sf) sf.style.display = 'none';
@@ -1975,7 +1975,7 @@ window.Posts = {
             this._journalPostId = post_id;      // the FA window (desktop) records onto the same journal
             if (scheduledIso) {
                 await API.schedulePost(post_id, { platforms, account_ids, scheduled_at: scheduledIso });
-                this._toast('success', `Scheduled for ${Utils.time.fmt.dateTime(scheduledIso)}`);
+                this._toast('success', `Scheduled for ${Utils.time.fmt.dateTime(scheduledIso)}`); if (window.Sound) Sound.play('scheduled');
                 window.location.hash = '#/posts';
                 return;
             }

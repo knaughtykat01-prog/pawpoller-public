@@ -977,6 +977,16 @@ def _metric_word(code: str, key: str) -> str:
     return {"views": "view", "faves": "fave", "comments": "comment", "score": "score"}.get(key, key)
 
 
+def _poll_news(log: dict, deltas: dict | None) -> bool:
+    """Did this poll see faves or comments go up? The bell plays its "news" sound on it (spec 049).
+    Same sources as the summary line: the snapshots where they exist, else the log's counters."""
+    if log.get("status") not in ("success", "partial"):
+        return False
+    if deltas:
+        return (deltas.get("faves") or 0) > 0 or (deltas.get("comments") or 0) > 0
+    return (log.get("new_faves_found") or 0) > 0 or (log.get("new_comments_found") or 0) > 0
+
+
 def _format_poll_summary(log: dict, code: str = "", deltas: dict | None = None) -> str:
     """One line for a poll: what moved ('+152 views, +4 likes, +1 reply'), else
     'nothing new · 32 posts checked'.
@@ -1136,6 +1146,7 @@ def _collect_activity_events(limit: int = 30) -> list:
                         "status": log.get("status"),
                         "summary": summary,
                         # Nothing moved: the feeds can fold these away so posts stand out.
+                        "news": _poll_news(log, deltas),
                         "quiet": log.get("status") == "success" and (
                             summary.startswith("nothing new") or summary == "no posts found"),
                         "detail": log.get("error_message"),

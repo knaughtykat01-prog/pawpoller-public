@@ -39,7 +39,10 @@
         ensureToastStack();
         const t = document.createElement('div');
         t.className = 'pp-toast pp-toast-' + kind;
-        if (kind === 'error') t.setAttribute('role', 'alert');   // errors interrupt; the rest wait their turn
+        if (kind === 'error') {
+            t.setAttribute('role', 'alert');   // errors interrupt; the rest wait their turn
+            if (window.Sound) Sound.play('error');
+        }
         const icon =
             kind === 'success' ? '✓' :
             kind === 'error'   ? '✕' :

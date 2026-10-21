@@ -284,6 +284,7 @@ window.Bookshelf = {
             if (res.failed) bits.push(`${res.failed} failed`);
             this._toast(res.imported ? 'success' : (res.failed ? 'warn' : 'info'),
                 `Discovered art: ${bits.join(', ')}`);
+            if (res.imported && window.Sound) Sound.play('batch_done');
             await this.render();   // refresh shelf + banner
         } catch (err) {
             this._toast('error', `Import failed: ${this.esc(err.message || err)}`);

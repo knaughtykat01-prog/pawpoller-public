@@ -529,6 +529,7 @@ window.Accounts = {
                 if (t && t.status === 'ok') {
                     this._setTestStatus(accountId, '✓ logged in' +
                         (t.username ? ' as ' + t.username : ''), 'var(--success)');
+                    if (window.Sound) Sound.play('connected');
                     this._flashSaved(row, acctName, fields);
                     panel.remove();
                     return;
@@ -706,6 +707,7 @@ window.Accounts = {
             if (r.status === 'ok') {
                 out.textContent = '✓ logged in' + (r.username ? ' as ' + r.username : '');
                 out.style.color = 'var(--success)';
+                if (window.Sound) Sound.play('connected');
                 App.maybePostingDefaults(platform);   // X / Bluesky: ask their post settings once (4.69.0)
             }
             // "Logged in, but as somebody else" is a different problem from
