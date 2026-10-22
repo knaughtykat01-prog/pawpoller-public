@@ -1368,7 +1368,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.83.1"
+APP_VERSION = "4.85.0"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).
@@ -1405,6 +1405,21 @@ def _app_commit() -> str:
 
 
 APP_COMMIT = _app_commit()
+
+
+def _asset_tag() -> str:
+    """The `?v=` on every CSS/JS URL and the service-worker cache name: the version plus a
+    fingerprint of the frontend's own bytes. The version alone let a rebuild at the same version
+    (a seat's test image, a hotfix) keep serving old files from the phone's cache and from
+    Cloudflare's edge, which keys on the full URL. pwa.js compares it with /api/health's `asset`."""
+    h = hashlib.sha1()
+    root = Path(__file__).resolve().parent / "frontend"
+    for p in sorted([*root.glob("js/*.js"), *root.glob("css/*.css")]):
+        h.update(p.read_bytes())
+    return f"{APP_VERSION}-{h.hexdigest()[:8]}"
+
+
+ASSET_TAG = _asset_tag()
 
 # ── Inkbunny API settings ──
 INKBUNNY_API_BASE = "https://inkbunny.net"     # Inkbunny API root URL
@@ -1898,6 +1913,71 @@ def set_run_on_startup(enabled: bool) -> None:
         return
 
     logger.warning("set_run_on_startup is not supported on this platform (%s)", sys.platform)
+
+
+# XPLEVELS (4.84.0, spec 050): what each action earns, the daily caps, and the level curve
+# (reaching level L takes 25·L·(L−1) XP with a step of 50). Counts actions, never audience
+# size (FR-002). Tune here only; xp.py reads nothing else. Guide §177 publishes the table.
+XP_TABLE = {
+    "work": 20,             # a work posted, once per work
+    "site": 10,             # each site it goes up on, once per work per site
+    "words_per_1000": 15,   # each whole 1,000 words of a chapter, once per chapter
+    "streak_week": 25,      # each week with at least one post
+    "reply": 5,             # a comment replied to from the Inbox
+    "tidy": 3,              # tags, artist or alt text filled in on a work
+    "cap_site_day": 60,     # live site XP per site per day
+    "cap_day": 300,         # live XP per day, everything together
+    "level_step": 50,
+}
+
+# WORKLEVELS (spec 052): levels for works and accounts, audience XP and "your usual". score =
+# views + 5·faves + 20·comments (a booru's net score sits with faves); level = 1 + log2(score / 10),
+# min 1. Per-site columns come from database/platform_metrics.py. Guide §178 publishes all of it.
+PROGRESS_TABLE = {
+    "weights": {"views": 1, "faves": 5, "comments": 20},
+    "level_base": 10,
+    "audience_xp_per_level": 10,       # 10 × L for each new level of a work (FR-006)
+    "perf_windows_h": [48, 168, 720],  # 2 days, 7 days, 30 days after posting
+    "perf_tolerance_h": 12,            # a snapshot this close to the age counts as "at" it
+    "perf_min_history": 5,             # fewer earlier pieces on a site = "not enough history yet"
+    "perf_history_cap": 50,
+    "perf_share_days": 90,             # audience share window for the blend
+    "medals": {                        # per-work medals, research R6
+        "sites": [3, 5, 8],
+        "views": [100, 1000, 10000],
+        "breakout_ratio": 3.0, "breakout_min_sites": 2,
+        "slow_burn_growth": 0.25, "slow_burn_min_score": 20,
+        "found_depth_x": 2.0, "found_min_response": 5,
+    },
+}
+
+# LVLREWARDS (spec 051): what each level gives. Titles come from the level alone; one item
+# per gold level; surprises are fixed checks over xp_ledger (rewards.py). Cosmetic only —
+# nothing reads these to gate a feature (test_rewards_gate_nothing). Ids are never reused:
+# an unlocked id dropped from here stays usable as "retired". Research R1/R4.
+REWARD_TABLE = {
+    "titles": {1: "Newcomer", 5: "Sketcher", 10: "Regular", 15: "Inker", 20: "Colourist",
+               25: "Storyteller", 30: "Curator", 35: "Old Hand", 40: "Headliner", 45: "Maestro",
+               50: "Legend"},
+    "items": [
+        {"id": "ring_copper",  "kind": "ring",  "name": "Copper ring", "level": 5},
+        {"id": "lv_ink",       "kind": "style", "name": "Ink splash",  "level": 10},
+        {"id": "theme_dusk",   "kind": "theme", "name": "Dusk",        "level": 15},
+        {"id": "theme_ember",  "kind": "theme", "name": "Ember",       "level": 20},
+        {"id": "ring_silver",  "kind": "ring",  "name": "Silver ring", "level": 25},
+        {"id": "lv_fireworks", "kind": "style", "name": "Fireworks",   "level": 30},
+        {"id": "theme_aurora", "kind": "theme", "name": "Aurora",      "level": 35},
+        {"id": "ring_gold",    "kind": "ring",  "name": "Gold ring",   "level": 40},
+        {"id": "lv_starfall",  "kind": "style", "name": "Starfall",    "level": 45},
+        {"id": "theme_gilded", "kind": "theme", "name": "Gilded",      "level": 50},
+    ],
+    "surprises": [
+        {"id": "s_streak4",  "kind": "ring",  "name": "Flame ring",    "hint": "Keep showing up",  "rule": ("streak_weeks", 4)},
+        {"id": "s_sites5",   "kind": "ring",  "name": "Compass ring",  "hint": "Go wide",          "rule": ("distinct_sites", 5)},
+        {"id": "s_reply100", "kind": "style", "name": "Chorus",        "hint": "Talk back",        "rule": ("replies", 100)},
+        {"id": "s_tidy50",   "kind": "ring",  "name": "Polished ring", "hint": "Keep things neat", "rule": ("tidies", 50)},
+    ],
+}
 
 
 def display_zone():

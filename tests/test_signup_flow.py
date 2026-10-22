@@ -117,7 +117,7 @@ def test_wizard_skips_what_signup_asked():
     wiz = src[src.index("async renderSetupWizard("):src.index("renderLogin() {")] \
         if "async renderSetupWizard(" in src else src[src.index("renderSetupWizard("):src.index("renderLogin() {")]
     assert "&& !answered[s]" in wiz
-    assert "['welcome', 'timezone', 'age', 'mode', 'pairing', 'hear', 'tech', 'done'].filter(keep)" in wiz
+    assert "['welcome', 'timezone', 'age', 'mode', 'pairing', 'hear', 'fun', 'tech', 'done'].filter(keep)" in wiz
 
 
 def test_beacons_start_off_in_signup():

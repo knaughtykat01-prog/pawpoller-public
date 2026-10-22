@@ -5,17 +5,17 @@
  * rung, a grid of earned/locked medals, per-persona trophy cards ("account
  * medals"), and a light publishing-rhythm strip.
  *
- * Path A — reuses the real endpoints, adds NO backend:
+ * Reads:
+ *   - Progress.load()        → GET /api/progress: the medals, earned and dated by the server
+ *                              (medals.py, spec 052), and persona levels
  *   - API.getPersonas()      → normalized cross-platform totals + per-persona breakdown
- *   - API.getPreferences()   → the app's existing milestone ladders (reused as medal rungs)
- *   - API.getWorks()         → catalogue medals (first story/art, N works, platform spread)
- *   - API.getSummary()       → breakout piece (top-viewed) + watchers
+ *   - API.getPreferences()   → the app's milestone ladders (the hero's progress bars)
  *   - API.getAggregate()     → tracking-active days (distinct poll dates)
  *   - API.getPostingLog()    → publishing rhythm (weeks with a publish)
  *
- * Milestones read the *current cumulative* totals each platform reports, so they
- * are effectively ALL-TIME (credit for everything achieved) — stated in the page
- * footnote. Template-string rendering, CSP-safe (no inline handlers). */
+ * Medals are earned once and kept, even if a site later recounts lower (FR-004). New ones
+ * are announced by levels.js on whichever device sees them first, not by this page.
+ * Template-string rendering, CSP-safe (no inline handlers). */
 window.Laurels = {
 
     esc(s) {
@@ -52,14 +52,9 @@ window.Laurels = {
         return { name: 'Bronze', cls: 'is-bronze' };
     },
 
-    /* ── Data load + medal computation ───────────────────────────
-     * Fetches the 6 read-only endpoints and derives the full model the page
-     * renders from — totals, ladders, rhythm and the complete medal set.
-     * SHARED by render() and the app-wide achievement watcher so both compute
-     * the exact same medal ids from one code path (no drift, one seen-baseline).
-     * A load from the last 30 s is reused (OVERVIEWSPEED): the watcher's catch-up 4 s after
-     * sign-in re-downloaded everything the page had just fetched. Post-poll checks come
-     * minutes apart, so they still read fresh numbers. */
+    /* ── Data load ────────────────────────────────────────────────
+     * Fetches the read-only endpoints the page renders from: totals, ladders, rhythm, and the
+     * server's medals. A load from the last 30 s is reused (OVERVIEWSPEED). */
     _load() {
         const now = Date.now();
         if (this._loaded && now - this._loaded.at < 30000) return this._loaded.p;
@@ -71,11 +66,10 @@ window.Laurels = {
 
     async _loadFresh() {
         const safe = (p, fallback) => p.then(r => r).catch(() => fallback);
-        const [personasResp, prefs, worksResp, summary, agg, postLog] = await Promise.all([
+        const [personasResp, prefs, prog, agg, postLog] = await Promise.all([
             safe(API.getPersonas(), { personas: [], unassigned: [] }),
             safe(API.getPreferences(), {}),
-            safe(API.getWorks({ type: 'all' }), { works: [], personas: [] }),
-            safe(API.getSummary(), {}),
+            safe(window.Progress ? Progress.load() : Promise.reject(), { medals: [], personas: [] }),
             safe(API.getAggregate(), { snapshots: [] }),
             safe(API.getPostingLog({ limit: 250, content_type: null }), { log: [] }),
         ]);
@@ -98,59 +92,165 @@ window.Laurels = {
         const ladderF = (Array.isArray(prefs.milestone_faves) && prefs.milestone_faves.length) ? prefs.milestone_faves : this._LADDER_F;
         const ladderC = (Array.isArray(prefs.milestone_comments) && prefs.milestone_comments.length) ? prefs.milestone_comments : this._LADDER_C;
 
-        const works = worksResp.works || [];
-        const stories = works.filter(w => w.content_type === 'story');
-        const artworks = works.filter(w => w.content_type === 'artwork');
-        // Platform spread across the whole catalogue
-        const allPlats = new Set();
-        let maxPlatsOnWork = 0;
-        works.forEach(w => {
-            const ps = w.platforms || [];
-            ps.forEach(c => allPlats.add(c));
-            if (ps.length > maxPlatsOnWork) maxPlatsOnWork = ps.length;
-        });
-        const totalPlatforms = (window.PLATFORMS || []).length || 16;
-
-        const topViewed = (summary.top_viewed && summary.top_viewed[0]) || null;
-        const breakoutViews = topViewed ? (Number(topViewed.views) || 0) : 0;
-        const breakoutTitle = topViewed ? topViewed.title : '';
-        const watchers = Number(summary.total_watchers) || 0;
-
         const pV = this._progress(totals.views, ladderV);
         const pF = this._progress(totals.favorites, ladderF);
         const pC = this._progress(totals.comments, ladderC);
 
-        // ── Publishing rhythm + tracking days (also feed the medals) ─
+        // ── Publishing rhythm + tracking days ─
         const logRows = Array.isArray(postLog) ? postLog
             : (postLog.log || postLog.entries || postLog.publications || []);
         const rhythm = this._rhythm(logRows);
         const days = new Set((agg.snapshots || []).map(s => String(s.polled_at || '').slice(0, 10)).filter(Boolean));
         const trackingDays = days.size;
 
-        // Best single-persona view total + how many personas — feed the
-        // Persona-tier medals.
-        let personaViews = 0;
-        personas.forEach(p => {
-            const v = Number(p.stats && p.stats.combined && p.stats.combined.views) || 0;
-            if (v > personaViews) personaViews = v;
-        });
+        const medals = prog.medals || [];
+        const levels = {};
+        (prog.personas || []).forEach(l => { levels[l.subject] = l.level; });
+        const hasWork = medals.some(m => m.id === 'works-1' && m.earned);
+        const empty = (!hasWork && totals.views === 0 && totals.favorites === 0);
+        return { personas, totals, ladderV, rhythm, trackingDays, pV, pF, pC, medals, levels, empty };
+    },
 
-        const medals = this._buildMedals({
-            totals, pV, pF, pC, ladderV, ladderF, ladderC,
-            stories, artworks, works, allPlats, maxPlatsOnWork, totalPlatforms,
-            breakoutViews, breakoutTitle, watchers,
-            trackingDays, streak: rhythm.streak,
-            personaViews, personaCount: personas.length,
-        });
+    /* Level card (spec 050): the level, XP to the next one, and this week's XP by kind.
+     * Numbers are the server's (/api/xp via Levels); nothing is computed here. */
+    _levelSection(x) {
+        if (!x || !x.enabled) return '';
+        const have = x.xp - x.level_start, need = x.next_level_at - x.level_start;
+        const pct = Math.round(Math.max(0, Math.min(1, have / need)) * 100);
+        const kinds = [['posting', 'Posting'], ['writing', 'Writing'], ['community', 'Replies'], ['care', 'Tidying']];
+        return `
+            <section class="lr-section">
+                <h2 class="lr-h2">${x.rewards ? Utils.escapeHtml(x.rewards.title) + ' · ' : ''}Level ${x.level} <span class="lr-h2-note">${this._num(x.next_level_at - x.xp)} XP to level ${x.level + 1} · ${this._num(x.xp)} XP in all</span></h2>
+                <div class="lr-rhythm-card">
+                    ${Levels.nextLine() ? `<div class="lr-rhythm-lead">${Utils.escapeHtml(Levels.nextLine())}</div>` : ''}
+                    <div class="lr-mini-bar" role="img" aria-label="${have} of ${need} XP"><div class="lr-mini-fill" data-pct="${pct}" style="width:0"></div></div>
+                    <div class="lr-rhythm-lead">This week: <strong>${this._num(x.week.xp)} XP</strong>${x.week.xp ? ' · ' + kinds.filter(([k]) => x.week.by_kind[k]).map(([k, n]) => `${n} ${this._num(x.week.by_kind[k])}`).join(' · ') : ''}</div>
+                    <div class="lr-rhythm-small">Most points come from what you do (posting, writing, replying, tidying). Your audience adds a little: when a work reaches a new level, you get 10 × that level${x.audience_xp ? `, ${this._num(x.audience_xp)} XP so far` : ''}.</div>
+                    <details class="lr-history" id="lr-history"><summary>History</summary><div class="lr-history-body">Loading…</div></details>
+                </div>
+            </section>`;
+    },
 
-        const empty = (!works.length && totals.views === 0 && totals.favorites === 0);
-        return { personas, totals, ladderV, rhythm, trackingDays, pV, pF, pC, medals, empty };
+    /* Level history (US7): fetched only when the disclosure is first opened. */
+    _wireHistory() {
+        const d = document.getElementById('lr-history');
+        if (!d) return;
+        d.addEventListener('toggle', async () => {
+            if (!d.open || d.dataset.loaded) return;
+            d.dataset.loaded = '1';
+            const box = d.querySelector('.lr-history-body');
+            try {
+                const h = await API.get('/api/xp/history');
+                const fmt = (s) => Utils.time.format(s, { day: 'numeric', month: 'short', year: 'numeric' });   // a date-only string stays that day
+                box.innerHTML = `
+                    <p class="lr-rhythm-lead">${Utils.escapeHtml(h.month.this_label)}: <strong>${this._num(h.month.this)} XP</strong>
+                        · ${Utils.escapeHtml(h.month.last_label)}: ${this._num(h.month.last)} XP</p>
+                    ${h.levels.length ? `<ol class="lr-history-list">${h.levels.slice().reverse().map(l =>
+                        `<li><span>Level ${l.level}</span><span>${Utils.escapeHtml(fmt(l.date))}</span></li>`).join('')}</ol>`
+                        : '<p class="lr-rhythm-small">No levels reached yet.</p>'}`;
+            } catch (e) {
+                delete d.dataset.loaded;
+                box.textContent = 'Couldn’t load your history. Close and open it to try again.';
+            }
+        });
+    },
+
+    /* The rewards shelf (US4): everything earned, usable here; what's next as silhouettes.
+     * Shown with levels off too (FR-013): equipped things stay and can still be changed. */
+    _SHELF_ROWS: [['theme', 'Themes'], ['ring', 'Rings'], ['style', 'Level-up styles']],
+
+    _shelfSection(x) {
+        const r = x && x.rewards;
+        if (!r || !window.Levels) return '';
+        const esc = (s) => Utils.escapeHtml(String(s ?? ''));
+        const have = new Set(r.unlocked);
+        const themeOf = (id) => ((window.App && App.THEMES) || []).find(t => t.rewardId === id);
+        const inUse = (c) => c.kind === 'theme' ? (themeOf(c.id) || {}).id === r.equipped.theme : r.equipped[c.kind] === c.id;
+        const tile = (c) => {
+            const open = have.has(c.id);
+            if (!open && c.surprise) {
+                return `<li class="lr-rw is-unfound"><span class="lr-rw-prev lr-rw-q" aria-hidden="true">???</span>
+                    <span class="lr-rw-name">Surprise</span><span class="lr-rw-sub">${esc(c.hint)}</span></li>`;
+            }
+            if (!open) {
+                return `<li class="lr-rw is-locked"><span class="lr-rw-prev" aria-hidden="true">${Levels.preview(c)}<span class="lr-rw-lock">🔒</span></span>
+                    <span class="lr-rw-name">${esc(c.name)}</span><span class="lr-rw-sub">Locked · Level ${c.level}</span></li>`;
+            }
+            const on = inUse(c);
+            const canUse = c.kind !== 'theme' || themeOf(c.id);
+            const btn = on
+                ? (c.kind === 'theme' ? '<span class="lr-rw-on">In use</span>'
+                    : `<span class="lr-rw-on">In use</span><button type="button" class="btn btn-secondary btn-sm" data-rw-off="${esc(c.kind)}">Take off</button>`)
+                : canUse ? `<button type="button" class="btn btn-primary btn-sm" data-rw-use="${esc(c.id)}">Use</button>` : '';
+            return `<li class="lr-rw${on ? ' is-on' : ''}"><span class="lr-rw-prev" aria-hidden="true">${Levels.preview(c)}</span>
+                <span class="lr-rw-name">${esc(c.name)}${c.retired ? ' <small class="lr-rw-tag">Retired</small>' : ''}</span>
+                <span class="lr-rw-sub">${c.surprise ? 'Surprise' : c.level ? `Level ${c.level}` : ''}</span>${btn}</li>`;
+        };
+        const none = (kind) => {
+            const on = !r.equipped[kind];
+            return `<li class="lr-rw lr-rw-none${on ? ' is-on' : ''}"><span class="lr-rw-prev" aria-hidden="true">—</span>
+                <span class="lr-rw-name">None</span><span class="lr-rw-sub"></span>${on ? '<span class="lr-rw-on">In use</span>'
+                : `<button type="button" class="btn btn-secondary btn-sm" data-rw-off="${kind}">Use</button>`}</li>`;
+        };
+        const rows = this._SHELF_ROWS.map(([kind, label]) => {
+            const items = r.catalog.filter(c => c.kind === kind);
+            return `<div class="lr-shelf-row"><h3 class="lr-shelf-h">${label}</h3>
+                <ul class="lr-shelf">${kind === 'theme' ? '' : none(kind)}${items.map(tile).join('')}</ul></div>`;
+        }).join('');
+        return `
+            <section class="lr-section" id="rewards" tabindex="-1">
+                <h2 class="lr-h2">Rewards <span class="lr-h2-note">${have.size} of ${r.catalog.length} unlocked</span></h2>
+                ${rows}
+            </section>`;
+    },
+
+    _wireShelf() {
+        const sec = document.getElementById('rewards');
+        if (!sec) return;
+        sec.addEventListener('click', async (e) => {
+            const use = e.target.closest('[data-rw-use]'), off = e.target.closest('[data-rw-off]');
+            if (!use && !off) return;
+            const s = Levels.state(), r = s && s.rewards;
+            if (!r) return;
+            if (use) {
+                const c = r.catalog.find(x => x.id === use.dataset.rwUse);
+                if (!c) return;
+                if (c.kind === 'theme') {
+                    const t = App.THEMES.find(x => x.rewardId === c.id);
+                    if (t) { App.applyTheme(t.id); r.equipped.theme = t.id; }
+                } else {
+                    try { r.equipped = await API.post('/api/xp/rewards/equip', { kind: c.kind, id: c.id }); } catch (err) { return; }
+                }
+            } else {
+                try { r.equipped = await API.post('/api/xp/rewards/equip', { kind: off.dataset.rwOff, id: null }); } catch (err) { return; }
+            }
+            await Levels.refresh();
+            const fresh = document.createElement('div');
+            fresh.innerHTML = this._shelfSection(Levels.state());
+            if (fresh.firstElementChild) { sec.replaceWith(fresh.firstElementChild); this._wireShelf(); }
+            document.querySelector('#rewards [data-rw-use], #rewards [data-rw-off]')?.focus();
+        });
     },
 
     async render() {
         const _rt = App._routeToken();   // route race guard (App._stale)
         const app = document.getElementById('app');
         if (App._stale(_rt)) return;
+        // Gamification off (a choice, 22 Oct): no medals or levels, just the way back on.
+        const st = window.Levels ? (Levels.state() || await Levels.refresh()) : null;
+        if (App._stale(_rt)) return;
+        if (st && !st.enabled) {
+            app.innerHTML = `
+                <div class="lr-head"><h1 class="lr-title">Laurels</h1>
+                    <p class="lr-sub">Levels, medals and rewards are turned off. PawPoller still counts them quietly,
+                    so if you turn them on, everything you've earned is there.</p></div>
+                <button class="btn btn-primary" type="button" id="lr-turn-on">Turn on levels, medals and rewards</button>`;
+            document.getElementById('lr-turn-on').addEventListener('click', async () => {
+                try { await API.savePreferences({ levels_enabled: true }); await Levels.refresh(); this.render(); }
+                catch (e) { window.toast?.error("Couldn't save that: " + e.message); }
+            });
+            return;
+        }
         app.innerHTML = `
             <div class="lr-head">
                 <div class="lr-eyebrow">Your den</div>
@@ -178,11 +278,15 @@ window.Laurels = {
             return;
         }
 
-        const { personas, totals, ladderV, rhythm, trackingDays, pV, pF, pC, medals } = model;
-        const earned = medals.filter(m => m.earned);
+        const { personas, totals, ladderV, rhythm, trackingDays, pV, pF, pC, medals, levels } = model;
+        const xpBody = window.Levels ? await Levels.refresh() : null;
 
         body.innerHTML = `
             ${this._heroCard(totals, pV, pF, pC)}
+
+            ${this._levelSection(xpBody)}
+
+            ${this._shelfSection(xpBody)}
 
             ${this._medalsSection(medals)}
 
@@ -190,7 +294,7 @@ window.Laurels = {
             <section class="lr-section">
                 <h2 class="lr-h2">Personas <span class="lr-h2-note">a trophy shelf per identity</span></h2>
                 <div class="lr-personas">
-                    ${personas.map(p => this._personaCard(p, ladderV)).join('')}
+                    ${personas.map(p => this._personaCard(p, levels[`persona:${p.persona_id}`])).join('')}
                 </div>
             </section>` : ''}
 
@@ -213,6 +317,14 @@ window.Laurels = {
             <p class="lr-foot">Milestones reflect your <strong>all-time</strong> totals as each platform
             currently reports them — you keep credit for everything you've earned.</p>`;
 
+        this._wireHistory();
+        this._wireShelf();
+        if (this._jump) {                                  // "See them" on the catch-up card
+            document.getElementById(this._jump)?.scrollIntoView();
+            document.getElementById(this._jump)?.focus({ preventScroll: true });
+            this._jump = null;
+        }
+
         // Medal filter (All / Earned) — CSP-safe, wired after render.
         const sec = document.getElementById('lr-medals-section');
         if (sec) {
@@ -225,10 +337,7 @@ window.Laurels = {
             });
         }
 
-        // Animate the hero number + progress bars in, then celebrate anything
-        // newly earned since the last visit.
-        this._animateIn(totals.views);
-        this._celebrateNew(earned);
+        this._animateIn(totals.views);   // the hero number + progress bars
     },
 
     /* ── Count-up + progress-fill entrance animation ─────────────── */
@@ -252,165 +361,6 @@ window.Laurels = {
             else el.textContent = this._num(target);
         };
         requestAnimationFrame(tick);
-    },
-
-    /* ── New-achievement celebration ─────────────────────────────
-     * Diffs the currently-earned medal ids against a localStorage baseline.
-     * The FIRST ever check just records the baseline silently (so a returning
-     * user isn't buried in confetti); after that, only genuinely new medals
-     * pop. Fires when the Laurels page is opened. */
-    // Bumped to _v2 with the 100+ medal catalogue so everyone re-baselines
-    // silently once (the new per-rung ids would otherwise all read as "new").
-    _SEEN_KEY: 'pp_laurels_seen_v2',
-    // A jump larger than this at once isn't a single "moment" (it's an upgrade
-    // adding medals, or a bulk data catch-up) → absorb silently, no confetti flood.
-    _CELEB_BURST_CAP: 3,
-    _celebrateNew(earned) {
-        const ids = earned.map(x => x.id).filter(Boolean);
-        let seen = null;
-        try { seen = JSON.parse(localStorage.getItem(this._SEEN_KEY) || 'null'); } catch (e) { seen = null; }
-        if (!Array.isArray(seen)) {
-            try { localStorage.setItem(this._SEEN_KEY, JSON.stringify(ids)); } catch (e) { /* ignore */ }
-            return;
-        }
-        const seenSet = new Set(seen);
-        const fresh = earned.filter(x => x.id && !seenSet.has(x.id));
-        if (!fresh.length) return;
-        // Advance the baseline first, whatever we decide to show.
-        try { localStorage.setItem(this._SEEN_KEY, JSON.stringify([...new Set([...seen, ...ids])])); } catch (e) { /* ignore */ }
-        if (fresh.length > this._CELEB_BURST_CAP) return;   // bulk → silent
-        fresh.forEach(m => this._enqueueCeleb(m));
-    },
-
-    /* ── App-wide achievement watcher ────────────────────────────
-     * The page only celebrates when it's open. This runs on every screen:
-     * a silent catch-up shortly after login, then a re-check each time a poll
-     * completes — so the moment a poll pushes you past 500 faves (or any medal),
-     * the celebration pops wherever you are. It reuses _load() + _celebrateNew(),
-     * sharing the same `pp_laurels_seen` baseline as the page, so any crossing
-     * is celebrated exactly once. Started from App.init() behind the auth gate. */
-    startAchievementWatch() {
-        if (this._watching) return;
-        this._watching = true;
-        // Catch-up once the dashboard has painted (covers milestones crossed
-        // while the app was closed). First-ever run just records the baseline.
-        setTimeout(() => this._achCheck(), 4000);
-        // Re-check whenever a poll finishes — detected by the newest
-        // last_poll_at across platforms advancing (PlatformHealth ticks 60s;
-        // this only fires real work when a poll actually landed).
-        if (window.PlatformHealth && PlatformHealth.subscribe) {
-            this._achUnsub = PlatformHealth.subscribe((data) => {
-                const newest = this._newestPoll(data);
-                if (!newest) return;
-                if (this._lastPollSeen == null) { this._lastPollSeen = newest; return; }
-                if (newest > this._lastPollSeen) {
-                    this._lastPollSeen = newest;
-                    this._achCheck();
-                }
-            });
-        }
-    },
-    _newestPoll(data) {
-        let max = 0;
-        Object.keys(data || {}).forEach(k => {
-            const e = data[k];
-            const t = (e && e.last_poll_at) ? Utils.time.ms(e.last_poll_at) : 0;
-            if (t && t > max) max = t;
-        });
-        return max || null;
-    },
-    async _achCheck() {
-        if (this._achBusy) return;
-        this._achBusy = true;
-        try {
-            const model = await this._load();
-            if (model) this._celebrateNew(model.medals.filter(m => m.earned));
-        } catch (e) { /* transient — the next poll re-checks */ }
-        finally { this._achBusy = false; }
-    },
-
-    _enqueueCeleb(medal) {
-        (this._celebQ = this._celebQ || []).push(medal);
-        this._drainCeleb();
-    },
-    _drainCeleb() {
-        if (this._celebBusy) return;
-        const medal = (this._celebQ || []).shift();
-        if (!medal) return;
-        this._celebBusy = true;
-        if (window.Sound) Sound.play('medal');
-
-        const cols = ['#c9822f', '#9a5b34', '#2f8f5b', '#4d6b8a', '#b7791f', '#c0453b'];
-        const conf = Array.from({ length: 28 }, (_, i) => {
-            const c = cols[i % cols.length];
-            const left = Math.round(Math.random() * 100);
-            const delay = (Math.random() * 0.3).toFixed(2);
-            const dur = (0.9 + Math.random() * 0.8).toFixed(2);
-            return `<span class="lr-conf" style="left:${left}%;background:${c};animation-delay:${delay}s;animation-duration:${dur}s"></span>`;
-        }).join('');
-
-        const el = document.createElement('div');
-        el.className = 'lr-celebrate';
-        el.innerHTML = `
-            <div class="lr-celebrate-conf" aria-hidden="true">${conf}</div>
-            <div class="lr-celebrate-card" role="alert" aria-live="assertive">
-                <div class="lr-celebrate-rays" aria-hidden="true"></div>
-                <div class="lr-celebrate-ico">${medal.icon || '🏅'}</div>
-                <div class="lr-celebrate-label">Achievement unlocked</div>
-                <div class="lr-celebrate-name">${this.esc(medal.name)}</div>
-                <div class="lr-celebrate-desc">${this.esc(medal.desc || '')}</div>
-                <div class="lr-celebrate-dismiss">tap to dismiss</div>
-            </div>`;
-        document.body.appendChild(el);
-        requestAnimationFrame(() => el.classList.add('show'));
-
-        const close = () => {
-            if (this._celebTimer) { clearTimeout(this._celebTimer); this._celebTimer = null; }
-            el.classList.remove('show');
-            setTimeout(() => {
-                el.remove();
-                this._celebBusy = false;
-                this._drainCeleb();   // next in the queue, if any
-            }, 350);
-        };
-        el.addEventListener('click', close);
-        this._celebTimer = setTimeout(close, 4600);
-    },
-
-    /* ── Per-work achievements (used by the Bookshelf work detail) ──
-     * Pure function over one work's aggregate stats — returns the same medal
-     * shape as the account page so it can share the renderer. */
-    workMedals(w) {
-        w = w || {};
-        const views = Number(w.views) || 0, faves = Number(w.faves) || 0, comments = Number(w.comments) || 0;
-        const plats = (w.platforms || []).length;
-        const chapters = Number(w.chapters) || 0;
-        const words = Number(w.words) || 0;
-        const gaps = Number(w.incompleteChapters) || 0;
-        const m = [];
-        const num = (n) => this._num(n);
-        const badge = (id, cond, icon, name, desc, sub) => m.push({ id, icon, name, desc, earned: !!cond, sub });
-        const tiers = (rows, total, key, unit) => rows.forEach(([r, nm, ic]) =>
-            badge(`${key}-${r}`, total >= r, ic, nm, `${num(r)} ${unit} on this work.`, total >= r ? '' : `${num(total)}/${num(r)}`));
-
-        badge('w-published', plats >= 1, '🌱', 'Published', 'Live on at least one platform.');
-        badge('w-crossposted', plats >= 3, '🔗', 'Cross-Posted', 'Live on 3 or more platforms.', plats >= 3 ? '' : `${plats}/3`);
-        badge('w-wide', plats >= 8, '🌐', 'Wide Reach', 'Live on 8 or more platforms.', plats >= 8 ? '' : `${plats}/8`);
-        // Full view / fave / comment ladders — a work always has a next target.
-        tiers([[100, 'Seen', '👁'], [500, 'Noticed', '👀'], [1000, '1K Views', '🔥'],
-               [5000, '5K Club', '💥'], [10000, '10K Club', '🚀'], [25000, 'Breakout', '🌟']], views, 'w-views', 'views');
-        tiers([[10, 'Liked', '⭐'], [100, 'Beloved', '❤'], [500, 'Adored', '💖']], faves, 'w-faves', 'favourites');
-        tiers([[10, 'Chatted', '💬'], [25, 'Discussed', '🗨'], [100, 'Talked About', '📢']], comments, 'w-comments', 'comments');
-        if (chapters >= 1) {
-            badge('w-epic', chapters >= 10, '📕', 'Epic', 'A work of 10+ chapters.', chapters >= 10 ? '' : `${chapters}/10 ch`);
-            badge('w-saga', chapters >= 25, '📚', 'Saga', 'A work of 25+ chapters.', chapters >= 25 ? '' : `${chapters}/25 ch`);
-        }
-        if (words) {
-            badge('w-wordsmith', words >= 40000, '✍', 'Novel Length', '40,000+ words.', words >= 40000 ? '' : `${num(words)}/40k`);
-            badge('w-tome', words >= 100000, '📜', 'Epic Length', '100,000+ words.', words >= 100000 ? '' : `${num(words)}/100k`);
-        }
-        if (chapters > 1 && plats >= 1) badge('w-complete', gaps === 0, '✅', 'Complete Run', 'Every chapter reached every platform it should.', gaps === 0 ? '' : `${gaps} gap${gaps === 1 ? '' : 's'}`);
-        return m;
     },
 
     /* ── Hero milestone card ─────────────────────────────────────── */
@@ -446,117 +396,6 @@ window.Laurels = {
                 <div class="lr-mini-bar"><div class="lr-mini-fill" data-pct="${p.pct}" style="width:0"></div></div>
                 <div class="lr-mini-cap">${p.next ? `${this._num(p.next)} next` : 'maxed'}</div>
             </div>`;
-    },
-
-    /* ── Medal derivation — a big, grouped catalogue (100+), all real, all
-     * earned from thresholds on the live totals. Ladders render as a progress
-     * track (ascending: earned rungs, then climbing to the locked ones). Every
-     * medal has a stable id so the celebration diff can fire each exactly once. */
-    _buildMedals(d) {
-        const m = [];
-        const num = (n) => this._num(n);
-
-        // One medal per rung of a ladder (earned when total >= rung).
-        const ladder = (o) => {
-            o.rungs.forEach(r => {
-                const earned = (o.total || 0) >= r;
-                m.push({
-                    group: o.group,
-                    id: `${o.key}-${r}`,
-                    icon: o.icon,
-                    name: (o.names && o.names[r]) || `${num(r)} ${o.unit}`,
-                    desc: o.desc ? o.desc(r) : `${o.verb} ${num(r)} ${o.unit.toLowerCase()}.`,
-                    earned,
-                    sub: earned ? '' : `${num(o.total || 0)}/${num(r)}`,
-                });
-            });
-        };
-        const badge = (group, id, cond, icon, name, desc, sub) =>
-            m.push({ group, id, icon, name, desc, earned: !!cond, sub });
-
-        // ── Views / Favourites / Comments — the big engagement ladders ──
-        ladder({ group: 'Views', key: 'views', icon: '👁', unit: 'Views', verb: 'Reach',
-            total: d.totals.views,
-            rungs: [100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000],
-            names: { 1000: '1K Views', 10000: '10K Club', 100000: '100K Club', 1000000: 'Millionaire' } });
-        ladder({ group: 'Favourites', key: 'faves', icon: '⭐', unit: 'Favourites', verb: 'Reach',
-            total: d.totals.favorites,
-            rungs: [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000],
-            names: { 1000: '1K Favourites', 10000: '10K Favourites' } });
-        ladder({ group: 'Comments', key: 'comments', icon: '💬', unit: 'Comments', verb: 'Reach',
-            total: d.totals.comments,
-            rungs: [10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
-            names: { 1000: '1K Comments' } });
-
-        // ── Library: works, stories, artworks ──
-        ladder({ group: 'Library', key: 'works', icon: '📚', unit: 'Works', verb: 'Have',
-            total: d.works.length, rungs: [1, 3, 5, 10, 25, 50, 100, 250],
-            names: { 1: 'First Work', 10: 'Shelf of Ten', 100: 'Century' } });
-        ladder({ group: 'Library', key: 'stories', icon: '📖', unit: 'Stories', verb: 'Publish',
-            total: d.stories.length, rungs: [1, 5, 10, 25, 50], names: { 1: 'First Words' } });
-        ladder({ group: 'Library', key: 'art', icon: '🎨', unit: 'Artworks', verb: 'Publish',
-            total: d.artworks.length, rungs: [1, 5, 10, 25, 50], names: { 1: 'First Canvas' } });
-
-        // ── Reach: platform breadth + single-work cross-post depth ──
-        ladder({ group: 'Reach', key: 'breadth', icon: '🌐', unit: 'Platforms', verb: 'Publish across',
-            total: d.allPlats.size, rungs: [1, 2, 3, 4, 5, 8, 10, 12, 16],
-            names: { [d.totalPlatforms]: 'Full Spread' } });
-        badge('Reach', 'crosspost-3', d.maxPlatsOnWork >= 3, '🔗', 'Cross-Poster', 'Put one work on 3+ platforms.',
-            d.maxPlatsOnWork >= 3 ? '' : `best ${d.maxPlatsOnWork}/3`);
-        badge('Reach', 'crosspost-5', d.maxPlatsOnWork >= 5, '🕸', 'Wide Load', 'Put one work on 5+ platforms.',
-            d.maxPlatsOnWork >= 5 ? '' : `best ${d.maxPlatsOnWork}/5`);
-        badge('Reach', 'crosspost-8', d.maxPlatsOnWork >= 8, '📡', 'Omnipost', 'Put one work on 8+ platforms.',
-            d.maxPlatsOnWork >= 8 ? '' : `best ${d.maxPlatsOnWork}/8`);
-        badge('Reach', 'crosspost-all', d.maxPlatsOnWork >= d.totalPlatforms, '🌟', 'Everywhere at Once',
-            `Put one work on all ${d.totalPlatforms} platforms.`,
-            d.maxPlatsOnWork >= d.totalPlatforms ? '' : `best ${d.maxPlatsOnWork}/${d.totalPlatforms}`);
-
-        // ── Following: watchers across platforms ──
-        ladder({ group: 'Following', key: 'watchers', icon: '👥', unit: 'Watchers', verb: 'Gather',
-            total: d.watchers, rungs: [10, 25, 50, 100, 250, 500, 1000, 5000],
-            names: { 100: 'Following of 100', 1000: '1K Followers', 5000: 'Devoted Legion' } });
-
-        // ── Breakouts: your single best work by views ──
-        ladder({ group: 'Breakouts', key: 'breakout', icon: '🚀', unit: 'Views', verb: 'Land a single work at',
-            total: d.breakoutViews, rungs: [1000, 2500, 5000, 10000, 25000, 50000, 100000],
-            names: { 1000: 'Breakout', 2500: 'Rising Star', 5000: 'Hit', 10000: 'Viral',
-                     25000: 'Sensation', 50000: 'Phenomenon', 100000: 'Legendary' } });
-
-        // ── Momentum: publishing streak + tracking longevity ──
-        ladder({ group: 'Momentum', key: 'streak', icon: '🔥', unit: 'Week Streak', verb: 'Publish',
-            total: d.streak, rungs: [2, 3, 4, 6, 8, 12],
-            desc: (r) => `Publish in ${r} weeks running.`,
-            names: { 2: 'Warming Up', 4: 'On a Roll', 8: 'Relentless', 12: 'Unbroken Quarter' } });
-        ladder({ group: 'Momentum', key: 'track', icon: '📅', unit: 'Days Tracked', verb: 'Track',
-            total: d.trackingDays, rungs: [7, 30, 90, 180, 365, 730],
-            desc: (r) => `Track your work for ${num(r)} days.`,
-            names: { 365: 'Dedicated', 730: 'Veteran' } });
-
-        // ── Personas: best persona's metal tier + how many you run ──
-        const pv = d.personaViews || 0, pc = d.personaCount || 0;
-        badge('Personas', 'persona-silver', pv >= 1000, '🥈', 'Silver Persona', 'Take a persona past 1,000 views.',
-            pv >= 1000 ? '' : `${num(pv)}/1,000`);
-        badge('Personas', 'persona-gold', pv >= 10000, '🥇', 'Gold Persona', 'Take a persona past 10,000 views.',
-            pv >= 10000 ? '' : `${num(pv)}/10,000`);
-        badge('Personas', 'persona-plat', pv >= 50000, '🏅', 'Platinum Persona', 'Take a persona past 50,000 views.',
-            pv >= 50000 ? '' : `${num(pv)}/50,000`);
-        badge('Personas', 'persona-diamond', pv >= 100000, '💎', 'Diamond Persona', 'Take a persona past 100,000 views.',
-            pv >= 100000 ? '' : `${num(pv)}/100,000`);
-        badge('Personas', 'persona-two', pc >= 2, '🎭', 'Two Faces', 'Run 2 personas at once.',
-            pc >= 2 ? '' : `${pc}/2`);
-        badge('Personas', 'persona-three', pc >= 3, '🎬', 'Full Cast', 'Run 3 personas at once.',
-            pc >= 3 ? '' : `${pc}/3`);
-
-        // ── Milestones: cross-category + collection meta ──
-        badge('Milestones', 'all-rounder', d.stories.length >= 1 && d.artworks.length >= 1, '🎪',
-            'All-Rounder', 'Publish both a story and an artwork.');
-        const earnedSoFar = m.filter(x => x.earned).length;
-        [[15, 'Decorated', '🎖'], [30, 'Distinguished', '🏵'], [50, 'Illustrious', '🎗'],
-         [75, 'Hall of Fame', '🏛'], [100, 'Completionist', '🏆']].forEach(([n, nm, ic]) => {
-            badge('Milestones', `decorated-${n}`, earnedSoFar >= n, ic, nm, `Earn ${n} achievements.`,
-                earnedSoFar >= n ? '' : `${earnedSoFar}/${n}`);
-        });
-        return m;
     },
 
     /* Group order for the medal grid (any medal whose group isn't listed falls
@@ -599,17 +438,19 @@ window.Laurels = {
                 <div class="lr-medal-ico" aria-hidden="true">${m.icon}</div>
                 <div class="lr-medal-name">${this.esc(m.name)}</div>
                 <div class="lr-medal-desc">${this.esc(m.desc)}</div>
-                ${m.sub ? `<div class="lr-medal-sub">${this.esc(m.sub)}</div>` : ''}
+                ${m.earned && m.earned_at ? `<div class="lr-medal-sub">${m.dated_exactly ? 'Earned' : 'Before'} ${this.esc(Utils.time.format(m.earned_at, { day: 'numeric', month: 'short', year: 'numeric' }))}</div>`
+                    : m.sub ? `<div class="lr-medal-sub">${this.esc(m.sub)}</div>` : ''}
                 ${m.earned ? '<div class="lr-medal-check" aria-hidden="true">✓</div>' : ''}
             </div>`;
     },
 
     /* ── Per-persona trophy card ─────────────────────────────────── */
-    _personaCard(p, ladderV) {
+    /* `level` is the persona's level on the work scale (spec 052 US6), from /api/progress. */
+    _personaCard(p, level) {
         const c = (p.stats && p.stats.combined) || { views: 0, favorites: 0, comments: 0, submissions: 0 };
         const views = Number(c.views) || 0;
         const tier = this._tier(views);
-        const level = ladderV.filter(t => t <= views).length;  // rungs cleared
+        level = level || 1;
         const color = p.color || 'var(--accent)';
         return `
             <div class="lr-persona">

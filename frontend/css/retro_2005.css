@@ -274,7 +274,7 @@ html[data-theme="retro_2005"] .status-dot { border-radius: 2px !important; }
 
 /* ── Modals: a dialog box with a title bar ─────────────────────────────── */
 html[data-theme="retro_2005"] .modal-overlay { background: rgba(0,0,32,.45); }
-html[data-theme="retro_2005"] .modal-panel {
+html[data-theme="retro_2005"] .modal-panel, html[data-theme="retro_2005"] .modal {
     background: var(--bg-secondary);
     border: 2px solid;
     border-color: var(--r-hi) var(--r-title-lo) var(--r-title-lo) var(--r-hi);
@@ -422,7 +422,6 @@ html[data-theme="retro_2005"] .lr-hero,
 html[data-theme="retro_2005"] .lr-persona,
 html[data-theme="retro_2005"] .lr-medal,
 html[data-theme="retro_2005"] .lr-rhythm-card,
-html[data-theme="retro_2005"] .lr-celebrate-card,
 html[data-theme="retro_2005"] .led-detail,
 html[data-theme="retro_2005"] .cmdk-panel,
 html[data-theme="retro_2005"] .create-story-dialog,

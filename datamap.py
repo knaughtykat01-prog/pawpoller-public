@@ -304,6 +304,13 @@ _TABLES = (
     T("turn_skips", "Polling and posting history", "When a check was skipped because another seat on the same box had that site's turn (kept 7 days)."),
     T("posting_queue", "Polling and posting history", "What is waiting to be posted, and to which account."),
     T("posting_log", "Polling and posting history", "What was posted where, and what went wrong."),
+    T("xp_ledger", "Polling and posting history", "Experience points: one row per award (what earned it, when, which site)."),
+    T("xp_state", "Polling and posting history", "Where the experience-points count has got up to."),
+    T("xp_rewards", "Polling and posting history", "Rewards you've unlocked, and when."),
+    T("work_levels", "Polling and posting history", "Each work's level from its views, faves and comments, and the highest it has reached."),
+    T("account_levels", "Polling and posting history", "Each account's and persona's level, and the highest it has reached."),
+    T("earned_medals", "Polling and posting history", "Medals you, your accounts and your works have earned, and when."),
+    T("profile_picture", "Unpublished work", "Your profile picture, which may be a crop of your own art."),
     T("publications", "Polling and posting history", "Where each work is published."),
     T("post_publications", "Polling and posting history", "Where each post is published."),
     # internal — library
@@ -398,7 +405,7 @@ _SETTINGS = (
     *(S(k, _PREF) for k in (
         "announce_defaults", "comment_templates", "comment_defaults", "journal_templates", "auto_backup_dir", "auto_backup_enabled", "auto_backup_interval_hours",
         "auto_backup_keep", "auto_sync_enabled", "auto_update", "board_track", "credits", "credential_mode",
-        "da_client_id", "sc_client_id", "yt_client_id", "ttv_client_id", "dashboard_layout", "discord_announce_on_publish",
+        "da_client_id", "sc_client_id", "yt_client_id", "ttv_client_id", "dashboard_layout", "dashboard_progress_added", "discord_announce_on_publish",
         "display_timezone", "email_digest_enabled", "overnight_show_after", "email_digest_interval_days", "hidden_platforms",
         "logs_panel_enabled", "minimize_to_tray", "mirror_auto_check", "mirror_check_interval_minutes",
         "mobile_mode", "muted_session_codes", "never_post_account_ids", "notification_comments_only", "notification_min_faves_delta",
@@ -408,6 +415,8 @@ _SETTINGS = (
         "update_skip_version", "watcher_notifications_enabled", "tech_reports", "tech_usage", "consent_records", "age_band",
         "legal_accepted", "legal_history",   # Terms + Privacy accepted, and when (4.67.0, spec 033)
         "auth_mail_log",   # when account emails were last sent, for the send limit (4.68.0)
+        "levels_enabled",   # gamification on/off; absent = never asked = off (spec 050, NOFUN 4.85.0)
+        "rewards_equipped",   # the ring + level-up style in use (spec 051)
         "pb_import_asked", "twofa_offered", "announce_defaults_asked",   # sign-up's once-only offers (4.69.0)
         "interval_changed_from",   # a hosted seat's interval before it was rounded to the allowed list (4.74.0)
         "milestone_comments", "milestone_faves", "milestone_score", "milestone_views",

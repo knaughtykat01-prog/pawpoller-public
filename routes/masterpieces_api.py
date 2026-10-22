@@ -1569,7 +1569,37 @@ def update_masterpiece(name: str, body: dict):
         raise HTTPException(400, detail="no editable fields provided")
 
     artwork_reader.save_artwork_metadata(name, updates)
+    try:
+        _award_tidy(name, raw, updates)
+    except Exception as e:   # XP must never fail a save
+        logger.warning("tidy XP skipped for a work: %s", e)
     return {"status": "updated", "name": name}
+
+
+def _award_tidy(name: str, before: dict, updates: dict) -> None:
+    """XPLEVELS (spec 050): tags, the artist or alt text going from empty to filled earns
+    tidy XP, once per field per work (clearing and refilling earns nothing more)."""
+    import xp
+    had_tags = bool(artwork_reader._canonical_tag_list(dict(before.get("tags") or {})))
+    filled = {
+        "tags": "tags" in updates and not had_tags
+                and bool(artwork_reader._canonical_tag_list(dict(updates["tags"] or {}))),
+        "artist": ("artist" in updates or "artist_status" in updates)
+                  and not (before.get("artist") or before.get("artist_status") == "own")
+                  and bool(updates.get("artist") or updates.get("artist_status") == "own"),
+        "alt": "alt_text" in updates and not (before.get("alt_text") or "").strip()
+               and bool(updates["alt_text"]),
+    }
+    if not any(filled.values()):
+        return
+    conn = get_connection()
+    try:
+        for field, yes in filled.items():
+            if yes:
+                xp.award(conn, "tidy", f"tidy:{field}:artwork:{name}", xp.config.XP_TABLE["tidy"])
+        conn.commit()
+    finally:
+        conn.close()
 
 
 

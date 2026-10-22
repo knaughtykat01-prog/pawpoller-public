@@ -146,7 +146,7 @@ def app_url():
 
     import dashboard
     signed_up = _signed_up()
-    config.save_settings({"setup_complete": True, "age_band": "adult", "setup_mode": "server", "tours_seen": ["*"],
+    config.save_settings({"setup_complete": True, "age_band": "adult", "setup_mode": "server", "levels_enabled": True, "tours_seen": ["*"],
                           "display_timezone": "UTC", **signed_up})
     config.invalidate_auth_required_cache()
     from database.db import get_connection
@@ -175,7 +175,8 @@ def app_url():
     config.invalidate_auth_required_cache()
 
 
-APP_SCREENS = ["/#/", "/#/library", "/#/accounts", "/#/posts", "/#/settings", "/#/settings/privacy"]
+# "/#/" carries the Progress card, "/#/accounts" the level chips (spec 052).
+APP_SCREENS = ["/#/", "/#/laurels", "/#/library", "/#/accounts", "/#/posts", "/#/settings", "/#/settings/privacy"]
 
 
 @pytest.mark.parametrize("theme", ["default", "light"])
@@ -428,6 +429,46 @@ def test_the_mail_and_import_screens_pass_axe(browser, signup_url, monkeypatch, 
     assert not fails, "\n".join(fails)
 
 
+def test_the_progress_surfaces_pass_axe(browser, app_url):
+    """Spec 052: a work's Laurels card with its breakdown open, and the Overnight sheet's progress."""
+    def paint(page):
+        page.evaluate("() => window.Tour && Tour.end && Tour.end()")
+        page.evaluate("""() => {
+            const host = document.getElementById('app');
+            host.insertAdjacentHTML('beforeend', Progress.card('story', 'Sample Story'));
+            const sec = host.querySelector('.pg-work');
+            sec.querySelector('.pg-body').innerHTML = '';
+            // paint() is internal; fill() would 404 here, so stub the one read it makes.
+            const get = API.get;
+            API.get = () => Promise.resolve({peak_level: 4, score: 95, next_level_score: 160, next_hint: 'about 65 more views',
+                no_view_sites: ['bsky'], medals: [{name: '100 views', icon: '👁', earned_at: '2026-10-01', dated_exactly: 1}],
+                performance: {at_age_h: 48, blended: 3.1, top_pct: 10, early: {48: 3.1}, depth: 0.2, usual_depth: 0.1,
+                    sites: [{code: 'fa', value: 95, usual: 30, ratio: 3.2}], spread: {posted: 1, at_or_above: 1}}});
+            return Progress.fill(host).then(() => { API.get = get; sec.querySelector('details').open = true;
+                if (!sec.querySelector('.pg-bar') || !sec.querySelector('.pg-table')) throw new Error('card not painted'); });
+        }""")
+    fails = _scan(browser, app_url + "/#/library", before=paint)
+
+    def sheet(page):
+        page.evaluate("() => window.Tour && Tour.end && Tour.end()")
+        page.evaluate("""() => Overnight.open({since: '2026-10-10T12:00:00Z', until: '2026-10-11T00:00:00Z',
+            totals: {views: 90, faves: 4, comments: 1, followers: 0}, usual: null, coverage: {sites: 1, covered: 1},
+            pieces: [], comments: {count: 0, items: []}, followers: {named: [], counted: {}},
+            did: {attention: [], posted: [], checks: 0, check_sites: 0}, best_time: null, show_after: '6',
+            progress: {xp: 150, level_before: 3, level_after: 4, work_levelups: [{title: 'Sample Story', level: 6}],
+                medals: [{name: '100 views', icon: '👁'}], rewards: ['Dusk theme'],
+                callouts: [{title: 'Sample Story', ratio: 3.1, at_age_h: 48}]}})""")
+        assert page.locator('#ov-h-prog').count() == 1
+    fails += _scan(browser, app_url + "/#/", before=sheet)
+
+    def ask(page):                       # the levels question (asked until answered, 22 Oct)
+        page.evaluate("() => window.Tour && Tour.end && Tour.end()")
+        page.evaluate("() => App._askGamification()")
+        page.wait_for_selector("#fun-ask")
+    fails += _scan(browser, app_url + "/#/", before=ask)
+    assert not fails, "\n".join(fails)
+
+
 def test_the_overnight_sheet_closes_on_a_phone(browser, app_url):
     """4.69.1: a long night pushed the only close button off the bottom of an iPhone screen."""
     ctx = _ctx(browser, viewport={"width": 390, "height": 664}, is_mobile=True, has_touch=True)
@@ -487,4 +528,36 @@ def test_the_hosted_seat_screens_pass_axe_and_fit_a_phone(browser, signup_url, m
                 fails.append(f"[{name}] {over}px wider than a 390px phone")
         finally:
             ctx.close()
+    assert not fails, "\n".join(fails)
+
+
+def _seed_rewards(surprise_pending: bool):
+    """Level 20 with its rewards. The catch-up card shows unless they are already revealed;
+    a pending surprise then shows the reveal card instead (spec 051)."""
+    import xp
+    from database.db import get_connection
+    conn = get_connection()
+    try:
+        for t in ("xp_ledger", "xp_state", "xp_rewards"):
+            conn.execute(f"DELETE FROM {t}")
+        xp._set_state(conn, "posting_log_watermark", str(conn.execute(
+            "SELECT COALESCE(MAX(log_id), 0) FROM posting_log").fetchone()[0]))
+        xp._set_state(conn, "backfilled_at", "2026-01-01 00:00:00")
+        xp.award(conn, "work", "axe:seed", xp.level_start(20), at="2026-10-01 03:00:00", source="backfill")
+        xp.sync(conn)
+        if surprise_pending:
+            conn.execute("UPDATE xp_rewards SET revealed_at = '2026-10-01 03:00:00'")
+            conn.execute("INSERT INTO xp_rewards (reward_id, source, unlocked_at) VALUES ('s_sites5', 'surprise', 'x')")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("card", ["catch-up", "reveal"])
+def test_the_reward_cards_and_shelf_pass_axe(browser, app_url, card):
+    _seed_rewards(surprise_pending=card == "reveal")
+    sel = ".lv-cu" if card == "catch-up" else ".lv-rv"
+    fails = _scan(browser, app_url + "/?r=1#/laurels", before=lambda p: p.wait_for_selector(sel, timeout=10000))
+    fails += _scan(browser, app_url + "/?r=2#/laurels",
+                   before=lambda p: (p.keyboard.press("Escape"), p.wait_for_selector("#rewards", timeout=10000)))
     assert not fails, "\n".join(fails)

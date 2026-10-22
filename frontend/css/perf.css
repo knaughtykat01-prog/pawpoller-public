@@ -30,7 +30,7 @@
    scrolling inside it stays smooth and the page behind isn't repainted.
    Deliberately NOT the main scroll column: a transform there would re-root any
    position:fixed descendants and misplace them. */
-.modal-panel,
+.modal-panel, .modal,
 .pp-toast,
 .cmdk-panel,
 .chart-modal-wrap,
@@ -40,7 +40,7 @@
 }
 
 /* 4 · Momentum scrolling in the scroll panes. */
-.modal-panel,
+.modal-panel, .modal,
 .settings-tab-content,
 .chart-modal-wrap,
 .det-panel {

@@ -257,6 +257,15 @@ async def reply(body: dict):
     conn = get_connection()
     try:
         inbox_queries.set_handled(conn, platform, comment_id, True)
+        # XPLEVELS (spec 050): a reply leaves no record of its own, so it awards here. Never
+        # let it fail the request: the reply is already out, and a 500 invites a second one.
+        try:
+            import xp
+            xp.award(conn, "reply", f"reply:{platform}:{comment_id}", xp.config.XP_TABLE["reply"],
+                     site=platform)
+            conn.commit()
+        except Exception as e:
+            logger.warning("reply XP skipped: %s", e)
     finally:
         conn.close()
     logger.info("Inbox reply posted on %s (comment %s, account %s)",

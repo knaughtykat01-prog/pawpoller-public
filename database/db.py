@@ -1783,6 +1783,73 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     # they are, and posts other people uploaded can be kept out of the account's totals.
     _board_track_columns(conn)
 
+    # XPLEVELS (4.84.0, spec 050): the XP ledger, one row per award. `award_key` is
+    # UNIQUE so every award is given once, however often the sweep runs (xp.py).
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS xp_ledger (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            award_key   TEXT UNIQUE NOT NULL,
+            kind        TEXT NOT NULL,
+            site        TEXT,
+            points      INTEGER NOT NULL,
+            capped      INTEGER NOT NULL DEFAULT 0,
+            source      TEXT NOT NULL,
+            earned_at   TEXT NOT NULL,
+            day         TEXT NOT NULL
+        )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_xp_ledger_day ON xp_ledger(day, site)")
+    conn.execute("CREATE TABLE IF NOT EXISTS xp_state (key TEXT PRIMARY KEY, value TEXT)")
+    # LVLREWARDS (spec 051): rewards unlocked, insert-only (never revoked, FR-012), and the
+    # one profile picture, re-encoded to 256 px WebP by routes/xp_api.py.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS xp_rewards (
+            reward_id   TEXT PRIMARY KEY,
+            source      TEXT NOT NULL,
+            unlocked_at TEXT NOT NULL,
+            revealed_at TEXT
+        )""")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS profile_picture (
+            id         INTEGER PRIMARY KEY CHECK (id = 1),
+            image      BLOB NOT NULL,
+            source     TEXT NOT NULL,
+            work_name  TEXT,
+            rating     TEXT NOT NULL DEFAULT 'general',
+            updated_at TEXT NOT NULL
+        )""")
+    # WORKLEVELS (spec 052): work and account levels keep their peak (FR-002); earned medals are
+    # insert-only apart from announced_at (FR-004). progress.py / medals.py.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS work_levels (
+            content_type    TEXT NOT NULL,
+            work_name       TEXT NOT NULL,
+            score           INTEGER NOT NULL,
+            level           INTEGER NOT NULL,
+            peak_level      INTEGER NOT NULL,
+            paid_level      INTEGER NOT NULL,
+            announced_level INTEGER NOT NULL,
+            updated_at      TEXT NOT NULL,
+            PRIMARY KEY (content_type, work_name)
+        )""")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS account_levels (
+            subject    TEXT PRIMARY KEY,
+            score      INTEGER NOT NULL,
+            level      INTEGER NOT NULL,
+            peak_level INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS earned_medals (
+            medal_id      TEXT NOT NULL,
+            subject       TEXT NOT NULL,
+            earned_at     TEXT NOT NULL,
+            dated_exactly INTEGER NOT NULL DEFAULT 1,
+            source        TEXT NOT NULL,
+            announced_at  TEXT,
+            PRIMARY KEY (medal_id, subject)
+        )""")
+
     # Migration (3.8.0): the shared-table delete outbox — mirroring Stage 3.
     # The upward sync is a natural-key upsert, which is additive by nature and
     # therefore cannot express "this row is gone". For four tables a delete IS

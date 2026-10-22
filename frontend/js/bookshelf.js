@@ -842,9 +842,10 @@ window.Bookshelf = {
         // 4.18.0 (MEDIATYPES): a video / audio piece shows its kind + length on the cover (its poster).
         const mediaBadge = (window.MediaKinds && w.media_kind && w.media_kind !== 'image')
             ? `<span class="book-media-badge" title="${this.esc(w.media_kind)}">${this.esc(MediaKinds.badge(w.media, w.media_kind))}</span>` : '';
+        const lv = window.Progress ? Progress.badge(w) : '';     // spec 052: "Lv 6", hidden with Levels off
         const cover = w.thumb_url
-            ? `<div class="book-cover"${rAttr} style="background-image:url('${this.esc(w.thumb_url)}')">${chip}${mediaBadge}</div>`
-            : `<div class="book-cover book-cover--blank"${rAttr}><span class="book-initial">${initials}</span>${chip}${mediaBadge}</div>`;
+            ? `<div class="book-cover"${rAttr} style="background-image:url('${this.esc(w.thumb_url)}')">${chip}${mediaBadge}${lv}</div>`
+            : `<div class="book-cover book-cover--blank"${rAttr}><span class="book-initial">${initials}</span>${chip}${mediaBadge}${lv}</div>`;
         const rating = w.rating ? `<span class="book-rating">${this.esc(w.rating)}</span>` : '';
         // The date "Recently posted" sorts by, on the card — a sort key nobody
         // can see cannot be checked (4.3.1). ≈ = matched to an upload by title;

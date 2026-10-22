@@ -114,9 +114,12 @@
     background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--bg-card)), var(--bg-card));
 }
 .lr-medal.is-earned:hover { transform: translateY(-3px); }
-.lr-medal.is-locked { opacity: .62; }
+/* Locked: dashed edge and a faded icon. The text stays full strength — dimming the whole card
+   took the progress line to 2.4:1 (axe, 051). */
+.lr-medal.is-locked { border-style: dashed; }
 .lr-medal-ico { font-size: 2.2rem; line-height: 1; margin-bottom: .55rem; filter: saturate(1); }
-.lr-medal.is-locked .lr-medal-ico { filter: grayscale(.9); opacity: .8; }
+.lr-medal.is-locked .lr-medal-ico { filter: grayscale(.9); opacity: .5; }
+.lr-medal.is-locked .lr-medal-sub { color: var(--text-secondary); }
 .lr-medal-name { font-family: var(--font-serif); font-weight: 700; font-size: 1rem; color: var(--text-primary); margin-bottom: .25rem; }
 .lr-medal-desc { font-size: .78rem; color: var(--text-secondary); line-height: 1.35; }
 .lr-medal-sub {
@@ -182,89 +185,6 @@
 .lr-empty-emoji { font-size: 3rem; margin-bottom: 1rem; }
 .lr-empty h2 { font-family: var(--font-serif); color: var(--text-primary); margin: 0 0 .6rem; }
 .lr-empty p { color: var(--text-secondary); line-height: 1.55; margin: 0 0 1.4rem; }
-
-/* ── Per-work achievements (Bookshelf work detail) ── */
-.wm-grid { display: flex; flex-wrap: wrap; gap: .55rem; }
-.wm {
-    display: inline-flex; align-items: center; gap: .45rem;
-    padding: .4rem .7rem; border-radius: 999px;
-    border: 1px solid var(--card-border-inner); background: var(--bg-card);
-    font-size: .82rem; color: var(--text-secondary);
-}
-.wm.is-earned {
-    color: var(--text-primary);
-    border-color: color-mix(in srgb, var(--accent) 40%, var(--card-border-inner));
-    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, var(--bg-card)), var(--bg-card));
-}
-.wm.is-locked { opacity: .55; }
-.wm-ico { font-size: 1rem; line-height: 1; }
-.wm.is-locked .wm-ico { filter: grayscale(.9); }
-.wm-name { font-weight: 600; }
-.wm-sub { font-size: .72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-
-/* ── Achievement-unlocked celebration popup ── */
-.lr-celebrate {
-    position: fixed; inset: 0; z-index: 9999; overflow: hidden;
-    display: flex; align-items: center; justify-content: center;
-    background: color-mix(in srgb, var(--overlay-backdrop) 55%, transparent);
-    opacity: 0; transition: opacity .3s ease; pointer-events: none;
-}
-.lr-celebrate.show { opacity: 1; pointer-events: auto; }
-.lr-celebrate-card {
-    position: relative; overflow: hidden; cursor: pointer; text-align: center;
-    background: var(--bg-card); border: 1px solid var(--card-border-inner);
-    border-radius: 20px; padding: 2.1rem 2.4rem 1.6rem; max-width: min(90vw, 380px);
-    box-shadow: var(--shadow-strong);
-    transform: scale(.72) translateY(8px); opacity: 0;
-    transition: transform .4s cubic-bezier(.2, 1.35, .4, 1), opacity .3s ease;
-}
-.lr-celebrate.show .lr-celebrate-card { transform: scale(1) translateY(0); opacity: 1; }
-/* Spec 049: one light sweep across a newly earned medal's card. */
-.lr-celebrate-card::after {
-    content: ""; position: absolute; inset: 0; pointer-events: none; transform: translateX(-120%);
-    background: linear-gradient(105deg, transparent 35%, color-mix(in srgb, #fff 35%, transparent) 50%, transparent 65%);
-}
-.lr-celebrate.show .lr-celebrate-card::after { animation: lrShine 900ms 350ms ease-out forwards; }
-@keyframes lrShine { to { transform: translateX(120%); } }
-.lr-celebrate-rays {
-    position: absolute; inset: 0; pointer-events: none;
-    background: radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 62%);
-}
-.lr-celebrate-ico {
-    position: relative; font-size: 3.6rem; line-height: 1; margin-bottom: .6rem;
-    animation: lrPop .55s cubic-bezier(.2, 1.5, .4, 1) both;
-}
-.lr-celebrate-label {
-    position: relative; font-family: var(--font-sans); font-size: .72rem; font-weight: 700;
-    letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin-bottom: .3rem;
-}
-.lr-celebrate-name {
-    position: relative; font-family: var(--font-serif); font-weight: 700; font-size: 1.5rem;
-    color: var(--text-primary); line-height: 1.1; margin-bottom: .35rem;
-}
-.lr-celebrate-desc { position: relative; font-size: .88rem; color: var(--text-secondary); line-height: 1.4; }
-.lr-celebrate-dismiss {
-    position: relative; margin-top: 1rem; font-size: .7rem; text-transform: uppercase;
-    letter-spacing: .08em; color: var(--text-muted);
-}
-/* confetti */
-.lr-celebrate-conf { position: absolute; inset: 0; pointer-events: none; }
-.lr-conf {
-    position: absolute; top: -14px; width: 8px; height: 13px; border-radius: 2px; opacity: .9;
-    animation-name: lrConf; animation-timing-function: cubic-bezier(.3, .1, .5, 1); animation-fill-mode: forwards;
-}
-@keyframes lrPop { 0% { transform: scale(0) rotate(-12deg); } 65% { transform: scale(1.22) rotate(4deg); } 100% { transform: scale(1) rotate(0); } }
-@keyframes lrConf { 0% { transform: translateY(0) rotate(0); opacity: 1; } 100% { transform: translateY(104vh) rotate(680deg); opacity: .15; } }
-@media (prefers-reduced-motion: reduce) {
-    .lr-celebrate-card { transition: opacity .2s ease; transform: none; }
-    .lr-celebrate.show .lr-celebrate-card { transform: none; }
-    .lr-celebrate-ico { animation: none; }
-    .lr-celebrate-card::after { display: none; }
-    .lr-conf { display: none; }
-}
-/* Brut: square the popup + medals */
-html[data-mode="brut"] .lr-celebrate-card { border-width: 2px; border-radius: 5px; box-shadow: 6px 6px 0 var(--brut-shadow, rgba(0,0,0,.8)); }
-html[data-mode="brut"] .wm { border-width: 2px; border-radius: 4px; }
 
 /* ── Responsive ── */
 @media (max-width: 768px) {

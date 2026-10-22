@@ -251,6 +251,8 @@ def merge_masterpieces(conn: sqlite3.Connection, keep: str, drop: str) -> int:
     conn.execute("DELETE FROM masterpiece_members WHERE masterpiece_name = ?", (drop,))
     conn.execute("DELETE FROM masterpieces WHERE name = ?", (drop,))
     conn.execute("UPDATE masterpieces SET updated_at = datetime('now') WHERE name = ?", (keep,))
+    import progress
+    progress.carry(conn, "artwork", drop, keep)   # spec 052: no level is paid twice
     conn.commit()
     return moved
 

@@ -797,7 +797,7 @@ window.Masterpieces = {
                 <div class="board">
                     <div class="board-col">${this._canonicalHtml(name, m)}${this._tagsHtml(m)}${this._budgetHtml()}</div>
                     <div class="board-col">${this._publishHtml(m)}${this._linkHtml()}${this._foldHtml()}</div>
-                    <div class="board-col board-col--3">${this._locationsHtml(m)}${this._growthHtml()}${this._bestHtml(m)}${this._rendersHtml(name, m, v)}</div>
+                    <div class="board-col board-col--3">${this._locationsHtml(m)}${this._growthHtml()}${this._bestHtml(m)}${window.Progress ? Progress.card('artwork', name) : ''}${this._rendersHtml(name, m, v)}</div>
                 </div>
             </div>`;
 
@@ -820,6 +820,7 @@ window.Masterpieces = {
         this._charChips();
         this._loadTagBudget();
         this._loadChart(name);
+        if (window.Progress) Progress.fill(root);                    // the piece's Laurels (spec 052)
         if (window.BoardPolish) BoardPolish.collapse(root, 'mp');   // folded cards remembered (C2 phase 3)
         this._foldTarget = null;      // reset the "fold into" choice per detail open
     },

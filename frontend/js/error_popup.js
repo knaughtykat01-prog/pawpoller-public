@@ -36,7 +36,7 @@
     function _version() {
         const s = document.querySelector('script[src*="/js/api.js"]');
         if (!s) return '';
-        try { return new URL(s.src, location.origin).searchParams.get('v') || ''; }
+        try { return (new URL(s.src, location.origin).searchParams.get('v') || '').split('-')[0]; }   // drop the asset fingerprint
         catch (e) { return ''; }
     }
 

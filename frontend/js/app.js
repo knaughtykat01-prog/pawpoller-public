@@ -327,13 +327,10 @@ const App = {
         if (window.NotificationCenter) {
             window.NotificationCenter.start();
         }
-        // App-wide achievement watcher — pops the Laurels celebration the moment
-        // a poll crosses a milestone, on whatever screen you're on (not just the
-        // Laurels page). Subscribes to PlatformHealth to detect poll completion;
-        // shares its seen-baseline with the page, so each crossing fires once.
-        if (window.Laurels && window.Laurels.startAchievementWatch) {
-            window.Laurels.startAchievementWatch();
-        }
+        // Level bar (spec 050): first draw; a finished post refreshes it from activity.js.
+        // Then the announce watch (spec 052): medals and work level-ups the server earned
+        // during polls, shown once on whichever device sees them first.
+        if (window.Levels) { window.Levels.refresh(); window.Levels.watch(); }
         // Warm the guided-tour seen-set from the server now that we're past the
         // auth gate. /api/settings/preferences needs a session, and hydrating
         // here (before the first route() below) means a tour the user already
@@ -365,6 +362,8 @@ const App = {
             if (a && a.band) this._applyAgeLock(a.band);
             else this._askAgeOnce();
         }).catch(() => {});
+        /* Gamification is a choice (22 Oct): until it's answered, every visit asks. */
+        API.getPreferences().then(p => { if (p && !p.gamification_asked) this._askGamification(); }).catch(() => {});
 
         /* Inkbunny platform auth gate — decide which screen the user should
          * land on. Two important rules learned in 2.14.7 (BUG-005/006/007):
@@ -591,6 +590,7 @@ const App = {
             'img.artwork-detail-img:not([data-rating="general"])',
             'img.mp-hero-img:not([data-rating="general"])',
             'img.post-card-img:not([data-rating="general"])',
+            '.acct-av img:not([data-rating="general"])',
         ].join(', ');
         document.addEventListener('click', (e) => {
             if (document.documentElement.dataset.sfw !== '1') return;
@@ -723,10 +723,24 @@ const App = {
           swatch: ['#000000', '#0a0a0a', '#ffeb3b', '#ff9800', '#ffffff'] },
         { id: 'retro_2005',     name: 'Retro 2005',     desc: 'Early-2000s web: silver chrome, beveled buttons, Verdana',
           swatch: ['#d4d0c8', '#ffffff', '#0a52c9', '#ff6600', '#000000'] },
+        // Reward themes (spec 051): listed only once unlocked (themeUnlocked).
+        { id: 'dusk',           name: 'Dusk',           desc: 'Reward · Slate + lilac', reward: 15, rewardId: 'theme_dusk',
+          swatch: ['#161722', '#252839', '#b9a2f0', '#f0b48c', '#ece8f8'] },
+        { id: 'ember',          name: 'Ember',          desc: 'Reward · Charcoal + red-orange', reward: 20, rewardId: 'theme_ember',
+          swatch: ['#161312', '#27211e', '#ff7a45', '#ffb347', '#f5eae2'] },
+        { id: 'aurora',         name: 'Aurora',         desc: 'Reward · Deep teal + green-cyan', reward: 35, rewardId: 'theme_aurora',
+          swatch: ['#0e1a1c', '#1a2c30', '#4fe0b0', '#b48cf0', '#e2f4f0'] },
+        { id: 'gilded',         name: 'Gilded',         desc: 'Reward · Near-black + gold', reward: 50, rewardId: 'theme_gilded',
+          swatch: ['#0d0c0a', '#1e1b15', '#e8c062', '#f4dc9a', '#f8f0dc'] },
     ],
 
+    /* A reward theme counts only once the server says it is unlocked. */
+    themeUnlocked(t) {
+        return !!t && (!t.reward || ((window.Levels?.state()?.rewards?.unlocked) || []).includes(t.rewardId));
+    },
+
     applyTheme(themeId) {
-        const valid = this.THEMES.some(t => t.id === themeId);
+        const valid = this.themeUnlocked(this.THEMES.find(t => t.id === themeId));
         const id = valid ? themeId : 'quill';
         document.documentElement.dataset.theme = id;
         localStorage.setItem('pawpoller-theme', id);
@@ -3424,6 +3438,58 @@ const App = {
         }
     },
 
+    /* Levels, medals and rewards: off until the person says yes. Asked in setup, and on each visit
+       until answered (an install from before the choice existed starts here). Both buttons answer;
+       there is no "later", or it would ask forever. Waits for the age question to close first. */
+    async _askGamification() {
+        if (document.getElementById('fun-ask')) return;
+        for (let i = 0; document.getElementById('age-ask') && i < 600; i++) await new Promise(r => setTimeout(r, 1000));
+        const ov = document.createElement('div');
+        ov.className = 'modal-overlay open';
+        ov.id = 'fun-ask';
+        ov.innerHTML = `
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="fun-ask-title" style="max-width:480px">
+                <div class="modal-header"><h3 id="fun-ask-title" style="margin:0">Turn on levels, medals and rewards?</h3></div>
+                <div class="modal-body" style="font-size:14px;line-height:1.55">
+                    ${this._gamificationBlurb()}
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+                        <button class="btn btn-primary" id="fun-ask-yes">Yes, turn them on</button>
+                        <button class="btn" id="fun-ask-no">No thanks</button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(ov);
+        const answer = async (on) => {
+            try {
+                await API.savePreferences({ levels_enabled: on });
+                ov.remove();
+                if (window.Levels) await Levels.refresh();
+                if (location.hash.startsWith('#/laurels') || location.hash === '#/' || location.hash === '') this.route();
+            } catch (e) { window.toast?.error('Could not save: ' + (e.message || e)); }
+        };
+        ov.querySelector('#fun-ask-yes').addEventListener('click', () => answer(true));
+        ov.querySelector('#fun-ask-no').addEventListener('click', () => answer(false));
+        ov.querySelector('#fun-ask-yes').focus();
+    },
+
+    /* The account menu's switch (NOFUN): flip, save, then redraw the page so Laurels, badges and
+       cards appear or go. levels.js repaints the switch from the saved answer. */
+    async _toggleGamification(item) {
+        const on = item.getAttribute('aria-checked') !== 'true';
+        try {
+            await API.savePreferences({ levels_enabled: on });
+            if (window.Levels) await Levels.refresh();
+            window.toast?.success(on ? 'Levels, medals and rewards are on' : 'Levels, medals and rewards are off');
+            this.route();
+            item.focus();
+        } catch (e) { window.toast?.error("Couldn't save that: " + (e.message || e)); }
+    },
+
+    _gamificationBlurb() {
+        return `<p>PawPoller can turn your progress into a game: points and levels for posting and writing, a level and medals for each piece as people view and comment, and rewards like new themes.</p>
+            <p style="color:var(--text-secondary);font-size:13px">Some people love it, some would rather just see their numbers. If you say no, none of it shows. You can change this any time in Settings → Appearance.</p>`;
+    },
+
     /* An install set up before the age step asks once, in a small dialog. */
     _askAgeOnce() {
         if (document.getElementById('age-ask')) return;
@@ -3626,17 +3692,18 @@ const App = {
         // Age, time zone and the Tech Centre switches are asked in sign-up now (4.67.0,
         // spec 033); the wizard keeps its own copies only for an install where they're unanswered.
         const answered = (this._signup && this._signup.answered) || {};
-        const keep = (s) => (s !== 'archive' || makesAll().includes('stories')) && !answered[s];
+        const keep = (s) => (s !== 'archive' || makesAll().includes('stories')) && !answered[s]
+            && !(s === 'fun' && prefs.gamification_asked);   // levels, medals, rewards: asked once (22 Oct)
         const stepOrder = () => {
             if (runtimeMode === 'server') {
-                return ['welcome', 'timezone', 'age', 'make', 'archive', 'sites', 'platforms', 'interval', 'posting', 'hear', 'persona', 'tech', 'done'].filter(keep);
+                return ['welcome', 'timezone', 'age', 'make', 'archive', 'sites', 'platforms', 'interval', 'posting', 'hear', 'persona', 'fun', 'tech', 'done'].filter(keep);
             }
             if (selectedMode === 'paired_desktop' || selectedMode === 'connected') {
                 // Paired installs read the server's data — personas, sites, intervals and defaults live there.
-                return ['welcome', 'timezone', 'age', 'mode', 'pairing', 'hear', 'tech', 'done'].filter(keep);
+                return ['welcome', 'timezone', 'age', 'mode', 'pairing', 'hear', 'fun', 'tech', 'done'].filter(keep);
             }
             // standalone (or undecided) — full flow
-            return ['welcome', 'timezone', 'age', 'mode', 'make', 'archive', 'sites', 'platforms', 'interval', 'posting', 'hear', 'persona', 'tech', 'done'].filter(keep);
+            return ['welcome', 'timezone', 'age', 'mode', 'make', 'archive', 'sites', 'platforms', 'interval', 'posting', 'hear', 'persona', 'fun', 'tech', 'done'].filter(keep);
         };
 
         // Validate against the CURRENT path rather than trusting what was stored:
@@ -3893,6 +3960,16 @@ const App = {
                         <button class="btn btn-primary login-btn" id="setup-age-adult" style="flex:1">I'm 18 or older</button>
                         <button class="btn" id="setup-age-minor" style="flex:0 0 auto">I'm under 18</button>
                     </div>`;
+            } else if (currentStep === 'fun') {
+                /* ── Levels, medals and rewards: a choice, off unless they say yes (22 Oct). ── */
+                body = `
+                    <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px">Turn on levels, medals and rewards?</h2>
+                    <div style="text-align:left;color:var(--text-secondary);font-size:13px;margin-bottom:16px">${App._gamificationBlurb()}</div>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>
+                        <button class="btn btn-primary login-btn" id="setup-fun-yes" style="flex:1">Yes, turn them on</button>
+                        <button class="btn" id="setup-fun-no" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">No thanks</button>
+                    </div>`;
             } else if (currentStep === 'tech') {
                 /* ── Technical error reports (4.10.0) — asked once, here, for
                    new installs; installs that predate this step get the same
@@ -4134,6 +4211,17 @@ const App = {
                 document.getElementById(id)?.addEventListener('click', async () => {
                     try { await API.setAge(band); App._applyAgeLock(band); }
                     catch (err) { console.warn('[Setup] age save failed:', err); }
+                    goNext();
+                });
+            }
+
+            /* Levels, medals and rewards — both answers are answers: store, advance. */
+            for (const [id, on] of [['setup-fun-yes', true], ['setup-fun-no', false]]) {
+                document.getElementById(id)?.addEventListener('click', async () => {
+                    // prefs.gamification_asked stays as loaded: flipping it would drop this step from
+                    // stepOrder() mid-wizard and goNext() would lose its place.
+                    try { await API.savePreferences({ levels_enabled: on }); }
+                    catch (err) { console.warn('[Setup] gamification save failed:', err); }
                     goNext();
                 });
             }
@@ -4550,11 +4638,12 @@ const App = {
             // /api/activity/recent doesn't block the rest of the page render.
             // Failures fall back to empty. getPersonas already returns each
             // persona with pooled stats.combined, so no per-persona round-trips.
-            const [systemActivity, personasResp, queueResp] = await Promise.all([
+            const [systemActivity, personasResp, queueResp, progressResp] = await Promise.all([
                 API.getRecentActivity(20).catch(() => ({ events: [] })),
                 API.getPersonas().catch(() => ({ personas: [] })),
                 // Feeds the opt-in "Pending queue" widget; additive, never blocks.
                 API.getPostingQueue().catch(() => ({ queue: [] })),
+                window.Progress ? Progress.load().catch(() => null) : null,   // the Progress card (spec 052)
             ]);
 
             /* code -> payload. Every widget reads these through
@@ -4684,6 +4773,12 @@ const App = {
                     return e;
                 });
             if (!layout.length) layout = defaultLayout;
+            // Spec 052 US8: a layout saved before the Progress card existed gets it once, after
+            // Platform health. Removing it afterwards sticks (the flag rides with the layout).
+            if (saved && saved.length && !prefs.dashboard_progress_added && !layout.some(w => w.id === 'progress')) {
+                layout.splice(layout[0] && layout[0].id === 'health' ? 1 : 0, 0, { id: 'progress', span: 2 });
+                API.savePreferences({ dashboard_layout: layout, dashboard_progress_added: true }).catch(() => {});
+            }
             this._dashboardLayout = layout;
             if (this._dashEdit === undefined) this._dashEdit = false;
 
@@ -4708,6 +4803,7 @@ const App = {
                 personas: (personasResp.personas || []),
                 platRollup,
                 queue: (queueResp && queueResp.queue) || [],
+                progress: progressResp,
             };
 
             this._renderDashboard();
@@ -4729,6 +4825,7 @@ const App = {
     _dashDefaultLayout(includePersonas = false) {
         const layout = [
             { id: 'health', span: 4 },
+            { id: 'progress', span: 2 },   // spec 052 US8
             { id: 'stat-subs', span: 1 }, { id: 'stat-views', span: 1 },
             { id: 'stat-faves', span: 1 }, { id: 'stat-comments', span: 1 },
             { id: 'charts', span: 4 }, { id: 'platforms', span: 4 },
@@ -4768,6 +4865,7 @@ const App = {
             { id: 'bestplatform', title: 'Best platform', icon: '\u{1F947}', desc: 'Where your work gets the most views', spans: [1, 2] },
             { id: 'comments', title: 'Recent comments', icon: '\u{1F5E8}', desc: 'Just the comments — people talking to you', spans: [2, 4] },
             { id: 'queue', title: 'Pending queue', icon: '⏳', desc: 'Uploads waiting to go out', spans: [2, 4] },
+            { id: 'progress', title: 'Progress', icon: '🏅', desc: 'Your level, the next reward, and this week’s level-ups and medals', spans: [1, 2, 4] },
         ];
     },
 
@@ -4907,6 +5005,10 @@ const App = {
                         : '<div class="dash-empty">No comments yet — they’ll show here as they land.</div>');
             }
             case 'queue': return `<div class="wtitle">Pending queue</div>${this._queueWidgetHtml(ctx.queue)}`;
+            case 'progress': {   // spec 052: hidden with Levels off (FR-014)
+                const card = window.Progress ? Progress.overviewCard(window.Levels && Levels.state(), ctx.progress) : '';
+                return card ? `<div class="wtitle">Progress</div>${card}` : '';
+            }
             default: return '<div class="wtitle">Widget</div>';
         }
     },
@@ -6123,7 +6225,7 @@ const App = {
         const btn = document.getElementById('account-menu-btn');
         const menu = document.getElementById('account-menu');
         if (!btn || !menu) return;
-        const items = () => [...menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"]')];
+        const items = () => [...menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]')];
         const open = (last) => {
             this._paintAccountMenu();
             menu.hidden = false;
@@ -6164,8 +6266,10 @@ const App = {
             const it = e.target.closest('[data-acct]');
             if (!it) return;
             const act = it.dataset.acct;
+            if (act === 'gamification') { this._toggleGamification(it); return; }   // stays open: a switch
             close(false);
             if (act === 'theme') this.navigate('/settings/appearance');
+            else if (act === 'picture') this._openAvatarPicker();
             else if (act === 'tour') window.Tour?.startHere({ auto: false });
             else if (act === 'help') this.navigate('/getting-started');
             else if (act === 'accounts') this.navigate('/accounts');
@@ -6173,6 +6277,10 @@ const App = {
             else if (act === 'signout') this._signOut();
         });
         this._loadAccountName();
+        document.addEventListener('click', (e) => {     // PostyBirb import from Accounts or Settings → Data
+            if (!e.target.closest('[data-pb-import]')) return;
+            this.openPbImport(() => { if (location.hash.startsWith('#/accounts')) window.Accounts?._refresh(); });
+        });
     },
 
     /* Who the avatar stands for. There are no user accounts (one dashboard password), so
@@ -6190,7 +6298,7 @@ const App = {
     _paintAccountMenu() {
         const name = this._accountName || 'PawPoller';
         const initial = name.trim().charAt(0).toUpperCase() || 'P';
-        document.querySelectorAll('#bar-controls .acct-av').forEach(el => { el.textContent = initial; });
+        this._paintAvatars(initial);
         const set = (sel, text) => { const el = document.querySelector(sel); if (el) el.textContent = text; };
         set('#acct-name', name);
         set('#account-menu .acct-who-name', name);
@@ -6201,7 +6309,9 @@ const App = {
         const box = document.getElementById('acct-swatches');
         if (box) {
             const esc = (s) => Utils.escapeHtml(String(s));
-            box.innerHTML = this._QUICK_THEMES.map(id => {
+            const quick = [...this._QUICK_THEMES,
+                ...this.THEMES.filter(t => t.reward && this.themeUnlocked(t)).map(t => t.id)];
+            box.innerHTML = quick.map(id => {
                 const t = this.THEMES.find(x => x.id === id);
                 if (!t) return '';
                 return `<button type="button" role="menuitemradio" class="acct-swatch" data-theme-id="${esc(id)}"
@@ -6263,6 +6373,160 @@ const App = {
             ov.addEventListener('click', (e) => { if (e.target === ov) close(false); });
             ov.querySelector('#signout-go').focus();
         });
+    },
+
+    /* The picture inside every avatar (spec 051 US8), or the letter when there is none or it
+       fails to load. data-rating feeds the safe-mode blur, like every other cover. */
+    _avatarInner(letter) {
+        const av = window.Levels?.state()?.rewards?.avatar;
+        if (!av) return Utils.escapeHtml(letter);
+        return `<img src="/api/xp/avatar?v=${encodeURIComponent(av.updated_at)}" data-rating="${Utils.escapeHtml(av.rating)}" alt="">`;
+    },
+
+    _paintAvatars(initial) {
+        const letter = initial || (this._accountName || 'P').trim().charAt(0).toUpperCase() || 'P';
+        const html = this._avatarInner(letter);
+        document.querySelectorAll('#bar-controls .acct-av').forEach(el => {
+            if (el.dataset.avHtml === html) return;            // no reload on every repaint
+            el.dataset.avHtml = html;
+            el.innerHTML = html;
+            const img = el.querySelector('img');
+            if (img) img.addEventListener('error', () => { el.textContent = letter; }, { once: true });
+        });
+        const label = document.getElementById('acct-picture-label');
+        if (label) label.textContent = window.Levels?.state()?.rewards?.avatar ? 'Change picture' : 'Use a picture';
+    },
+
+    /* "Use a picture" (US8): a piece from the Library or an upload, cropped to a circle here,
+       re-encoded on the server (PUT /api/xp/avatar). */
+    async _openAvatarPicker() {
+        const esc = (s) => Utils.escapeHtml(String(s ?? ''));
+        const has = !!window.Levels?.state()?.rewards?.avatar;
+        const ov = document.createElement('div');
+        ov.className = 'modal-overlay open';
+        ov.innerHTML = `
+            <div class="modal-panel av-pick" role="dialog" aria-modal="true" aria-labelledby="av-pick-h" style="max-width:560px">
+                <div class="modal-header"><h3 id="av-pick-h" style="margin:0">Your picture</h3></div>
+                <div class="modal-body">
+                    <div class="av-pick-src" role="group" aria-label="Where the picture comes from">
+                        <button type="button" class="btn btn-secondary btn-sm" data-av="lib" aria-pressed="true">From my Library</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-av="upload" aria-pressed="false">Upload</button>
+                        <input type="file" accept="image/png,image/jpeg,image/webp" hidden data-av="file">
+                    </div>
+                    <div class="av-pick-grid" data-av="grid"><p class="signup-hint">Loading your artwork…</p></div>
+                    <div class="av-pick-crop" data-av="crop" hidden>
+                        <canvas width="280" height="280" aria-label="Your picture. Drag, or use the arrow keys, to move it inside the circle"></canvas>
+                        <label class="av-pick-zoom">Zoom <input type="range" min="1" max="4" step="0.01" value="1" data-av="zoom"></label>
+                        <label class="av-pick-adult" data-av="adult-row" hidden><input type="checkbox" data-av="adult"> Is this picture 18+?</label>
+                    </div>
+                </div>
+                <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+                    ${has ? '<button class="btn btn-outline" type="button" data-av="remove" style="margin-right:auto">Remove</button>' : ''}
+                    <button class="btn btn-outline" type="button" data-av="cancel">Cancel</button>
+                    <button class="btn btn-primary" type="button" data-av="save" disabled>Save</button>
+                </div>
+            </div>`;
+        const $ = (k) => ov.querySelector(`[data-av="${k}"]`);
+        const canvas = ov.querySelector('canvas'), ctx = canvas.getContext('2d');
+        let img = null, pick = null, zoom = 1, ox = 0, oy = 0;    // pick = {source, work_name, rating}
+        const close = () => { document.removeEventListener('keydown', onKey); ov.remove(); };
+        const onKey = (e) => { if (e.key === 'Escape') close(); };
+        const base = () => Math.max(canvas.width / img.width, canvas.height / img.height);   // cover the square
+        const draw = () => {
+            if (!img) return;
+            const s = base() * zoom;
+            ox = Math.min(0, Math.max(canvas.width - img.width * s, ox));     // never show an empty edge
+            oy = Math.min(0, Math.max(canvas.height - img.height * s, oy));
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, ox, oy, img.width * s, img.height * s);
+        };
+        const load = (src, meta) => {
+            const im = new Image();
+            im.onload = () => {
+                img = im; pick = meta; zoom = 1; $('zoom').value = '1';
+                const s = base();
+                ox = (canvas.width - img.width * s) / 2; oy = (canvas.height - img.height * s) / 2;
+                $('crop').hidden = false; $('save').disabled = false;
+                $('adult-row').hidden = meta.source !== 'upload';
+                draw();
+            };
+            im.onerror = () => window.toast?.error?.("That picture couldn't be opened.");
+            im.src = src;
+        };
+        const showSource = async (which) => {
+            $('lib').setAttribute('aria-pressed', String(which === 'lib'));
+            $('upload').setAttribute('aria-pressed', String(which === 'upload'));
+            if (which === 'upload') { $('grid').hidden = true; $('file').click(); return; }
+            $('grid').hidden = false;
+            try {
+                const r = await API.getWorks({ type: 'artwork' });
+                const art = ((r && r.works) || []).filter(w => w.content_type !== 'story' && w.thumb_url);
+                $('grid').innerHTML = art.length ? art.map((w, i) => {
+                    const rating = ['general', 'mature', 'adult'][window.MediaKinds ? MediaKinds.ratingRank(w.rating) : 2];
+                    return `<button type="button" class="av-pick-tile" data-i="${i}" title="${esc(w.title || w.name)}">
+                        <span class="book-cover" data-rating="${rating}" style="background-image:url('${esc(w.thumb_url)}')"></span>
+                        <span class="sr-only">${esc(w.title || w.name)}</span></button>`;
+                }).join('') : '<p class="signup-hint">No artwork in your Library yet. Try Upload.</p>';
+                $('grid').onclick = (e) => {
+                    const t = e.target.closest('.av-pick-tile');
+                    if (!t) return;
+                    const w = art[+t.dataset.i];
+                    load(w.thumb_url, { source: 'work', work_name: w.name, rating: t.firstElementChild.dataset.rating });
+                };
+            } catch (e) { $('grid').innerHTML = '<p class="signup-hint">Couldn’t load your Library. Try Upload.</p>'; }
+        };
+        document.body.appendChild(ov);
+        document.addEventListener('keydown', onKey);
+        ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+        $('cancel').addEventListener('click', close);
+        $('lib').addEventListener('click', () => showSource('lib'));
+        $('upload').addEventListener('click', () => showSource('upload'));
+        $('file').addEventListener('change', () => {
+            const f = $('file').files[0];
+            if (f) load(URL.createObjectURL(f), { source: 'upload', work_name: null, rating: 'general' });
+        });
+        $('zoom').addEventListener('input', () => {                // zoom about the centre
+            const c = canvas.width / 2, before = base() * zoom;
+            zoom = parseFloat($('zoom').value);
+            const k = (base() * zoom) / before;
+            ox = c - (c - ox) * k; oy = c - (c - oy) * k;
+            draw();
+        });
+        let drag = null;
+        canvas.addEventListener('pointerdown', (e) => { if (img) { drag = { x: e.clientX - ox, y: e.clientY - oy }; canvas.setPointerCapture(e.pointerId); } });
+        canvas.addEventListener('pointermove', (e) => { if (drag) { ox = e.clientX - drag.x; oy = e.clientY - drag.y; draw(); } });
+        canvas.addEventListener('pointerup', () => { drag = null; });
+        canvas.tabIndex = 0;                                       // arrows move it too
+        canvas.addEventListener('keydown', (e) => {
+            const d = { ArrowLeft: [8, 0], ArrowRight: [-8, 0], ArrowUp: [0, 8], ArrowDown: [0, -8] }[e.key];
+            if (d && img) { e.preventDefault(); ox += d[0]; oy += d[1]; draw(); }
+        });
+        $('save').addEventListener('click', async () => {
+            $('save').disabled = true;
+            try {
+                const blob = await new Promise((res, rej) => canvas.toBlob(b => (b ? res(b) : rej()), 'image/png'));
+                const fd = new FormData();
+                fd.append('image', blob, 'picture.png');
+                fd.append('source', pick.source);
+                if (pick.work_name) fd.append('work_name', pick.work_name);
+                fd.append('rating', pick.source === 'upload' ? ($('adult').checked ? 'adult' : 'general') : pick.rating);
+                await API._sendForm('PUT', '/api/xp/avatar', fd);
+                close();
+                await window.Levels?.refresh();
+                this._paintAvatars();
+            } catch (e) {
+                $('save').disabled = false;
+                window.toast?.error?.('Couldn’t save the picture. Try a different one.');
+            }
+        });
+        $('remove')?.addEventListener('click', async () => {
+            try { await API.del('/api/xp/avatar'); } catch (e) { /* already gone */ }
+            close();
+            await window.Levels?.refresh();
+            this._paintAvatars();
+        });
+        showSource('lib');
+        $('lib').focus();
     },
 
     _dashWidgetMount(id, ctx, w) {
@@ -15771,7 +16035,7 @@ const App = {
                         Click any theme to apply it instantly. The choice persists across sessions and (when cloud sync is enabled) syncs to other devices.
                     </p>
                     <div class="theme-picker" id="theme-picker">
-                        ${this.THEMES.map(t => {
+                        ${this.THEMES.filter(t => this.themeUnlocked(t)).map(t => {
                             const isActive = t.id === this.getCurrentTheme();
                             const [bg, card, accent, accentWarm, text] = t.swatch;
                             return `
@@ -15878,6 +16142,20 @@ const App = {
                     <div class="settings-row">
                         <label class="settings-label" for="pref-sound-vol">Volume</label>
                         <input type="range" id="pref-sound-vol" min="0" max="100" step="5" value="${window.Sound ? Sound.get().volume : 60}">
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Levels, medals and rewards</h3>
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
+                        Turns your progress into a game: points and levels for posting, writing, replying and tidying, levels and medals for each piece as people view and comment, and rewards like themes. Off by default. Off hides all of it, Laurels included; PawPoller still counts quietly, so turning it on later loses nothing.
+                    </p>
+                    <div class="settings-row">
+                        <span class="settings-label" id="pref-levels-label">Use levels, medals and rewards</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="pref-levels" aria-labelledby="pref-levels-label" ${prefs.levels_enabled ? 'checked' : ''}>
+                            <span class="toggle-slider"></span>
+                        </label>
                     </div>
                 </div>
 
@@ -16598,6 +16876,20 @@ const App = {
                     <span id="autobk-msg" style="font-size:12px;margin-top:4px;display:block"></span>
                     <span id="backup-msg" style="font-size:13px;margin-top:8px;display:block"></span>
                 </div>
+
+                ${App._runtimeMode === 'server' ? '' : `<div class="settings-section" id="pb-section">
+                    <h3>Bring things in from PostyBirb</h3>
+                    <div class="settings-row">
+                        <div>
+                            <span class="settings-label">Import from PostyBirb</span>
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
+                                Copies the site logins PostyBirb has on this computer. Run it again any time to pick up
+                                accounts you've added in PostyBirb since. Accounts that already have a login here are left alone.
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-secondary" data-pb-import>Import</button>
+                    </div>
+                </div>`}
 
                 <div class="settings-section" id="move-section">
                     <h3>Moving to another PawPoller</h3>
@@ -18551,6 +18843,16 @@ const App = {
             document.getElementById('pref-sound-vol')?.addEventListener('change', (e) => {
                 Sound.set({ volume: Number(e.target.value) });
                 Sound.preview();
+            });
+            // ── Levels (Appearance tab, spec 050) — follows the person, not the device ──
+            document.getElementById('pref-levels')?.addEventListener('change', async (e) => {
+                try {
+                    await API.savePreferences({ levels_enabled: e.target.checked });
+                    if (window.Levels) Levels.refresh();
+                } catch (err) {
+                    e.target.checked = !e.target.checked;
+                    toast.error("Couldn't save that: " + err.message);
+                }
             });
 
             // Log tab event handlers

@@ -33,7 +33,8 @@ html[data-sfw="1"] .mp-alts:not([data-rating="general"]) img,
 html[data-sfw="1"] .artwork-detail-alts:not([data-rating="general"]) img,
 html[data-sfw="1"] img.artwork-detail-img:not([data-rating="general"]),
 html[data-sfw="1"] img.mp-hero-img:not([data-rating="general"]),
-html[data-sfw="1"] img.post-card-img:not([data-rating="general"]) {
+html[data-sfw="1"] img.post-card-img:not([data-rating="general"]),
+html[data-sfw="1"] .acct-av img:not([data-rating="general"]) {
     filter: blur(22px) saturate(0.75);
     /* Keep blurred pixels from bleeding past the frame edge. */
     overflow: hidden;

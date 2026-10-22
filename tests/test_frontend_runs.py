@@ -213,7 +213,7 @@ def app_url(_offline):
     # tour sits over every page. Dummy logins for the seeded sites, so their dashboards draw their
     # charts instead of "not connected" — nothing can use them: see _offline.
     tours = re.findall(r"^ {8}'([a-z0-9-]+)': \[", (ROOT / "frontend/js/tour.js").read_text(encoding="utf-8"), re.M)
-    config.save_settings({"setup_complete": True, "age_band": "adult", "setup_mode": "server", "tours_seen": tours,
+    config.save_settings({"setup_complete": True, "age_band": "adult", "setup_mode": "server", "levels_enabled": True, "tours_seen": tours,
                           "display_timezone": "Australia/Sydney", **_DUMMY_LOGINS, **_SIGNED_UP})
     config.invalidate_auth_required_cache()
     conn = get_connection()
@@ -574,3 +574,41 @@ def test_the_age_question_and_the_under_18_lock(browser, app_url):
     finally:
         tab.close()
         config.save_settings({"age_band": "adult"})
+
+
+def test_gamification_is_asked_and_off_hides_it(browser, app_url):
+    """22 Oct: levels, medals and rewards are a choice. Unanswered, the app asks on load; "No
+    thanks" hides Laurels and every level surface, and Laurels offers the way back on."""
+    config.delete_settings_keys(["levels_enabled"])
+    tab = _Watched(browser, app_url, {"width": 390, "height": 844})
+    page = tab.page
+    try:
+        page.wait_for_selector("#fun-ask", timeout=8000)
+        page.click("#fun-ask-no")
+        page.wait_for_selector("#fun-ask", state="detached")
+        assert config.get_settings()["levels_enabled"] is False
+        page.wait_for_timeout(300)
+        assert page.evaluate("document.documentElement.dataset.gamification") == "off"
+        assert not page.locator('.bottom-nav-item[data-page="laurels"]').is_visible()
+        assert page.locator('.bottom-nav-item[data-page="analytics"]').is_visible()     # it gets the slot back
+        tab.open("#/laurels")
+        page.click("#lr-turn-on")
+        page.wait_for_selector(".lr-eyebrow")                                           # the real Laurels page
+        assert config.get_settings()["levels_enabled"] is True
+        assert page.locator('.bottom-nav-item[data-page="laurels"]').is_visible()
+        page.click("#account-menu-btn")                                                 # the menu's switch
+        sw = page.locator('[data-acct="gamification"]')
+        assert sw.get_attribute("aria-checked") == "true" and sw.inner_text().strip().endswith("On")
+        sw.click()
+        page.wait_for_function("() => document.documentElement.dataset.gamification === 'off'")
+        assert config.get_settings()["levels_enabled"] is False
+        assert sw.get_attribute("aria-checked") == "false"
+        assert not page.locator("#acct-level").is_visible()                            # no level under your name
+        assert not page.locator("#acct-next").is_visible()
+        assert not page.locator('.bottom-nav-item[data-page="laurels"]').is_visible()
+        page.reload(wait_until="networkidle")
+        page.wait_for_timeout(1500)
+        assert page.locator("#fun-ask").count() == 0                                    # answered: never asked again
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()

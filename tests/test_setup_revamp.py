@@ -27,7 +27,7 @@ def test_the_new_steps_are_in_every_full_path_and_paired_skips_the_server_ones()
 
 
 def test_the_story_folder_is_only_asked_of_writers():
-    assert "const keep = (s) => (s !== 'archive' || makesAll().includes('stories')) && !answered[s];" in WIZ
+    assert "const keep = (s) => (s !== 'archive' || makesAll().includes('stories')) && !answered[s]" in WIZ
     assert all(o.rstrip().endswith(".filter(keep);") for o in _orders() if "'archive'" in o)
 
 
@@ -42,6 +42,9 @@ def test_every_theme_the_app_offers_is_one_the_server_saves():
     """Quill and Quill Dark (the default looks) were missing from the server's list, so choosing
     them never reached settings.json."""
     themes = set(re.findall(r"\{ id: '([a-z_0-9]+)',\s+name:", APP[APP.index("THEMES: ["):APP.index("applyTheme(themeId)")]))
+    # Reward themes (spec 051) are saved only once unlocked: test_rewards checks that path.
+    import config
+    themes -= {r["id"][len("theme_"):] for r in config.REWARD_TABLE["items"] if r["kind"] == "theme"}
     block = API_PY[API_PY.index('if "theme" in body:'):API_PY.index('update["theme"] = theme_val')]
     saved = set(re.findall(r'"([a-z_0-9]+)"', block)) - {"theme"}
     assert themes and themes <= saved, themes - saved

@@ -44,10 +44,11 @@ class TestThePageMergeIsStillInPlace:
 
     def test_the_story_board_carries_what_both_old_pages_had(self):
         """The superset the spec asked for: the posting page's record and publish
-        controls, plus the library page's chapter reach and achievements."""
+        controls, plus the library page's chapter reach and achievements (the work's
+        Laurels card since spec 052, drawn from the server by progress.js)."""
         src = _read("frontend/js/story_board.js")
         for needed in ("_canonicalHtml", "_chaptersHtml", "_publishHtml",
-                       "_locationsHtml", "_growthHtml", "_laurelsHtml"):
+                       "_locationsHtml", "_growthHtml", "Progress.card('story'"):
             assert needed in src, f"the merged board lost {needed}"
 
     def test_it_uses_the_contracts_vocabulary(self):

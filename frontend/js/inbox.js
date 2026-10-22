@@ -181,6 +181,7 @@ window.Inbox = {
                     const d = await r.json().catch(() => ({}));
                     if (!r.ok) throw new Error(d.detail || 'HTTP ' + r.status);
                     if (window.toast) window.toast.success('Reply posted ✓');
+                    if (window.Levels) Levels.refresh();   // a reply earns XP (spec 050)
                     this.render();   // reply auto-marks handled server-side
                 } catch (err) {
                     btn.disabled = false; btn.textContent = 'Send reply';

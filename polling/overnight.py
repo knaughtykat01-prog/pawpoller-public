@@ -412,6 +412,50 @@ def best_time(conn, zone: str | None) -> dict | None:
     return {"day": top.get("day"), "h0": top.get("h0"), "h1": top.get("h1"), "zone": w.get("zone")}
 
 
+def progress_block(conn, start: datetime, end: datetime) -> dict | None:
+    """"Your progress" (spec 052 US5, research R8): XP earned in the window (any source), the
+    level before and after, works that levelled up (their audience ledger rows), medals and
+    rewards earned, and up to five pieces at 2× your usual or more. None when nothing
+    progressed or Levels is off. The ledger already dates every award, so no new table."""
+    import medals
+    import progress
+    import rewards
+    import xp
+    if not xp.enabled():
+        return None
+    s, e = _sql(start), _sql(end)
+    gained = xp._sum(conn, "earned_at > ? AND earned_at <= ?", (s, e))
+    total = xp._sum(conn, "earned_at <= ?", (e,))
+    since = max(s, xp._state(conn, "progress_baselined_at") or "")   # the one-off back-pay isn't news
+    ups: dict[tuple, int] = {}
+    for (key,) in conn.execute("SELECT award_key FROM xp_ledger WHERE kind = 'audience' AND earned_at > ?"
+                               " AND earned_at <= ?", (since, e)):
+        ctype, rest = key[len("audience:"):].split(":", 1)
+        name, lvl = rest.rsplit(":", 1)
+        ups[(ctype, name)] = max(ups.get((ctype, name), 0), int(lvl))
+    names = medals._names()
+    won = [{"name": names.get(mid, {}).get("name", mid), "icon": names.get(mid, {}).get("icon", "🏅")}
+           for (mid,) in conn.execute("SELECT medal_id FROM earned_medals WHERE source = 'live'"
+                                      " AND earned_at > ? AND earned_at <= ? ORDER BY earned_at", (s, e))]
+    rnames = {c["id"]: c.get("name") or c.get("title") or c["id"]
+              for c in rewards.catalog(rewards.unlocked_ids(conn))}
+    unlocked = [rnames.get(rid, rid) for (rid,) in conn.execute(
+        "SELECT reward_id FROM xp_rewards WHERE source != 'catchup' AND unlocked_at > ? AND unlocked_at <= ?", (s, e))]
+    moved = conn.execute("SELECT content_type, work_name FROM work_levels WHERE updated_at > ?"
+                         " AND updated_at <= ? ORDER BY score DESC LIMIT 5", (s, e)).fetchall()
+    titles = progress._catalogue() if (ups or moved) else {}
+    callouts = []
+    for ctype, name in moved:
+        p = progress.performance(conn, ctype, name)
+        if p and (p.get("blended") or 0) >= 2 and (ctype, name) in titles:
+            callouts.append({"title": titles[(ctype, name)], "ratio": p["blended"], "at_age_h": p["at_age_h"]})
+    if not (gained or ups or won or unlocked or callouts):
+        return None
+    return {"xp": gained, "level_before": xp.level_for(total - gained), "level_after": xp.level_for(total),
+            "work_levelups": [{"title": titles.get(k, k[1]), "level": lv} for k, lv in sorted(ups.items())],
+            "medals": won, "rewards": unlocked, "callouts": callouts}
+
+
 # ── The sheet ─────────────────────────────────────────────────────────────
 
 def build(conn, start: datetime, end: datetime, zone: str | None = None) -> dict:
@@ -433,8 +477,15 @@ def build(conn, start: datetime, end: datetime, zone: str | None = None) -> dict
                       "counted": t["counted_followers"]},
         "did": d, "best_time": best_time(conn, zone),
     }
+    try:
+        pg = progress_block(conn, start, end)
+    except Exception as e:                 # progress never stops the sheet
+        logger.warning("overnight: progress unavailable: %s", e)
+        pg = None
+    if pg:
+        out["progress"] = pg
     tt = t["totals"]
-    out["has_news"] = bool(any(tt.values()) or cm["count"] or d["attention"] or d["posted"])
+    out["has_news"] = bool(any(tt.values()) or cm["count"] or d["attention"] or d["posted"] or pg)
     return out
 
 

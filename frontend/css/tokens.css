@@ -409,6 +409,116 @@
     --bg-glow-cool:   rgba(196, 122, 154, 0.05);
 }
 
+/* ── Reward themes (spec 051): unlocked at levels 15, 20, 35 and 50. Same token set as
+   Forest; App.THEMES lists each with `reward:` and the picker shows it once unlocked. ── */
+[data-theme="dusk"] {
+    --bg-primary:    #161722;
+    --bg-secondary:  #1e2030;
+    --bg-card:       #252839;
+    --bg-tertiary:   #2e3246;
+    --bg-hover:      #383c54;
+    --bg-glass:      rgba(37, 40, 57, 0.65);
+    --border:             #484d68;
+    --card-border-inner:  rgba(236, 232, 248, 0.07);
+    --overlay-backdrop:   rgba(10, 10, 18, 0.65);
+    --text-primary:  #ece8f8;
+    --text-secondary:#c4bedb;
+    --text-muted:    #b4aecb;
+    --accent:        #b9a2f0;
+    --accent-dim:    #9480cc;
+    --accent-warm:   #f0b48c;
+    --success:       #84c79e;
+    --warning:       #e6b866;
+    --danger:        #f08a8a;
+    --info:          #8fb4ee;
+    --shadow:         0 4px 20px rgba(0, 0, 0, 0.40);
+    --shadow-strong:  0 8px 40px rgba(0, 0, 0, 0.50);
+    --shadow-glass:   0 8px 32px rgba(0, 0, 0, 0.35);
+    --bg-glow-warm:   rgba(240, 180, 140, 0.05);
+    --bg-glow-cool:   rgba(185, 162, 240, 0.07);
+}
+
+[data-theme="ember"] {
+    --bg-primary:    #161312;
+    --bg-secondary:  #1f1a18;
+    --bg-card:       #27211e;
+    --bg-tertiary:   #322a26;
+    --bg-hover:      #3d332e;
+    --bg-glass:      rgba(39, 33, 30, 0.65);
+    --border:             #54463f;
+    --card-border-inner:  rgba(245, 234, 226, 0.07);
+    --overlay-backdrop:   rgba(12, 8, 6, 0.65);
+    --text-primary:  #f5eae2;
+    --text-secondary:#d2c2b6;
+    --text-muted:    #c0b0a4;
+    --accent:        #ff7a45;
+    --accent-dim:    #d65d2c;
+    --accent-warm:   #ffb347;
+    --success:       #8cc084;
+    --warning:       #f0b850;
+    --danger:        #ff8a8a;
+    --info:          #8fb0e0;
+    --shadow:         0 4px 20px rgba(0, 0, 0, 0.45);
+    --shadow-strong:  0 8px 40px rgba(255, 122, 69, 0.14);
+    --shadow-glass:   0 8px 32px rgba(0, 0, 0, 0.35);
+    --bg-glow-warm:   rgba(255, 122, 69, 0.08);
+    --bg-glow-cool:   rgba(255, 179, 71, 0.04);
+}
+
+[data-theme="aurora"] {
+    --bg-primary:    #0e1a1c;
+    --bg-secondary:  #142326;
+    --bg-card:       #1a2c30;
+    --bg-tertiary:   #22373b;
+    --bg-hover:      #2b4348;
+    --bg-glass:      rgba(26, 44, 48, 0.65);
+    --border:             #3d5a5f;
+    --card-border-inner:  rgba(226, 244, 240, 0.07);
+    --overlay-backdrop:   rgba(5, 12, 13, 0.65);
+    --text-primary:  #e2f4f0;
+    --text-secondary:#b6d3cd;
+    --text-muted:    #a6c4be;
+    --accent:        #4fe0b0;
+    --accent-dim:    #34b48c;
+    --accent-warm:   #b48cf0;
+    --success:       #6fd08c;
+    --warning:       #e8c060;
+    --danger:        #f38f8f;
+    --info:          #6cc8f0;
+    --shadow:         0 4px 20px rgba(0, 0, 0, 0.40);
+    --shadow-strong:  0 8px 40px rgba(79, 224, 176, 0.12);
+    --shadow-glass:   0 8px 32px rgba(0, 0, 0, 0.35);
+    --bg-glow-warm:   rgba(180, 140, 240, 0.06);
+    --bg-glow-cool:   rgba(79, 224, 176, 0.08);
+}
+
+[data-theme="gilded"] {
+    --bg-primary:    #0d0c0a;
+    --bg-secondary:  #161410;
+    --bg-card:       #1e1b15;
+    --bg-tertiary:   #28241c;
+    --bg-hover:      #332e24;
+    --bg-glass:      rgba(30, 27, 21, 0.65);
+    --border:             #4d4433;
+    --card-border-inner:  rgba(248, 240, 220, 0.08);
+    --overlay-backdrop:   rgba(6, 5, 3, 0.70);
+    --text-primary:  #f8f0dc;
+    --text-secondary:#d8cbad;
+    --text-muted:    #c4b796;
+    --accent:        #e8c062;
+    --accent-dim:    #c09a40;
+    --accent-warm:   #f4dc9a;
+    --success:       #9cc47c;
+    --warning:       #f0b850;
+    --danger:        #f08c7c;
+    --info:          #9cb8e0;
+    --shadow:         0 4px 20px rgba(0, 0, 0, 0.50);
+    --shadow-strong:  0 8px 40px rgba(232, 192, 98, 0.14);
+    --shadow-glass:   0 8px 32px rgba(0, 0, 0, 0.40);
+    --bg-glow-warm:   rgba(232, 192, 98, 0.08);
+    --bg-glow-cool:   rgba(244, 220, 154, 0.04);
+}
+
 /* ── High Contrast (a11y, pure black/white + yellow) ─────── */
 [data-theme="high_contrast"] {
     --bg-primary:    #000000;
@@ -503,7 +613,7 @@
    while giving the marketing-style "literary" tell where it shows most. */
 h1, h2, h3,
 .page-header h2, .page-header h1,
-.modal-panel h3,
+.modal-panel h3, .modal h3,
 .settings-section h3,
 .sidebar-header .brand-name,
 .login-card h1,

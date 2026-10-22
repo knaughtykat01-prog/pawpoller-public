@@ -93,9 +93,10 @@
         if (!_appVer || _editing()) return;
         _lastCheck = Date.now();
         _health().then(function (h) {
-            if (!h || !h.version || h.version === _appVer) return;
-            if (_ss.get('pp-fresh-for') === h.version) return;        // already tried for this version
-            _ss.set('pp-fresh-for', h.version);
+            var v = h && (h.asset || h.version);                      // asset = version + frontend fingerprint
+            if (!v || v === _appVer) return;
+            if (_ss.get('pp-fresh-for') === v) return;                // already tried for this version
+            _ss.set('pp-fresh-for', v);
             freshCopy();
         });
     }

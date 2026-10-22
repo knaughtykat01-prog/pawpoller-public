@@ -21,7 +21,8 @@ window.Accounts = {
         const app = document.getElementById('app');
         if (App._stale(_rt)) return;
         app.innerHTML = `
-            <div class="page-header"><h1>Accounts</h1></div>
+            <div class="page-header acct-head"><h1>Accounts</h1>${App._runtimeMode === 'server' ? ''
+                : '<button type="button" class="btn btn-secondary btn-sm" data-pb-import>Import from PostyBirb</button>'}</div>
             <p class="acct-intro muted">Run more than one account per platform. Each platform's
             default account keeps your existing credentials; add extra accounts below. Group accounts
             across platforms into a <strong>persona</strong> for scoped views and per-persona digests.</p>
@@ -47,10 +48,15 @@ window.Accounts = {
     async _refresh() {
         let data, personas;
         try {
-            [data, personas] = await Promise.all([
+            let prog;
+            [data, personas, prog] = await Promise.all([
                 API.getAccounts(),
                 API.getPersonas().catch(() => ({ personas: [] })),
+                (window.Progress && Progress.on()) ? Progress.load().catch(() => null) : null,
             ]);
+            // Spec 052 US6: each account's level on the work scale (levels only; accounts give no XP).
+            this._levels = {};
+            ((prog && prog.accounts) || []).forEach(l => { this._levels[l.subject] = l.level; });
         } catch (err) {
             const list = document.getElementById('accounts-list');
             if (list) list.innerHTML =
@@ -404,7 +410,8 @@ window.Accounts = {
             : '';
         return `<div class="acct-card${a.enabled ? '' : ' disabled'}" style="--pc:${color || 'var(--accent)'}">
             <div class="acct-id">
-                <span class="acct-name">${this.esc(a.label || '(unnamed)')} ${badge}</span>
+                <span class="acct-name">${this.esc(a.label || '(unnamed)')} ${badge}${(this._levels || {})[`acct:${a.account_id}`]
+                    ? `<span class="pg-acct-level" role="img" aria-label="Level ${this._levels[`acct:${a.account_id}`]}">Lv ${this._levels[`acct:${a.account_id}`]}</span>` : ''}</span>
                 ${a.handle ? `<span class="acct-handle">${this.esc(a.handle)}</span>` : ''}
             </div>
             <span class="acct-stats">${this._statChips(a.stats, a.platform, a.account_id, a.follower_count)}</span>

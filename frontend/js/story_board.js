@@ -121,10 +121,11 @@
                     <div class="board">
                         <div class="board-col">${this._canonicalHtml(name, d, meta)}${this._tagsHtml(d, meta)}${this._budgetHtml()}</div>
                         <div class="board-col">${this._chaptersHtml(name, d, v)}${this._publishHtml(name, d)}${this._promosHtml(name)}${this._linkHtml()}</div>
-                        <div class="board-col board-col--3">${this._locationsHtml(name, d, v)}${this._growthHtml()}${this._attentionHtml(name, d)}${this._laurelsHtml(d, v)}${this._moreHtml(name, d)}</div>
+                        <div class="board-col board-col--3">${this._locationsHtml(name, d, v)}${this._growthHtml()}${this._attentionHtml(name, d)}${window.Progress ? Progress.card('story', name) : ''}${this._moreHtml(name, d)}</div>
                     </div>
                 </div>`;
             this._tagChips();
+            if (window.Progress) Progress.fill(root);   // the work's Laurels (spec 052), from the server
             if (window.BoardPolish) BoardPolish.collapse(root, 'sb');   // folded cards remembered (C2 phase 3)
         },
 
@@ -538,28 +539,6 @@
                     <div class="sec-title"><h2 id="sb-sec-needs">Needs attention</h2><span class="acts">${count}${all}</span></div>
                     ${drift.length ? '<p class="sec-note">Drifted: the local file changed since it was posted. Update pushes it.</p>' : ''}
                     ${items.length ? items.join('') : '<p class="muted" style="margin:0;font-size:12.5px">Nothing needs you.</p>'}
-                </section>`;
-        },
-
-        /* Per-work achievements (Laurels) — carried over from the old page. */
-        _laurelsHtml(d, v) {
-            if (!(window.Laurels && window.Laurels.workMedals)) return '';
-            const chapters = d.chapters || [];
-            const multi = v.published.filter(c => v.byPlat[c] && [...v.byPlat[c].chapters].some(i => i > 0));
-            const reach = {};
-            v.pubs.forEach(p => { const i = p.chapter_index == null ? 0 : p.chapter_index; (reach[i] || (reach[i] = new Set())).add(p.platform); });
-            const incomplete = chapters.reduce((n, ch) => n + (multi.some(c => !(reach[ch.index] && reach[ch.index].has(c))) ? 1 : 0), 0);
-            const medals = Laurels.workMedals({
-                views: v.totals.views, faves: v.totals.faves, comments: v.totals.comments,
-                platforms: v.published, chapters: chapters.length, words: d.total_words, incompleteChapters: incomplete,
-            }) || [];
-            if (!medals.length) return '';
-            const earned = medals.filter(x => x.earned).length;
-            const chip = (x) => `<div class="wm ${x.earned ? 'is-earned' : 'is-locked'}" title="${esc(x.desc || '')}"><span class="wm-ico" aria-hidden="true">${x.icon}</span><span class="wm-name">${esc(x.name)}</span>${x.sub ? `<span class="wm-sub">${esc(x.sub)}</span>` : ''}</div>`;
-            return `
-                <section class="card" aria-labelledby="sb-sec-laurels">
-                    <div class="sec-title"><h2 id="sb-sec-laurels">Achievements</h2><span class="muted" style="font-size:12px">${earned} of ${medals.length}</span></div>
-                    <div class="wm-grid">${medals.map(chip).join('')}</div>
                 </section>`;
         },
 

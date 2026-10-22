@@ -67,7 +67,7 @@ async def health_check():
     4.43.2: added `commit` — one version can span several commits, so the
     version alone can't say which code is running. update.sh checks it.
     """
-    return {"status": "ok", "version": config.APP_VERSION, "commit": config.APP_COMMIT}
+    return {"status": "ok", "version": config.APP_VERSION, "commit": config.APP_COMMIT, "asset": config.ASSET_TAG}
 
 
 # /api/health/ready thresholds (4.45.5). The scheduler loops every minute, but one post
@@ -1929,12 +1929,17 @@ def get_preferences():
         # Free-form list of {id, span} objects; null until the user
         # customises (the frontend falls back to its default layout).
         "dashboard_layout": settings.get("dashboard_layout", None),
+        "dashboard_progress_added": bool(settings.get("dashboard_progress_added", False)),
         # ── Guided-tour "seen" set (2.82.0) ────────────────────────
         # List of tour names the user has completed/dismissed. Backs the
         # onboarding tours server-side so a dismissal sticks across Safari,
         # the installed PWA, the desktop app and updates — localStorage was
         # per-origin/per-browser and would re-show tours on a fresh store.
         "tours_seen": settings.get("tours_seen", []),
+        # Gamification: levels, medals, rewards (spec 050–052). OFF until the person says yes;
+        # off hides it all and the ledger keeps counting. Asked at setup or on the next visit.
+        "levels_enabled": settings.get("levels_enabled", False),
+        "gamification_asked": "levels_enabled" in settings,
         # ── Per-platform notification master toggles ───────────────
         # Registry-derived so a new platform cannot be rendered by the settings
         # UI while being invisible here — see platform_metrics.setting_keys.
@@ -2006,6 +2011,8 @@ def save_preferences(body: dict):
     # Startup update gate (4.9.0): on by default; one version may be skipped.
     if "auto_update" in body:
         update["auto_update"] = bool(body["auto_update"])
+    if "levels_enabled" in body:
+        update["levels_enabled"] = bool(body["levels_enabled"])
     if "update_skip_version" in body:
         update["update_skip_version"] = str(body.get("update_skip_version") or "").strip()[:32]
     if "telegram_enabled" in body:
@@ -2032,6 +2039,15 @@ def save_preferences(body: dict):
                          "midnight_press", "forest", "velvet", "high_contrast",
                          "retro_2005"}:
             update["theme"] = theme_val
+        else:
+            # Reward themes (spec 051) are accepted once unlocked.
+            import rewards
+            conn = get_connection()
+            try:
+                if theme_val in rewards.unlocked_theme_ids(conn):
+                    update["theme"] = theme_val
+            finally:
+                conn.close()
     # Mobile UX override. `auto` (default) follows viewport via matchMedia;
     # `on` forces the mobile layout on every screen size; `off` suppresses
     # the new mobile-mode-only enhancements (existing media queries still
@@ -2240,6 +2256,9 @@ def save_preferences(body: dict):
     # widget's `exclude` list of platform codes it should NOT count.
     if "dashboard_layout" in body:
         update["dashboard_layout"] = body["dashboard_layout"]
+    # Spec 052: the Progress card was added to a saved layout once; removing it then sticks.
+    if "dashboard_progress_added" in body:
+        update["dashboard_progress_added"] = bool(body["dashboard_progress_added"])
 
     # ── Windows startup registry ───────────────────────────────
     # Handled separately because it modifies the system registry

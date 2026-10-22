@@ -2222,7 +2222,10 @@ a.stat-card:hover {
 
 .modal-overlay.open { display: flex; justify-content: center; align-items: center; }
 
-.modal-panel {
+/* `.modal` is the same box: the sign-out, age, PostyBirb import, post-defaults, uninstall,
+   check-ins and error dialogs were written against a `.modal` base that never existed, so
+   they rendered with no panel at all (no background, no padding). */
+.modal-panel, .modal {
     background: var(--bg-glass);
     backdrop-filter: blur(var(--blur));
     -webkit-backdrop-filter: blur(var(--blur));
@@ -2236,9 +2239,12 @@ a.stat-card:hover {
     overflow-y: auto;
 }
 
-[data-theme="light"] .modal-panel {
+[data-theme="light"] .modal-panel, [data-theme="light"] .modal {
     border-color: rgba(0, 0, 0, 0.08);
 }
+.modal-header { margin-bottom: 12px; }
+.modal-footer { margin-top: 18px; }
+
 
 /* ── Publish confirmation + results (4.1.0) ─────────────────── */
 .pub-confirm { max-width: 560px; }

@@ -335,6 +335,7 @@ def assemble_works(
     estimated: set | None = None,   # keys whose date came from a title match (4.3.1)
     rollups: dict | None = None,    # artwork name -> masterpiece_queries.summarize_many row (4.47.0)
     scheduled: dict | None = None,  # (content_type, name) -> posting_queries.scheduled_parts rows (4.47.0)
+    levels: dict | None = None,     # (content_type, name) -> peak level (spec 052)
 ) -> dict:
     """Pure grouping/filter/sort over already-fetched data (unit-testable).
 
@@ -515,6 +516,9 @@ def assemble_works(
                 "status": _work_status(platforms, art_sched),
             })
 
+    for w in works:   # spec 052: the Library badge; 1 until the first progress sync sees the work
+        w["level"] = (levels or {}).get((w["content_type"], w["name"]), 1)
+
     if persona:
         works = [w for w in works if persona in w["persona_ids"]]
     if search:
@@ -669,6 +673,8 @@ def list_works(
             rollups = masterpiece_queries.summarize_many(
                 conn, [a["name"] for a in artworks], extra=extra)
             scheduled = posting_queries.scheduled_parts(conn)
+            levels = {(r[0], r[1]): r[2] for r in conn.execute(
+                "SELECT content_type, work_name, peak_level FROM work_levels")}
         finally:
             conn.close()
         return assemble_works(
@@ -680,6 +686,7 @@ def list_works(
             junk=junk,
             rollups=rollups,
             scheduled=scheduled,
+            levels=levels,
             acct_to_persona=acct_to_persona,
             personas=personas,
             type=type, persona=persona, search=search, sort=sort,

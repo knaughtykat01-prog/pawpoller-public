@@ -538,7 +538,13 @@ async def check_milestones_batch(platform: str, snap_table: str, sub_table: str,
     only that account's submissions are scanned — both to label the alert and to
     avoid double-firing when a platform has multiple accounts (each account's poll
     only checks its own submissions).
+
+    Every poller calls this, so it is also where work levels, audience XP and medals are
+    earned while no browser is open (spec 052). That runs first, whatever the Telegram
+    settings, and commits before any message is sent.
     """
+    import progress
+    progress.after_poll()
     settings = config.get_settings()
     if not settings.get("telegram_milestones", True):
         return

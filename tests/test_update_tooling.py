@@ -125,7 +125,17 @@ def test_health_says_which_commit_is_running(monkeypatch):
     import dashboard
     monkeypatch.setattr(config, "APP_COMMIT", "abc1234")
     body = TestClient(dashboard.app).get("/api/health").json()
-    assert body == {"status": "ok", "version": config.APP_VERSION, "commit": "abc1234"}
+    assert body == {"status": "ok", "version": config.APP_VERSION, "commit": "abc1234", "asset": config.ASSET_TAG}
+
+
+def test_asset_tag_follows_the_frontend_bytes(monkeypatch, tmp_path):
+    """A rebuild at the same version must change every ?v= (stale phones and Cloudflare)."""
+    import config
+    from fastapi.testclient import TestClient
+    import dashboard
+    assert config.ASSET_TAG.startswith(config.APP_VERSION + "-")
+    page = TestClient(dashboard.app).get("/").text
+    assert f"/js/pwa.js?v={config.ASSET_TAG}" in page or "login" in page.lower()
 
 
 def test_the_baked_commit_wins_over_the_checkout(monkeypatch):

@@ -27,6 +27,7 @@
     const _watched = new Set();     // jobs this tab saw running → toast when they finish
     const _toasted = new Set();
     const _sounded = new Set();     // a screen that shows the result itself still gets the sound (spec 049)
+    const _xpDone = new Set();      // and the level bar refresh (spec 050)
     const _grids = new Map();       // element → job id (publish screens)
     const _log = new Map();         // job id → [{t, text, cls}] (the grid's running log)
     const _lastStep = new Map();    // `${job}|${key}` → step text (to log transitions)
@@ -95,10 +96,17 @@
                 _sounded.add(j.id);
                 if (j.state !== 'cancelled' && window.Sound) Sound.play(j.state === 'done' ? 'post_up' : 'post_failed');
             }
+            let toastEl = null;
             if (j.finished && _watched.has(j.id) && !_toasted.has(j.id)) {
                 _toasted.add(j.id);
-                resultToast(j);
+                toastEl = resultToast(j);
                 if (window.NotificationCenter && NotificationCenter.poll) NotificationCenter.poll();
+            }
+            // Levels (spec 050): every finished post moves the bar, also when the screen that ran it
+            // shows its own grid and no toast; the "+N XP" chip goes on the toast when there is one.
+            if (j.finished && _watched.has(j.id) && !_xpDone.has(j.id)) {
+                _xpDone.add(j.id);
+                if (window.Levels) Levels.refresh({ toast: toastEl, sites: sites(j).map(l => l.key) });
             }
         }
         drawPill();
@@ -315,6 +323,7 @@
         stack.prepend(el);
         // A failure stays on the red pill until opened, so its toast need not stay too.
         setTimeout(() => el.remove(), j.state === 'failed' ? 15000 : 9000);
+        return el;
     }
 
     // ── the publish grid (US3) ─────────────────────────────────────

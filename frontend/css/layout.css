@@ -188,6 +188,17 @@
     min-width: 0;
 }
 .sidebar.collapsed .poll-badge { display: none; }
+/* Level bar (spec 050, levels.js). A small inline item: the footer is a row in the top-bar layout, so it
+   must never claim the full width (that pushed the account menu off screen). Collapsed rail: "Lv N" only. */
+.pp-level { flex: 0 1 150px; min-width: 70px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-secondary); }
+.pp-level[hidden] { display: none; }
+.pp-level-n { font-weight: 600; white-space: nowrap; }
+.pp-level-track { flex: 1; height: 6px; border-radius: 999px; background: var(--bg-tertiary); overflow: hidden; }
+.pp-level-fill { display: block; height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width .6s ease; }
+.pp-level.is-up .pp-level-n { animation: pp-level-up 1.2s ease; }
+@keyframes pp-level-up { 0% { transform: scale(1); } 30% { transform: scale(1.35); } 100% { transform: scale(1); } }
+.sidebar.collapsed .pp-level-track { display: none; }
+.act-chip.xp-chip { font-weight: 600; outline: 1px solid var(--accent); }
 .sidebar.collapsed .sidebar-footer { flex-direction: column; gap: 6px; }
 
 .sidebar-version {
@@ -816,6 +827,8 @@ button.nav-group-label {
 .acct-who { display: flex; gap: 10px; align-items: center; padding: 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
 .acct-who b { display: block; font-size: 14px; color: var(--text-primary); }
 .acct-who small { display: block; color: var(--text-muted); font-size: 12px; }
+.acct-who small[hidden] { display: none; }   /* display: block above would beat [hidden]: the level line showed with gamification off */
+.acct-who small.acct-who-level { color: var(--text-secondary); font-weight: 600; margin-top: 2px; }
 .acct-item {
     display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 8px;
     background: none; border: 0; color: var(--text-primary); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
@@ -891,6 +904,15 @@ html:not([data-navmode="top"]) .sidebar-footer .acct-menu { top: auto; bottom: c
 @media (min-width: 900px) and (max-width: 1199px) {
   html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-header .brand-name,
   html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-footer .sfw-word { display: none; }
+}
+/* Step 3 (spec 052 put Laurels top-level): below 1000px it is its medal icon; the word stays for
+   screen readers. */
+@media (min-width: 900px) and (max-width: 999px) {
+  html[data-navmode="top"]:not([data-mobile="1"]) .nav-links > li > .nav-link[href="#/laurels"] .nav-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  html[data-navmode="top"]:not([data-mobile="1"]) .nav-links > li > .nav-link,
+  html[data-navmode="top"]:not([data-mobile="1"]) button.nav-group-label { padding: 7px 6px; }
 }
 
 /* ── Phone bar (spec 019) ─────────────────────────────────────────────────────

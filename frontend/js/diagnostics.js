@@ -90,6 +90,13 @@
             const catalog = this._categories.map(cat => this._renderCategory(cat)).join('');
             root.innerHTML = `
                 ${this._renderTech()}
+                <div class="tech-panel">
+                    <h3>Display checks</h3>
+                    <div class="tech-row">
+                        <button class="btn btn-xs" id="diag-replay-level">Replay level-up</button>
+                        <span style="color:var(--text-muted);font-size:12px">Plays the level-up moment for your current level. Your level and XP don't change.</span>
+                    </div>
+                </div>
                 <div class="diag-wrap">
                     <div class="diag-toolbar">
                         <input type="search" class="diag-search" placeholder="Filter tests…" />
@@ -413,6 +420,7 @@
         },
 
         _bindEvents(root) {
+            root.querySelector('#diag-replay-level')?.addEventListener('click', () => window.Levels && Levels.replay());
             // Run single test
             root.addEventListener('click', async (e) => {
                 const runBtn = e.target.closest('.diag-run-test');

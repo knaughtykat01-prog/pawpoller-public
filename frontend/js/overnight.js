@@ -13,6 +13,9 @@ const Overnight = {
     blocked() { return /^#\/(login|loading|setup|signup|dashboard-)/.test(location.hash); },
 
     async auto() {
+        // Spec 052: hold the level-up while the server decides, so it never plays under the sheet.
+        if (window.Levels) Levels.hold();
+        let opened = false;
         try {
             const r = await API.post('/api/overnight/auto', {});
             if (!(r && r.show)) return;
@@ -21,8 +24,9 @@ const Overnight = {
                 .some(el => !el.closest('.ov-overlay') && el.getClientRects().length > 0)
                 || !!document.querySelector('.pp-tour-blocker');   // 4.69.1: nor under a running tour
             for (let i = 0; busy() && i < 600; i++) await new Promise(res => setTimeout(res, 1000));
-            if (!busy() && !this.blocked()) this.open(r);
+            if (!busy() && !this.blocked()) { this.open(r); opened = true; }
         } catch (e) { /* the app works without it */ }
+        finally { if (!opened && window.Levels) Levels.release(); }
     },
 
     async manual() {
@@ -136,6 +140,24 @@ const Overnight = {
             <ul class="ov-did">${rows.join('')}</ul></section>` : '';
     },
 
+    /* "Your progress" (spec 052 US5): XP, level, work level-ups, medals, rewards, standout pieces.
+     * The server leaves the block out when nothing progressed or Levels is off. */
+    _progress(p) {
+        if (!p) return '';
+        const ages = { 48: '2 days', 168: '7 days', 720: '30 days' };
+        const rows = [];
+        if (p.xp) rows.push(`+${this._n(p.xp)} XP${p.level_after > p.level_before ? ` · level ${p.level_before} → <b>${p.level_after}</b>` : ''}`);
+        for (const w of p.work_levelups) rows.push(`<b>${this._esc(w.title)}</b> reached level ${w.level}`);
+        for (const c of p.callouts) rows.push(`<b>${this._esc(c.title)}</b> is ${c.ratio}× your usual at ${ages[c.at_age_h] || ''}`);
+        for (const m of p.medals) rows.push(`${this._esc(m.icon)} Medal: ${this._esc(m.name)}`);
+        for (const r of p.rewards) rows.push(`Unlocked: ${this._esc(r)}`);
+        const next = window.Levels ? Levels.nextLine() : '';
+        return `<section class="ov-sec" aria-labelledby="ov-h-prog"><div class="ov-sec-h">
+            <h3 id="ov-h-prog">Your progress</h3><a href="#/laurels" data-ov-go>Laurels</a></div>
+            <ul class="ov-did">${rows.map(r => `<li><span class="ic ok" aria-hidden="true">★</span><span>${r}</span><span></span></li>`).join('')}</ul>
+            ${next ? `<p class="ov-tip">${this._esc(next)}</p>` : ''}</section>`;
+    },
+
     _best(b) {
         if (!b) return '';
         const days = ['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays'];
@@ -181,7 +203,7 @@ const Overnight = {
               <p>${coverage}${u ? ', compared with your usual for these hours this week' : ''}.</p></header>
             <div class="ov-totals">${total(t.views, 'views', 'views', scoreLine)}${total(t.faves, 'faves &amp; likes', 'faves')}
               ${total(t.comments, 'comments', 'comments')}${total(t.followers, 'followers', 'followers')}</div>
-            ${pieces}${comments}${followers}${this._did(d)}${this._best(d.best_time)}
+            ${this._progress(d.progress)}${pieces}${comments}${followers}${this._did(d)}${this._best(d.best_time)}
           </div>
           <footer class="ov-foot">
             <label>Show after <select id="ov-when">${opt('6', '6 hours away')}${opt('8', '8 hours away')}${opt('12', '12 hours away')}${opt('morning', 'Every morning')}${opt('never', 'Never')}</select></label>
@@ -190,6 +212,7 @@ const Overnight = {
           </footer></section>`;
         document.body.appendChild(ov);
         this._open = ov;
+        if (window.Levels) Levels.hold();       // a level-up earned while away plays after the sheet (US5 #2)
         ov.addEventListener('click', e => {
             if (e.target === ov || e.target.closest('[data-close]')) { e.preventDefault(); this.close(true); }
             else if (e.target.closest('[data-ov-go]')) this.close(true, true);
@@ -213,6 +236,7 @@ const Overnight = {
             try { history.back(); } catch (e) { /* ignore */ }
         }
         ov.remove();
+        if (window.Levels) Levels.release();
         if (markSeen) API.post('/api/overnight/seen', {}).catch(() => {});
     },
 };

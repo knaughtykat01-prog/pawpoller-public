@@ -62,6 +62,8 @@ from routes.characters_api import characters_router
 from routes.server_update_api import server_update_router
 from routes.masterpieces_api import masterpieces_router
 from routes.whatsnew_api import whatsnew_router
+from routes.xp_api import xp_router
+from routes.progress_api import progress_router
 from routes.privacy_api import privacy_router
 from routes.tech_api import tech_router
 from routes.legal_api import legal_router
@@ -776,6 +778,8 @@ app.include_router(artists_router)       # Artist registry (/api/artists/*)
 app.include_router(characters_router)    # Character registry (/api/characters/*)
 app.include_router(server_update_router)  # Server self-update: button + host-agent handoff (/api/server/*)
 app.include_router(whatsnew_router)  # In-app "What's new" changelog popup (/api/whatsnew)
+app.include_router(xp_router)  # Experience points + levels (spec 050) (/api/xp)
+app.include_router(progress_router)  # Work/account levels + medals (spec 052) (/api/progress)
 app.include_router(privacy_router)  # Settings → Privacy: what this install holds (/api/privacy, spec 011)
 app.include_router(backup_router)    # Backup & restore (/api/backup/*)
 app.include_router(move_router)      # Move to / bring in from another install (/api/move/*, spec 035)
@@ -843,7 +847,7 @@ async def serve_manifest():
 @app.get("/sw.js", include_in_schema=False)
 async def serve_service_worker():
     raw = (frontend_dir / "sw.js").read_text(encoding="utf-8")
-    rendered = raw.replace("__APP_VERSION__", config.APP_VERSION)
+    rendered = raw.replace("__APP_VERSION__", config.ASSET_TAG)
     return Response(
         content=rendered,
         media_type="application/javascript",
@@ -871,7 +875,7 @@ _index_html_cache: dict[str, str] = {}  # version -> rendered html
 
 
 def _render_index_html() -> str:
-    version = config.APP_VERSION
+    version = config.ASSET_TAG
     cached = _index_html_cache.get(version)
     if cached is not None:
         return cached

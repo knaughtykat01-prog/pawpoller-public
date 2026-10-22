@@ -50,7 +50,10 @@ def test_class_counts_match_the_spec(conn):
     # +4 in 4.64.0: e621/Furbooru found + found_snapshots (spec 028).
     # +5 in 4.65.0: Rule34's trio via PLATFORM_PREFIXES + r34_found / r34_found_snapshots (spec 028 US6).
     # +4 in spec 045: Twitch's trio via PLATFORM_PREFIXES + ttv_channel_snapshots.
-    assert counts["SRV"] == 99
+    # +2 in 4.84.0: xp_ledger + xp_state (spec 050); the server's ledger is the truth.
+    # +2 in spec 051: xp_rewards + profile_picture, beside the ledger they come from.
+    # +3 in spec 052: work_levels, account_levels, earned_medals.
+    assert counts["SRV"] == 106
     # The spec's §1 says 25 but enumerates 26; two of those (posting_queue,
     # posting_log) are reclassified HANDOFF here for the reasons in the module
     # docstring, leaving 24 that actually travel as shared rows.

@@ -2,6 +2,39 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.85.0] - 2026-10-22 - Progress everywhere
+
+> - Levels, medals and rewards are now your choice, and off unless you turn them on. PawPoller asks once, when you set up or on your next visit.
+> - Turn them on or off any time from the menu under your picture, or in Settings → Appearance. Off hides all of it, Laurels included; nothing you earn is lost.
+> - New: every piece in your Library has its own level, shown on its cover. More views, faves and comments raise it.
+> - Each story and artwork page has a Laurels card: its level, what the next level needs, and how it compares with your usual pieces.
+> - Pieces earn medals of their own, like First comment, On 3 sites and 100 views, and a level-up for a piece earns you XP.
+> - Pieces you posted before this update are paid their XP once, in one catch-up note.
+> - Each account on the Accounts page shows its level too.
+> - Medals are now worked out from every site, not just Inkbunny, and each shows when you earned it.
+> - The Overview has a Progress card, and the overnight summary has a Your progress section.
+> - Laurels now sits second in the menu and on the phone bar; Analytics moved into More on phones.
+
+## [4.84.0] - 2026-10-21 - Levels
+
+> - New: experience points and levels. Posting, writing, replying to comments and tidying your work all earn points.
+> - A bar beside the clock shows your level, and a post's result note shows the points it earned.
+> - Levelling up takes over the screen for a moment: your new level slams in with a burst of colour, and every fifth level is gold.
+> - The account menu shows your level and your XP toward the next one under your name.
+> - Settings → Logs & diagnostics has a Replay level-up button, so you can see the moment again any time.
+> - Phones now pick up a fixed app straight away, even when the version number hasn't changed.
+> - Points count what you do, never views or faves, so every artist levels up at the same pace.
+> - Posting the same piece again earns nothing extra, and each site has a daily limit, so spamming never pays.
+> - If you've used PawPoller for a while, you start at the level your history has already earned.
+> - Laurels shows your level, the points still needed for the next level, and this week's points. Turn the bar off in Settings → Appearance → Levels.
+> - Levels come with rewards: a new title every five levels, and a theme, an avatar ring or a level-up style on every fifth level.
+> - New rewards flip in during the level-up, with a Use it now button. A few hidden surprise rewards turn up for things like a four-week streak.
+> - Laurels has a Rewards shelf with everything you've earned and what's still to come, plus a history of when you reached each level.
+> - You can use a picture as your avatar: pick a piece from your Library or upload one, then crop it to the circle.
+> - Rewards are only for show. They never unlock or limit anything PawPoller does.
+> - Import from PostyBirb now has a button on the Accounts page and in Settings → Data, so you can run it again any time.
+> - Fixed several pop-up boxes (signing out, the age question, PostyBirb import, uninstall) showing with no background behind their text.
+
 ## [4.83.1] - 2026-10-21 - Faster Overview and Laurels on hosted seats
 
 > - The Overview loads several times faster on a hosted seat: PawPoller now compresses what it sends.
@@ -128,15 +161,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Getting Started now has the "Moving to a hosted seat" guide at the top, so it's easy to find before you move.
 > - The moving guide ends with a "Check your sites" step: test each account, and the two extra things DeviantArt needs on a new address.
 > - After a move, the rate watch only counts checks made on the new PawPoller, so the old copy's history no longer sets off an alert.
-
-## [4.77.2] - 2026-10-15 - Sync says when part of it didn't happen
-
-> - A sync that only partly worked now says so. For example, DeviantArt can't change a description without your sign-in cookie, and the result now tells you that instead of just "Synced".
-> - The same goes for Weasyl when it can't replace the picture file itself.
-> - The Test button on a DeviantArt account now also checks whether descriptions can sync, and warns you if they can't.
-> - DeviantArt description problems now come with a code, DA-COOKIE-MISSING or DA-COOKIE-EXPIRED, and the DeviantArt guide says what to do for each.
-
-## [4.77.1] - 2026-10-15 - DeviantArt edits work again
-
-> - Fixed editing artwork on DeviantArt: it always failed with "isn't in … gallery", whatever the username.
-> - DeviantArt edits now go through DeviantArt's official connection, the same one polling already uses.

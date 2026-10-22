@@ -80,6 +80,7 @@
     <link rel="stylesheet" href="/css/accounts.css?v=__APP_VERSION__">
     <link rel="stylesheet" href="/css/bookshelf.css?v=__APP_VERSION__">
     <link rel="stylesheet" href="/css/laurels.css?v=__APP_VERSION__">
+    <link rel="stylesheet" href="/css/levels.css?v=__APP_VERSION__">
     <link rel="stylesheet" href="/css/error_popup.css?v=__APP_VERSION__">
     <link rel="stylesheet" href="/css/ledger.css?v=__APP_VERSION__">
     <link rel="stylesheet" href="/css/workbench.css?v=__APP_VERSION__">
@@ -110,6 +111,7 @@
         <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
         <symbol id="i-map" viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/></symbol>
         <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+        <symbol id="i-medal" viewBox="0 0 24 24"><path d="M7 3h10l-3 6h-4z"/><circle cx="12" cy="15" r="6"/><path d="m12 12 .9 1.9 2.1.3-1.5 1.4.4 2.1-1.9-1-1.9 1 .4-2.1-1.5-1.4 2.1-.3z"/></symbol>
         <symbol id="i-caret" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
         <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></symbol>
     </svg>
@@ -150,6 +152,10 @@
         <ul class="nav-links">
             <li><a href="#/" class="nav-link active" data-page="overview">
                 <span class="nav-icon">&#9632;</span><span class="nav-label">Overview</span>
+            </a></li>
+            <!-- Laurels sits beside Overview (spec 052 US8): progress is core, not a tool. -->
+            <li><a href="#/laurels" class="nav-link" data-page="laurels">
+                <span class="nav-icon">&#127941;</span><span class="nav-label">Laurels</span>
             </a></li>
             <li><a href="#/platforms" class="nav-link" data-page="platforms">
                 <span class="nav-icon">&#128062;</span><span class="nav-label">Platforms</span>
@@ -229,9 +235,6 @@
                 <li><a href="#/repost-radar" class="nav-link" data-page="repost-radar">
                     <span class="nav-icon">&#128260;</span><span class="nav-label">Repost Radar</span>
                 </a></li>
-                <li><a href="#/laurels" class="nav-link" data-page="laurels">
-                    <span class="nav-icon">&#127941;</span><span class="nav-label">Laurels</span>
-                </a></li>
                 <li><a href="#/ledger" class="nav-link" data-page="ledger">
                     <span class="nav-icon">&#128197;</span><span class="nav-label">Activity</span>
                 </a></li>
@@ -265,6 +268,7 @@
 
         <div class="sidebar-footer">
             <div id="poll-status-mini" class="poll-badge">--</div>
+            <div id="pp-level" class="pp-level" hidden></div><!-- level bar (spec 050, levels.js) -->
             <button class="btn-clock" id="pp-clock" type="button" aria-expanded="false" aria-controls="pp-clock-pop"></button>
             <!-- Safe mode, the bell, the avatar (spec 019). One cluster, moved into #mobile-bar on phones. -->
             <div class="bar-controls" id="bar-controls">
@@ -281,11 +285,16 @@
                     <div class="acct-menu" id="account-menu" role="menu" aria-labelledby="account-menu-btn" hidden>
                         <div class="acct-who" role="presentation">
                             <span class="acct-av acct-av--lg" aria-hidden="true"></span>
-                            <span><b class="acct-who-name"></b><small class="acct-who-sub">Signed in on this server</small></span>
+                            <span><b class="acct-who-name"></b><small class="acct-who-sub">Signed in on this server</small><small class="acct-who-level" id="acct-level" hidden></small><small class="acct-who-next" id="acct-next" hidden></small></span>
                         </div>
                         <button type="button" role="menuitem" class="acct-item" data-acct="theme">
                             <svg class="ico" aria-hidden="true"><use href="#i-palette"/></svg><span>Theme</span><span class="acct-hint" id="acct-theme-name"></span></button>
                         <div class="acct-swatches" id="acct-swatches" role="group" aria-label="Quick themes"></div>
+                        <button type="button" role="menuitem" class="acct-item" data-acct="picture">
+                            <svg class="ico" aria-hidden="true"><use href="#i-user"/></svg><span id="acct-picture-label">Use a picture</span></button>
+                        <!-- NOFUN (22 Oct): the same switch as Settings → Appearance, one tap away. -->
+                        <button type="button" role="menuitemcheckbox" aria-checked="false" class="acct-item" data-acct="gamification">
+                            <svg class="ico" aria-hidden="true"><use href="#i-medal"/></svg><span>Levels, medals &amp; rewards</span><span class="acct-hint" id="acct-fun-state">Off</span></button>
                         <button type="button" role="menuitem" class="acct-item" data-acct="tour">
                             <svg class="ico" aria-hidden="true"><use href="#i-map"/></svg><span>Take the tour</span></button>
                         <button type="button" role="menuitem" class="acct-item" data-acct="help">
@@ -339,6 +348,11 @@
             <span class="bottom-nav-icon">&#9632;</span>
             <span class="bottom-nav-label">Overview</span>
         </a>
+        <!-- Laurels second (spec 052 US8). Analytics takes the slot back when gamification is off (levels.css). -->
+        <a href="#/laurels" class="bottom-nav-item" data-page="laurels">
+            <span class="bottom-nav-icon">&#127941;</span>
+            <span class="bottom-nav-label">Laurels</span>
+        </a>
         <a href="#/platforms" class="bottom-nav-item" data-page="platforms">
             <span class="bottom-nav-icon">&#128062;</span>
             <span class="bottom-nav-label">Platforms</span>
@@ -368,6 +382,8 @@
     <script src="/js/platforms.js?v=__APP_VERSION__"></script>
     <script src="/js/loading_indicator.js?v=__APP_VERSION__"></script>
     <script src="/js/sound.js?v=__APP_VERSION__"></script>
+    <script src="/js/levels.js?v=__APP_VERSION__"></script>
+    <script src="/js/progress.js?v=__APP_VERSION__"></script>
     <script src="/js/tour.js?v=__APP_VERSION__"></script>
     <script src="/js/platform_health.js?v=__APP_VERSION__"></script>
     <script src="/js/command_palette.js?v=__APP_VERSION__"></script>
