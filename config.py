@@ -741,6 +741,8 @@ IG_RELAY_MAX_BYTES = 12 * 1024 * 1024
 IG_RELAY_MAX_VIDEO_BYTES = 100 * 1024 * 1024   # 4.20.1: a Reel's video through the relay / paired host
 IG_RELAY_PER_IP = (10, 600)        # uploads per window (seconds) from one address
 IG_RELAY_MAX_PENDING = 300         # hosted images at once, all callers — then 503
+IG_RELAY_MAX_PENDING_BYTES = 256 * 1024 * 1024   # 054: and in bytes, so 300 large files can't fill the disk
+IG_RELAY_MAX_PIXELS = 40_000_000  # 054: open relay refuses bigger images before decoding them
 # The tunnel helper is downloaded on request, pinned by version AND digest; a
 # download that does not match is deleted, never installed. Bump both together.
 IG_TUNNEL_HELPER_VERSION = "2026.8.3"
@@ -1368,7 +1370,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.85.0"
+APP_VERSION = "4.85.1"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).

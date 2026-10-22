@@ -77,7 +77,11 @@ def get_work(content_type: str, name: str):
 def post_announce(body: dict):
     conn = get_connection()
     try:
-        medals.announce(conn, body or {})
+        try:
+            medals.announce(conn, body or {})
+        except (TypeError, ValueError, AttributeError):
+            # junk from the browser (a level that isn't a number, a list that isn't one): nothing marked
+            raise HTTPException(400, "Malformed announcement")
         conn.commit()
         return {"ok": True}
     finally:

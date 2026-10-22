@@ -93,8 +93,10 @@ def api(stash_dir, monkeypatch):
     return TestClient(app)
 
 
-def test_the_relay_and_the_paired_route_take_a_video_under_the_video_cap(api, monkeypatch):
-    r = api.post("/api/ig/relay", files={"file": ("clip.mp4", MP4, "application/octet-stream")})
+def test_the_paired_route_takes_a_video_and_the_open_relay_does_not(api, monkeypatch):
+    # Spec 054 (RELAYHARDEN): the open relay kept a video byte-for-byte — any file on our domain
+    # for 15 minutes — so it hosts pictures only; the signed-in paired route keeps video.
+    r = api.post("/api/ig/pubmedia", files={"file": ("clip.mp4", MP4, "application/octet-stream")})
     assert r.status_code == 200, r.text
     url = r.json()["url"]
     assert url.endswith(".mp4")
@@ -102,15 +104,17 @@ def test_the_relay_and_the_paired_route_take_a_video_under_the_video_cap(api, mo
     assert g.status_code == 200 and g.headers["content-type"].startswith("video/mp4") and g.content == MP4
     r = api.post("/api/ig/pubmedia", files={"file": ("clip.mov", MOV, "application/octet-stream")})
     assert r.status_code == 200 and r.json()["url"].endswith(".mov")
+    r = api.post("/api/ig/relay", files={"file": ("clip.mp4", MP4, "application/octet-stream")})
+    assert r.status_code == 415
     # an image still has the pixels rule and the 12 MB rule
     r = api.post("/api/ig/relay", files={"file": ("x.bin", b"not a file at all", "application/octet-stream")})
-    assert r.status_code == 400 and "mp4" in r.json()["detail"]
+    assert r.status_code == 400 and "Not an image" in r.json()["detail"]
     monkeypatch.setattr(config, "IG_RELAY_MAX_BYTES", 10)
     r = api.post("/api/ig/relay", files={"file": ("pic.png", _png(), "image/png")})
     assert r.status_code == 413
-    # a video over the video cap is refused by the reader
+    # a video over the video cap is refused by the paired route's reader
     monkeypatch.setattr(config, "IG_RELAY_MAX_VIDEO_BYTES", 32)
-    r = api.post("/api/ig/relay", files={"file": ("clip.mp4", MP4, "application/octet-stream")})
+    r = api.post("/api/ig/pubmedia", files={"file": ("clip.mp4", MP4, "application/octet-stream")})
     assert r.status_code == 413
 
 

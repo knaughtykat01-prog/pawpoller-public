@@ -11,6 +11,7 @@ import re
 import sys
 import time
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -908,10 +909,33 @@ _APP_RESET_HTML = (
     "<p>The saved copy of the app on this device has been cleared. You're still signed in.</p>"
     "<a href='/'>Open PawPoller</a></div></body></html>"
 )
+# Spec 054 (REVIEW4811): another website's link must not clear this device (it wipes editor
+# recovery drafts too), so a cross-site or same-site arrival gets this page and nothing is cleared.
+# Its link is same-origin, so pressing it does the refresh. Same-site counts: seats share a parent domain.
+_APP_RESET_ASK_HTML = (
+    _APP_RESET_HTML.split("</head>")[0].replace("PawPoller refreshed", "Refresh PawPoller?")
+    + "</head><body><div><h1>Refresh PawPoller on this device?</h1>"
+    "<p>This clears the saved copy of the app on this device, including unsaved editor drafts. "
+    "You stay signed in. Nothing has been cleared yet.</p>"
+    "<a href='/app-reset'>Refresh PawPoller</a></div></body></html>"
+)
+
+
+def _app_reset_from_here(request: Request) -> bool:
+    """Typed/bookmarked (`none`) or from PawPoller itself. A browser that sends no Sec-Fetch-Site
+    counts only with a Referer from this address, which the confirm page's own link supplies
+    (Referrer-Policy keeps the full same-origin referrer), so it never loops on the ask page."""
+    site = request.headers.get("sec-fetch-site")
+    if site is not None:
+        return site in ("same-origin", "none")
+    ref = urlsplit(request.headers.get("referer") or "")
+    return bool(ref.netloc) and ref.netloc == request.headers.get("host")
 
 
 @app.get("/app-reset", include_in_schema=False)
-async def app_reset():
+async def app_reset(request: Request):
+    if not _app_reset_from_here(request):
+        return Response(content=_APP_RESET_ASK_HTML, media_type="text/html", headers={"Cache-Control": "no-store"})
     return Response(content=_APP_RESET_HTML, media_type="text/html",
                     headers={"Clear-Site-Data": '"cache", "storage"', "Cache-Control": "no-store"})
 

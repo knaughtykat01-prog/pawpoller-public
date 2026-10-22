@@ -49,7 +49,7 @@ self.addEventListener('fetch', (event) => {
                 const net = await fetch(req);
                 if (net && net.ok) {
                     const cache = await caches.open(CACHE);
-                    cache.put(req, net.clone());
+                    cache.put(req, net.clone()).catch(() => {});
                 }
                 return net;
             } catch (e) {
@@ -68,7 +68,8 @@ self.addEventListener('fetch', (event) => {
             if (hit) return hit;
             try {
                 const net = await fetch(req);
-                if (net && net.ok && net.type === 'basic') cache.put(req, net.clone());
+                // 200 only: a 206 (an <audio> range request) can't be cached and put() would reject (SW206).
+                if (net && net.status === 200 && net.type === 'basic') cache.put(req, net.clone()).catch(() => {});
                 return net;
             } catch (e) {
                 return hit || Response.error();

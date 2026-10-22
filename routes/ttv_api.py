@@ -31,6 +31,7 @@ from database.db import get_connection
 from polling import golive
 from polling.background import spawn_poll
 from polling.ttv_poller import TOKEN_FIELDS, make_client, run_ttv_poll_cycle, save_tokens, ttv_poll_progress
+from routes.body_caps import read_capped
 
 logger = logging.getLogger(__name__)
 ttv_router = APIRouter(prefix="/api/ttv")
@@ -290,15 +291,24 @@ def _when(ts: str) -> float | None:
         return None
 
 
+_last_refusal_log = 0.0
+
+
+def _log_refusal() -> None:
+    """At most one line a minute, as /hooks/trello: a stranger shouldn't get to fill the log."""
+    global _last_refusal_log
+    now = time.monotonic()
+    if now - _last_refusal_log >= 60:
+        _last_refusal_log = now
+        logger.warning("Twitch webhook: a delivery with a bad signature was refused")
+
+
 @ttv_hooks_router.post("/hooks/twitch")
 async def twitch_webhook(request: Request):
     if not golive.webhook_base():
         raise HTTPException(404)
-    if int(request.headers.get("content-length") or 0) > _MAX_BODY:
-        raise HTTPException(413)
-    raw = await request.body()
-    if len(raw) > _MAX_BODY:
-        raise HTTPException(413)
+    # Streamed with a cap: a chunked body has no Content-Length to check (REVIEW4811, spec 054).
+    raw = await read_capped(request, _MAX_BODY)
     h = request.headers
     mid, ts = h.get("twitch-eventsub-message-id", ""), h.get("twitch-eventsub-message-timestamp", "")
     sig, kind = h.get("twitch-eventsub-message-signature", ""), h.get("twitch-eventsub-message-type", "")
@@ -307,7 +317,7 @@ async def twitch_webhook(request: Request):
     want = "sha256=" + hmac.new(golive.eventsub_secret().encode(), mid.encode() + ts.encode() + raw,
                                 hashlib.sha256).hexdigest()
     if not hmac.compare_digest(want, sig):
-        logger.warning("Twitch webhook: a delivery with a bad signature was refused")
+        _log_refusal()
         raise HTTPException(403)
     when = _when(ts)
     if when is None or not (-60 <= time.time() - when <= 600):

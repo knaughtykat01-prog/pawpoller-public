@@ -28,9 +28,12 @@ def test_the_page_is_always_checked_with_the_server(client):
 def test_app_reset_clears_the_device_copy_but_not_the_sign_in(client):
     import dashboard
     assert "/app-reset" in dashboard._AUTH_EXEMPT_PATHS
-    r = client.get("/app-reset")
+    # As the error popup's link arrives (same-origin). Since 4.85.1 a link from elsewhere, or a bare
+    # request with no referrer from here, gets the confirm page instead (spec 054, REVIEW4811).
+    r = client.get("/app-reset", headers={"Sec-Fetch-Site": "same-origin"})
     assert r.status_code == 200 and "Open PawPoller" in r.text
     assert r.headers["clear-site-data"] == '"cache", "storage"'      # never "cookies": stay signed in
+    assert "clear-site-data" not in client.get("/app-reset").headers
 
 
 def test_server_unreachable_offers_the_reset():

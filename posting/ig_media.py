@@ -90,19 +90,29 @@ def stash_image(source_path: str) -> str:
     return _stash(Image.open(source_path))
 
 
-def stash_bytes(data: bytes) -> str:
+class TooManyPixels(ValueError):
+    """The image is bigger (width x height) than the caller allows; nothing was decoded."""
+
+
+def stash_bytes(data: bytes, max_pixels: int | None = None) -> str:
     """Stash raw *data* and return its token: an image is normalised to a web-safe
     JPEG; an mp4 / mov (4.20.1) is kept byte-for-byte under ``.mp4`` / ``.mov``.
 
     Used by the authenticated ``POST /api/ig/pubmedia`` relay endpoint, so a
     paired desktop instance (no public address of its own) can hand a file to
     this public server to host during an Instagram publish.
+
+    *max_pixels* (the open relay, spec 054) refuses a larger image from its header size,
+    before any decode.
     """
     sweep()
     if is_video_bytes(data):
         return _stash_raw(data, ".mov" if data[8:12] == b"qt  " else ".mp4")
     from PIL import Image
-    return _stash(Image.open(io.BytesIO(data)))
+    img = Image.open(io.BytesIO(data))
+    if max_pixels is not None and img.size[0] * img.size[1] > max_pixels:
+        raise TooManyPixels(f"{img.size[0]} x {img.size[1]}")
+    return _stash(img)
 
 
 def stash_file(source_path: str) -> str:
@@ -125,6 +135,18 @@ def pending_count() -> int:
     """How many files are hosted right now (after a sweep) — the relay's cap."""
     sweep()
     return sum(1 for _ in _dir().glob("*.*"))
+
+
+def pending_bytes() -> int:
+    """How many bytes are hosted right now (after a sweep) — the relay's other cap (spec 054)."""
+    sweep()
+    total = 0
+    for f in _dir().glob("*.*"):
+        try:
+            total += f.stat().st_size
+        except OSError:
+            pass
+    return total
 
 
 def _find(token: str) -> Path | None:

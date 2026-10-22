@@ -78,7 +78,7 @@
 
     function medalChip(m) {
         const when = m.dated_exactly ? `Earned ${day(m.earned_at)}` : `Before ${day(m.earned_at)}`;
-        return `<li class="pg-medal" title="${esc(m.desc || '')}"><span class="pg-medal-ico" aria-hidden="true">${m.icon || '🏅'}</span>
+        return `<li class="pg-medal" title="${esc(m.desc || '')}"><span class="pg-medal-ico" aria-hidden="true">${esc(m.icon || '🏅')}</span>
             <span class="pg-medal-name">${esc(m.name)}</span><span class="pg-medal-when">${esc(when)}</span></li>`;
     }
 

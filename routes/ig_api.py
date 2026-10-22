@@ -6,6 +6,7 @@ Tracks views, reach, likes, comments, saved, shares. Post IDs are numeric media 
 """
 
 from __future__ import annotations
+import asyncio
 import re
 import csv
 import io
@@ -16,6 +17,7 @@ import time
 
 from fastapi import APIRouter, Query, HTTPException, UploadFile, File, Request
 from fastapi.responses import StreamingResponse, FileResponse
+from starlette.concurrency import run_in_threadpool
 
 from database.db import get_connection
 from database import ig_queries
@@ -23,6 +25,7 @@ from polling.ig_poller import run_ig_poll_cycle, ig_poll_progress
 from polling.background import spawn_poll
 import config
 import legal
+from routes.body_caps import check_declared
 
 logger = logging.getLogger(__name__)
 ig_router = APIRouter(prefix="/api/ig")
@@ -196,8 +199,17 @@ async def _read_capped(file: UploadFile, cap: int) -> bytes:
     return b"".join(chunks)
 
 
+_RELAY_LOCK = asyncio.Lock()
+_FORM_OVERHEAD = 64 * 1024
+
+
+def _relay_busy(ig_media) -> bool:
+    return (ig_media.pending_count() >= config.IG_RELAY_MAX_PENDING
+            or ig_media.pending_bytes() >= config.IG_RELAY_MAX_PENDING_BYTES)
+
+
 @ig_router.post("/relay")
-async def ig_relay(request: Request, file: UploadFile = File(...)):
+async def ig_relay(request: Request):
     """Host one image for an install that has no public address (no auth).
 
     Returns the public URL Meta will fetch; the image self-expires on the stash
@@ -205,6 +217,10 @@ async def ig_relay(request: Request, file: UploadFile = File(...)):
     public base, is rate-limited for this address, or is already hosting the
     cap. The body must decode as an image — PIL re-encodes it to JPEG, so the
     URL can only ever serve pixels.
+
+    Spec 054 (RELAYHARDEN): takes Request, not UploadFile, so every cheap check runs before
+    the body is read; pictures only (a video was kept byte-for-byte — any file on our domain);
+    pending capped in bytes as well as files, checked and stashed under one lock.
     """
     s = config.get_settings()
     # A hosted seat never relays for strangers (IGSEAT review, 4.82.2): seats share one home box's
@@ -218,24 +234,34 @@ async def ig_relay(request: Request, file: UploadFile = File(...)):
     if not _relay_rate_ok(ip):
         raise HTTPException(429, "Too many images from this address — try again in a few minutes.")
     from posting import ig_media
-    if ig_media.pending_count() >= config.IG_RELAY_MAX_PENDING:
-        raise HTTPException(503, "The relay is busy hosting other images right now — try again in a few minutes.")
-    data = await _read_capped(file, config.IG_RELAY_MAX_VIDEO_BYTES)
+    busy = "The relay is busy hosting other images right now — try again in a few minutes."
+    if _relay_busy(ig_media):
+        raise HTTPException(503, busy)
+    cap = config.IG_RELAY_MAX_BYTES
+    too_big = f"Image too large (max {cap // (1024 * 1024)} MB)"
+    check_declared(request, cap + _FORM_OVERHEAD, required=True, too_big=too_big)
+    async with request.form(max_files=1, max_fields=4) as form:   # closes the spooled file
+        file = form.get("file")
+        if file is None or isinstance(file, str):
+            raise HTTPException(400, "Empty upload")
+        data = await _read_capped(file, cap)
     if not data:
         raise HTTPException(400, "Empty upload")
-    # 4.20.1: the open relay also hosts a Reel's video (mp4 / mov by its `ftyp` box) —
-    # kept byte-for-byte, so the type check is the container signature, and the
-    # larger cap applies only to it; anything else must still be pixels under 12 MB.
-    is_video = ig_media.is_video_bytes(data)
-    if not is_video and len(data) > config.IG_RELAY_MAX_BYTES:
-        raise HTTPException(413, f"Image too large (max {config.IG_RELAY_MAX_BYTES // (1024 * 1024)} MB)")
-    if not is_video and not data.startswith(_IMAGE_MAGIC):
-        raise HTTPException(400, "Not an image or an mp4 / mov video")
-    try:
-        token = ig_media.stash_bytes(data)
-    except Exception as e:
-        raise HTTPException(400, f"Could not process the file: {e}")
-    logger.info("IG relay: hosting one %s (%d KB) for a remote install", "video" if is_video else "image", len(data) // 1024)
+    if ig_media.is_video_bytes(data):
+        raise HTTPException(415, "This relay hosts pictures only. Post videos from your own seat or paired server.")
+    if not data.startswith(_IMAGE_MAGIC):
+        raise HTTPException(400, "Not an image (PNG, JPEG, WebP or GIF)")
+    async with _RELAY_LOCK:
+        # ponytail: one lock serialises relay stashes; fine at tens a minute, per-upload reservations if it gets busy
+        if _relay_busy(ig_media):
+            raise HTTPException(503, busy)
+        try:
+            token = await run_in_threadpool(ig_media.stash_bytes, data, config.IG_RELAY_MAX_PIXELS)
+        except ig_media.TooManyPixels:
+            raise HTTPException(413, f"Image too large (max {config.IG_RELAY_MAX_PIXELS // 1_000_000} megapixels)")
+        except Exception as e:
+            raise HTTPException(400, f"Could not process the file: {e}")
+    logger.info("IG relay: hosting one image (%d KB) for a remote install", len(data) // 1024)
     return {"url": ig_media.public_url(base, token), "expires_in": ig_media.TTL_SECONDS}
 
 

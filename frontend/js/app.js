@@ -6750,7 +6750,7 @@ const App = {
         ov.innerHTML = `
             <div class="wn-modal" role="dialog" aria-modal="true" aria-label="What's new">
                 <div class="wn-top">
-                    <h2>✨ What's new <span class="wn-cur">v${esc(Utils.versionLabel(data.current))}</span></h2>
+                    <h2>What's new <span class="wn-cur">v${esc(Utils.versionLabel(data.current))}</span></h2>
                     <button class="wn-x" type="button" aria-label="Close">×</button>
                 </div>
                 <div class="wn-scroll">${items}${more}</div>

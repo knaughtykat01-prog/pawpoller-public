@@ -183,8 +183,11 @@ async def host_images(paths: list[str], settings: dict | None = None) -> Hosted:
         except Exception as e:
             tried.append(f"your paired server ({_short(e)})")
 
-    # 3. the PawPoller relay — only with a yes to the current wording (LEGALPAGES)
-    if relay_on(s):
+    # 3. the PawPoller relay — only with a yes to the current wording (LEGALPAGES).
+    # Pictures only since 4.85.1 (spec 054): a Reel goes on to the tunnel without a doomed upload.
+    if relay_on(s) and any(str(p).lower().endswith(ig_media.VIDEO_EXTS) for p in paths):
+        tried.append("the PawPoller relay (it hosts pictures only, not videos)")
+    elif relay_on(s):
         endpoint = relay_url(s)
         try:
             urls = [await upload_to_host(endpoint, p) for p in paths]

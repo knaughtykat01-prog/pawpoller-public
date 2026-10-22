@@ -2,6 +2,15 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.85.1] - 2026-10-23 - Quick fixes
+
+> - The Promo Maker now has a megaphone icon instead of sparkles, which many people read as "AI".
+> - The DeviantArt guide now walks you through copying the cookie for description changes, one step at a time.
+> - A link on another website can no longer wipe your saved app and editor drafts through the "Refresh PawPoller" page.
+> - Oversized or broken uploads are now turned away straight away, with a clear message instead of an error.
+> - Servers that host Instagram pictures for other installs now host pictures only, with tighter limits.
+> - Playing a sound no longer leaves an error in the browser console.
+
 ## [4.85.0] - 2026-10-22 - Progress everywhere
 
 > - Levels, medals and rewards are now your choice, and off unless you turn them on. PawPoller asks once, when you set up or on your next visit.
@@ -155,9 +164,3 @@ Generated from the release notes: each version's plain-language summary.
 > - X polls use fewer requests: the separate login check before each poll is gone; the poll itself now says when the X cookies need renewing.
 > - X no longer keeps other people's reposts, even when they tag you. A repost of your own post counts as that post, and a quote keeps its own numbers.
 > - The update check asks GitHub far less often, so seats sharing one internet connection no longer hit GitHub's hourly limit.
-
-## [4.77.3] - 2026-10-15 - The moving guide is on Getting Started
-
-> - Getting Started now has the "Moving to a hosted seat" guide at the top, so it's easy to find before you move.
-> - The moving guide ends with a "Check your sites" step: test each account, and the two extra things DeviantArt needs on a new address.
-> - After a move, the rate watch only counts checks made on the new PawPoller, so the old copy's history no longer sets off an alert.

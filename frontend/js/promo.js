@@ -391,7 +391,7 @@ const Promo = {
             const ok = await this.open(id);
             if (!ok) {
                 if (App._stale(_rt)) return;
-                app.innerHTML = `<div class="page-header"><h1>✨ Promo Maker</h1></div>
+                app.innerHTML = `<div class="page-header"><h1>📣 Promo Maker</h1></div>
                     <div class="card error">That promo no longer exists. <a href="#/promo/new">Make a new one</a></div>`;
                 return;
             }
@@ -414,7 +414,7 @@ const Promo = {
         if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header">
-                <h1>✨ Promo Maker</h1>
+                <h1>📣 Promo Maker</h1>
                 <p class="muted">Turn a spicy excerpt into a shareable image. Paste your text, select a phrase and
                 tap a colour to highlight it or a style to format it, pick a background and size, then download.
                 Great for Instagram, TikTok covers, Bluesky and Threads.</p>

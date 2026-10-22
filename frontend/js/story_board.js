@@ -330,7 +330,7 @@
             return `
                 <section class="card" aria-labelledby="sb-sec-promos">
                     <div class="sec-title"><h2 id="sb-sec-promos">Promos</h2>
-                        <a class="btn btn-sm btn-primary" href="#/promo/new?story=${encodeURIComponent(name)}">✨ New promo</a></div>
+                        <a class="btn btn-sm btn-primary" href="#/promo/new?story=${encodeURIComponent(name)}">📣 New promo</a></div>
                     <p class="sec-note">Excerpt cards made from this story. Reopen one to edit it; Send puts it in the post composer.</p>
                     <div id="sb-promos" class="sb-promos"><div class="muted" style="font-size:12.5px">Loading…</div></div>
                 </section>`;
