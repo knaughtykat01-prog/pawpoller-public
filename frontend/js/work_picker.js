@@ -14,6 +14,7 @@
  *     title: 'Add to collection',
  *     confirmLabel: 'Add selected',
  *     multi: true,                              // default true
+ *     pickOnClick: false,                       // single mode: a card click confirms at once
  *     onConfirm: async (items) => { ... },      // items: [{member_type, member_ref, title, badge, thumb}]
  *   });
  */
@@ -197,7 +198,10 @@
 
         grid.addEventListener('click', (e) => {
             const card = e.target.closest('.wp-card');
-            if (card) toggle(card.dataset.ref);
+            if (!card) return;
+            toggle(card.dataset.ref);
+            // pickOnClick (spec 053): a single choice that means "go there" needs no Select press.
+            if (!multi && opts.pickOnClick && selected.size) confirmBtn.click();
         });
         selectedEl.addEventListener('click', (e) => {
             const rm = e.target.closest('[data-wp-unpick]');

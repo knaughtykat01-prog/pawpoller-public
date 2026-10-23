@@ -337,7 +337,7 @@ window.Masterpieces = {
                 close();
                 this._selMode = false; this._sel.clear();
                 this._repaintHost();
-                this._toast('success', `Queued ${data.pieces} piece${data.pieces === 1 ? '' : 's'} (${data.rows} posts) — see Queue & Schedule`);
+                this._toast('success', `Queued ${data.pieces} piece${data.pieces === 1 ? '' : 's'} (${data.rows} posts) — see Scheduled`);
                 if (window.Sound) Sound.play('scheduled');
             } catch (err) {
                 $('#bp-queue').disabled = false;
@@ -729,6 +729,11 @@ window.Masterpieces = {
         if (App._stale(_rt)) return;   // the user moved on: don't paint this piece
         this._paintDetail(name, m);
         this._renderDetailNav(name);
+        // Start → Schedule something → Artwork (spec 053) lands with the schedule form open.
+        if (new URLSearchParams(App._routeQuery || '').get('schedule') === '1') {
+            const t = document.querySelector('[data-mp-schedule-toggle]');
+            if (t) { t.click(); t.scrollIntoView({ block: 'center' }); }
+        }
     },
 
     /* Prev/next navigation across the grid list (2.190.0; generalised 4.34.3).

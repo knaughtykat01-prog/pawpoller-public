@@ -111,14 +111,14 @@ class TestTheNavCannotLie:
     def test_a_deep_link_with_no_cache_still_gets_a_list(self):
         """Arriving from search or the Publish Check matrix has no cached order."""
         sb = _read("frontend/js/story_board.js")
-        i = sb.index("_renderDetailNav")
+        i = sb.index("async _renderDetailNav")
         block = sb[i:i + 1200]
         assert "Bookshelf._works" in block
         assert "API.getWorks()" in block, "must fall back to fetching"
 
     def test_a_failed_fetch_leaves_the_plain_back_link(self):
         sb = _read("frontend/js/story_board.js")
-        i = sb.index("_renderDetailNav")
+        i = sb.index("async _renderDetailNav")
         assert "catch (e) { return; }" in sb[i:i + 1200]
 
     def test_a_repaint_does_not_stack_a_second_set_of_arrows(self):

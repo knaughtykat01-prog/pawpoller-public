@@ -369,6 +369,7 @@ def add_to_queue(
     variant_key: str = "",
     announce: int | None = None,
     persona_id: int | None = None,
+    draft: bool | None = None,
 ) -> int:
     """Add an item to the posting queue. Returns queue_id.
 
@@ -390,6 +391,8 @@ def add_to_queue(
             1 announces the piece once when its batch rows settle.
         persona_id: The persona a persona-first schedule was made for (4.43.1); the
             scheduler re-checks the account against it when the row fires.
+        draft: A story post's public/draft choice (spec 053). None = no choice stored
+            (rows before 053): the scheduler then passes no extras, as it always did.
     """
     if account_id is None:
         from database import accounts as _accts
@@ -399,12 +402,12 @@ def add_to_queue(
             (content_type, story_name, chapter_index, platform, account_id, action,
              scheduled_at, title_override, description_override, tags_override,
              rating_override, file_path_override, priority, requires, drip_group,
-             variant_key, announce, persona_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             variant_key, announce, persona_id, draft)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (content_type, story_name, chapter_index, platform, account_id, action,
          scheduled_at, title_override, description_override, tags_override,
          rating_override, file_path_override, priority, requires, drip_group,
-         variant_key or "", announce, persona_id),
+         variant_key or "", announce, persona_id, None if draft is None else int(bool(draft))),
     )
     conn.commit()
     return cursor.lastrowid

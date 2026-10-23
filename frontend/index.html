@@ -150,40 +150,82 @@
         </button>
 
         <ul class="nav-links">
-            <li><a href="#/" class="nav-link active" data-page="overview">
+            <!-- Spec 053 (PATHWAYS): Start is everyone's home; every group holds only what its
+                 name says, and Post & schedule has a door for every kind of posting. -->
+            <li><a href="#/start" class="nav-link active" data-page="start" title="Start">
+                <span class="nav-icon">&#127968;</span><span class="nav-label">Start</span>
+            </a></li>
+            <li><a href="#/overview" class="nav-link" data-page="overview" title="Overview">
                 <span class="nav-icon">&#9632;</span><span class="nav-label">Overview</span>
             </a></li>
             <!-- Laurels sits beside Overview (spec 052 US8): progress is core, not a tool. -->
-            <li><a href="#/laurels" class="nav-link" data-page="laurels">
+            <li><a href="#/laurels" class="nav-link" data-page="laurels" title="Laurels">
                 <span class="nav-icon">&#127941;</span><span class="nav-label">Laurels</span>
             </a></li>
-            <li><a href="#/platforms" class="nav-link" data-page="platforms">
+            <li><a href="#/platforms" class="nav-link" data-page="platforms" title="Platforms">
                 <span class="nav-icon">&#128062;</span><span class="nav-label">Platforms</span>
             </a></li>
-            <li><a href="#/library" class="nav-link" data-page="library">
-                <span class="nav-icon">&#128366;</span><span class="nav-label">Library</span>
+            <li><a href="#/library" class="nav-link" data-page="library" title="Library">
+                <span class="nav-icon">&#128218;</span><span class="nav-label">Library</span>
             </a></li>
-            <li><a href="#/inbox" class="nav-link" data-page="inbox">
+            <li><a href="#/inbox" class="nav-link" data-page="inbox" title="Inbox">
                 <span class="nav-icon">&#128172;</span><span class="nav-label">Inbox</span>
             </a></li>
 
             <!-- Grouped so the top-nav mode (Settings → Appearance) can turn each
                  group into a dropdown. In the side rail the .nav-sub is always
-                 shown (flat, identical to before); in top mode it's a hover/
-                 focus/click dropdown panel. -->
-            <!-- IA (2.142.0): Publish = your catalogues (works via Library above,
-                 plus Posts view-only + Collections); every make-new action lives in
-                 Create; Queue/History moved to Insights & Tools.
-                 2.155.0 (backlog L) finishes that: the Stories and Artwork entries
-                 that used to sit here pointed at hubs showing the same records
-                 Library already holds, so both are now Library segments — reach
-                 them via Library, or deep-link #/library/type/{story,artwork}. -->
+                 shown (flat); in top mode it's a hover/focus/click dropdown panel. -->
             <li class="nav-group">
-              <button class="nav-group-label" data-nav-toggle type="button" aria-expanded="false">Publish<span class="nav-caret" aria-hidden="true">&#9662;</span></button>
+              <button class="nav-group-label" data-nav-toggle type="button" aria-expanded="false">Post &amp; schedule<span class="nav-caret" aria-hidden="true">&#9662;</span></button>
               <ul class="nav-sub">
-                <li><a href="#/posts" class="nav-link" data-page="posts">
-                    <span class="nav-icon">&#128172;</span><span class="nav-label">Posts</span>
+                <li><a href="#/start/schedule" class="nav-link" data-page="start-schedule">
+                    <span class="nav-icon">&#128197;</span><span class="nav-label">Schedule something</span>
                 </a></li>
+                <li><a href="#/start/post" class="nav-link" data-page="start-post">
+                    <span class="nav-icon">&#128228;</span><span class="nav-label">Post something now</span>
+                </a></li>
+                <li><a href="#/artwork/quick" class="nav-link" data-page="artwork-quick">
+                    <span class="nav-icon">&#9889;</span><span class="nav-label">Quick publish</span>
+                </a></li>
+                <li><a href="#/artwork/new" class="nav-link" data-page="artwork-new">
+                    <span class="nav-icon">&#11014;</span><span class="nav-label">Upload artwork</span>
+                </a></li>
+                <li><a href="#/posts/new" class="nav-link" data-page="posts-new">
+                    <span class="nav-icon">&#128172;</span><span class="nav-label">Short post</span>
+                </a></li>
+                <li><a href="#/posts/journal" class="nav-link" data-page="posts-journal">
+                    <span class="nav-icon">&#128211;</span><span class="nav-label">Journal</span>
+                </a></li>
+                <li><a href="#/posting/queue" class="nav-link" data-page="posting-queue">
+                    <span class="nav-icon">&#9203;</span><span class="nav-label">Scheduled</span>
+                </a></li>
+                <li><a href="#/posts" class="nav-link" data-page="posts">
+                    <span class="nav-icon">&#128240;</span><span class="nav-label">Posts</span>
+                </a></li>
+                <li><a href="#/posting/log" class="nav-link" data-page="posting-log">
+                    <span class="nav-icon">&#128220;</span><span class="nav-label">History</span>
+                </a></li>
+              </ul>
+            </li>
+
+            <li class="nav-group">
+              <button class="nav-group-label" data-nav-toggle type="button" aria-expanded="false">Make<span class="nav-caret" aria-hidden="true">&#9662;</span></button>
+              <ul class="nav-sub">
+                <li><a href="#/editor" class="nav-link" data-page="editor">
+                    <span class="nav-icon">&#9998;</span><span class="nav-label">Write a story</span>
+                </a></li>
+                <li><a href="#/promo" class="nav-link" data-page="promo">
+                    <span class="nav-icon">&#128227;</span><span class="nav-label">Promo Maker</span>
+                </a></li>
+                <li><a href="#/imagetool" class="nav-link" data-page="imagetool">
+                    <span class="nav-icon">&#128444;</span><span class="nav-label">Image Tool</span>
+                </a></li>
+              </ul>
+            </li>
+
+            <li class="nav-group">
+              <button class="nav-group-label" data-nav-toggle type="button" aria-expanded="false">Organise<span class="nav-caret" aria-hidden="true">&#9662;</span></button>
+              <ul class="nav-sub">
                 <li><a href="#/collections" class="nav-link" data-page="collections">
                     <span class="nav-icon">&#128451;</span><span class="nav-label">Collections</span>
                 </a></li>
@@ -199,35 +241,14 @@
                 <li><a href="#/characters" class="nav-link" data-page="characters">
                     <span class="nav-icon">&#128062;</span><span class="nav-label">Characters</span>
                 </a></li>
-              </ul>
-            </li>
-
-            <li class="nav-group">
-              <button class="nav-group-label" data-nav-toggle type="button" aria-expanded="false">Create<span class="nav-caret" aria-hidden="true">&#9662;</span></button>
-              <ul class="nav-sub">
-                <li><a href="#/artwork/quick" class="nav-link" data-page="artwork-quick">
-                    <span class="nav-icon">&#9889;</span><span class="nav-label">Quick Publish</span>
-                </a></li>
-                <li><a href="#/editor" class="nav-link" data-page="editor">
-                    <span class="nav-icon">&#9998;</span><span class="nav-label">New Story</span>
-                </a></li>
-                <li><a href="#/artwork/new" class="nav-link" data-page="artwork-new">
-                    <span class="nav-icon">&#128444;</span><span class="nav-label">New Artwork</span>
-                </a></li>
-                <li><a href="#/posts/new" class="nav-link" data-page="posts-new">
-                    <span class="nav-icon">&#128172;</span><span class="nav-label">New Post</span>
-                </a></li>
-                <li><a href="#/promo" class="nav-link" data-page="promo">
-                    <span class="nav-icon">&#128227;</span><span class="nav-label">Promo Maker</span>
-                </a></li>
-                <li><a href="#/imagetool" class="nav-link" data-page="imagetool">
-                    <span class="nav-icon">&#128444;</span><span class="nav-label">Image Tool</span>
+                <li><a href="#/groups" class="nav-link" data-page="groups">
+                    <span class="nav-icon">&#128193;</span><span class="nav-label">Groups</span>
                 </a></li>
               </ul>
             </li>
 
             <li class="nav-group">
-              <button class="nav-group-label" data-nav-toggle type="button" aria-expanded="false">Insights &amp; Tools<span class="nav-caret" aria-hidden="true">&#9662;</span></button>
+              <button class="nav-group-label" data-nav-toggle type="button" aria-expanded="false">Insights<span class="nav-caret" aria-hidden="true">&#9662;</span></button>
               <ul class="nav-sub">
                 <li><a href="#/analytics" class="nav-link" data-page="analytics">
                     <span class="nav-icon">&#128200;</span><span class="nav-label">Analytics</span>
@@ -238,18 +259,6 @@
                 <li><a href="#/ledger" class="nav-link" data-page="ledger">
                     <span class="nav-icon">&#128197;</span><span class="nav-label">Activity</span>
                 </a></li>
-                <li><a href="#/groups" class="nav-link" data-page="groups">
-                    <span class="nav-icon">&#128193;</span><span class="nav-label">Groups</span>
-                </a></li>
-                <li><a href="#/posting/queue" class="nav-link" data-page="posting-queue">
-                    <span class="nav-icon">&#9203;</span><span class="nav-label">Queue</span>
-                </a></li>
-                <li><a href="#/posting/log" class="nav-link" data-page="posting-log">
-                    <span class="nav-icon">&#128220;</span><span class="nav-label">History</span>
-                </a></li>
-                <!-- Cross-Platform Links retired in 2.113.0 — merged into Collections
-                     (same idea: one piece across platforms + combined analytics).
-                     #/cross-platform now redirects to #/collections. -->
               </ul>
             </li>
 
@@ -344,28 +353,23 @@
          Top destinations + "More" opens the full nav drawer.
          ============================================================ -->
     <nav class="bottom-nav" id="bottom-nav">
-        <a href="#/" class="bottom-nav-item" data-page="overview">
-            <span class="bottom-nav-icon">&#9632;</span>
-            <span class="bottom-nav-label">Overview</span>
+        <!-- Spec 053: the phone bar leads with the jobs, not the stats (Overview,
+             Laurels, Platforms and Analytics are a tap away under More). -->
+        <a href="#/start" class="bottom-nav-item" data-page="start">
+            <span class="bottom-nav-icon">&#127968;</span>
+            <span class="bottom-nav-label">Start</span>
         </a>
-        <!-- Laurels second (spec 052 US8). Analytics takes the slot back when gamification is off (levels.css). -->
-        <a href="#/laurels" class="bottom-nav-item" data-page="laurels">
-            <span class="bottom-nav-icon">&#127941;</span>
-            <span class="bottom-nav-label">Laurels</span>
-        </a>
-        <a href="#/platforms" class="bottom-nav-item" data-page="platforms">
-            <span class="bottom-nav-icon">&#128062;</span>
-            <span class="bottom-nav-label">Platforms</span>
-        </a>
-        <!-- Was "Stories" (#/posting) until 2.155.0 — that hub is now a Library
-             segment, and Library is the one works hub, so it takes the slot. -->
         <a href="#/library" class="bottom-nav-item" data-page="library">
-            <span class="bottom-nav-icon">&#128366;</span>
+            <span class="bottom-nav-icon">&#128218;</span>
             <span class="bottom-nav-label">Library</span>
         </a>
-        <a href="#/analytics" class="bottom-nav-item" data-page="analytics">
-            <span class="bottom-nav-icon">&#128200;</span>
-            <span class="bottom-nav-label">Analytics</span>
+        <a href="#/start/schedule" class="bottom-nav-item" data-page="start-schedule">
+            <span class="bottom-nav-icon">&#128197;</span>
+            <span class="bottom-nav-label">Schedule</span>
+        </a>
+        <a href="#/inbox" class="bottom-nav-item" data-page="inbox">
+            <span class="bottom-nav-icon">&#128172;</span>
+            <span class="bottom-nav-label">Inbox</span>
         </a>
         <button class="bottom-nav-item" id="bottom-nav-more" type="button">
             <span class="bottom-nav-icon">&#8943;</span>
@@ -450,6 +454,8 @@
     <script src="/js/search_query.js?v=__APP_VERSION__"></script>
     <script src="/js/bookshelf.js?v=__APP_VERSION__"></script>
     <script src="/js/story_board.js?v=__APP_VERSION__"></script>
+    <script src="/js/schedule_sheet.js?v=__APP_VERSION__"></script>
+    <script src="/js/start.js?v=__APP_VERSION__"></script>
     <script src="/js/board_polish.js?v=__APP_VERSION__"></script>
     <script src="/js/laurels.js?v=__APP_VERSION__"></script>
     <script src="/js/ledger.js?v=__APP_VERSION__"></script>

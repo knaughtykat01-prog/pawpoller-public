@@ -1660,6 +1660,15 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             "ON posting_queue(origin_queue_id, origin_reported_at)"
         )
 
+    # Migration (spec 053): a scheduled story post's public/draft choice. NULL on every
+    # older row, which keeps posting exactly as before (no extras passed).
+    if "posting_queue" in tables:
+        try:
+            conn.execute("ALTER TABLE posting_queue ADD COLUMN draft INTEGER")
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
+
     # Migration (3.10.0): the live artist registry.
     #
     # 3.5.0 made `artist` a structured field on masterpiece.json and taught

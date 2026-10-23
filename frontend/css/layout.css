@@ -880,8 +880,9 @@ html:not([data-navmode="top"]) .sidebar-footer .acct-menu { top: auto; bottom: c
 .sidebar.collapsed .sidebar-footer .acct-menu { left: calc(100% + 10px); bottom: 0; }
 
 /* Top bar: a real search field once there is room (every link, the clock and the cluster need
-   ~1710px with it — measured, 4.54.6); an icon below that. */
-@media (min-width: 1720px) {
+   ~1710px with it — measured, 4.54.6; ~1900px since spec 053 added Start and the Organise group);
+   an icon below that. */
+@media (min-width: 1920px) {
   html[data-navmode="top"]:not([data-mobile="1"]) .sidebar-search {
     width: 210px; padding: 7px 10px; gap: 8px; justify-content: flex-start;
   }
@@ -915,6 +916,27 @@ html:not([data-navmode="top"]) .sidebar-footer .acct-menu { top: auto; bottom: c
   html[data-navmode="top"]:not([data-mobile="1"]) button.nav-group-label { padding: 7px 6px; }
 }
 
+/* Step 4 (spec 053 added Start and the Organise group): the top-level links show their icon
+   alone as the bar narrows; the word stays for screen readers and in the tooltip. */
+@media (min-width: 900px) and (max-width: 1399px) {
+  /* An icon-only link keeps a full-size target (WCAG 2.5.8) and holds its hidden word inside it. */
+  html[data-navmode="top"]:not([data-mobile="1"]) .nav-links > li > .nav-link { position: relative; min-width: 28px; justify-content: center; }
+}
+@media (min-width: 900px) and (max-width: 1399px) {
+  html[data-navmode="top"]:not([data-mobile="1"]) .nav-links > li > .nav-link:is([href="#/start"], [href="#/overview"]) .nav-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+}
+@media (min-width: 900px) and (max-width: 1199px) {
+  html[data-navmode="top"]:not([data-mobile="1"]) .nav-links > li > .nav-link:is([href="#/laurels"], [href="#/inbox"]) .nav-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+}
+@media (min-width: 900px) and (max-width: 1049px) {
+  html[data-navmode="top"]:not([data-mobile="1"]) .nav-links > li > .nav-link:is([href="#/platforms"], [href="#/library"]) .nav-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+}
 /* ── Phone bar (spec 019) ─────────────────────────────────────────────────────
    ☰ stays where it was (top-left); the cluster sits top-right as 44px round buttons: the
    18+ badge alone, the bell, the avatar. The avatar menu opens as a sheet from the bottom. */

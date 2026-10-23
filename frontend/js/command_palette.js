@@ -25,8 +25,8 @@
         { label: 'Settings',           hint: 'All preferences',           href: '#/settings' },
         { label: 'Story Editor',       hint: 'Browse and edit stories',   href: '#/editor' },
         // Create actions (IA 2.142.0)
-        { label: 'New Story',          hint: 'Create — write a story',    href: '#/editor', keywords: 'create write new' },
-        { label: 'New Artwork',        hint: 'Create — upload an image',  href: '#/artwork/new', keywords: 'create upload image art' },
+        { label: 'Write a story',          hint: 'Make — write a story',    href: '#/editor', keywords: 'create write new' },
+        { label: 'Upload artwork',        hint: 'Post & schedule — upload an image',  href: '#/artwork/new', keywords: 'create upload image art' },
         { label: 'New Post',           hint: 'Create — compose a post',   href: '#/posts/new', keywords: 'create compose microblog tweet' },
         { label: 'Promo Maker',        hint: 'Create — excerpt image',    href: '#/promo', keywords: 'create marketing booktok' },
         { label: 'Posts',              hint: 'Your published posts',      href: '#/posts', keywords: 'microblog feed catalogue' },

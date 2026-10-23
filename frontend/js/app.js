@@ -650,6 +650,13 @@ const App = {
     /* Pull the latest preferences from the server and apply any drift.
        Currently only the theme has a visible effect — but pulling all
        prefs keeps client-side caches honest if we add more later. */
+    /* What #/ opens on (spec 053): 'start' unless the person chose 'overview'. */
+    _home() {
+        if (this._homeScreen) return this._homeScreen;
+        try { return localStorage.getItem('pp-home-screen') === 'overview' ? 'overview' : 'start'; }
+        catch (e) { return 'start'; }
+    },
+
     async _refreshPrefsFromServer({ zoneOnly = false } = {}) {
         try {
             const prefs = await API.getPreferences();
@@ -664,6 +671,12 @@ const App = {
             try { localStorage.setItem('pp-display-tz', (prefs && prefs.display_timezone) || ''); } catch (e) { /* private mode */ }
             this._maybeOfferZone(prefs && prefs.display_timezone);
             if (prefs && prefs.moved_away_at) this._showMovedBanner();
+            // Home screen (spec 053): cached so the next start opens on it before this returns.
+            const home = (prefs && prefs.home_screen) === 'overview' ? 'overview' : 'start';
+            const homeBefore = this._home();
+            this._homeScreen = home;
+            try { localStorage.setItem('pp-home-screen', home); } catch (e) { /* private mode */ }
+            if (home !== homeBefore && (location.hash === '' || location.hash === '#/') && this.route) this.route();
             if (Utils.time.zone !== zoneBefore) {
                 if (this._redrawClock) this._redrawClock();
                 if (this.route) this.route();
@@ -1118,7 +1131,9 @@ const App = {
         /* Highlight the active sidebar nav link */
         document.querySelectorAll('.nav-link').forEach(link => {
             const href = link.getAttribute('href');
-            let active = href === '#' + hash || (hash === '/' && href === '#/');
+            // #/ is whichever home the person chose (spec 053); #/start/... keeps Start lit.
+            let active = href === '#' + hash || (hash === '/' && href === '#/' + this._home())
+                || (parts[0] === 'start' && href === '#/start');
             if (isPlatformRoute && href === '#/platforms') active = true;
             /* Persona overview pages live under Accounts — keep it lit. */
             if (parts[0] === 'persona' && href === '#/accounts') active = true;
@@ -1136,7 +1151,8 @@ const App = {
                 && parts[1] !== 'quick' && href === '#/library') active = true;
             /* Posts sub-pages (contacts) keep "Posts" (Publish) lit; #/posts/new is
                the Create → New Post item, so it keeps its own highlight. */
-            if (!active && parts[0] === 'posts' && parts[1] && parts[1] !== 'new' && href === '#/posts') active = true;
+            if (!active && parts[0] === 'posts' && parts[1] && parts[1] !== 'new' && parts[1] !== 'journal' && href === '#/posts') active = true;
+            if (!active && parts[0] === 'posts' && parts[1] === 'journal' && href === '#/posts/journal') active = true;
             /* #/submissions/discovered is the standalone discovered page; light Library
                (its hub lost its nav entry in 2.117.0 and its root now redirects). */
             if (!active && parts[0] === 'submissions' && href === '#/library') active = true;
@@ -1158,7 +1174,10 @@ const App = {
             bottomNav.querySelectorAll('.bottom-nav-item[data-page]').forEach(item => {
                 const page = item.dataset.page;
                 let on;
-                if (page === 'overview') on = (hash === '/' || parts[0] === '' || parts[0] === 'overview');
+                const atHome = hash === '/' || parts[0] === '';
+                if (page === 'overview') on = (atHome && this._home() === 'overview') || parts[0] === 'overview';
+                else if (page === 'start') on = (atHome && this._home() === 'start') || (parts[0] === 'start' && parts[1] !== 'schedule');
+                else if (page === 'start-schedule') on = parts[0] === 'start' && parts[1] === 'schedule';
                 else if (page === 'platforms') on = isPlatformRoute;
                 else on = parts[0] === page;
                 item.classList.toggle('active', on);
@@ -1219,6 +1238,9 @@ const App = {
             this.renderLogin();
         } else if (parts[0] === 'loading') {
             this.renderLoading();
+        } else if (parts[0] === 'start' || ((hash === '/' || hash === '') && this._home() === 'start' && window.Start)) {
+            // Spec 053: Start is everyone's home unless Settings says Overview.
+            window.Start.render(parts[0] === 'start' ? parts[1] : null);
         } else if (hash === '/' || hash === '' || parts[0] === 'overview') {
             this.renderOverview();
         } else if (parts[0] === 'platforms') {
@@ -16146,6 +16168,20 @@ const App = {
                 </div>
 
                 <div class="settings-section">
+                    <h3>Home screen</h3>
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
+                        What PawPoller opens on. Start asks what you came to do; the Overview shows your numbers first. Both stay one click away.
+                    </p>
+                    <div class="settings-row">
+                        <label class="settings-label" for="pref-home">Open on</label>
+                        <select id="pref-home">
+                            <option value="start" ${prefs.home_screen !== 'overview' ? 'selected' : ''}>Start</option>
+                            <option value="overview" ${prefs.home_screen === 'overview' ? 'selected' : ''}>Overview</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="settings-section">
                     <h3>Levels, medals and rewards</h3>
                     <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
                         Turns your progress into a game: points and levels for posting, writing, replying and tidying, levels and medals for each piece as people view and comment, and rewards like themes. Off by default. Off hides all of it, Laurels included; PawPoller still counts quietly, so turning it on later loses nothing.
@@ -18843,6 +18879,17 @@ const App = {
             document.getElementById('pref-sound-vol')?.addEventListener('change', (e) => {
                 Sound.set({ volume: Number(e.target.value) });
                 Sound.preview();
+            });
+            // ── Home screen (Appearance tab, spec 053) — follows the person too ──
+            document.getElementById('pref-home')?.addEventListener('change', async (e) => {
+                try {
+                    await API.savePreferences({ home_screen: e.target.value });
+                    this._homeScreen = e.target.value;
+                    try { localStorage.setItem('pp-home-screen', e.target.value); } catch { /* first paint only */ }
+                    toast.success(e.target.value === 'start' ? 'PawPoller now opens on Start.' : 'PawPoller now opens on the Overview.');
+                } catch (err) {
+                    toast.error("Couldn't save that: " + err.message);
+                }
             });
             // ── Levels (Appearance tab, spec 050) — follows the person, not the device ──
             document.getElementById('pref-levels')?.addEventListener('change', async (e) => {

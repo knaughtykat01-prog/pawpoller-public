@@ -6,6 +6,7 @@ starlette~=1.9
 python-multipart~=0.0.22
 uvicorn[standard]~=0.41.0
 httpx~=0.28.1
+certifi>=2026.10.19   # eMudhra/emSign CA keys compromised (Oct 2026): this release drops them; floor so no build ships an older bundle
 # AO3 connects as current Chrome (spec 041). curl_cffi's "chrome" alias is the newest Chrome it knows:
 # bump this pin now and then, or AO3's outdated-browser check catches up with it.
 curl_cffi==0.16.3   # exact: AO3 logins pass through it (security review 4.78.0)

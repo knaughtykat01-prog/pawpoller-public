@@ -32,10 +32,10 @@ window.PublishCheck = (function () {
         modal.className = 'publish-check-modal';
         modal.innerHTML = `
             <div class="publish-check-backdrop"></div>
-            <div class="publish-check-dialog" role="dialog" aria-label="Publish check">
+            <div class="publish-check-dialog" role="dialog" aria-label="Chapter × site grid">
                 <div class="publish-check-header">
                     <div>
-                        <div class="publish-check-title" id="publish-check-title">Publish Check</div>
+                        <div class="publish-check-title" id="publish-check-title">Chapter × site grid</div>
                         <div class="publish-check-subtitle" id="publish-check-subtitle"></div>
                     </div>
                     <button class="publish-check-close" id="publish-check-close" aria-label="Close">&times;</button>
@@ -164,7 +164,7 @@ window.PublishCheck = (function () {
         const modal = _ensureModal();
         modal.classList.add('open');
         document.getElementById('publish-check-title').textContent =
-            'Publish Check — ' + storyName.replace(/_/g, ' ');
+            'Chapter × site grid — ' + storyName.replace(/_/g, ' ');
         document.getElementById('publish-check-subtitle').textContent = '';
         document.getElementById('publish-check-body').innerHTML =
             '<div class="publish-check-loading">Checking ' +
@@ -788,6 +788,13 @@ window.PublishCheck = (function () {
         html += '<div class="schedule-form-inner">';
         html += '<label class="schedule-label">Schedule for:</label>';
         html += '<input type="datetime-local" class="schedule-datetime" id="schedule-datetime">';
+        // Spec 053: a schedule's own public/draft choice. It used to borrow the post-now box
+        // above, whose value the queue then dropped; now it is stored and kept.
+        if ((_lastMatrixData && _lastMatrixData.draft_platforms || []).includes(platId)) {
+            html += '<div class="schedule-vis">' +
+                '<label><input type="radio" name="schedule-vis" value="public" checked> Post publicly</label> ' +
+                '<label><input type="radio" name="schedule-vis" value="draft"> Save as draft</label></div>';
+        }
         html += '<div class="schedule-form-actions">';
         html += '<button class="btn btn-sm btn-primary" id="schedule-confirm">Confirm schedule</button>';
         html += '<button class="btn btn-sm btn-outline" id="schedule-cancel-form">Cancel</button>';
@@ -1683,7 +1690,7 @@ window.PublishCheck = (function () {
             '<h3 style="margin:0 0 6px">💧 Drip schedule — ' + chapters.length + ' chapters</h3>' +
             '<p class="muted" style="font-size:12px;margin:0 0 8px">Chapter 1 posts at the start time, then one ' +
             'chapter every N days at the same time. Every chapter is validated first; the rows land in ' +
-            'Queue &amp; Schedule and the whole drip can be cancelled as one.</p>' +
+            'Scheduled and the whole drip can be cancelled as one.</p>' +
             '<div id="drip-persona-row" class="persona-picker persona-picker--inline" data-persona-picker hidden></div>' +
             '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px">' + plats + '</div>' +
             '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">' +
@@ -1741,7 +1748,7 @@ window.PublishCheck = (function () {
             title: _currentStory.replace(/_/g, ' '), subtitle: 'Drip campaign',
             verb: 'Schedule', noun: 'sites',
             warning: 'Every unposted chapter to each site, one slot every ' + (days || 7)
-                + ' day(s), starting ' + Utils.time.fmt.dateTime(start) + '. Cancellable as a unit from Queue & Schedule.',
+                + ' day(s), starting ' + Utils.time.fmt.dateTime(start) + '. Cancellable as a unit from Scheduled.',
             targets: platforms.map(code => {
                 const p = (window.platformByCode && window.platformByCode(code)) || { label: code, emoji: '' };
                 return { code, label: p.label, emoji: p.emoji };
@@ -1754,6 +1761,8 @@ window.PublishCheck = (function () {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     platforms, start: start.toISOString(), interval_days: days || 7,
+                    // Spec 053: the warning below promises "every unposted chapter" — now it is.
+                    only_new: true, draft: null,   // no choice here: each site keeps its own default (AO3 = draft), as before 053
                     account_ids: Object.fromEntries(Array.from(document.querySelectorAll('.drip-acct'))
                         .filter(el => platforms.includes(el.dataset.platform) && el.value)
                         .map(el => [el.dataset.platform, parseInt(el.value, 10)])),
@@ -1768,7 +1777,7 @@ window.PublishCheck = (function () {
             document.getElementById('drip-panel')?.remove();
             if (window.toast) window.toast.success(
                 '💧 Drip scheduled — ' + data.rows + ' item(s) across ' + data.slots.length +
-                ' slot(s). See Queue & Schedule.');
+                ' slot(s). See Scheduled.');
         } catch (err) {
             if (msg) msg.textContent = 'Failed: ' + (err.message || err);
         }
@@ -1778,8 +1787,9 @@ window.PublishCheck = (function () {
         const storyName = _currentStory;
         if (!storyName) return;
 
-        const draftCb = document.getElementById('publish-opt-draft');
-        const draft = draftCb ? draftCb.checked : true;
+        // Spec 053: the schedule form's own choice (public unless "Save as draft" is picked).
+        const vis = document.querySelector('input[name="schedule-vis"]:checked');
+        const draft = !!(vis && vis.value === 'draft');
         const resultBox = document.getElementById('publish-action-result');
 
         // The datetime-local value is wall time in the saved zone -> a UTC instant.

@@ -196,7 +196,7 @@ const Posting = {
     async renderQueue() {
         const _rt = App._routeToken();   // route race guard (App._stale)
         if (App._stale(_rt)) return;
-        App._setContent('<div class="page-header"><h1>Queue &amp; Schedule</h1></div><div class="loading">Loading queue...</div>');
+        App._setContent('<div class="page-header"><h1>Scheduled</h1></div><div class="loading">Loading queue...</div>');
         try {
             // content_type omitted → the endpoint returns stories, artwork AND posts.
             const { queue } = await API.getPostingQueue({ include_completed: true });
@@ -231,7 +231,7 @@ const Posting = {
         const queue = this._queueData || [];
         if (!queue.length) {
             App._setContent(`
-                <div class="page-header"><h1>Queue &amp; Schedule</h1></div>
+                <div class="page-header"><h1>Scheduled</h1></div>
                 <div class="empty-state"><h3>Nothing queued</h3><p>Schedule a story, artwork or post, or upload one, and it shows up here.</p></div>`);
             return;
         }
@@ -256,7 +256,7 @@ const Posting = {
 
         App._setContent(`
             <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
-                <div><h1>Queue &amp; Schedule</h1>${schedNote}</div>
+                <div><h1>Scheduled</h1>${schedNote}</div>
                 <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;">${clearBtn}${toggle}</div>
             </div>
             ${body}`);

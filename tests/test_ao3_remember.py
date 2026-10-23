@@ -16,7 +16,7 @@ from polling import ao3_poller
 def _renewing_ao3(new_session: str):
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="<a>Log Out</a>", headers={
-            "set-cookie": f"{SESSION_COOKIE}={new_session}; path=/; expires=Fri, 23 Oct 2026 00:00:00 GMT; secure; HttpOnly"})
+            "set-cookie": f"{SESSION_COOKIE}={new_session}; path=/; expires=Fri, 01 Jan 2100 00:00:00 GMT; secure; HttpOnly"})
     return httpx.MockTransport(handler)
 
 

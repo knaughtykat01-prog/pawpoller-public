@@ -1940,6 +1940,8 @@ def get_preferences():
         # off hides it all and the ledger keeps counting. Asked at setup or on the next visit.
         "levels_enabled": settings.get("levels_enabled", False),
         "gamification_asked": "levels_enabled" in settings,
+        # Spec 053: what the app opens on. Everyone gets the Start screen unless they chose Overview.
+        "home_screen": settings.get("home_screen", "start"),
         # ── Per-platform notification master toggles ───────────────
         # Registry-derived so a new platform cannot be rendered by the settings
         # UI while being invisible here — see platform_metrics.setting_keys.
@@ -2013,6 +2015,11 @@ def save_preferences(body: dict):
         update["auto_update"] = bool(body["auto_update"])
     if "levels_enabled" in body:
         update["levels_enabled"] = bool(body["levels_enabled"])
+    # Spec 053: the first screen. Anything but the two known screens is refused, not stored.
+    if "home_screen" in body:
+        if body["home_screen"] not in ("start", "overview"):
+            raise HTTPException(status_code=400, detail="home_screen must be 'start' or 'overview'")
+        update["home_screen"] = body["home_screen"]
     if "update_skip_version" in body:
         update["update_skip_version"] = str(body.get("update_skip_version") or "").strip()[:32]
     if "telegram_enabled" in body:

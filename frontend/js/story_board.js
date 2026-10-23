@@ -83,6 +83,46 @@
             this._loadTagPreview();
             this._loadChart(d);
             this._loadPromos();
+            this._loadScheduled();
+            // Start → Schedule something lands here with the sheet open (spec 053).
+            const q = new URLSearchParams(App._routeQuery || '');
+            if (q.get('schedule') === '1') this._schedule(q.has('chapter') ? Number(q.get('chapter')) : null);
+            else if (q.get('post') === '1' && window.PublishCheck) PublishCheck.open(name);   // Post something now
+        },
+
+        /* ── Scheduling from the page (spec 053) ─────────────────────────── */
+        _schedule(chapter) {
+            if (!window.ScheduleSheet) return;
+            ScheduleSheet.openStory(this._name, {
+                chapter: chapter == null ? undefined : chapter,
+                onDone: () => this._loadScheduled(),
+            });
+        },
+
+        /* What each chapter row already has lined up, with Cancel. */
+        async _loadScheduled() {
+            const name = this._name;
+            let items = [];
+            try { items = (await API.get(`/api/editor/stories/${encodeURIComponent(name)}/scheduled`)).items || []; }
+            catch (e) { return; }
+            if (name !== this._name) return;
+            document.querySelectorAll('[data-sb-ch-sched]').forEach(box => {
+                const idx = Number(box.dataset.sbChSched);
+                box.innerHTML = items.filter(i => i.action === 'post' && i.chapter_index === idx && i.scheduled_at)
+                    .map(i => `<span class="pill pill--sched">🕐 ${esc(plat(i.platform).label)} · ${esc(Utils.time.fmt.dateTime(i.scheduled_at))}
+                        <button type="button" class="linkish" data-sb-unsched="${i.queue_id}" aria-label="Cancel this schedule">Cancel</button></span>`)
+                    .join(' ');
+            });
+        },
+
+        async _unschedule(queueId) {
+            try {
+                await API.del(`/api/editor/stories/${encodeURIComponent(this._name)}/scheduled/${queueId}`);
+                if (window.toast) toast.success('Cancelled.');
+            } catch (err) {
+                if (window.toast) toast.error(`Couldn't cancel: ${err.message || err}`);
+            }
+            this._loadScheduled();
         },
 
         /* Prev/next across the Library's stories (4.34.3, UNIFORMITEM contract
@@ -196,8 +236,9 @@
                         ])}
                     </div>
                     <div class="board-hero-actions">
-                        <a class="btn btn-sm btn-primary" href="#/editor/${encodeURIComponent(name)}">✎ Open in editor</a>
-                        <button class="btn btn-sm" type="button" data-sb-pubcheck title="Every chapter against every platform — opens the Publish Check">✓ Publish check…</button>
+                        <button class="btn btn-sm btn-primary" type="button" data-sb-schedule>📅 ${d.total_chapters > 0 ? 'Schedule chapters' : 'Schedule'}</button>
+                        <a class="btn btn-sm" href="#/editor/${encodeURIComponent(name)}">✎ Open in editor</a>
+                        <button class="btn btn-sm" type="button" data-sb-pubcheck title="Every chapter against every site: post, update or schedule one at a time">▦ Chapter × site grid…</button>
                         <button class="btn btn-sm" type="button" data-post-action="update-all" data-post-story="${esc(name)}" title="Push the local files to every site this story is on">↑ Update all</button>
                     </div>
                 </div>`;
@@ -298,6 +339,9 @@
                         <span class="chapter-name">${esc(ch.title || 'Chapter ' + idx)}${ch.word_count ? ` <em>${num(ch.word_count)}w</em>` : ''}${ch.description ? `<div class="muted" style="font-size:11.5px">${esc(ch.description)}</div>` : ''}</span>
                         <span class="chapter-reach">${lit}</span>
                         ${gap}
+                        <button class="btn btn-sm chapter-sched-btn" type="button" data-sb-sched-ch="${idx}"
+                            aria-label="Schedule chapter ${idx}">📅 Schedule</button>
+                        <div class="chapter-sched" data-sb-ch-sched="${idx}"></div>
                     </div>`;
             }).join('');
             return `
@@ -315,9 +359,10 @@
                 : `<div class="muted" style="font-size:12.5px">On every site it is configured for.</div>`;
             return `
                 <section class="card" aria-labelledby="sb-sec-pub">
-                    <div class="sec-title"><h2 id="sb-sec-pub">Publish</h2>
-                        <button class="btn btn-sm btn-primary" type="button" data-sb-pubcheck>✓ Publish check…</button></div>
-                    <p class="sec-note">Sites this story isn't on yet. Publishing runs from the check, chapter by chapter.</p>
+                    <div class="sec-title"><h2 id="sb-sec-pub">Post &amp; schedule</h2>
+                        <button class="btn btn-sm btn-primary" type="button" data-sb-schedule>📅 ${d.total_chapters > 0 ? 'Schedule chapters' : 'Schedule'}</button></div>
+                    <p class="sec-note">Sites this story isn't on yet. Schedule them all in one go, or one chapter at a time from its row.
+                        To post right now, or update one site, use the <button type="button" class="linkish" data-sb-pubcheck>chapter × site grid</button>.</p>
                     <div class="plat-lines">${rows}</div>
                 </section>`;
         },
@@ -433,7 +478,7 @@
                 return `
                 <section class="card" aria-labelledby="sb-sec-loc">
                     <div class="sec-title"><h2 id="sb-sec-loc">Published to</h2></div>
-                    <div class="mp-empty">Not posted anywhere yet — the Publish check posts it, and <strong>Link this story elsewhere</strong> records a copy you posted by hand.</div>
+                    <div class="mp-empty">Not posted anywhere yet — <strong>Schedule</strong> lines it up, the chapter × site grid posts it now, and <strong>Link this story elsewhere</strong> records a copy you posted by hand.</div>
                 </section>`;
             }
             const groups = v.published.map(code => {
@@ -814,6 +859,9 @@
                 if ((el = t.closest('[data-sb-save]')))         { e.preventDefault(); this._save(); return; }
                 if ((el = t.closest('[data-sb-reload]')))       { e.preventDefault(); this.render(this._name); return; }
                 if ((el = t.closest('[data-sb-pubcheck]')))     { e.preventDefault(); if (window.PublishCheck) PublishCheck.open(this._name); return; }
+                if ((el = t.closest('[data-sb-schedule]')))     { e.preventDefault(); this._schedule(null); return; }
+                if ((el = t.closest('[data-sb-sched-ch]')))     { e.preventDefault(); this._schedule(Number(el.dataset.sbSchedCh)); return; }
+                if ((el = t.closest('[data-sb-unsched]')))      { e.preventDefault(); this._unschedule(Number(el.dataset.sbUnsched)); return; }
                 if ((el = t.closest('[data-sb-tagbrowse]')))    { e.preventDefault(); this._browse(); return; }
                 if ((el = t.closest('[data-sb-chip-x]')))       { e.preventDefault(); this._removeTag(el.dataset.sbChipX); return; }
                 if ((el = t.closest('[data-sb-chip-add]')))     { e.preventDefault(); const inp = document.getElementById('sb-tag-add'); if (inp) { inp.hidden = false; inp.focus(); } return; }

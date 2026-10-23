@@ -27,7 +27,13 @@ body {
     overscroll-behavior: none;
 }
 
-/* ── Stat Cards ──────────────────────────────────────────── */
+/* Every plain link takes the theme's accent (spec 053: there was no base rule, so any link
+   without its own class showed the browser's blue, and purple once visited). Classed links
+   (nav, cards, buttons) set their own colour and win on specificity. */
+a { color: var(--accent); text-underline-offset: 2px; }
+a:hover { color: var(--accent-hover); }
+
+/* ── Stat Cards──────────────────────────────────────────── */
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

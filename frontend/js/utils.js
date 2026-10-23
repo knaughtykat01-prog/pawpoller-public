@@ -216,6 +216,16 @@ const Utils = {
             return d.toISOString().slice(0, 10) + String(local).slice(10, 16);
         },
 
+        /* Calendar grids on 'YYYY-MM-DD' day keys (already in the zone, so no zone maths):
+         * the Monday of a key's week, and whole days from one key to another. */
+        weekStart(key) {
+            const dow = new Date(Date.parse(key + 'T00:00:00Z')).getUTCDay();
+            return this.addDays(key, -((dow + 6) % 7)).slice(0, 10);
+        },
+        dayGap(a, b) {
+            return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+        },
+
         /* 'YYYY-MM-DDTHH:MM' for `minutes` from now, in the zone (a picker's default). */
         pickerIn(minutes) { return this.toPicker(new Date(Date.now() + minutes * 60000)); },
 

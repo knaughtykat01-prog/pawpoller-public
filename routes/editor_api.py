@@ -1322,6 +1322,9 @@ async def regenerate_all_cancel(run_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 # Platform display order + labels for the matrix
+# Story posters that read package.extra["draft"] (spec 053). Keep in step with posting/platforms.
+DRAFT_PLATFORMS = ("ao3", "ib", "sf")
+
 PUBLISH_PLATFORMS = [
     ("ib", "Inkbunny"),
     ("fa", "FurAffinity"),
@@ -1590,6 +1593,9 @@ async def publish_check(story_name: str):
         "chapters": chapters,
         "matrix": matrix,
         "active_jobs": active_jobs,
+        # Spec 053: the sites whose posters honour extra["draft"] — the only ones a
+        # schedule offers "Save as draft" for.
+        "draft_platforms": list(DRAFT_PLATFORMS),
     }
     if regen_stale:
         resp["regen_stale"] = True
@@ -1965,7 +1971,9 @@ class ScheduleRequest(BaseModel):
     chapter: int                  # 0 = full story; 1+ = specific chapter
     action: str = "post"          # 'post' | 'update'
     scheduled_at: str             # ISO 8601 datetime string
-    draft: bool = True
+    # Spec 053: stored on the row and honoured when it fires. None = no choice (old callers):
+    # the row then posts with each site's own default, as every schedule did before 053.
+    draft: bool | None = None
     account_id: int | None = None  # which account to post AS (None = platform default)
     persona_id: int | None = None  # persona-first (4.43.1): checked now AND when the row fires
     comment: str | None = None    # spec 021: the paired comment; None = the site's default template
@@ -2023,7 +2031,7 @@ async def schedule_publish(story_name: str, req: ScheduleRequest):
 
     # Validate the scheduled time
     try:
-        scheduled_dt = datetime.fromisoformat(req.scheduled_at)
+        scheduled_dt = datetime.fromisoformat(req.scheduled_at.replace("Z", "+00:00"))   # 3.10 (desktop) rejects "Z"
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid datetime format — use ISO 8601")
 
@@ -2077,6 +2085,7 @@ async def schedule_publish(story_name: str, req: ScheduleRequest):
             requires=requires,
             account_id=req.account_id,
             persona_id=req.persona_id,
+            draft=req.draft if req.action == "post" else None,
         )
     finally:
         conn.close()
@@ -2096,25 +2105,58 @@ async def schedule_publish(story_name: str, req: ScheduleRequest):
     }
 
 
-def drip_slots(start_dt, interval_days: int, n: int, zone) -> list[str]:
+def drip_slots(start_dt, interval_days: int, n: int, zone, interval_minutes: int | None = None) -> list[str]:
     """n stored-UTC slot strings, `interval_days` apart in WALL time in `zone` (4.50.0, spec 016):
     "every 7 days at 20:00" stays 20:00 across a daylight-saving change. An aware datetime plus a
     timedelta keeps the wall clock and recomputes the offset; the old 24 h steps in UTC drifted
-    an hour instead."""
+    an hour instead.
+
+    `interval_minutes` (spec 053) overrides it. Whole days still step in wall time; anything
+    shorter ("every 30 minutes") steps in real elapsed time, which is what a short gap means."""
     from datetime import timedelta, timezone
+    fmt = "%Y-%m-%d %H:%M:%S"
+    if interval_minutes and interval_minutes % 1440:
+        utc = start_dt.astimezone(timezone.utc)
+        return [(utc + timedelta(minutes=interval_minutes * i)).strftime(fmt) for i in range(n)]
+    days = interval_minutes // 1440 if interval_minutes else interval_days
     local = start_dt.astimezone(zone)
-    return [(local + timedelta(days=interval_days * i)).astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            for i in range(n)]
+    return [(local + timedelta(days=days * i)).astimezone(timezone.utc).strftime(fmt) for i in range(n)]
 
 
 class DripRequest(BaseModel):
     platforms: list[str]          # e.g. ["ib", "sf"]
     start: str                    # ISO 8601 — chapter 1's slot
-    interval_days: int            # 1..60 — days between chapters
+    interval_days: int = 7        # 1..60 — days between chapters
+    interval_minutes: int | None = None   # spec 053: 1..40320 (28 days); overrides interval_days
     chapters: list[int] | None = None   # default: every chapter (1..N)
     account_ids: dict[str, int] | None = None   # {platform: account} (None = platform default)
     persona_id: int | None = None  # persona-first (4.43.1): checked now AND when each row fires
     comments: dict[str, str] | None = None   # spec 021: {platform: comment}; None = site defaults
+    # Spec 053 (Schedule chapters on the story page):
+    only_new: bool = False        # skip chapter × site already posted there or already waiting in the queue
+    dry_run: bool = False         # validate + compute the slots, schedule nothing (the preview)
+    draft: bool | None = None     # public/draft choice stored on every row; None = each site's default
+    moves: dict[int, str] | None = None   # Amendment A: {chapter: ISO time} — that chapter alone, moved on the calendar
+
+
+def _already_there(conn, canonical: str, platforms: list[str]) -> dict[tuple[int, str], str]:
+    """(chapter, site) → "posted" | "scheduled" for this story (spec 053 `only_new`).
+
+    Posted = a publication whose status is 'posted' (the grid's own rule). Scheduled = a story
+    'post' row still pending or being processed. Per site, not per account: a writer with two
+    accounts on one site uses the grid."""
+    done: dict[tuple[int, str], str] = {}
+    marks = ",".join("?" * len(platforms))
+    for r in conn.execute(
+            f"SELECT chapter_index, platform FROM posting_queue WHERE story_name = ? AND action = 'post' "
+            f"AND COALESCE(content_type, 'story') = 'story' AND status IN ('pending', 'processing') "
+            f"AND platform IN ({marks})", (canonical, *platforms)):
+        done[(r[0], r[1])] = "scheduled"
+    for r in conn.execute(
+            f"SELECT chapter_index, platform FROM publications WHERE story_name = ? AND content_type = 'story' "
+            f"AND status = 'posted' AND platform IN ({marks})", (canonical, *platforms)):
+        done[(r[0], r[1])] = "posted"
+    return done
 
 
 @editor_router.post("/stories/{story_name:path}/drip")
@@ -2138,13 +2180,16 @@ async def drip_schedule(story_name: str, req: DripRequest):
     story_dir = _resolve_story_dir(story_name)
     canonical = str(story_dir.relative_to(get_archive_path()))
 
+    req.platforms = list(dict.fromkeys(req.platforms))   # a site listed twice is still one row per chapter
     if not req.platforms:
         raise HTTPException(status_code=400, detail="Pick at least one platform")
     if not (1 <= req.interval_days <= 60):
         raise HTTPException(status_code=400, detail="interval_days must be 1-60")
+    if req.interval_minutes is not None and not (1 <= req.interval_minutes <= 40320):
+        raise HTTPException(status_code=400, detail="interval_minutes must be 1 minute to 28 days")
 
     try:
-        start_dt = datetime.fromisoformat(req.start)
+        start_dt = datetime.fromisoformat(req.start.replace("Z", "+00:00"))   # 3.10 (desktop) rejects "Z"
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid start datetime — use ISO 8601")
     now = datetime.now(timezone.utc)
@@ -2166,9 +2211,33 @@ async def drip_schedule(story_name: str, req: DripRequest):
         raise HTTPException(status_code=400,
                             detail=f"Chapters out of range (1-{story.total_chapters}): {bad}")
 
+    # Which chapter goes to which site. Normally every chapter to every site; with only_new
+    # (spec 053) a pair already posted or waiting is skipped, and a chapter no site needs
+    # gets no slot — so "every 7 days" counts the chapters actually going out.
+    skipped: list[dict] = []
+    need: dict[int, list[str]] = {ch: list(req.platforms) for ch in chapters}
+    if req.only_new:
+        conn = get_connection()
+        try:
+            there = _already_there(conn, canonical, req.platforms)
+        finally:
+            conn.close()
+        for ch in chapters:
+            for platform in req.platforms:
+                why = there.get((ch, platform))
+                if why:
+                    need[ch].remove(platform)
+                    skipped.append({"chapter": ch, "platform": platform, "reason": why})
+        need = {ch: ps for ch, ps in need.items() if ps}
+        if not need:
+            raise HTTPException(status_code=400,
+                                detail="Every chapter is already on those sites or scheduled")
+        chapters = list(need)
+
     # Validate EVERY chapter × platform before enqueuing anything.
     posters = {}
     failures = []
+    problems: list[dict] = []     # the same, per pair, for the preview (Amendment A)
     for platform in req.platforms:
         try:
             posters[platform] = manager._get_poster(platform)
@@ -2176,34 +2245,59 @@ async def drip_schedule(story_name: str, req: DripRequest):
             raise HTTPException(status_code=400, detail=f"Unknown platform '{platform}': {e}")
     for platform in req.platforms:
         for ch in chapters:
+            if platform not in need[ch]:
+                continue
             try:
                 package = story_reader.build_package(story, ch, platform)
             except Exception as e:
                 failures.append(f"{platform} ch{ch}: package build failed — {e}")
+                problems.append({"chapter": ch, "platform": platform, "message": f"couldn't be prepared: {e}"})
                 continue
             errors = posters[platform].validate(package)
             if errors:
                 failures.append(f"{platform} ch{ch}: {'; '.join(errors)}")
-    if failures:
+                problems.append({"chapter": ch, "platform": platform, "message": "; ".join(errors)})
+    if failures and not req.dry_run:
         raise HTTPException(status_code=400,
                             detail="Drip aborted — fix these first: " + " | ".join(failures))
     account_ids = req.account_ids or {}
     _story_persona_check(req.platforms, account_ids, req.persona_id)
+
+    total = len(chapters)
+    import config as _config
+    slot_strs = drip_slots(start_dt, req.interval_days, len(chapters), _config.display_zone(),
+                           req.interval_minutes)
+    # A chapter moved on the calendar keeps its own time; the others keep theirs.
+    for ch, when in (req.moves or {}).items():
+        if ch not in chapters:
+            continue
+        try:
+            moved = datetime.fromisoformat(str(when).replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Chapter {ch}: invalid time")
+        if moved.tzinfo is None:
+            moved = moved.replace(tzinfo=timezone.utc)
+        if (moved - now).total_seconds() < -30:
+            raise HTTPException(status_code=400, detail=f"Chapter {ch} was moved into the past")
+        slot_strs[chapters.index(ch)] = moved.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    slots = [{"chapter": ch, "scheduled_at": slot_strs[i], "platforms": need[ch]}
+             for i, ch in enumerate(chapters)]
+    if req.dry_run:
+        # The preview: same checks, nothing stored (not even the comments). Problems come back
+        # per pair so the sheet can name the site, instead of one refusal for the lot.
+        return {"ok": not problems, "drip_group": None, "rows": sum(len(s["platforms"]) for s in slots),
+                "slots": slots, "skipped": skipped, "problems": problems}
+
     # After the check: a refused drip must not leave pending comments for a later publish.
     _store_comments(canonical, req.platforms, chapters, req.comments)
 
     drip_group = uuid.uuid4().hex[:12]
-    total = len(chapters)
-    slots = []
     queue_ids = []
-    import config as _config
-    slot_strs = drip_slots(start_dt, req.interval_days, len(chapters), _config.display_zone())
     conn = get_connection()
     try:
         for i, ch in enumerate(chapters):
             slot_str = slot_strs[i]
-            slots.append({"chapter": ch, "scheduled_at": slot_str})
-            for platform in req.platforms:
+            for platform in need[ch]:
                 qid = posting_queries.add_to_queue(
                     conn, canonical, ch, platform,
                     action="post",
@@ -2213,15 +2307,17 @@ async def drip_schedule(story_name: str, req: DripRequest):
                     title_override=f"💧 drip {i + 1}/{total}",
                     account_id=account_ids.get(platform),
                     persona_id=req.persona_id,
+                    draft=req.draft,
                 )
                 queue_ids.append(qid)
     finally:
         conn.close()
 
-    logger.info("Drip %s: %s — %d chapters × %d platforms, every %dd from %s (%d rows)",
+    logger.info("Drip %s: %s — %d chapters × %d platforms, every %s min from %s (%d rows)",
                 drip_group, canonical, total, len(req.platforms),
-                req.interval_days, req.start, len(queue_ids))
-    return {"ok": True, "drip_group": drip_group, "rows": len(queue_ids), "slots": slots}
+                req.interval_minutes or req.interval_days * 1440, req.start, len(queue_ids))
+    return {"ok": True, "drip_group": drip_group, "rows": len(queue_ids), "slots": slots,
+            "skipped": skipped}
 
 
 @editor_router.get("/stories/{story_name:path}/scheduled")

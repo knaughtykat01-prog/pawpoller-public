@@ -416,6 +416,7 @@ _SETTINGS = (
         "legal_accepted", "legal_history",   # Terms + Privacy accepted, and when (4.67.0, spec 033)
         "auth_mail_log",   # when account emails were last sent, for the send limit (4.68.0)
         "levels_enabled",   # gamification on/off; absent = never asked = off (spec 050, NOFUN 4.85.0)
+        "home_screen",   # what the app opens on: "start" (absent) or "overview" (spec 053)
         "rewards_equipped",   # the ring + level-up style in use (spec 051)
         "pb_import_asked", "twofa_offered", "announce_defaults_asked",   # sign-up's once-only offers (4.69.0)
         "interval_changed_from",   # a hosted seat's interval before it was rounded to the allowed list (4.74.0)

@@ -589,13 +589,14 @@ def test_gamification_is_asked_and_off_hides_it(browser, app_url):
         assert config.get_settings()["levels_enabled"] is False
         page.wait_for_timeout(300)
         assert page.evaluate("document.documentElement.dataset.gamification") == "off"
-        assert not page.locator('.bottom-nav-item[data-page="laurels"]').is_visible()
-        assert page.locator('.bottom-nav-item[data-page="analytics"]').is_visible()     # it gets the slot back
+        # Spec 053: Laurels lives in the side menu (the phone bar leads with Start); off hides it.
+        laurels_shown = "getComputedStyle(document.querySelector('.nav-link[data-page=\"laurels\"]')).display !== 'none'"
+        assert not page.evaluate(laurels_shown)
         tab.open("#/laurels")
         page.click("#lr-turn-on")
         page.wait_for_selector(".lr-eyebrow")                                           # the real Laurels page
         assert config.get_settings()["levels_enabled"] is True
-        assert page.locator('.bottom-nav-item[data-page="laurels"]').is_visible()
+        assert page.evaluate(laurels_shown)
         page.click("#account-menu-btn")                                                 # the menu's switch
         sw = page.locator('[data-acct="gamification"]')
         assert sw.get_attribute("aria-checked") == "true" and sw.inner_text().strip().endswith("On")
@@ -605,10 +606,119 @@ def test_gamification_is_asked_and_off_hides_it(browser, app_url):
         assert sw.get_attribute("aria-checked") == "false"
         assert not page.locator("#acct-level").is_visible()                            # no level under your name
         assert not page.locator("#acct-next").is_visible()
-        assert not page.locator('.bottom-nav-item[data-page="laurels"]').is_visible()
+        assert not page.evaluate(laurels_shown)
         page.reload(wait_until="networkidle")
         page.wait_for_timeout(1500)
         assert page.locator("#fun-ask").count() == 0                                    # answered: never asked again
         assert not tab.errors, tab.errors
     finally:
         tab.close()
+
+def _sample_story(root: Path, chapters: int = 3) -> str:
+    """A chaptered story on disk, the shape the editor writes (MASTER.md, story.json, split chapters)."""
+    import json
+    d = root / "Sample_Story"
+    (d / "Markdown").mkdir(parents=True)
+    (d / "Chapters" / "BBCode").mkdir(parents=True)
+    bodies = [f"# Chapter {i}: Part {i}\n\nSample chapter {i}, a few words long." for i in range(1, chapters + 1)]
+    (d / "Markdown" / "MASTER.md").write_text("# Sample Story\n\n" + "\n\n".join(bodies) + "\n", encoding="utf-8")
+    info = [{"index": i, "title": f"Part {i}", "words": 7} for i in range(1, chapters + 1)]
+    for c in info:
+        (d / "Chapters" / "BBCode" / f"Chapter_{c['index']}_Part_{c['index']}.txt").write_text(
+            f"Sample chapter {c['index']}.", encoding="utf-8")
+    (d / "Chapters" / "split_manifest.json").write_text(json.dumps({"chapters": [
+        {"index": c["index"], "title": c["title"], "filename": f"Chapter_{c['index']}_Part_{c['index']}",
+         "word_count": 7, "files": {"bbcode": f"BBCode/Chapter_{c['index']}_Part_{c['index']}.txt"}}
+        for c in info]}), encoding="utf-8")
+    (d / "story.json").write_text(json.dumps({
+        "title": "Sample Story", "author": "Inkwolf", "description": "A sample.", "summary": "A sample.",
+        "rating": "general", "word_count": 7 * chapters, "chapters": chapters, "chapter_info": info,
+        "tags": {"default": ["fox", "story", "adventure", "anthro"]}, "platforms": {"ib": {}}}), encoding="utf-8")
+    return d.name
+
+
+@pytest.mark.parametrize("viewport", [{"width": 1280, "height": 900}, {"width": 390, "height": 844}],
+                         ids=["desktop", "phone"])
+def test_scheduling_a_storys_chapters_takes_few_clicks(browser, app_url, tmp_path, viewport):
+    """Spec 053 SC-001: from a cold start, every chapter of a story goes on a weekly schedule to one
+    site in eight clicks or fewer. It used to be ~34 for ten chapters, through the Publish Check."""
+    from database.db import get_connection
+    name = _sample_story(tmp_path)
+    config.save_settings({"posting_story_archive_path": str(tmp_path)})
+    tab = _Watched(browser, app_url, viewport)
+    page = tab.page
+    clicks = 0
+
+    def click(sel):
+        nonlocal clicks
+        page.locator(sel).first.click()
+        clicks += 1
+
+    try:
+        page.wait_for_selector(".start-card")                                  # Start is the home screen
+        click('.start-card[href="#/start/schedule"]')
+        click('[data-start-pick="story"]')
+        click(".wp-card")
+        page.wait_for_selector('.ss-site-check[value="ib"]:not([disabled])', timeout=10000)
+        click('.ss-site-check[value="ib"]')
+        page.wait_for_selector("[data-ss-next]:not([disabled])")              # the check ran: no problems
+        click("[data-ss-next]")                                                # → When (a week, 8 pm tomorrow)
+        click("[data-ss-next]")                                                # → Check
+        page.wait_for_selector(".ss-cal-day.is-mine")                          # the run, on a calendar
+        page.wait_for_selector("[data-ss-next]:not([disabled])")
+        click("[data-ss-next]")                                                # Schedule
+        page.wait_for_selector(".ss-sheet", state="detached", timeout=10000)
+        assert clicks <= 8, clicks
+        conn = get_connection()
+        try:
+            rows = conn.execute("SELECT chapter_index, scheduled_at FROM posting_queue WHERE story_name = ? AND "
+                                "platform = 'ib' AND status = 'pending' ORDER BY chapter_index", (name,)).fetchall()
+            conn.execute("DELETE FROM posting_queue WHERE story_name = ?", (name,))
+            conn.commit()
+        finally:
+            conn.close()
+        assert [r[0] for r in rows] == [1, 2, 3], rows
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()
+        config.delete_settings_keys(["posting_story_archive_path"])
+
+def test_the_sheet_takes_a_short_gap_and_moves_one_chapter(browser, app_url, tmp_path):
+    """Amendment A: "Other gap" down to minutes, and Move shifts one chapter while the rest keep theirs."""
+    from database.db import get_connection
+    name = _sample_story(tmp_path)
+    config.save_settings({"posting_story_archive_path": str(tmp_path)})
+    tab = _Watched(browser, app_url, {"width": 390, "height": 844})
+    page = tab.page
+    try:
+        tab.open(f"#/library/work/{name}?schedule=1")
+        page.wait_for_selector('.ss-site-check[value="ib"]')
+        page.check('.ss-site-check[value="ib"]')
+        page.wait_for_selector("[data-ss-next]:not([disabled])")
+        page.click("[data-ss-next]")
+        page.select_option("#ss-every", "30")
+        page.wait_for_selector("[data-ss-next]:not([disabled])")
+        page.click("[data-ss-next]")
+        page.wait_for_selector(".ss-list li")
+        page.click('[data-ss-move="2"]')
+        page.fill('[data-ss-movebox="2"] input', "2031-03-01T09:15")
+        page.wait_for_selector('.ss-list li[data-ch="2"] .ss-pill')
+        page.wait_for_selector("[data-ss-next]:not([disabled])")
+        page.click("[data-ss-next]")
+        page.wait_for_selector(".ss-sheet", state="detached", timeout=10000)
+        conn = get_connection()
+        try:
+            rows = dict(conn.execute("SELECT chapter_index, scheduled_at FROM posting_queue WHERE story_name = ? "
+                                     "AND platform = 'ib' AND status = 'pending'", (name,)).fetchall())
+            conn.execute("DELETE FROM posting_queue WHERE story_name = ?", (name,))
+            conn.commit()
+        finally:
+            conn.close()
+        from datetime import datetime as _dt
+        t1, t3 = (_dt.fromisoformat(rows[c].replace(" ", "T")) for c in (1, 3))
+        assert (t3 - t1).total_seconds() == 60 * 60, rows                     # 30 minutes apart, ch 2 out of line
+        assert rows[2].startswith("2031-02-28") or rows[2].startswith("2031-03-01"), rows   # 9:15 Sydney = UTC day before
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()
+        config.delete_settings_keys(["posting_story_archive_path"])

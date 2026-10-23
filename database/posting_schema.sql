@@ -109,6 +109,9 @@ CREATE TABLE IF NOT EXISTS posting_queue (
     -- 4.43.1: the persona a persona-first schedule was made for — re-checked when the row
     -- fires (an account that has since moved persona is refused, not posted). NULL = none.
     persona_id          INTEGER,
+    -- Spec 053: a scheduled story post's public/draft choice. NULL = scheduled before 053
+    -- (posts with no extras, as it always did); 0 = public; 1 = draft where the site has one.
+    draft               INTEGER,
     -- 4.43.1: a retry / desktop hand-off row points at the ROOT row it re-runs, so it stays
     -- part of that row's scheduled slot (one Discord message per slot, retries included).
     retry_of            INTEGER,

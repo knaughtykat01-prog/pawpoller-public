@@ -120,15 +120,16 @@ window.Tour = (function () {
     const TOURS = {
         'getting-started': [
             { target: null, title: 'Welcome to PawPoller 👋', body: 'PawPoller tracks and publishes your stories and art across every site you use, from one place. Here’s a quick tour of the essentials — about a minute.' },
-            { target: '.nav-link[data-page="platforms"]', title: 'Platforms', body: 'Start here. Connect the sites you use — Inkbunny, FurAffinity, AO3, Bluesky and more. PawPoller only ever tracks the platforms you connect.' },
+            { target: '.nav-link[data-page="start"]', title: 'Start', body: 'Came to do one thing? Start asks what: post something, schedule it, write, see your numbers or set up a site. Each one is a click away.' },
+            { target: '.nav-link[data-page="platforms"]', title: 'Platforms', body: 'Connect the sites you use first. Connect the sites you use — Inkbunny, FurAffinity, AO3, Bluesky and more. PawPoller only ever tracks the platforms you connect.' },
             // One Library step, because there's now one works hub (2.155.0). These
             // were two steps targeting data-page="submissions" (hub retired 2.117.0)
             // and data-page="posting" (retired 2.155.0) — both nav entries are gone,
             // so both steps were silently targeting nothing.
             { target: '.nav-link[data-page="library"]', title: 'Library', body: 'Every work you track — stories and artwork alike — lives here, with views, faves and comments pulled in from each platform. Filter by type, or review what polling has discovered.' },
             { target: '.nav-link[data-page="inbox"]', title: 'Inbox', body: 'Comments from every site in one list. Reply from here where the site allows it, or tick them off as handled.' },
-            { target: '.nav-link[data-page="posts"]', title: 'Posts', body: 'Short posts and journals: write once, send to Bluesky, X, Mastodon, Threads, Tumblr and more, now or at a time you pick.' },
-            { target: '.nav-link[data-page="editor"]', title: 'Story Editor', body: 'Write or import a story, tag it per platform, then run a Publish Check to catch problems <em>before</em> anything goes live.' },
+            { target: '.nav-link[data-page="start-schedule"]', title: 'Post & schedule', body: 'One place for every kind of posting: a story or its chapters, artwork, a short post or a journal, now or at a time you pick. <em>Scheduled</em> lists what is lined up.' },
+            { target: '.nav-link[data-page="editor"]', title: 'Story Editor', body: 'Write or import a story, tag it per platform, then schedule its chapters from the story’s page.' },
             { target: '.nav-link[data-page="analytics"]', title: 'Analytics', body: 'Views, favourites and comments over time — combined across every platform, or broken down site by site.' },
             { target: '#poll-status-mini', title: 'Polling', body: 'PawPoller checks your platforms on a schedule and refreshes these numbers on its own. This badge shows the current cycle at a glance.' },
             { target: '#pp-notif-bell', title: 'The bell', body: 'What PawPoller did and found: posts that went out or failed, new comments, sign-ins that need redoing. Coming back after a while? An <em>Overnight</em> summary opens on its own.' },
@@ -158,13 +159,13 @@ window.Tour = (function () {
             { target: '#shelf-search', title: 'Search the shelf', body: 'Type a title to narrow the shelf instantly — handy once you’re tracking a lot of pieces.' },
             { target: '.shelf-sort', title: 'Sort', body: 'Newest, A–Z, most platforms — or by pooled views, favourites and comments to see what’s actually landing.' },
             { target: '#shelf-grid', title: 'Your works', body: 'Each cover tells the truth: a gilt ribbon means it’s live, and it says on how many platforms. Click one for its full per-platform detail.' },
-            { target: '.empty-state', title: 'Get works in', body: 'Nothing here yet? Add art with <strong>New Artwork</strong> or a story with <strong>New Story</strong> in the menu — or connect a site and PawPoller finds what you’ve already posted.' },
+            { target: '.empty-state', title: 'Get works in', body: 'Nothing here yet? Add art with <strong>Upload artwork</strong> or a story with <strong>Write a story</strong> in the menu — or connect a site and PawPoller finds what you’ve already posted.' },
         ],
 
         'queue': [
-            { target: null, title: 'The posting queue', body: 'The Queue holds every upload and update that’s pending, scheduled or being processed right now.' },
-            { target: '.page-header', title: 'Posting Queue', body: 'Your work-in-progress list — items sit here until the scheduler runs them, then move on to History.' },
-            { target: '.empty-state', title: 'Nothing queued', body: 'The Queue starts empty. Publish or schedule a story or a piece of art and its jobs appear here.' },
+            { target: null, title: 'Scheduled', body: 'Scheduled holds every upload and update that’s pending, scheduled or being processed right now.' },
+            { target: '.page-header', title: 'Scheduled', body: 'Your work-in-progress list — items sit here until the scheduler runs them, then move on to History.' },
+            { target: '.empty-state', title: 'Nothing scheduled', body: 'This list starts empty. Publish or schedule a story or a piece of art and its jobs appear here.' },
             { target: '.data-table', title: 'Queued items', body: 'Each row shows the story, platform, action and status. Pending items get a <em>Cancel</em> button before they run.' },
             { target: '.nav-link[data-page="posting-log"]', title: 'History', body: 'Once a queued item finishes, its outcome is recorded over in History.' },
         ],
@@ -174,7 +175,7 @@ window.Tour = (function () {
             { target: '.page-header', title: 'Posting History', body: 'A record of what was posted where, whether it succeeded, and how long each job took.' },
             { target: '.empty-state', title: 'No activity yet', body: 'Once you publish or update a story, each attempt is logged here — successes and failures alike.' },
             { target: '.data-table', title: 'Log entries', body: 'Every row lists the time, story, platform, action and result, with a link to the post and its duration.' },
-            { target: '.nav-link[data-page="posting-queue"]', title: 'Queue', body: 'Work still in progress lives in the Queue; it only lands here once it has run.' },
+            { target: '.nav-link[data-page="posting-queue"]', title: 'Scheduled', body: 'Work still waiting lives in Scheduled; it only lands here once it has run.' },
         ],
 
         'editor': [

@@ -771,8 +771,8 @@ window.Posts = {
             <div class="pp-page pp-compose-page">
                 <div class="page-header pp-head">
                     <div>
-                        <h1>New post</h1>
-                        <p class="muted"><a href="#/posts">← Posts</a></p>
+                        <h1>Short post</h1>
+                        <p class="muted">Text and pictures for the social sites. To post a story, chapter or artwork, start from <a href="#/start/post">Post something now</a>. <a href="#/posts">← Posts</a></p>
                     </div>
                     <span class="pp-draft-state muted" id="pp-draft-state" aria-live="polite"></span>
                 </div>
@@ -794,6 +794,9 @@ window.Posts = {
             document.getElementById('post-schedule-form').style.display = '';
             document.getElementById('post-schedule-datetime').value = this._scheduleAt;
             this._scheduleAt = null;
+        } else if (new URLSearchParams(App._routeQuery || '').get('schedule') === '1') {
+            // Start → Schedule something → A short post (spec 053): the picker already open.
+            document.getElementById('post-schedule-toggle')?.click();
         }
         // An image handed over from the Promo Maker ("💬 Send to Posts"), else
         // re-sync previews for anything still pending from an earlier visit.

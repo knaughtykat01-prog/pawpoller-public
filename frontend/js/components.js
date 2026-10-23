@@ -2224,7 +2224,9 @@ const Components = {
         } catch (e) { /* no chips; rows fall back to the per-platform picker */ }
 
         const offered = new Set(o.platforms || []);
-        const enabled = accounts.filter(a => a.enabled && offered.has(a.platform));
+        // FRIENDGUARD: a Never-post account is never offered, so a persona that only holds
+        // someone else's account gets no chip and All accounts can't pick it either.
+        const enabled = accounts.filter(a => a.enabled && !a.never_post && offered.has(a.platform));
         const byPersona = {};   // persona_id → {code: [accounts]}
         const all = {};         // code → [accounts]
         for (const a of enabled) {

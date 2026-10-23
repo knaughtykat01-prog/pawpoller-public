@@ -199,6 +199,10 @@ async def _process_queue_item_core(item: dict) -> None:
     # as the piece, it derives to "no variant" and the retry would post the primary.
     _vk = item["variant_key"] if "variant_key" in item.keys() else ""
     variant_overrides = {platform: _vk} if _vk else None
+    # Spec 053: a scheduled story post's public/draft choice. NULL (rows before 053) passes
+    # no extras, so each poster keeps its own default — AO3 drafts, Inkbunny/SoFurry public.
+    _draft = item["draft"] if "draft" in item.keys() else None
+    story_extras = None if _draft is None else {"draft": bool(_draft)}
     # Rows never announce to Discord on their own (4.43.0 batches; 4.43.1 every artwork and
     # story row): a piece scheduled to five sites is five rows, and each announcing was five messages.
     # The piece is announced ONCE when its rows settle — _maybe_batch_announce (a batch,
@@ -269,6 +273,7 @@ async def _process_queue_item_core(item: dict) -> None:
         elif action == "post":
             results = await manager.post_story(
                 story_name, [platform], [chapter_index],
+                extras=story_extras,
                 account_ids={platform: account_id} if account_id else None,
                 description_overrides=description_overrides,
                 announce_discord=row_discord,
@@ -382,12 +387,14 @@ def _adopt_handoff(item) -> None:
         try:
             conn.execute(
                 "UPDATE posting_queue SET drip_group = ?, announce = ?, persona_id = ?, retry_of = ?, "
+                "draft = ?, "   # spec 053: a retried draft stays a draft
                 "title_override = COALESCE(title_override, ?), "
                 "description_override = COALESCE(description_override, ?) "
                 "WHERE queue_id = (SELECT MAX(queue_id) FROM posting_queue WHERE queue_id > ? "
                 "AND story_name = ? AND chapter_index = ? AND platform = ? AND content_type = ? "
                 "AND status = 'pending' AND retry_of IS NULL)",
                 (g("drip_group"), g("announce"), g("persona_id"), g("retry_of") or item["queue_id"],
+                 g("draft"),
                  g("title_override"), g("description_override"), item["queue_id"], item["story_name"],
                  item["chapter_index"], item["platform"], g("content_type") or "story"))
             conn.commit()
