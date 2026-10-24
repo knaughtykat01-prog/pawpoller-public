@@ -1553,7 +1553,10 @@ const API = {
 
     /* ── Setup wizard ─────────────────────────────────────────── */
     getSetupStatus() { return this.get('/api/settings/setup-status'); },
-    markSetupComplete() { return this.post('/api/settings/setup-complete'); },
+    // 056: Finish later passes the steps left to defaults; plain Finish passes nothing.
+    markSetupComplete(skipped) { return this.post('/api/settings/setup-complete', skipped ? { skipped } : {}); },
+    // 056: where setup got to, kept on the server — {step, path, skipped, return_to}, any subset.
+    saveSetupProgress(obj) { return this.post('/api/settings/setup-progress', obj); },
     setSetupMode(payload) { return this.post('/api/settings/setup-mode', payload); },
     pairTest(payload) { return this.post('/api/settings/pair-test', payload); },
     resetSetupWizard() { return this.post('/api/settings/setup-reset'); },

@@ -221,7 +221,10 @@ window.Accounts = {
 
     _renderCredFields(el, platform, data) {
         const fields = (data.platform_fields || {})[platform] || [];
-        el.innerHTML = fields.map(f =>
+        // 056: the site's own setup guide, beside the form, when there is one.
+        const guide = window.Guides && Guides.has && Guides.has(platform)
+            ? `<button type="button" class="guide-trigger" data-guide="${this.esc(platform)}">&#128214; Setup guide</button>` : '';
+        el.innerHTML = guide + fields.map(f =>
             `<label class="acct-field"><span>${this.esc(this._prettyField(platform, f.field))}</span>
                 <input class="acct-input acct-cred" data-field="${this.esc(f.field)}"
                        type="${f.secret ? 'password' : 'text'}" autocomplete="off"></label>`

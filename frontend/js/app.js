@@ -343,12 +343,28 @@ const App = {
          * the guided wizard instead of the normal dashboard. This check
          * runs after dashboard auth (so the user is authenticated) but
          * before any platform auth gates. */
+        // 056: the status is cached for route()'s gate and strip, and re-read whenever the window comes
+        // back (a browser sign-in in another window, a second tab finishing setup).
+        if (!this._setupFocusBound) {
+            this._setupFocusBound = true;
+            window.addEventListener('focus', async () => {
+                const was = this._setupUnfinished();
+                await this._refreshSetupStatus();
+                if (this._setupUnfinished()) this._setupReturnCheck();
+                else if (was) this._renderSetupStrip([], false);    // finished elsewhere: drop the strip
+            });
+        }
         try {
             const setupResp = await API.getSetupStatus();
+            this._setupStatus = setupResp;
             if (!setupResp.setup_complete) {
                 // Sign-up's own questions first (age, zone, reports), then the wizard.
                 const a = (this._signup && this._signup.answered) || {};
-                window.location.hash = this._signupAnswered(a) ? '#/setup' : '#/signup';
+                // 056: a reload on a page setup needs (a site's settings mid-connect) stays there.
+                const here = window.location.hash.slice(1).split('?')[0].split('/').filter(Boolean);
+                if (!(this._signupAnswered(a) && this._setupAllowed(here) && here[0] !== 'signup')) {
+                    window.location.hash = this._signupAnswered(a) ? '#/setup' : '#/signup';
+                }
                 this.route();
                 return;  // Don't proceed with platform auth — wizard handles it
             }
@@ -1079,6 +1095,9 @@ const App = {
         this._routeQuery = _q === -1 ? '' : rawHash.slice(_q + 1);
         const parts = hash.split('/').filter(Boolean);
 
+        // 056: while setup is unfinished, pages it doesn't need wait for it.
+        if (this._setupGate(parts)) return;
+
         /* A work's NAME travels in the hash percent-encoded (every link builds it with
            encodeURIComponent), and each renderer encodes it again for its API call. For an
            ASCII name encoding is the identity, so that double pass was invisible — but a
@@ -1103,6 +1122,8 @@ const App = {
         if (bottomNav) bottomNav.style.display = isFullScreen ? 'none' : '';
         const mobileBar = document.getElementById('mobile-bar');
         if (mobileBar) mobileBar.style.display = isFullScreen ? 'none' : '';
+        this._renderSetupStrip(parts, isFullScreen);     // 056
+        this._setupReturnWatch(parts);
 
         /* A "platform route" is the Platforms hub or any platform code
            (#/{code}, #/{code}/submissions, …). On these the "Platforms" nav
@@ -3540,6 +3561,119 @@ const App = {
         ov.querySelector('#age-ask-adult').focus();
     },
 
+    /* ── Setup stays open (056, ONBOARDEXIT) ─────────────────────────
+     * A tester connected a site from the wizard, landed on Accounts, took it for the end of setup and
+     * posted — a reload threw them back into the wizard. Now: one cached status, one gate in route(),
+     * one strip, and the wizard's Connect comes back to the wizard by itself once the site connects. */
+
+    // Pages setup itself needs. Everything else waits for setup (FR-003).
+    SETUP_ALLOWED: ['setup', 'signup', 'dashboard-setup', 'dashboard-login', 'login', 'loading',
+        'accounts', 'getting-started', 'help', 'settings/platforms'],
+
+    // Plain names for the strip, the "Finish later" list and the reason line.
+    SETUP_STEP_NAMES: {
+        welcome: 'Welcome', timezone: 'Your time zone', age: 'Your age', mode: 'How you run PawPoller',
+        pairing: 'Pair with your server', make: 'What you make', archive: 'Your story folder',
+        sites: 'Which sites you use', platforms: 'Connect your sites', interval: 'How often to check your sites',
+        posting: 'Posting defaults', hear: 'How PawPoller tells you things', persona: 'Your persona',
+        fun: 'Levels and rewards', tech: 'Problem reports', done: 'Finish',
+    },
+
+    // Which status call says a site is connected, and the field to read. The wizard and the return
+    // watcher both use it, so they can't disagree. A site missing here never auto-returns (the strip's
+    // "Back to setup" still does).
+    _SITE_AUTH: {
+        ib: ['getAuthStatus', 'has_credentials'], fa: ['getFAAuthStatus', 'has_cookies'],
+        ws: ['getWSAuthStatus', 'has_key'], sf: ['getSFAuthStatus', 'has_credentials'],
+        sqw: ['getSQWAuthStatus', 'has_credentials'], ao3: ['getAO3AuthStatus', 'has_credentials'],
+        da: ['getDAAuthStatus', 'has_credentials'], wp: ['getWPAuthStatus', 'has_credentials'],
+        ik: ['getIKAuthStatus', 'has_credentials'], bsky: ['getBSKYAuthStatus', 'has_credentials'],
+        tw: ['getTWAuthStatus', 'has_credentials'], mast: ['getMASTAuthStatus', 'has_credentials'],
+        tum: ['getTUMAuthStatus', 'has_credentials'], pix: ['getPIXAuthStatus', 'has_credentials'],
+        thr: ['getTHRAuthStatus', 'has_credentials'], ig: ['getIGAuthStatus', 'has_credentials'],
+        e621: ['getE621AuthStatus', 'has_credentials'],
+    },
+    async _siteConnected(code) {
+        const s = this._SITE_AUTH[code];
+        if (!s || typeof API[s[0]] !== 'function') return false;
+        try { return !!(await API[s[0]]())[s[1]]; } catch (e) { return false; }
+    },
+
+    _setupUnfinished() {
+        const st = this._setupStatus;
+        return !!(st && st.setup_complete === false);
+    },
+    _setupAllowed(parts) {
+        if (!parts.length) return false;
+        if (parts[0] === 'settings') return parts[1] === 'platforms';
+        return this.SETUP_ALLOWED.includes(parts[0]);
+    },
+    async _refreshSetupStatus() {
+        try { this._setupStatus = await API.getSetupStatus(); } catch (e) { /* keep the last one */ }
+        return this._setupStatus;
+    },
+    // Merge into the server's setup progress and the cache. Never throws: setup still works without it.
+    _saveSetupProgress(obj) {
+        const st = this._setupStatus;
+        if (st) st.progress = Object.assign({}, st.progress || {}, obj);
+        return API.saveSetupProgress(obj).catch(err => console.warn('[Setup] progress save failed:', err));
+    },
+
+    /* The gate (FR-002, FR-003): while setup is unfinished, a page setup doesn't need goes to #/setup
+     * with a reason. Links, the address bar and a reload all come through route(), so all are held. */
+    _setupGate(parts) {
+        if (!this._setupUnfinished() || this._setupAllowed(parts)) return false;
+        const page = parts.length ? parts[0].replace(/-/g, ' ') : 'Home';
+        this._setupReason = `Finish setup first: ${page[0].toUpperCase()}${page.slice(1)} needs a few more answers.`;
+        window.location.hash = '#/setup';
+        return true;
+    },
+
+    /* The strip (FR-002): on every allowed page outside the wizard, one line saying setup isn't done. */
+    _renderSetupStrip(parts, isFullScreen) {
+        let el = document.getElementById('setup-strip');
+        if (!this._setupUnfinished() || isFullScreen) { if (el) el.remove(); return; }
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'setup-strip';
+            el.className = 'setup-strip';
+            el.setAttribute('role', 'status');
+            const app = document.getElementById('app');
+            if (!app || !app.parentElement) return;
+            app.parentElement.insertBefore(el, app);
+        }
+        const step = ((this._setupStatus || {}).progress || {}).step;
+        const name = Object.hasOwn(this.SETUP_STEP_NAMES, step || '') ? this.SETUP_STEP_NAMES[step] : '';
+        el.innerHTML = `<span>Setup isn't finished${name ? ` (you were on: ${Utils.escapeHtml(name)})` : ''}.</span>
+            <a class="btn btn-sm btn-primary" href="#/setup">&#8592; Back to setup</a>`;
+    },
+
+    /* The return watcher (FR-001): after a wizard Connect, the site's page re-checks that one site on
+     * window focus and every 3 s; once it reads connected, back to the wizard. A failed sign-in just
+     * stays on the page with its error (the strip is the way back). */
+    _setupReturnWatch(parts) {
+        clearInterval(this._setupReturnTimer);
+        this._setupReturnTimer = null;
+        const rt = this._setupUnfinished() && ((this._setupStatus.progress || {}).return_to);
+        if (!rt) return;
+        if (parts[0] === 'settings' && parts[1] === 'platforms' && parts[2] === rt.site) {
+            this._setupReturnTimer = setInterval(() => this._setupReturnCheck(), 3000);
+        }
+    },
+    async _setupReturnCheck() {
+        const rt = this._setupUnfinished() && ((this._setupStatus.progress || {}).return_to);
+        if (!rt || this._setupReturnBusy) return;
+        this._setupReturnBusy = true;
+        try {
+            if (await this._siteConnected(rt.site)) {
+                clearInterval(this._setupReturnTimer);
+                this._setupReturnTimer = null;
+                await this._saveSetupProgress({ return_to: null });
+                if (!window.location.hash.startsWith('#/setup')) window.location.hash = '#/setup';
+            }
+        } finally { this._setupReturnBusy = false; }
+    },
+
     /* 2.16.13 (BUG-017): #/setup route guard. If setup_complete is
      * already true (the normal post-onboarding state), bounce the
      * user back to overview instead of letting them re-enter the
@@ -3550,6 +3684,13 @@ const App = {
     async _guardSetupRoute() {
         try {
             const status = await API.getSetupStatus();
+            this._setupStatus = status;
+            // 056: Settings → "Finish your setup choices" walks only the steps left for later.
+            const skipped = (status.progress || {}).skipped || [];
+            if (status.setup_complete && /(^|&)resume=1(&|$)/.test(this._routeQuery || '') && skipped.length) {
+                this.renderSetupWizard({ resume: skipped });
+                return;
+            }
             if (status.setup_complete) {
                 window.location.hash = '#/';
                 this.route();
@@ -3565,7 +3706,7 @@ const App = {
         this.renderSetupWizard();
     },
 
-    async renderSetupWizard() {
+    async renderSetupWizard({ resume = null } = {}) {
         const _rt = this._routeToken();   // route race guard (see _stale)
         /* Platform definitions for the platform-connect step — reuses emoji + colour from the nav grid */
         const platforms = [
@@ -3616,9 +3757,14 @@ const App = {
          * pre-populate fields and show "already connected" badges. */
         let runtimeMode = 'desktop';
         let archivePath = '';
+        let serverProgress = {};
+        let savedSetupMode = null;
         try {
             const status = await API.getSetupStatus().catch(() => ({}));
             runtimeMode = status.runtime_mode || 'desktop';
+            serverProgress = status.progress || {};      // 056: where setup got to, any tab, any window
+            savedSetupMode = status.setup_mode || null;
+            if (status.setup_complete !== undefined) this._setupStatus = status;
         } catch { /* ignore */ }
         try {
             const posting = await API.getPostingSettings().catch(() => ({}));
@@ -3627,44 +3773,8 @@ const App = {
 
         /* Per-platform connection status (used in the platforms step) */
         const authStatus = {};
-        try {
-            const [ib, fa, ws, sf, sqw, ao3, da, wp, ik, bsky, tw, mast, tum, pix, thr, ig, e621] = await Promise.all([
-                API.getAuthStatus().catch(() => ({})),
-                API.getFAAuthStatus().catch(() => ({})),
-                API.getWSAuthStatus().catch(() => ({})),
-                API.getSFAuthStatus().catch(() => ({})),
-                API.getSQWAuthStatus().catch(() => ({})),
-                API.getAO3AuthStatus().catch(() => ({})),
-                API.getDAAuthStatus().catch(() => ({})),
-                API.getWPAuthStatus().catch(() => ({})),
-                API.getIKAuthStatus().catch(() => ({})),
-                API.getBSKYAuthStatus().catch(() => ({})),
-                API.getTWAuthStatus().catch(() => ({})),
-                API.getMASTAuthStatus().catch(() => ({})),
-                API.getTUMAuthStatus().catch(() => ({})),
-                API.getPIXAuthStatus().catch(() => ({})),
-                API.getTHRAuthStatus().catch(() => ({})),
-                API.getIGAuthStatus().catch(() => ({})),
-                API.getE621AuthStatus().catch(() => ({})),
-            ]);
-            authStatus.ib = ib.has_credentials;
-            authStatus.fa = fa.has_cookies;
-            authStatus.ws = ws.has_key;
-            authStatus.sf = sf.has_credentials;
-            authStatus.sqw = sqw.has_credentials;
-            authStatus.ao3 = ao3.has_credentials;
-            authStatus.da = da.has_credentials;
-            authStatus.wp = wp.has_credentials;
-            authStatus.ik = ik.has_credentials;
-            authStatus.bsky = bsky.has_credentials;
-            authStatus.tw = tw.has_credentials;
-            authStatus.mast = mast.has_credentials;
-            authStatus.tum = tum.has_credentials;
-            authStatus.pix = pix.has_credentials;
-            authStatus.thr = thr.has_credentials;
-            authStatus.ig = ig.has_credentials;
-            authStatus.e621 = e621.has_credentials;
-        } catch { /* ignore — all default to undefined/false */ }
+        // One lookup per site, shared with the return watcher (056: App._SITE_AUTH).
+        await Promise.all(Object.keys(this._SITE_AUTH).map(async c => { authStatus[c] = await this._siteConnected(c); }));
 
         /* Wizard state */
         //
@@ -3675,15 +3785,23 @@ const App = {
         // seventeen platforms on that step, that is the difference between a
         // detour and a punishment.
         //
-        // sessionStorage: lives exactly as long as this browser tab, so it can
-        // never outlive the setup run it belongs to. Wrapped because storage
-        // throws outright in some private-browsing modes.
-        const _WIZ_KEY = 'pp.setup.progress';
+        // 056: the step and path live on the SERVER (setup_progress), so a second tab, a new
+        // window or a reload all land on the same step — sessionStorage didn't survive a browser
+        // sign-in window. The tab keeps only this run's answers, for the summary on the last step.
+        const _WIZ_KEY = 'pp.setup.answers';
         let _wizSaved = {};
         try { _wizSaved = JSON.parse(sessionStorage.getItem(_WIZ_KEY) || '{}') || {}; } catch (e) { _wizSaved = {}; }
+        _wizSaved.step = serverProgress.step;
+        _wizSaved.mode = savedSetupMode;
+        let _wizSentStep = serverProgress.step;
+        const _wizPath = () => runtimeMode === 'server' ? 'server'
+            : (selectedMode === 'paired_desktop' || selectedMode === 'connected') ? 'connected' : 'full';
         const _wizSave = () => {
-            try { sessionStorage.setItem(_WIZ_KEY, JSON.stringify({ step: currentStep, mode: selectedMode, answers })); }
-            catch (e) { /* storage unavailable — the wizard still works, it just forgets */ }
+            try { sessionStorage.setItem(_WIZ_KEY, JSON.stringify({ answers })); }
+            catch (e) { /* storage unavailable — the wizard still works */ }
+            if (resume || currentStep === _wizSentStep || currentStep === 'done') return;
+            _wizSentStep = currentStep;
+            this._saveSetupProgress({ step: currentStep, path: _wizPath() });
         };
 
         let currentStep = 'welcome';
@@ -3716,7 +3834,9 @@ const App = {
         const answered = (this._signup && this._signup.answered) || {};
         const keep = (s) => (s !== 'archive' || makesAll().includes('stories')) && !answered[s]
             && !(s === 'fun' && prefs.gamification_asked);   // levels, medals, rewards: asked once (22 Oct)
-        const stepOrder = () => {
+        // 056 resume mode (Settings → "Finish your setup choices"): only the steps left for later.
+        const stepOrder = () => resume ? baseOrder().filter(s => resume.includes(s) || s === 'done') : baseOrder();
+        const baseOrder = () => {
             if (runtimeMode === 'server') {
                 return ['welcome', 'timezone', 'age', 'make', 'archive', 'sites', 'platforms', 'interval', 'posting', 'hear', 'persona', 'fun', 'tech', 'done'].filter(keep);
             }
@@ -3733,9 +3853,29 @@ const App = {
         // mode may not exist under another. 'done' is excluded deliberately —
         // returning straight to the final screen would skip the setup it is
         // claiming to have finished.
-        if (_wizSaved.step && _wizSaved.step !== 'done' && stepOrder().includes(_wizSaved.step)) {
+        if (resume) currentStep = stepOrder()[0];
+        else if (_wizSaved.step && _wizSaved.step !== 'done' && stepOrder().includes(_wizSaved.step)) {
             currentStep = _wizSaved.step;
         }
+
+        /* 056 Finish later (FR-004): every step after age offers it. What each step is left at, in
+           plain words — the same values the steps fall back to when skipped. */
+        // Only what is true whatever was set before (a re-run or a resume can find things already set).
+        const nConnected = Object.values(authStatus).filter(Boolean).length;
+        const LATER_DEFAULT = {
+            mode: 'runs on this computer', make: 'art, stories and media', archive: 'as it is now (Settings → Posting)',
+            sites: 'as they are now (Settings → Platforms)',
+            platforms: `${nConnected ? `${nConnected} connected` : 'none connected yet'}; connect more in Settings → Platforms`,
+            interval: 'as it is now', posting: 'as they are now (Settings → Posting)', hear: 'the bell',
+            persona: 'as they are now (Settings → Personas)', fun: 'off', tech: 'off',
+        };
+        const laterSteps = () => {
+            const order = stepOrder();
+            const age = order.indexOf('age');
+            const i = order.indexOf(currentStep);
+            return (resume || i <= age || currentStep === 'pairing') ? []
+                : order.slice(i).filter(s => s in LATER_DEFAULT);
+        };
 
         const stepIndex = () => {
             const order = stepOrder();
@@ -3867,7 +4007,8 @@ const App = {
                             <span class="setup-platform-emoji" style="border-color:${p.color}">${p.emoji}</span>
                             <span class="setup-platform-name">${p.name}</span>
                             <span class="setup-platform-status">${connected ? 'Connected' : 'Not connected'}</span>
-                            <a href="#/settings/platforms/${p.key}" class="btn btn-sm setup-platform-connect" style="font-size:11px;padding:4px 10px;margin-top:4px;background:${connected ? 'var(--bg-hover)' : 'var(--accent-dim)'};color:#fff;text-decoration:none;border-radius:var(--radius-sm)">${connected ? 'Edit' : 'Connect'}</a>
+                            ${window.Guides && Guides.has(p.key) ? `<button type="button" class="btn btn-sm setup-platform-guide" data-guide="${p.key}">&#128214; Guide</button>` : ''}
+                            <a href="#/settings/platforms/${p.key}" data-site="${p.key}" class="btn btn-sm setup-platform-connect" style="font-size:11px;padding:4px 10px;margin-top:4px;background:${connected ? 'var(--bg-hover)' : 'var(--accent-dim)'};color:#fff;text-decoration:none;border-radius:var(--radius-sm)">${connected ? 'Edit' : 'Connect'}</a>
                             <a href="${p.url}" target="_blank" rel="noopener" class="setup-platform-site" title="Open ${p.name} in your browser — some platforms need you to generate an API key there first">Open site &#8599;</a>
                         </div>`;
                 }).join('');
@@ -4070,17 +4211,27 @@ const App = {
             }
 
             if (this._stale(_rt)) return;
+            // 056: why a page sent them here (once), and the deliberate way out.
+            const reason = this._setupReason;
+            this._setupReason = '';
+            const later = laterSteps();
             this._setContent(`
                 <div class="login-screen">
                     <div class="login-card setup-wizard">
                         ${stepsHtml}
+                        ${reason ? `<p class="setup-reason" role="status">${Utils.escapeHtml(reason)}</p>` : ''}
                         ${body}
+                        ${later.length ? `<p class="setup-later"><button type="button" class="btn-link" id="setup-later">Finish later</button></p>` : ''}
                     </div>
                 </div>`);
 
             const goNext = () => {
                 const order = stepOrder();
                 const i = order.indexOf(currentStep);
+                if (resume && resume.includes(currentStep)) {      // answered: it leaves the list (FR-005)
+                    resume = resume.filter(s => s !== currentStep);
+                    this._saveSetupProgress({ skipped: resume });
+                }
                 if (i >= 0 && i < order.length - 1) {
                     currentStep = order[i + 1];
                     renderStep();
@@ -4104,6 +4255,25 @@ const App = {
             });
 
             document.getElementById('setup-back')?.addEventListener('click', goBack);
+
+            /* 056: a Connect from here comes back here once the site connects (App._setupReturnWatch). */
+            document.querySelectorAll('.setup-platform-connect[data-site]').forEach(a => a.addEventListener('click', () => {
+                this._saveSetupProgress({ step: 'platforms', return_to: { step: 'platforms', site: a.dataset.site } });
+            }));
+
+            /* 056 Finish later: say what each remaining step is left at, then open the app. */
+            document.getElementById('setup-later')?.addEventListener('click', () => {
+                const rest = laterSteps();
+                const list = rest.map(s => `${this.SETUP_STEP_NAMES[s] || s}: ${LATER_DEFAULT[s]}`).join('\n');
+                if (!confirm(`Finish setup later? These stay as they are for now:\n\n${list}\n\nSettings → General → "Finish your setup choices" asks them again.`)) return;
+                const btn = document.getElementById('setup-later');
+                if (btn) btn.disabled = true;
+                API.markSetupComplete(rest).catch(err => console.warn('[Setup] finish later failed:', err)).finally(() => {
+                    try { sessionStorage.removeItem(_WIZ_KEY); } catch (e) { /* ignore */ }
+                    window.location.hash = '#/';
+                    window.location.reload();     // init() then runs the steps it skips while setup is open
+                });
+            });
 
             /* Time zone step: say what time it is there, as they type. */
             const tzInput = document.getElementById('setup-tz');
@@ -15999,6 +16169,7 @@ const App = {
             // 4.24.1: connected mode is saved by the wizard but only applied at launch — until the
             // restart this page is still the local app, and used to call itself "Standalone".
             const _isConnectedPending = _setupMode === 'connected' && !_isServer;
+            const _skippedLeft = Array.isArray((setupStatus.progress || {}).skipped) ? setupStatus.progress.skipped.length : 0;
             const _pollingOwner = setupStatus.polling_owner || (_isServer ? 'local' : (_isPaired ? 'server' : 'local'));
 
             // Store auth state for lazy-loaded polling tab
@@ -16231,6 +16402,16 @@ const App = {
                     </div>
                     </div>
                 </details>
+
+                ${_skippedLeft ? `
+                <div class="settings-row">
+                    <span class="settings-label">Some setup questions were left for later.</span>
+                    <a class="btn btn-primary" href="#/setup?resume=1">Finish your setup choices (${_skippedLeft} left)</a>
+                </div>` : ''}
+                <div class="settings-row">
+                    <span class="settings-label">Step-by-step guides for connecting each site.</span>
+                    <a class="btn btn-secondary" href="#/getting-started">Help guides</a>
+                </div>
 
                 ${_isPaired ? `
                 <details class="settings-accordion" data-page="connection" open id="mirror-sync-section">
@@ -17076,6 +17257,15 @@ const App = {
                 <!-- ═══ TAB: Logs ═══ -->
                 <div class="settings-tab-content" data-tab-content="logs" ${_settingsTab !== 'logs' ? 'style="display:none"' : ''}>
 
+                ${setupStatus.operator_tools ? `
+                <div class="settings-section">
+                    <h3>Testing</h3>
+                    <div class="settings-row">
+                        <span class="settings-label">Walk first-run setup again on this install. No settings are deleted.</span>
+                        <button class="btn btn-secondary" id="btn-rerun-wizard-ops">Re-run setup</button>
+                    </div>
+                </div>` : ''}
+
                 <div class="settings-section">
                     <h3>Application Logs</h3>
                     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
@@ -17453,12 +17643,6 @@ const App = {
 
                 <!-- ═══ TAB: Platforms ═══ -->
                 <div class="settings-tab-content" data-tab-content="platforms" ${_settingsTab !== 'platforms' ? 'style="display:none"' : ''}>
-
-                ${setupStatus.setup_complete ? '' : `
-                <div class="setup-return-banner">
-                    <span>You're part-way through first-time setup. Connect what you need here, then head back.</span>
-                    <a class="btn btn-sm btn-primary" href="#/setup">&#8592; Back to setup</a>
-                </div>`}
 
                 <details class="settings-accordion">
                     <summary>Platforms I use <span class="summary-meta">— hide the ones you don't</span></summary>
@@ -19077,7 +19261,7 @@ const App = {
 
             // "Re-run setup" button — clears setup_complete and routes back to
             // the wizard so the user can switch between standalone and paired.
-            document.getElementById('btn-rerun-wizard')?.addEventListener('click', async () => {
+            document.querySelectorAll('#btn-rerun-wizard, #btn-rerun-wizard-ops').forEach(b => b.addEventListener('click', async () => {
                 if (!confirm('Re-run the setup wizard? This won\'t delete any settings — you\'ll just go back through the questions.')) return;
                 try {
                     await API.resetSetupWizard();
@@ -19087,7 +19271,7 @@ const App = {
                 }
                 window.location.hash = '#/setup';
                 window.location.reload();
-            });
+            }));
 
             document.getElementById('pref-tray')?.addEventListener('change', async (e) => {
                 try {

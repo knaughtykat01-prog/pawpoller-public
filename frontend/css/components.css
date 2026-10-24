@@ -1643,10 +1643,10 @@ a.stat-card:hover {
     text-decoration: underline;
 }
 
-/* Shown on Settings → Platforms while first-run setup is unfinished, so a user
- * sent here by the wizard's Connect button has a visible way back. Without it
- * the deep link trades one dead end for another. */
-.setup-return-banner {
+/* 056: shown above every page setup allows while first-run setup is unfinished (it replaced the
+ * Settings → Platforms-only banner), so leaving the wizard never looks like finishing it. */
+.setup-strip {
+    margin: 12px 16px 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1659,6 +1659,34 @@ a.stat-card:hover {
     margin-bottom: 14px;
     font-size: 13px;
     color: var(--text-primary);
+}
+
+/* 056: why a page sent you to setup, the Finish later link, and the per-site guide button. */
+.setup-reason {
+    background: var(--accent-dim);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+.setup-later { margin-top: 14px; text-align: center; }
+.setup-later .btn-link {
+    background: none;
+    border: 0;
+    color: var(--text-muted);
+    font-size: 12px;
+    text-decoration: underline;
+    cursor: pointer;
+}
+.setup-platform-guide {
+    font-size: 11px;
+    padding: 4px 10px;
+    margin-top: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
 }
 
 /* Brief highlight on the accordion a deep link just opened, so it is obvious
@@ -3042,3 +3070,13 @@ html[data-mobile="1"] .tgopt input[type="checkbox"] { width: 20px; height: 20px;
 .board-origin { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; font-size: 11px; }
 .board-who { color: var(--text-secondary); }
 .board-why { padding: 1px 6px; border-radius: 999px; background: var(--bg-tertiary, rgba(127,127,127,.15)); color: var(--text-primary); }
+
+/* 057: the sites you can't post to yet, folded under the ones you can (Components.personaPicker). */
+.other-sites { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+.other-sites > summary { cursor: pointer; font-size: 13px; color: var(--text-secondary); padding: 6px 0; }
+.other-sites > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.other-sites input[type=checkbox] { display: none; }      /* a Connect link stands in for the tick box */
+.other-sites-connect { margin-left: 8px; font-size: 12px; color: var(--accent); }
+.other-sites-empty, .other-sites-note { font-size: 13px; color: var(--text-secondary); margin: 6px 0; }
+.other-sites-empty .btn { margin-left: 8px; }
+.other-sites-body details { display: none; }                 /* per-site overrides wait until it is connected */

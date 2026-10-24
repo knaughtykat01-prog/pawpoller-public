@@ -959,7 +959,7 @@ class FAClient:
         sid_match = re.search(r'/view/(\d+)', clean_url)
         submission_id = sid_match.group(1) if sid_match else ""
 
-        logger.info("FA: Story submitted — %s (id=%s)", clean_url, submission_id)
+        logger.info("FA: Submitted — %s (id=%s)", clean_url, submission_id)
         return {"submission_id": submission_id, "url": clean_url}
 
     async def submit_journal(self, subject: str, message: str, rating: str = "0", *,

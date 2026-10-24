@@ -448,6 +448,9 @@ _SETTINGS = (
         "mirror_seeded_at", "notifications_cleared_at", "notifications_last_read_at", "overnight_last_seen_at", "setup_complete",
         "sc_token_expires_at", "yt_token_expires_at", "ttv_token_expires_at", "tum_oauth2_expires_at",
     )),
+    # 056: where first-run setup got to (step, path, the sign-in it's waiting on) and the steps left to defaults.
+    S("setup_progress", _HOUSE, "Where first-run setup got to, and the setup choices left for later."),
+    S("operator_tools", _HOUSE, "Shows the operator's testing tools on Settings → Logs. Set on the host, never in the app."),
     # 4.71.0 (spec 035): this copy made a moving file and stood down; what to put back on Resume.
     S("moved_away_at", _HOUSE, "When this copy moved to another PawPoller and paused itself.", backup="derivable"),
     S("moved_in_at", _HOUSE, "When a move brought this copy's data in; rate watch counts from here.", backup="derivable"),

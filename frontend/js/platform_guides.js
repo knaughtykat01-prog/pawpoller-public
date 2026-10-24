@@ -1064,6 +1064,18 @@
       trigger.innerHTML = '📖 Setup guide';   // 📖
       btn.insertAdjacentElement('afterend', trigger);
     });
+    // 056: one more at the top of each site's own page, connected or not.
+    pane.querySelectorAll('details[data-platform]').forEach(d => {
+      const code = d.dataset.platform;
+      if (!has(code) || d.querySelector('.guide-trigger-top')) return;
+      const t = document.createElement('button');
+      t.type = 'button';
+      t.className = 'guide-trigger guide-trigger-top';
+      t.dataset.guide = code;
+      t.innerHTML = '📖 Setup guide';
+      const summary = d.querySelector(':scope > summary');
+      if (summary) summary.insertAdjacentElement('afterend', t); else d.prepend(t);
+    });
   }
 
   /* One delegated click handler powers every [data-guide] trigger (hub cards +
@@ -1085,5 +1097,5 @@
   }
   _init();
 
-  window.Guides = { openModal, closeModal, renderHub, injectSettingsButtons };
+  window.Guides = { openModal, closeModal, renderHub, injectSettingsButtons, has, codes };
 })();

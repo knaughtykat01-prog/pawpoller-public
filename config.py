@@ -769,6 +769,9 @@ CREDENTIAL_FIELDS = _datamap.vault_fields()
 
 SYNC_EXCLUDE = frozenset({
     "credential_mode",
+    # 056: per-device and checked on their own routes. A sync push would store them unchecked, and
+    # operator_tools (the operator's testing tools) is set on one box, never carried to another.
+    "setup_progress", "operator_tools",
     "minimize_to_tray",
     # Desktop-only — never leak to the server settings dump
     "run_on_startup",
@@ -1370,7 +1373,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.87.0"
+APP_VERSION = "4.87.1"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).

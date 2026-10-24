@@ -141,6 +141,24 @@ window.Artwork = {
         this._renderPlatformRows(document.getElementById('art-platforms'));
         this._wireUpload();
         await this._populateAccountSelectors();
+        this._keepTypedAcrossConnect();
+    },
+
+    /* 057 US2: a "Connect" detour from Other sites keeps what was typed. Convenience only: this tab, text
+       fields only (the picked file can't be kept), and storage may be unavailable. */
+    _keepTypedAcrossConnect() {
+        const KEY = 'pp.postform.artwork', IDS = ['art-title', 'art-desc', 'art-alt', 'art-tags', 'art-rating'];
+        try {
+            const saved = JSON.parse(sessionStorage.getItem(KEY) || 'null');
+            sessionStorage.removeItem(KEY);
+            if (saved) IDS.forEach(id => { const el = document.getElementById(id); if (el && saved[id] != null) el.value = saved[id]; });
+        } catch (e) { /* ignore */ }
+        document.getElementById('art-platforms')?.addEventListener('click', (e) => {
+            if (!e.target.closest('.other-sites-connect')) return;
+            const vals = {};
+            IDS.forEach(id => { const el = document.getElementById(id); if (el) vals[id] = el.value; });
+            try { sessionStorage.setItem(KEY, JSON.stringify(vals)); } catch (err) { /* ignore */ }
+        });
     },
 
     /* Shared platform rows — used by BOTH the artwork form and the
@@ -1049,8 +1067,10 @@ window.Artwork = {
      * catch-all. Each preset maps a platform → the account to post as (the
      * persona's default account on that platform, else its first). */
     _qpBuildMap(accounts) {
-        const artset = new Set(this._PLATFORMS);
-        const enabled = (accounts || []).filter(a => a.enabled && artset.has(a.platform));
+        // 057: a site switched off in Settings isn't offered here either; a Never-post account never is.
+        const hidden = new Set(window.HIDDEN_PLATFORMS || []);
+        const artset = new Set(this._PLATFORMS.filter(c => !hidden.has(c)));
+        const enabled = (accounts || []).filter(a => a.enabled && !a.never_post && artset.has(a.platform));
         const per = {};        // presetId -> {platform: account_id}
         const all = {};
         const multi = {};      // presetId -> {platform: [accounts]} where 2+ exist (4.2.0)

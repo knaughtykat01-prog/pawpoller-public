@@ -2250,22 +2250,29 @@ const Components = {
             accounts = (aRes && aRes.accounts) || [];
         } catch (e) { /* no chips; rows fall back to the per-platform picker */ }
 
-        const offered = new Set(o.platforms || []);
-        // FRIENDGUARD: a Never-post account is never offered, so a persona that only holds
-        // someone else's account gets no chip and All accounts can't pick it either.
-        const enabled = accounts.filter(a => a.enabled && !a.never_post && offered.has(a.platform));
-        const byPersona = {};   // persona_id → {code: [accounts]}
-        const all = {};         // code → [accounts]
-        for (const a of enabled) {
-            (all[a.platform] = all[a.platform] || []).push(a);
-            if (a.persona_id) {
-                const b = byPersona[a.persona_id] = byPersona[a.persona_id] || {};
-                (b[a.platform] = b[a.platform] || []).push(a);
+        // 057: a site switched off in Settings → Platforms isn't offered at all.
+        const hiddenSites = new Set(window.HIDDEN_PLATFORMS || []);
+        const offered = new Set((o.platforms || []).filter(c => !hiddenSites.has(c)));
+        let byPersona = {};     // persona_id → {code: [accounts]}
+        let all = {};           // code → [accounts]
+        let options = [];
+        const index = () => {
+            // FRIENDGUARD: a Never-post account is never offered, so a persona that only holds
+            // someone else's account gets no chip and All accounts can't pick it either.
+            const enabled = accounts.filter(a => a.enabled && !a.never_post && offered.has(a.platform));
+            byPersona = {}; all = {};
+            for (const a of enabled) {
+                (all[a.platform] = all[a.platform] || []).push(a);
+                if (a.persona_id) {
+                    const b = byPersona[a.persona_id] = byPersona[a.persona_id] || {};
+                    (b[a.platform] = b[a.platform] || []).push(a);
+                }
             }
-        }
-        const options = personas.filter(p => byPersona[p.persona_id]).map(p => ({
-            id: p.persona_id, label: p.name, color: p.color || '#6c8cff', map: byPersona[p.persona_id],
-        }));
+            options = personas.filter(p => byPersona[p.persona_id]).map(p => ({
+                id: p.persona_id, label: p.name, color: p.color || '#6c8cff', map: byPersona[p.persona_id],
+            }));
+        };
+        index();
         const state = { personaId: null, personaLabel: '' };
         const name = (a) => a.label || a.handle || ('account ' + a.account_id);
         const opts = (accts) => accts.map(a =>
@@ -2287,6 +2294,48 @@ const Components = {
                 `<span class="acct-choice-mark">${accts.length} accounts</span></label>`;
         };
 
+        /* 057 (POSTSITESONLY): the sites you can post to come first. A row with no account in the current
+           choice (a persona's, or any at all under All accounts) moves into one "Other sites (N)" group
+           after the last row, unticked, with a Connect link; it moves back when the choice changes. The
+           surfaces draw every row as before: the picker only re-parents them. */
+        const siteName = (code) => ((window.platformByCode && window.platformByCode(code)) || {}).label || code;
+        let group = null, lead = null;
+        const placeRows = (rows, dropped) => {
+            if (!group) {
+                // A second picker over the same rows (a surface re-run without redrawing): undo the first.
+                for (const [row] of rows) {
+                    const old = row.closest('.other-sites');
+                    if (!old) continue;
+                    if (row._ppHome) row._ppHome.after(row);
+                    if (!old.querySelector('.other-sites-body').children.length) {
+                        if (old.previousElementSibling && old.previousElementSibling.classList.contains('other-sites-lead')) old.previousElementSibling.remove();
+                        old.remove();
+                    }
+                }
+                lead = document.createElement('div');
+                lead.className = 'other-sites-lead';
+                group = document.createElement('details');
+                group.className = 'other-sites';
+                group.innerHTML = '<summary></summary><div class="other-sites-body"></div>';
+                rows[rows.length - 1][0].after(lead, group);
+            }
+            const body = group.querySelector('.other-sites-body');
+            for (const [row, usable] of rows) {
+                if (!row._ppHome) {                     // a marker where the surface drew the row
+                    row._ppHome = document.createComment('pp-row');
+                    row.before(row._ppHome);
+                }
+                if (!usable) body.appendChild(row);
+                else if (row.parentElement === body) row._ppHome.after(row);
+            }
+            const n = rows.filter(r => !r[1]).length;
+            group.hidden = !n;
+            group.querySelector('summary').textContent = `Other sites (${n})`;
+            lead.innerHTML = (n === rows.length ? `<p class="other-sites-empty">You haven't connected a site yet.
+                    <a class="btn btn-sm btn-primary" href="#/settings/platforms">Connect a site</a></p>` : '')
+                + dropped.map(nm => `<p class="other-sites-note">${esc(nm)} was unticked: no account to post as</p>`).join('');
+        };
+
         const apply = (pid) => {
             const persona = options.find(p => p.id === pid) || null;
             state.personaId = persona ? persona.id : null;
@@ -2295,28 +2344,60 @@ const Components = {
             o.host.dataset.personaLabel = state.personaLabel;
             const key = persona ? String(persona.id) : 'all';
             o.host.querySelectorAll('[data-persona]').forEach(c => c.classList.toggle('is-on', c.dataset.persona === key));
+            const rows = [], dropped = [];
             for (const code of (o.platforms || [])) {
                 const slot = o.slot(code);
                 const row = o.row ? o.row(code) : null;
+                if (hiddenSites.has(code)) {            // never offered, never sent
+                    if (row) {
+                        row.hidden = true;
+                        const cb = row.querySelector('input[type=checkbox]');
+                        if (cb) { cb.checked = false; cb.disabled = true; }
+                    }
+                    continue;
+                }
                 const accts = persona ? (persona.map[code] || []) : (all[code] || []);
-                const missing = !!persona && !accts.length;
+                const missing = !accts.length;          // 057: All accounts too, not only a persona
                 if (slot) {
                     slot.innerHTML = missing
-                        ? `<span class="acct-as acct-missing" title="A persona publish never falls back to the platform default">no ${esc(persona.label)} account</span>`
+                        ? (persona
+                            ? `<span class="acct-as acct-missing" title="A persona publish never falls back to the platform default">no ${esc(persona.label)} account</span>`
+                            : '<span class="acct-as acct-missing">not connected</span>')
+                          + `<a class="other-sites-connect" href="#/settings/platforms/${esc(code)}">Connect</a>`
                         : control(code, accts, persona);
                 }
                 if (row) {
+                    rows.push([row, !missing]);
                     row.classList.toggle('is-unavailable', missing);
                     const cb = row.querySelector('input[type=checkbox]');
                     if (cb) {
-                        if (missing) { cb.checked = false; cb.disabled = true; cb.dataset.personaDisabled = '1'; }
-                        else if (cb.dataset.personaDisabled) { cb.disabled = false; delete cb.dataset.personaDisabled; }
+                        if (missing) {
+                            if (cb.checked) dropped.push(siteName(code));
+                            cb.checked = false; cb.disabled = true; cb.dataset.personaDisabled = '1';
+                        } else if (cb.dataset.personaDisabled) { cb.disabled = false; delete cb.dataset.personaDisabled; }
                     }
                 }
             }
+            if (rows.length) placeRows(rows, dropped);
             try { localStorage.setItem(o.storageKey, key); } catch (e) { /* ignore */ }
             if (o.onChange) o.onChange({ ...state });
         };
+
+        /* 057 US2: a site connected in another window or tab moves up when this one gets focus back. */
+        let refetch = null;
+        const onFocus = () => {
+            if (!o.host.isConnected && !(o.row && document.body.contains(o.row((o.platforms || [])[0])))) {
+                window.removeEventListener('focus', onFocus);
+                return;
+            }
+            clearTimeout(refetch);
+            refetch = setTimeout(async () => {
+                try { accounts = ((await API.getAccounts()) || {}).accounts || accounts; } catch (e) { return; }
+                index();
+                apply(state.personaId);
+            }, 500);
+        };
+        window.addEventListener('focus', onFocus);
 
         if (!options.length) {
             // No persona holds an account on these platforms — nothing to pick

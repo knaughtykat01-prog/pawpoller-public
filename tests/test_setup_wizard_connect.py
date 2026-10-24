@@ -40,7 +40,7 @@ def app_js() -> str:
 
 def _wizard_platform_keys(src: str) -> list[str]:
     """The `key:` values from renderSetupWizard's platform list."""
-    start = src.index("renderSetupWizard()")
+    start = src.index("async renderSetupWizard(")
     block = src[start:src.index("];", start)]
     return re.findall(r"\{\s*key:\s*'([\w-]+)'", block)
 
@@ -105,9 +105,9 @@ def test_the_deep_link_handler_exists(app_js: str):
 
 def test_a_user_sent_from_the_wizard_can_get_back(app_js: str):
     """Otherwise the deep link trades one dead end for another."""
-    assert "setup-return-banner" in app_js, (
-        "no return-to-setup affordance on the Platforms tab; a user sent there "
-        "mid-wizard has no visible way back to finish setup"
+    # 056: the Platforms-only banner became one strip on every page setup allows.
+    assert "setup-strip" in app_js and 'href="#/setup">&#8592; Back to setup' in app_js, (
+        "no return-to-setup affordance; a user sent out mid-wizard has no visible way back"
     )
 
 
@@ -122,13 +122,13 @@ def test_the_wizard_remembers_its_step_across_the_round_trip(app_js: str):
 
     Static checks, because the behaviour they guard was confirmed live.
     """
-    start = app_js.index("renderSetupWizard()")
+    start = app_js.index("async renderSetupWizard(")
     block = app_js[start:start + 30000]
 
-    assert "pp.setup.progress" in block, "wizard progress is no longer persisted"
-    assert "sessionStorage" in block, (
-        "progress must live in sessionStorage — it should not outlive the tab, "
-        "and must never be restored into a later setup run"
+    # 056: the step lives on the server (setup_progress), so a sign-in window, a second tab or a
+    # reload all come back to it; setup-reset and setup-complete clear it for the next run.
+    assert "serverProgress.step" in block and "_saveSetupProgress({ step: currentStep" in block, (
+        "wizard progress is no longer persisted"
     )
     assert "!== 'done'" in block, (
         "a restored step must exclude 'done'; returning straight to the final "
@@ -144,7 +144,7 @@ def test_the_restored_step_is_validated_against_the_current_path(app_js: str):
     archive and platforms entirely), so a step saved under one mode may not
     exist under another. Restoring it blindly would strand the wizard on a step
     its own navigation cannot reach."""
-    start = app_js.index("renderSetupWizard()")
+    start = app_js.index("async renderSetupWizard(")
     block = app_js[start:start + 30000]
     assert "stepOrder().includes(" in block, (
         "restored step is not validated against the current stepOrder()"

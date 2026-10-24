@@ -113,7 +113,7 @@ def test_setup_asks_for_the_zone_instead_of_assuming_it():
     """FR-008: every setup path has a time zone step straight after Welcome, the step saves
     what was chosen, and finishing no longer saves the browser's zone behind the person's back."""
     src = (ROOT / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
-    wiz = src[src.index("async renderSetupWizard()"):src.index("document.getElementById('setup-finish')")]
+    wiz = src[src.index("async renderSetupWizard("):src.index("document.getElementById('setup-finish')")]
     orders = [line for line in wiz.splitlines() if "return ['welcome'" in line]
     assert len(orders) == 3 and all("'welcome', 'timezone'," in o for o in orders), orders
     step = wiz[wiz.index("if (currentStep === 'timezone') {\n                    const z"):]

@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = (ROOT / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
-WIZ = APP[APP.index("async renderSetupWizard()"):APP.index("renderLogin() {")]
+WIZ = APP[APP.index("async renderSetupWizard("):APP.index("renderLogin() {")]
 API_PY = (ROOT / "routes" / "api.py").read_text(encoding="utf-8")
 
 

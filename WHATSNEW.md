@@ -2,6 +2,17 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.87.1] - 2026-10-24 - Setup stays open
+
+> - Leaving setup part-way no longer looks like finishing it: a strip at the top says setup isn't done, with a button back.
+> - Connecting a site from setup brings you back to setup by itself once the site is connected.
+> - Setup now remembers where you got to, even in another tab or after signing in to a site in a new window.
+> - "Finish later" on the later setup steps lists what stays as it is; Settings → General asks just those questions later.
+> - Every site's setup guide is one tap away: on the setup cards, at the top of the site's settings and in Add account.
+> - Post forms list the sites you can post to first. The rest sit under "Other sites", each with a Connect link.
+> - Sites you've switched off in Settings no longer appear on post forms or Quick publish.
+> - When Inkbunny says "slow down" while PawPoller reads comments, it stops for that check instead of signing in again and again.
+
 ## [4.87.0] - 2026-10-24 - Every site reports back
 
 > - Every site you post to now says how it went, in the results and in the bell, even if you closed the page.
@@ -167,10 +178,3 @@ Generated from the release notes: each version's plain-language summary.
 > - The AO3 Test button always answers within a minute, and says plainly when AO3 isn't responding instead of showing a Cloudflare error page.
 > - Hosted seats: the server operator can now pause one site for every seat at once, for example while a site asks tools to stop. A paused site shows as skipped, "paused by the server operator".
 > - Small security tidy-ups to Rule34 connecting, file names on exports and the Inbox.
-
-## [4.77.6] - 2026-10-16 - FurAffinity bot checks named, and waited out
-
-> - When FurAffinity's bot protection blocks PawPoller, it now says so, instead of wrongly saying your cookies expired.
-> - The Test button shows "FurAffinity bot check" in that case: your login is fine, so there's no need to paste new cookies.
-> - While FurAffinity is blocking, PawPoller pauses FA checks and tries again later, waiting longer each time (up to a day), as FurAffinity asks.
-> - You get one message when FA starts blocking and one when it's reachable again.

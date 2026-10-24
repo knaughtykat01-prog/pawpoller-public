@@ -6,6 +6,7 @@ Auth is handled by the dashboard middleware (session cookie or API key).
 from __future__ import annotations
 
 import logging
+import re
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -169,6 +170,9 @@ async def setup_status():
     return {
         "setup_complete": settings.get("setup_complete", False),
         "setup_mode": settings.get("setup_mode"),
+        "progress": _setup_progress(settings),
+        # Testing tools on Logs (Re-run setup on a server). Set from the box only: no route writes it.
+        "operator_tools": bool(settings.get("operator_tools")),
         "runtime_mode": runtime_mode,
         "polling_owner": config.get_polling_owner(runtime_mode),
         "has_archive_path": bool(settings.get("posting_story_archive_path")),
@@ -185,6 +189,62 @@ async def setup_status():
     }
 
 
+# 056: where setup got to, kept on the server so a new tab, a reload or a browser sign-in window agrees.
+_SLUG = re.compile(r"^[a-z0-9_]{1,32}$")
+_PATHS = ("full", "server", "connected")
+_NEVER_SKIPPED = ("welcome", "timezone", "age")
+# Every step renderSetupWizard() has (app.js stepOrder). A step outside it is refused, not stored.
+_STEPS = frozenset({"welcome", "timezone", "age", "mode", "pairing", "make", "archive", "sites", "platforms",
+                    "interval", "posting", "hear", "persona", "fun", "tech", "done"})
+
+
+def _setup_progress(settings: dict) -> dict:
+    p = settings.get("setup_progress")
+    p = dict(p) if isinstance(p, dict) else {}
+    p.setdefault("skipped", [])
+    p.setdefault("return_to", None)
+    return p
+
+
+def _clean_progress(body: dict) -> dict:
+    """The fields of *body* that may be stored; 400 on anything malformed (unknown keys dropped)."""
+    bad = "`step` and `skipped` must be setup steps (at most 20); `site` a short slug"
+    out: dict = {}
+    if "step" in body:
+        if body["step"] not in _STEPS:
+            raise HTTPException(400, detail=bad)
+        out["step"] = body["step"]
+    if "path" in body:
+        if body["path"] not in _PATHS:
+            raise HTTPException(400, detail=f"`path` must be one of {', '.join(_PATHS)}")
+        out["path"] = body["path"]
+    if "skipped" in body:
+        sk = body["skipped"]
+        if (not isinstance(sk, list) or len(sk) > 20
+                or not all(isinstance(s, str) and s in _STEPS for s in sk)):
+            raise HTTPException(400, detail=bad)
+        out["skipped"] = [s for s in dict.fromkeys(sk) if s not in _NEVER_SKIPPED]
+    if "return_to" in body:
+        rt = body["return_to"]
+        if rt is not None:
+            if (not isinstance(rt, dict) or rt.get("step") not in _STEPS
+                    or not (isinstance(rt.get("site"), str) and _SLUG.match(rt["site"]))):
+                raise HTTPException(400, detail=bad)
+            rt = {"step": rt["step"], "site": rt["site"]}
+        out["return_to"] = rt
+    return out
+
+
+@settings_router.post("/setup-progress")
+async def save_setup_progress(body: dict):
+    """Merge any of ``{step, path, skipped, return_to}`` into ``setup_progress`` (056)."""
+    if not isinstance(body, dict):
+        raise HTTPException(400, detail="expected an object")
+    merged = {**_setup_progress(config.get_settings()), **_clean_progress(body)}
+    config.save_settings({"setup_progress": merged})
+    return merged
+
+
 @settings_router.post("/setup-reset")
 async def reset_setup():
     """Clear ``setup_complete`` so the user goes back through the wizard.
@@ -193,18 +253,22 @@ async def reset_setup():
     flips the "first-run done" flag. Used by the Settings page's
     "Re-run setup wizard" button.
     """
-    config.save_settings({"setup_complete": False})
+    fresh = dict(step="welcome", skipped=[], return_to=None)
+    config.save_settings({"setup_complete": False, "setup_progress": fresh})
     return {"ok": True}
 
 
 @settings_router.post("/setup-complete")
-async def mark_setup_complete():
+async def mark_setup_complete(body: dict | None = None):
     """Mark the first-run setup wizard as completed.
 
     Writes setup_complete=true into settings.json so the wizard is not
-    shown again on subsequent launches.
+    shown again on subsequent launches. An optional ``{"skipped": [...]}`` (056, Finish later)
+    keeps the steps left to their defaults, for Settings → General to offer again.
     """
-    config.save_settings({"setup_complete": True})
+    skipped = _clean_progress({"skipped": (body or {}).get("skipped") or []})["skipped"]
+    progress = dict(skipped=skipped, return_to=None)
+    config.save_settings({"setup_complete": True, "setup_progress": progress})
     return {"ok": True}
 
 

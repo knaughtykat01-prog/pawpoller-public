@@ -71,6 +71,9 @@ class InkbunnyClient:
         # Kept separate because it carries browser cookies and follows redirects,
         # which the API client does not need.
         self._web_http: httpx.AsyncClient | None = None
+        # IBWEB429: set when Inkbunny refuses the web sign-in (a 429 while polling). One refusal ends comment
+        # scraping for this client: each later submission used to sign in again, into the same rate limit.
+        self._web_login_refused = False
 
     async def __aenter__(self):
         return self
@@ -310,6 +313,8 @@ class InkbunnyClient:
         The web client is only created once (guarded by the None check) and reused
         for all subsequent comment scraping calls in this session.
         """
+        if self._web_login_refused:
+            return
         if self._web_http is not None:
             # Quick session check — verify existing session is still valid
             try:
@@ -335,6 +340,7 @@ class InkbunnyClient:
             logger.error("Web login failed: could not find CSRF token")
             await self._web_http.aclose()
             self._web_http = None
+            self._web_login_refused = True
             return
 
         token = token_match.group(1)
@@ -352,9 +358,11 @@ class InkbunnyClient:
         if "logout" in resp.text:
             logger.info("Web session established for comment scraping")
         else:
-            logger.warning("Web login may have failed (status %d) — closing web client", resp.status_code)
+            logger.warning("Web login may have failed (status %d) — closing web client; no more comment "
+                           "scraping this poll", resp.status_code)
             await self._web_http.aclose()
             self._web_http = None
+            self._web_login_refused = True
 
     async def scrape_comments(self, submission_id: int) -> list[dict]:
         """Scrape comments from a submission page via authenticated web session.
@@ -371,6 +379,9 @@ class InkbunnyClient:
           - reply_to_comment_id: From an anchor with title='In reply to' linking to parent
         """
         await self._ensure_web_session()
+        if self._web_http is None:
+            # Not an AttributeError on None any more: say what happened. The poller logs it and moves on.
+            raise RuntimeError("Inkbunny refused the web sign-in this poll (often a rate limit); comments skipped")
 
         resp = await self._web_http.get(f"{config.INKBUNNY_API_BASE}/s/{submission_id}")
         page_html = resp.text
