@@ -441,6 +441,9 @@ def run_standalone():
     # --- Step 1: Database initialisation ---
     logger.info("Initialising database...")
     init_db()  # Creates tables/schema if the DB file does not exist yet
+    # Posts cut off by the last shutdown show as "not sent" in the bell (055).
+    from posting.manager import mark_restart_leftovers
+    mark_restart_leftovers()
 
     # --- Step 1b: Sync settings from server (cloud mode) ---
     _sync_settings_on_startup()

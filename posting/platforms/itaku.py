@@ -198,9 +198,12 @@ class ItakuPoster(PlatformPoster):
 
     def validate(self, package: StoryUploadPackage) -> list[str]:
         errors = []
-        if len(package.tags) < _MIN_TAGS:
-            errors.append(f"Itaku requires at least {_MIN_TAGS} tags "
-                          f"(got {len(package.tags)})")
+        # Counted as Itaku will get them (055, FR-006): post() sends fit(tags), which drops
+        # anything over 59 characters, so five tags with one long one used to pass here and
+        # then fail at Itaku.
+        sent = tag_budget.fit(package.tags, self.platform_id)
+        if len(sent) < _MIN_TAGS:
+            errors.append(f"Itaku needs at least {_MIN_TAGS} tags; this piece has {len(sent)}.")
         if package.file_path:
             import os
             if os.path.isfile(package.file_path):

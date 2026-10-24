@@ -27,6 +27,11 @@ class PostResult:
     # Tumblr kept a Mature post as a draft because the label didn't stick. Used with success=True; the
     # manager shows it amber on the result row and in the bell, and records the publication as 'draft'.
     needs_attention: str = ""
+    # 055: the site said OK but gave back no id and no link, so the upload may or may not exist.
+    # Always with success=False; never retried (a retry could post twice).
+    unconfirmed: bool = False
+    # 055: per-site extras for the result row, e.g. "tags_left_out": [{"tag", "rule"}].
+    extra: dict = field(default_factory=dict)
 
 
 @dataclass

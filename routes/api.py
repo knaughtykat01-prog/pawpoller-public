@@ -1042,11 +1042,34 @@ def _format_post_summary(log: dict, title: str = "") -> str:
     name = title or str(log.get("story_name") or "?").replace("_", " ")
     chapter = log.get("chapter_index") or 0
     suffix = f" (chapter {chapter})" if chapter else ""
-    if log.get("status") == "error":
+    status = log.get("status")
+    site = _site_name(log.get("platform"))
+    # 055: the three outcomes that used to leave nothing — sentences from the spec's data model.
+    if status == "unconfirmed":
+        return (f"{site}: took the upload of {name}{suffix} but sent back no link. "
+                f"Check the site before posting again.")
+    if status == "gave_up":
+        # error_message already reads "gave up after N tries — <last reason>"
+        return f"{site}: {log.get('error_message') or 'gave up'} ({name}{suffix})"
+    if status == "not_sent":
+        return f"{site}: {name}{suffix} not sent (PawPoller restarted). Post it again when you're ready."
+    if status in ("error", "failed"):
         return f"{failed} {name}{suffix}"
-    if log.get("status") == "needs_attention":       # 4.60.0: on the site, the owner must finish it
+    if status == "needs_attention":       # 4.60.0: on the site, the owner must finish it
         return f"Needs you: {name}{suffix} is waiting as a draft"
     return f"{done} {name}{suffix}"
+
+
+# How the bell colours the 055 outcomes (it knows success / warn / error / failed).
+_POST_STATUS_FOR_BELL = {"unconfirmed": "warn", "not_sent": "warn", "gave_up": "error"}
+
+
+def _site_name(code) -> str:
+    try:
+        from database.accounts import PLATFORM_NAMES
+        return PLATFORM_NAMES.get(code) or str(code or "The site")
+    except Exception:
+        return str(code or "The site")
 
 
 _TITLE_CACHE: dict = {}
@@ -1166,13 +1189,15 @@ def _collect_activity_events(limit: int = 30) -> list:
             # isn't recording stuff like you'd expect" (3.17.0).
             for log in get_posting_log(conn, story_name=None, limit=limit,
                                        content_type=None):
+                if log.get("status") == "pending":     # still running (055): its final row follows
+                    continue
                 plat = log.get("platform") or "posting"
                 posts.append({
                     "timestamp": log.get("created_at"),
                     "platform": plat,
                     "account": names.get((plat, log.get("account_id")), ""),
                     "kind": log.get("action") or "post",
-                    "status": log.get("status"),
+                    "status": _POST_STATUS_FOR_BELL.get(log.get("status"), log.get("status")),
                     "summary": _format_post_summary(
                         log, _work_title(log.get("content_type") or "", log.get("story_name") or "")),
                     "detail": log.get("error_message"),

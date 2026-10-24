@@ -31,6 +31,7 @@ import logging
 
 import config
 from clients.e621.client import E621Client
+from posting import e621_tags
 from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,23 @@ logger = logging.getLogger(__name__)
 # e621 wants a genuine tag set, not a single keyword. A modest floor protects
 # the user's standing without blocking legitimate posts.
 _MIN_TAGS = 4
+
+
+def _left_out_text(left_out: list[dict]) -> str:
+    return ", ".join(f"{d['tag']} ({d['rule']})" for d in left_out)
+
+
+def _tag_refusal(sent: list[str], left_out: list[dict]) -> str | None:
+    """The before-sending refusal when e621's floor isn't met after formatting (055 FR-009),
+    naming the tags left out and how many more are needed. None when it's met."""
+    if len(sent) >= _MIN_TAGS:
+        return None
+    need = _MIN_TAGS - len(sent)
+    msg = (f"e621 needs at least {_MIN_TAGS} tags; this piece has {len(sent)} it will accept. "
+           f"Add {need} more.")
+    if left_out:
+        msg += f" Left out: {_left_out_text(left_out)}."
+    return msg
 
 
 class E621Poster(PlatformPoster):
@@ -81,9 +99,15 @@ class E621Poster(PlatformPoster):
         """Upload one image to e621."""
         _t = self._start_timer()
         try:
+            sent, left_out = e621_tags.prepare(package.tags)
+            extra = {"tags_left_out": left_out} if left_out else {}
+            refusal = _tag_refusal(sent, left_out)
+            if refusal:
+                return PostResult(success=False, error=refusal, extra=extra,
+                                  duration_seconds=self._elapsed(_t))
             client = await self._ensure_client()
             rating = _rating_to_e621(package.rating)
-            tag_string = " ".join(package.tags)
+            tag_string = " ".join(sent)
             source = str(package.extra.get("source", "") or "")
 
             result = await client.upload_post(
@@ -98,6 +122,7 @@ class E621Poster(PlatformPoster):
                 external_id=result.get("post_id", ""),
                 external_url=result.get("url", ""),
                 duration_seconds=self._elapsed(_t),
+                extra=extra,
             )
         except Exception as e:
             logger.error("e621 post failed: %s", e, exc_info=True)
@@ -129,18 +154,14 @@ class E621Poster(PlatformPoster):
         try:
             client = await self._ensure_client()
 
-            tags = [t for t in (package.tags or []) if str(t).strip()]
-            if len(tags) < _MIN_TAGS:
-                # The same floor post() enforces. A thin tag set is worse on an
-                # edit than on an upload: in replace mode it would strip a
-                # well-tagged live post down to a handful.
-                return PostResult(
-                    success=False,
-                    external_id=external_id,
-                    error=(f"e621 expects a real tag set - add at least "
-                           f"{_MIN_TAGS} tags (got {len(tags)})"),
-                    duration_seconds=self._elapsed(_t),
-                )
+            # Same formatting and floor as post(). A thin tag set is worse on an edit than on
+            # an upload: in replace mode it would strip a well-tagged live post to a handful.
+            tags, left_out = e621_tags.prepare(package.tags)
+            extra = {"tags_left_out": left_out} if left_out else {}
+            refusal = _tag_refusal(tags, left_out)
+            if refusal:
+                return PostResult(success=False, external_id=external_id, error=refusal,
+                                  extra=extra, duration_seconds=self._elapsed(_t))
 
             source = str(package.extra.get("source", "") or "").strip()
             replace = bool(package.extra.get("e621_replace_tags", False))
@@ -162,6 +183,7 @@ class E621Poster(PlatformPoster):
                 external_id=external_id,
                 external_url=result.get("url", ""),
                 duration_seconds=self._elapsed(_t),
+                extra=extra,
             )
         except Exception as e:
             logger.error("e621 edit failed for %s: %s", external_id, e, exc_info=True)
@@ -175,9 +197,9 @@ class E621Poster(PlatformPoster):
         errors: list[str] = []
         if not package.file_path:
             errors.append("e621 requires an image or webm file")
-        if len(package.tags) < _MIN_TAGS:
-            errors.append(f"e621 expects a real tag set - add at least "
-                          f"{_MIN_TAGS} tags (got {len(package.tags)})")
+        refusal = _tag_refusal(*e621_tags.prepare(package.tags))
+        if refusal:
+            errors.append(refusal)
         if package.file_path:
             import os
             if os.path.isfile(package.file_path):

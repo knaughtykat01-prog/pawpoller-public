@@ -2263,6 +2263,10 @@ a.stat-card:hover {
 .pub-confirm-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13.5px; }
 .pub-confirm-row:last-child { border-bottom: 0; }
 .pub-confirm-row.is-disabled { opacity: .5; }
+/* 055: the pre-check's sentence and left-out tags, on their own line under the site. */
+.pub-confirm-row { flex-wrap: wrap; }
+.pub-confirm-problem, .pub-confirm-leftout { flex-basis: 100%; font-size: 12.5px; }
+.pub-confirm-problem { color: var(--warning, #d29922); }
 .pub-confirm-row.is-disabled .pub-confirm-plat { text-decoration: line-through; }
 .pub-confirm-warn { color: var(--warning); font-size: 13px; margin: 0 0 8px; }
 .pub-confirm-note { font-size: 12px; margin: 0 0 16px; }
@@ -2317,6 +2321,8 @@ a.stat-card:hover {
 .pub-result-what { color: var(--text-secondary); overflow-wrap: anywhere; }
 .pub-result-variant { display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: var(--radius-sm);
     background: var(--bg-tertiary, var(--bg-secondary)); color: var(--text-muted); font-size: 11.5px; white-space: nowrap; }
+/* 055 (FR-010): tags a site's limits left out — named under the row. */
+.pub-result-leftout { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 12px; }
 .pub-result.is-skip { opacity: .7; }
 .pub-result.is-skip .pub-result-mark { color: var(--text-secondary); }
 

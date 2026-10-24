@@ -1984,6 +1984,21 @@ const Components = {
                  title: t[`${kind}_title`] || '', text: t[kind] || '' };
     },
 
+    /** 055: run the publish pre-check and hang each site's problems and left-out tags on its
+     *  confirmPublish target. Never throws: a check that can't run leaves the targets as they were. */
+    async withPublishCheck(targets, body) {
+        try {
+            const r = await API.publishCheck(body);
+            for (const t of targets || []) {
+                const p = (r.problems || {})[t.code];
+                if (p && p.length) t.problem = p.join(' ');
+                const lo = (r.left_out || {})[t.code];
+                if (lo && lo.length) t.leftOut = lo;
+            }
+        } catch (e) { /* the post itself still refuses with the same sentence */ }
+        return targets;
+    },
+
     confirmPublish(o) {
         const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
         const targets = (o.targets || []);
@@ -1997,6 +2012,10 @@ const Components = {
                 <span class="pub-confirm-acct muted">${t.disabled
                     ? esc(t.reason || 'skipped')
                     : (t.account ? 'as ' + esc(t.account) : '')}</span>
+                ${t.problem ? `<span class="pub-confirm-problem">⚠ ${esc(t.problem)}</span>` : ''}
+                ${(t.leftOut || []).length ? `<span class="pub-confirm-leftout muted">${t.leftOut.length} tag${
+                    t.leftOut.length === 1 ? '' : 's'} left out: ${t.leftOut.slice(0, 5).map(d =>
+                    `${esc(d.tag)} (${esc(d.rule)})`).join(', ')}${t.leftOut.length > 5 ? `, +${t.leftOut.length - 5} more` : ''}</span>` : ''}
             </li>`).join('');
         return new Promise(resolve => {
             const ov = document.createElement('div');
@@ -2158,10 +2177,18 @@ const Components = {
                 ? `<span class="pub-result-variant">${esc(r.variant)} render</span>` : '';
             // Spec 021: the paired comment's own outcome, under its site — never folded into it.
             const comment = (r.comment && window.Comments) ? Comments.stateHtml(r.comment, { block: true }) : '';
-            return `<li class="pub-result ${attention ? 'is-warn' : ok ? 'is-ok' : skipped ? 'is-skip' : 'is-fail'}">
-                <span class="pub-result-mark">${attention ? '!' : ok ? '✓' : skipped ? '–' : '✗'}</span>
+            // 055: the site said OK with no link — maybe posted, maybe not. Amber, and counted as a failure.
+            const unsure = !ok && !!r.unconfirmed;
+            // 055 (FR-010): tags a site's own limits left out, named rather than only logged.
+            const lo = r.tags_left_out || [];
+            const leftOut = lo.length
+                ? `<span class="pub-result-leftout">${lo.length} tag${lo.length === 1 ? '' : 's'} left out: ${
+                    lo.slice(0, 5).map(t => `${esc(t.tag)} (${esc(t.rule)})`).join(', ')}${
+                    lo.length > 5 ? `, +${lo.length - 5} more` : ''}</span>` : '';
+            return `<li class="pub-result ${attention || unsure ? 'is-warn' : ok ? 'is-ok' : skipped ? 'is-skip' : 'is-fail'}">
+                <span class="pub-result-mark">${attention ? '!' : unsure ? '?' : ok ? '✓' : skipped ? '–' : '✗'}</span>
                 <span class="pub-result-plat">${esc(p.emoji || '')} ${esc(r.label || p.label)}</span>
-                <span class="pub-result-what">${what}${variant}${comment}</span>
+                <span class="pub-result-what">${what}${variant}${leftOut}${comment}</span>
             </li>`;
         }).join('');
         return `<ul class="pub-results">${rows}</ul>`;

@@ -79,7 +79,15 @@ def describe(platform: str) -> str:
 
 
 def fit(tags: list[str], platform: str, *, core_count: int | None = None) -> list[str]:
-    """Trim `tags` to what `platform` accepts. Order is preserved.
+    """Trim `tags` to what `platform` accepts. ``fit_report(...)[0]``."""
+    return fit_report(tags, platform, core_count=core_count)[0]
+
+
+def fit_report(tags: list[str], platform: str, *,
+               core_count: int | None = None) -> tuple[list[str], list[dict]]:
+    """``(kept, dropped)``: `tags` trimmed to what `platform` accepts, order preserved, and
+    every tag cut as ``{"tag", "rule"}`` in plain words (055, FR-010) — until then a dropped
+    tag existed only as a warning in the server log.
 
     Tags arrive core-first, so trimming drops from the TAIL — whatever survives
     is guaranteed to be what was declared most important. That is the entire
@@ -91,8 +99,9 @@ def fit(tags: list[str], platform: str, *, core_count: int | None = None) -> lis
     """
     b = budget_for(platform)
     out = [str(t) for t in (tags or [])]
+    dropped: list[dict] = []
     if not b:
-        return out
+        return out, dropped
 
     # Over-long individual tags go first, wherever they sit. Truncating one
     # would change what it means and could collide with a real tag; dropping it
@@ -103,16 +112,20 @@ def fit(tags: list[str], platform: str, *, core_count: int | None = None) -> lis
         if too_long:
             logger.warning("%s: dropping %d tag(s) longer than %d characters: %s",
                            platform, len(too_long), per_tag, ", ".join(too_long[:5]))
+            dropped += [{"tag": t, "rule": f"longer than {per_tag} characters"} for t in too_long]
             out = [t for t in out if len(t) <= per_tag]
 
     max_count = b.get("count")
     if max_count and len(out) > max_count:
+        dropped += [{"tag": t, "rule": f"over the {max_count}-tag limit"} for t in out[max_count:]]
         out = out[:max_count]
 
     max_chars = b.get("chars")
     if max_chars:
+        cut = []
         while out and len(" ".join(out)) > max_chars:
-            out.pop()
+            cut.append(out.pop())
+        dropped += [{"tag": t, "rule": f"over the {max_chars}-character total"} for t in reversed(cut)]
 
     if core_count and len(out) < core_count:
         logger.warning(
@@ -125,7 +138,7 @@ def fit(tags: list[str], platform: str, *, core_count: int | None = None) -> lis
         # upload failing with a message that says what is wrong.
         logger.warning("%s wants at least %d tags; this piece has %d",
                        platform, min_count, len(out))
-    return out
+    return out, dropped
 
 
 def preview(tags: list[str], platform: str) -> dict:

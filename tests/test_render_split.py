@@ -30,11 +30,17 @@ def piece(tmp_path):
         ])
 
 
+def _loop_src():
+    """The publish loop and the pre-send helpers it shares with the pre-check (055)."""
+    return "".join(inspect.getsource(f) for f in (
+        manager._post_artwork, manager._site_renders, manager._prepare_render))
+
+
 class TestTheLoopShape:
     """Read off the source — the loop is async and needs live posters to run."""
 
     def test_the_render_loop_is_nested_inside_the_platform_loop(self):
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         assert src.index("for platform in _announcers_last(platforms):") \
             < src.index("for _ri, _variant in enumerate(_renders):"), \
             "platform must be the OUTER loop or the rate limit below is the wrong one"
@@ -43,14 +49,14 @@ class TestTheLoopShape:
         """FR-007. post_artwork was the only publish path that never rate-limited —
         harmless while each platform got one post, a live problem the moment
         FurAffinity gets three against its enforced 70-second floor."""
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         assert "await poster._rate_limit()" in src
         block = src[src.index("for _ri, _variant in enumerate(_renders):"):][:400]
         assert "if _ri:" in block, "no sleep before the FIRST render"
 
     def test_the_gate_runs_per_render(self):
         """FR-002: one render refused must not refuse its siblings."""
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         assert src.index("for _ri, _variant in enumerate(_renders):") \
             < src.index("poster.refusal(package)")
 
@@ -58,18 +64,18 @@ class TestTheLoopShape:
         """Three places have to agree about which render this was: the publication row,
         the masterpiece member, and any retry queued for it. A retry that forgets comes
         back as the rating's pick, which for an alternate render is the primary."""
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         for call in ("upsert_publication(", "add_member(", "_schedule_retry("):
             i = src.index(call)
             block = src[i:i + 700]
             assert "variant_key=" in block, f"{call} does not carry the render"
 
     def test_an_unknown_render_in_the_list_is_reported_not_guessed(self):
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         assert 'no render called {_key!r} on this piece' in src
 
     def test_renders_outranks_a_named_override(self):
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         assert src.index("if renders:") < src.index("elif _asked == _PRIMARY_RENDER:")
 
     def test_the_route_passes_the_list(self):
@@ -198,7 +204,7 @@ class TestAutomaticStaysTheDefault:
         assert manager._AUTO_RENDER != manager._PRIMARY_RENDER
 
     def test_auto_resolves_to_the_ratings_pick(self):
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         block = src[src.index("if _key == _AUTO_RENDER:"):][:300]
         assert "variant_for_rating(" in block
 
@@ -212,7 +218,7 @@ class TestAutomaticStaysTheDefault:
 
     def test_a_render_chosen_twice_posts_once(self):
         """Auto can resolve to a render the user also ticked by name."""
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         assert "_seen, _uniq = set(), []" in src
 
 
@@ -224,7 +230,7 @@ class TestTheReviewFindings:
         """N renders failing a server post used to queue N rows that all meant "the
         rating's pick" — the desktop then published the same image N times and the
         alternates never went out. posting_queue has no UNIQUE to dedupe them."""
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         i = src.index('requires="desktop"')
         # the kwarg follows the comment block explaining it, so look further ahead
         assert "variant_key=" in src[i:i + 700]

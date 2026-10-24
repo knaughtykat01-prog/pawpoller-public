@@ -77,7 +77,7 @@ def test_no_typed_phrase_gate():
 def test_results_panel_names_the_platform_and_the_error():
     src = _src("frontend/js/components.js")
     i = src.index("publishResults(results, opts) {")
-    block = src[i:i + 2500]
+    block = src[i:i + 4000]
     assert "r.error" in block and "pub-result is-fail" in block or "is-fail" in block
     assert "external_url" in block, "a success should link to the post"
 

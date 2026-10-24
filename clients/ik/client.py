@@ -512,9 +512,11 @@ class IKClient:
             raise RuntimeError(f"IK: Upload failed — status {resp.status_code}: {resp.text[:200]}")
 
         result = resp.json()
-        image_id = result.get("id", "")
-        logger.info("IK: Uploaded %s %s — %s", kind, image_id, title[:40])
-        return {"id": str(image_id), "url": f"{_WEB_BASE}/{web_seg}/{image_id}"}
+        # No id → no link either (055, IKSILENT): a link to the bare gallery read as "posted"
+        # when Itaku had sent back nothing to prove it. The manager records it as unconfirmed.
+        image_id = str(result.get("id") or "") if isinstance(result, dict) else ""
+        logger.info("IK: Uploaded %s %s — %s", kind, image_id or "(no id returned)", title[:40])
+        return {"id": image_id, "url": f"{_WEB_BASE}/{web_seg}/{image_id}" if image_id else ""}
 
 
     async def edit_image(
@@ -666,6 +668,6 @@ class IKClient:
             raise RuntimeError(f"IK: Post creation failed — status {resp.status_code}: {resp.text[:200]}")
 
         result = resp.json()
-        post_id = result.get("id", "")
-        logger.info("IK: Created post %s — %s", post_id, title[:40])
-        return {"id": str(post_id), "url": f"{_WEB_BASE}/post/{post_id}"}
+        post_id = str(result.get("id") or "") if isinstance(result, dict) else ""
+        logger.info("IK: Created post %s — %s", post_id or "(no id returned)", title[:40])
+        return {"id": post_id, "url": f"{_WEB_BASE}/post/{post_id}" if post_id else ""}

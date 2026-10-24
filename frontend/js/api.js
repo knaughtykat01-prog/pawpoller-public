@@ -1457,6 +1457,8 @@ const API = {
     },
     getPlatformsMedia() { return this.get('/api/platforms/media'); },
     publishArtwork(data) { return this.post('/api/artwork/publish', data); },
+    // 055: what each site would refuse or leave out — sends nothing.
+    publishCheck(data) { return this.post('/api/artwork/publish/check', data); },
     /* Schedule an artwork to publish later. One call per platform.
        data = { artwork_name, platform, scheduled_at, account_id? }. */
     scheduleArtwork(data) { return this.post('/api/artwork/schedule', data); },

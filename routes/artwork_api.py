@@ -521,6 +521,33 @@ def _store_comments(name: str, platforms, body: dict) -> None:
             raise HTTPException(400, detail=str(e))
 
 
+@artwork_router.post("/publish/check")
+def publish_check(body: dict):
+    """What each ticked site would refuse or leave out — sends nothing, logs nothing (055).
+
+    Body: the /publish fields minus confirm_live and background. Returns
+    {problems: {site: [sentence]}, left_out: {site: [{tag, rule}]}, tag_counts: {site: n}}."""
+    from posting import manager
+    name, platforms = body.get("artwork_name"), body.get("platforms") or []
+    if not name or not isinstance(name, str):
+        raise HTTPException(400, detail="artwork_name is required")
+    if not platforms or not isinstance(platforms, list) or not all(isinstance(p, str) for p in platforms):
+        raise HTTPException(400, detail="platforms list is required")
+    if body.get("account_ids") is not None and not isinstance(body.get("account_ids"), dict):
+        raise HTTPException(400, detail="account_ids must be {site: account id}")
+    renders = body.get("renders") or None
+    if renders is not None and (not isinstance(renders, list) or len(renders) > 32
+                                or not all(isinstance(r, str) for r in renders)):
+        raise HTTPException(400, detail="renders must be a list of render names")
+    try:
+        return manager.publish_check(
+            name, platforms, account_ids=body.get("account_ids"),
+            persona_id=body.get("persona_id"), renders=renders,
+            variant_overrides=body.get("variant_overrides") or None)
+    except FileNotFoundError as e:
+        raise HTTPException(404, detail=str(e))
+
+
 @artwork_router.post("/publish")
 async def publish_artwork(body: dict):
     """Publish an artwork to one or more platforms immediately.
@@ -585,14 +612,22 @@ async def publish_artwork(body: dict):
     if body.get("background"):
         from posting import activity      # spec 017 — see posting_api.post_story
 
-        def _run(sites):
+        def _run(sites, pending=None):
             return manager.post_artwork(
                 artwork_name, sites, account_ids=account_ids, persona_id=persona_id,
                 description_overrides=description_overrides,
                 variant_overrides=variant_overrides, renders=renders,
-                announce_discord=announce_discord)
+                announce_discord=announce_discord, pending=pending)
+        # One `pending` row per site, committed before this returns (055): a restart that
+        # kills the job leaves "not sent" in the bell instead of nothing at all.
+        from posting.artwork_reader import load_artwork
+        try:
+            load_artwork(artwork_name)
+        except FileNotFoundError as e:
+            raise HTTPException(404, detail=str(e))
+        pending = manager.write_pending(artwork_name, platforms, account_ids)
         jid = activity.launch("publish", artwork_name.replace("_", " "), platforms,
-                              lambda: _run(platforms), ref={"artwork": artwork_name},
+                              lambda: _run(platforms, pending), ref={"artwork": artwork_name},
                               retry=lambda site: _run([site]))
         return {"status": "started", "job_id": jid}
 

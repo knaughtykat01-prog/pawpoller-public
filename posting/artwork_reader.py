@@ -94,11 +94,24 @@ def _e621_categorised(tags, names, category: str) -> list[str]:
     showed no artist at all. The ``artist:`` / ``character:`` prefix is e621's own upload
     syntax; on a tag that already exists it changes nothing. Any bare copy already in the
     list (a hand-typed tag) is dropped so the prefixed one is the only one sent.
+
+    Names are formatted the way e621 writes them (055, E621TAGS): ``Second Fur`` →
+    ``artist:second_fur``. A name e621 would refuse is NOT prefixed — it stays as written,
+    so ``e621_tags.prepare`` leaves it out with its reason on the result row.
     """
-    names = [str(n).strip().lower() for n in names if str(n).strip()]
-    drop = set(names)
-    rest = [t for t in tags if str(t).lower().split(":", 1)[-1] not in drop]
-    return [f"{category}:{n}" for n in names] + rest
+    from posting import e621_tags
+    good, bad = [], []
+    for n in names:
+        if not str(n).strip():
+            continue
+        f = e621_tags.format_tag(n)
+        if e621_tags.rule_broken(f):
+            bad.append(str(n))
+        else:
+            good.append(f)
+    drop = set(good)
+    rest = [t for t in tags if e621_tags.format_tag(str(t).split(":", 1)[-1]) not in drop]
+    return [f"{category}:{n}" for n in good] + bad + rest
 
 
 def _canonical_tag_list(tags: dict) -> list[str]:
@@ -682,6 +695,7 @@ def build_artwork_package(
     from posting import attribution
     description = attribution.maybe_append(description, platform)
 
+    tags_left_out: list[dict] = []
     if tags_override is not None:
         tags = tags_override
     else:
@@ -698,7 +712,7 @@ def build_artwork_package(
         else:
             canonical = _canonical_tag_list(source)
             core_len = len(source.get(_TAG_KEY_CORE) or []) or None
-            tags = fit_tags_to_platform(canonical, platform, core_len)
+            tags, tags_left_out = tag_budget.fit_report(canonical, platform, core_count=core_len)
 
     # Artist tag on the booru-style sites (3.5.0). They index on artist harder
     # than on anything else, and artist is tier 1 in the catalogue's own tag
@@ -799,6 +813,8 @@ def build_artwork_package(
         # Categories are the platform's submission params; alt_text rides along
         # for posters that support per-image alt (bluesky.py reads it, G6).
         extra={**dict(artwork.categories_by_platform.get(platform, {})),
+               # 055 (FR-010): what this site's tag limits cut, for the result row.
+               **({"tags_left_out": tags_left_out} if tags_left_out else {}),
                **({"alt_text": artwork.alt_text} if artwork.alt_text else {}),
                **({"tw_photo_tags": photo_tags} if photo_tags else {}),
                # 4.19.0: the credited artist's name, for players that show a performer

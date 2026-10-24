@@ -1716,9 +1716,11 @@ window.Masterpieces = {
         const conf = await Components.confirmPublish({
             title, thumb, subtitle: 'Masterpiece',
             persona: window.Artwork ? window.Artwork._personaLabel('#mp-detail-platforms') : '',
-            targets: window.Artwork
+            // 055: what each site would refuse or leave out, before the live post.
+            targets: await Components.withPublishCheck(window.Artwork
                 ? window.Artwork._confirmTargets('#mp-detail-platforms', platforms, accountIds)
                 : platforms.map(code => ({ code, label: code })),
+                { artwork_name: name, platforms, account_ids: accountIds, persona_id: personaId }),
             textBoxes: window.Artwork ? window.Artwork._pubTextBoxes(platforms) : [],
             commentBoxes: window.Comments ? await Comments.boxesFor(platforms) : [],   // spec 021
             journalBox: await Components.journalBox('art'),                               // spec 027

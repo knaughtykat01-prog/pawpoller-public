@@ -695,6 +695,9 @@ def main():
     # Step 1: Database
     logger.info("Initialising database...")
     init_db()
+    # Posts cut off by the last shutdown show as "not sent" in the bell (055).
+    from posting.manager import mark_restart_leftovers
+    mark_restart_leftovers()
 
     # Step 2: Seed credentials from environment variables
     _seed_settings_from_env()

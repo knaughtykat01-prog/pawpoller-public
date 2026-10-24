@@ -90,7 +90,7 @@ def _pkg(tags, file_path="/tmp/x.png", rating="adult", source=""):
 def test_validate_requires_tag_floor():
     p = E621Poster()
     errs = p.validate(_pkg(["wolf", "male"]))
-    assert any("tag set" in e for e in errs)
+    assert any("at least 4" in e for e in errs)
 
 
 def test_validate_requires_file():

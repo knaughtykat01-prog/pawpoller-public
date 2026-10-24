@@ -589,7 +589,11 @@ window.Artwork = {
         const conf = await Components.confirmPublish({
             title: meta.title, subtitle: 'New artwork',
             persona: this._personaLabel('#art-platforms'),
-            targets: this._confirmTargets('#art-platforms', meta.platforms, accountIds),
+            // 055: what each site would refuse or leave out, before the live post.
+            targets: await Components.withPublishCheck(
+                this._confirmTargets('#art-platforms', meta.platforms, accountIds),
+                { artwork_name: name, platforms: meta.platforms, account_ids: accountIds,
+                  persona_id: this._personaId('#art-platforms') }),
             textBoxes: this._pubTextBoxes(meta.platforms),
             commentBoxes: window.Comments ? await Comments.boxesFor(meta.platforms) : [],   // spec 021
             journalBox: await Components.journalBox('art'),                                   // spec 027

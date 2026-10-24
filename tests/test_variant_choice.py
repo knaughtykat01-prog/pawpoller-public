@@ -60,11 +60,17 @@ def test_naming_a_render_does_not_relax_the_rating(tmp_path):
     assert rating_rank(pkg.rating) > rating_rank("general")
 
 
+def _loop_src():
+    """The publish loop and the pre-send helpers it shares with the pre-check (055)."""
+    return "".join(inspect.getsource(f) for f in (
+        manager._post_artwork, manager._site_renders, manager._prepare_render))
+
+
 class TestThePublishLoopHonoursIt:
     """Read off the source: the loop is async and needs a live poster to run."""
 
     def test_a_named_render_beats_the_ratings_pick(self):
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         assert 'variant_overrides or {}).get(platform)' in src
         # the automatic pick is the ELSE branch, so a name always wins
         assert src.index("_asked = ") < src.index("artwork_reader.variant_for_rating(")
@@ -72,7 +78,7 @@ class TestThePublishLoopHonoursIt:
     def test_primary_can_be_forced(self):
         """Without a sentinel there is no way to decline an automatic substitution."""
         assert manager._PRIMARY_RENDER == "__primary__"
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         assert "_asked == _PRIMARY_RENDER:" in src
         # 4.34.0 made the selection a LIST; the sentinel now yields the primary as the
         # single render rather than a bare None.
@@ -80,11 +86,11 @@ class TestThePublishLoopHonoursIt:
 
     def test_an_unknown_render_name_refuses_that_platform(self):
         """Not a silent fallback to the primary: the caller asked for something real."""
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         assert "no render called" in src
 
     def test_the_gate_still_runs_on_a_named_render(self):
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         assert "poster.refusal(package)" in src
         assert src.index("_asked = ") < src.index("poster.refusal(package)")
 
@@ -100,7 +106,7 @@ class TestWhichRenderWentOutIsRecorded:
     alternate render, which is rated the same as the piece and so derives to None."""
 
     def test_the_post_records_it(self):
-        src = inspect.getsource(manager.post_artwork)
+        src = _loop_src()
         assert 'variant_key=(_variant or {}).get("key") or ""' in src
 
     def test_the_edit_reads_it_back_before_re_deriving(self):

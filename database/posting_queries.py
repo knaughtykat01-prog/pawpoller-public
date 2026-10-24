@@ -762,6 +762,51 @@ def log_posting_action(
     return cursor.lastrowid
 
 
+_LOG_FIELDS = ("account_id", "pub_id", "external_id", "external_url", "error_message",
+               "duration_seconds")
+
+
+def write_pending(conn: sqlite3.Connection, story_name: str, platforms, *,
+                  account_ids: dict | None = None, content_type: str = "artwork",
+                  action: str = "post") -> dict[str, int]:
+    """One ``pending`` posting_log row per site, committed before any upload (055, FR-001/FR-004).
+
+    Returns ``{platform: log_id}``; each site's finish updates its row in place, so a job ends
+    with exactly one row per site. A row still ``pending`` at the next start-up was cut off by
+    a restart (``mark_stale_pending``)."""
+    out: dict[str, int] = {}
+    for plat in dict.fromkeys(platforms or []):
+        cur = conn.execute(
+            """INSERT INTO posting_log (platform, story_name, chapter_index, account_id,
+                   content_type, action, status) VALUES (?, ?, 0, ?, ?, ?, 'pending')""",
+            (plat, story_name, int((account_ids or {}).get(plat) or 0), content_type, action))
+        out[plat] = cur.lastrowid
+    conn.commit()
+    return out
+
+
+def update_posting_log(conn: sqlite3.Connection, log_id: int, status: str, **fields) -> None:
+    """Finish a ``pending`` row in place: its final status plus any of ``_LOG_FIELDS``."""
+    cols = {k: v for k, v in fields.items() if k in _LOG_FIELDS}
+    sets = ", ".join(["status = ?"] + [f"{k} = ?" for k in cols])
+    conn.execute(f"UPDATE posting_log SET {sets} WHERE log_id = ?",
+                 [status, *cols.values(), log_id])
+    conn.commit()
+
+
+def mark_stale_pending(conn: sqlite3.Connection, before: str) -> int:
+    """Every ``pending`` row created before *before* (UTC 'YYYY-MM-DD HH:MM:SS') → ``not_sent``.
+
+    Run once at start-up: those jobs died with the last process. Nothing is re-posted — the
+    owner decides (an upload may have been half-way)."""
+    cur = conn.execute(
+        "UPDATE posting_log SET status = 'not_sent', error_message = ? "
+        "WHERE status = 'pending' AND created_at < ?",
+        ("not sent (PawPoller restarted)", before))
+    conn.commit()
+    return cur.rowcount
+
+
 def get_posting_log(
     conn: sqlite3.Connection,
     story_name: str | None = None,

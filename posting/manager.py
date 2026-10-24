@@ -16,7 +16,7 @@ from typing import Any
 from database.db import get_connection
 from database import posting_queries
 from posting import activity, story_reader
-from posting.platforms.base import PlatformPoster
+from posting.platforms.base import PlatformPoster, PostResult
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,70 @@ _PERMANENT_ERROR_MARKERS = (
                                          # can land before the check answers its redirect, so a retry double-posts
     "didn't save the work",              # AO3 validation (4.78.1): the same form fails the same way
 )
+
+
+_MAX_RETRY_ATTEMPTS = 3
+
+
+def _gave_up(story_name: str, ch_idx: int, platform: str, action: str, error: str, *,
+             content_type: str = "story", account_id: int | None = None) -> str:
+    """The 'gave up' sentence when automatic retries for this target are used up, else ''
+    (055, FR-003). Called only after ``_schedule_retry`` declined; until then the give-up was
+    one INFO line in the app log and the bell showed an ordinary failure, or nothing."""
+    try:
+        conn = get_connection()
+        try:
+            n = posting_queries.count_retry_rows(conn, story_name, ch_idx, platform, action,
+                                                 content_type=content_type, account_id=account_id)
+        finally:
+            conn.close()
+    except Exception:          # noqa: BLE001 — bookkeeping never sinks a post
+        return ""
+    if n < _MAX_RETRY_ATTEMPTS:
+        return ""
+    return f"gave up after {n + 1} tries — {error or 'unknown error'}"
+
+
+def _confirmed(result: PostResult, poster: PlatformPoster) -> PostResult:
+    """A success counts only with a post number or a link (055, FR-002 / SC-004), on every site.
+
+    Itaku answered 201 with no id and the result read "posted" with a link to an empty
+    gallery. The upload may exist, so this is *unconfirmed*, not failed: never retried (a
+    retry could post twice) and the owner is told to look first."""
+    if result.success and not (result.external_id or result.external_url):
+        name = getattr(poster, "platform_name", "") or "The site"
+        result.success = False
+        result.unconfirmed = True
+        result.error = (f"{name} took the upload but sent back no link. "
+                        f"Check your {name} gallery before posting again.")
+    return result
+
+
+def _tags_left_out(package, result: PostResult, platform: str) -> list[dict]:
+    """Every tag this site didn't get, with its rule (055, FR-010): cut by the budget when the
+    package was built, cut again by the poster's own ``tag_budget.fit`` (deterministic from
+    ``package.tags``, so it's recomputed here once rather than threaded through every poster),
+    and anything the poster reported itself (e621's format rules)."""
+    from posting import tag_budget
+    out = list(package.extra.get("tags_left_out") or [])
+    out += tag_budget.fit_report(package.tags, platform)[1]
+    out += list(result.extra.get("tags_left_out") or [])
+    return out
+
+
+def _final_status(result: PostResult, queued_for_desktop: bool, gave_up: str) -> tuple[str, str | None]:
+    """``(posting_log status, error_message)`` for one finished post — the one mapping
+    post_story and post_artwork share (055 data-model)."""
+    attention = getattr(result, "needs_attention", "") or ""
+    if result.success:
+        return ("needs_attention" if attention else "success"), attention or result.error
+    if result.unconfirmed:
+        return "unconfirmed", result.error
+    if queued_for_desktop:
+        return "queued_desktop", result.error
+    if gave_up:
+        return "gave_up", gave_up
+    return "failed", result.error
 
 
 def _schedule_retry(story_name: str, ch_idx: int, platform: str, action: str,
@@ -91,7 +155,7 @@ def _schedule_retry(story_name: str, ch_idx: int, platform: str, action: str,
                        story_name, ch_idx, platform, error[:200])
         return False
 
-    max_attempts = 3
+    max_attempts = _MAX_RETRY_ATTEMPTS
     conn = get_connection()
     try:
         attempt = posting_queries.count_retry_rows(
@@ -251,7 +315,7 @@ def _get_poster(platform: str, account_id: int | None = None) -> PlatformPoster:
 
 
 def _resolve_account_id(platform: str, account_id: int | None,
-                        persona_id: int | None = None) -> int:
+                        persona_id: int | None = None, *, create: bool = True) -> int:
     """Return a concrete account_id for a platform.
 
     Two regimes, and the difference is the whole of publish_flow spec §3:
@@ -268,7 +332,7 @@ def _resolve_account_id(platform: str, account_id: int | None,
     Either way a "Never post" account is refused (4.45.4, FRIENDGUARD) — before
     the poster, so the result reads as a refusal beside the other sites.
     """
-    resolved = _resolve_account_id_unchecked(platform, account_id, persona_id)
+    resolved = _resolve_account_id_unchecked(platform, account_id, persona_id, create=create)
     from database import accounts as accounts_db
     if resolved is not None and resolved in accounts_db.never_post_ids():
         raise ValueError(accounts_db.NEVER_POST_ERROR)
@@ -276,7 +340,7 @@ def _resolve_account_id(platform: str, account_id: int | None,
 
 
 def _resolve_account_id_unchecked(platform: str, account_id: int | None,
-                                  persona_id: int | None) -> int:
+                                  persona_id: int | None, *, create: bool = True) -> int:
     if persona_id is not None:
         from database import personas as personas_db
         conn = get_connection()
@@ -292,7 +356,7 @@ def _resolve_account_id_unchecked(platform: str, account_id: int | None,
     from database import accounts as accounts_db
     conn = get_connection()
     try:
-        return accounts_db.get_default_account_id(conn, platform, create=True)
+        return accounts_db.get_default_account_id(conn, platform, create=create)
     finally:
         conn.close()
 
@@ -447,7 +511,8 @@ from polling.telegram import PLATFORM_EMOJI as PLATFORM_EMOJIS  # noqa: E402,F40
 
 def _log_validation_failure(platform: str, name: str, chapter_index: int,
                             errors: list[str], *, account_id: int = 0,
-                            content_type: str = "story") -> None:
+                            content_type: str = "story",
+                            pending: dict[str, int] | None = None) -> None:
     """Record a refused-before-sending attempt in `posting_log`.
 
     Validation failures used to `continue` straight past the logging call, so
@@ -466,19 +531,93 @@ def _log_validation_failure(platform: str, name: str, chapter_index: int,
     try:
         conn = get_connection()
         try:
-            posting_queries.log_posting_action(
-                conn, platform, name, chapter_index,
-                action="post",
-                account_id=account_id,
-                content_type=content_type,
-                status="failed",
-                error_message="Rejected before sending: " + "; ".join(errors),
-            )
+            msg = "Rejected before sending: " + "; ".join(errors)
+            log_id = (pending or {}).pop(platform, None)
+            if log_id:
+                posting_queries.update_posting_log(conn, log_id, "failed", account_id=account_id,
+                                                   error_message=msg)
+            else:
+                posting_queries.log_posting_action(
+                    conn, platform, name, chapter_index,
+                    action="post",
+                    account_id=account_id,
+                    content_type=content_type,
+                    status="failed",
+                    error_message=msg,
+                )
         finally:
             conn.close()
     except Exception as e:  # noqa: BLE001 — never let bookkeeping sink a post run
         logger.debug("Could not log validation failure for %s/%s: %s",
                      name, platform, e)
+
+
+def write_pending(name: str, platforms: list[str], account_ids: dict | None = None,
+                  content_type: str = "artwork") -> dict[str, int]:
+    """``{platform: log_id}`` of fresh ``pending`` rows, committed now (055, FR-001/FR-004)."""
+    conn = get_connection()
+    try:
+        return posting_queries.write_pending(conn, name, platforms, account_ids=account_ids,
+                                             content_type=content_type)
+    finally:
+        conn.close()
+
+
+def mark_restart_leftovers() -> int:
+    """At start-up, every ``pending`` row is a job the last process didn't finish → ``not_sent``
+    (055, FR-004). Never re-posts: an upload may have been half-way. Call once after
+    ``init_db()``, before anything can start a new job."""
+    before = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        conn = get_connection()
+        try:
+            n = posting_queries.mark_stale_pending(conn, before)
+        finally:
+            conn.close()
+    except Exception:          # noqa: BLE001 — an older DB without posting tables
+        logger.warning("Could not sweep unfinished posting rows", exc_info=True)
+        return 0
+    if n:
+        logger.warning("%d site post(s) were cut off by the last shutdown — marked 'not sent'", n)
+    return n
+
+
+def _log_final(conn, pending: dict[str, int] | None, platform: str, name: str, status: str,
+               **fields) -> None:
+    """Finish this site's ``pending`` row in place, or append a row for a later render."""
+    log_id = (pending or {}).pop(platform, None)
+    if log_id:
+        posting_queries.update_posting_log(conn, log_id, status, **fields)
+    else:
+        posting_queries.log_posting_action(conn, platform, name, 0, action="post",
+                                           content_type="artwork", status=status, **fields)
+
+
+def _close_pending(pending: dict[str, int], results: list[dict[str, Any]]) -> None:
+    """Every site still ``pending`` when a run ends gets its final row (055, FR-001).
+
+    A site refused before its package was built (persona guard, unknown render) never reached
+    a log call, so it left no row at all; a site after "Cancel the rest", or after a crash,
+    is not sent."""
+    if not pending:
+        return
+    try:
+        conn = get_connection()
+        try:
+            for plat, log_id in list(pending.items()):
+                bad = next((r for r in results if r.get("platform") == plat and not r.get("success")), None)
+                if bad:
+                    posting_queries.update_posting_log(
+                        conn, log_id, "failed",
+                        error_message="Rejected before sending: " + str(bad.get("error") or "refused"))
+                else:
+                    posting_queries.update_posting_log(conn, log_id, "not_sent",
+                                                       error_message="not sent (the run stopped first)")
+                pending.pop(plat, None)
+        finally:
+            conn.close()
+    except Exception:          # noqa: BLE001 — a stale pending row is swept at the next start
+        logger.warning("Could not close pending posting rows", exc_info=True)
 
 
 async def post_story(
@@ -572,7 +711,7 @@ async def post_story(
 
             # Post
             activity.step(platform, "Uploading", _ch_label(ch_idx, chapter_list))
-            result = await poster.post(package)
+            result = _confirmed(await poster.post(package), poster)
 
             # Compute file hash for change detection
             from posting.sync import hash_file
@@ -583,7 +722,9 @@ async def post_story(
             # 2. Rate limit / transient errors → schedule retry with backoff
             queued_for_desktop = False
             retry_queued = False
-            if not result.success:
+            gave_up = ""
+            # Unconfirmed (055): the upload may exist — no desktop queue, no retry.
+            if not result.success and not result.unconfirmed:
                 from posting.scheduler import _runtime_mode
                 if poster.requires_mode == "desktop" and _runtime_mode == "server":
                     conn = get_connection()
@@ -605,6 +746,9 @@ async def post_story(
                         story_name, ch_idx, platform, "post", result.error or "unknown",
                         account_id=account_id,
                     )
+                    if not retry_queued:
+                        gave_up = _gave_up(story_name, ch_idx, platform, "post", result.error,
+                                           account_id=account_id)
 
             # Record in database
             conn = get_connection()
@@ -623,15 +767,16 @@ async def post_story(
                     word_count=package.word_count,
                     status="posted" if result.success else "failed",
                 )
+                _status, _msg = _final_status(result, queued_for_desktop, gave_up)
                 posting_queries.log_posting_action(
                     conn, platform, story_name, ch_idx,
                     action="post",
                     account_id=account_id,
-                    status="success" if result.success else ("queued_desktop" if queued_for_desktop else "failed"),
+                    status=_status,
                     pub_id=pub_id,
                     external_id=result.external_id,
                     external_url=result.external_url,
-                    error_message=getattr(result, "needs_attention", "") or result.error,
+                    error_message=_msg,
                     duration_seconds=result.duration_seconds,
                 )
             finally:
@@ -647,7 +792,9 @@ async def post_story(
                 "account_id": account_id,      # spec 021: the comment goes out as the same account
                 "external_id": result.external_id,
                 "external_url": result.external_url,
-                "error": result.error,
+                "error": gave_up or result.error,
+                "unconfirmed": result.unconfirmed,
+                "tags_left_out": _tags_left_out(package, result, platform),
                 "duration": result.duration_seconds,
             })
 
@@ -717,6 +864,163 @@ _PRIMARY_RENDER = "__primary__"
 _AUTO_RENDER = "__auto__"
 
 
+def _site_renders(artwork, platform: str, poster, variant_overrides, renders,
+                  results: list[dict[str, Any]]) -> list:
+    """Which renders *platform* gets: a list, ``None`` for the piece's own image. A named
+    render the piece doesn't have is refused into *results*; ``[]`` when nothing is left.
+    Shared by the publish and the pre-check (055) so the two can't disagree."""
+    from posting import artwork_reader
+    _renders: list = []
+    _asked = (variant_overrides or {}).get(platform) or ""
+    if renders:
+        for _key in renders:
+            if _key == _AUTO_RENDER:
+                _renders.append(artwork_reader.variant_for_rating(
+                    artwork, getattr(poster, "max_rating", "adult")))
+                continue
+            if _key == _PRIMARY_RENDER:
+                _renders.append(None)
+                continue
+            _v = next((v for v in (artwork.variants or [])
+                       if isinstance(v, dict) and v.get("key") == _key), None)
+            if _v is None:
+                results.append(_refused(
+                    platform, ValueError(f"no render called {_key!r} on this piece"),
+                    chapter_index=0, chapter_title="", variant=_key))
+                continue
+            _renders.append(_v)
+        # Auto can resolve to a render that was also ticked by name — one submission,
+        # not two identical ones.
+        _seen, _uniq = set(), []
+        for _v in _renders:
+            _k = (_v or {}).get("key") or ""
+            if _k in _seen:
+                continue
+            _seen.add(_k)
+            _uniq.append(_v)
+        _renders = _uniq
+    elif _asked == _PRIMARY_RENDER:
+        _renders = [None]
+    elif _asked:
+        _v = next((v for v in (artwork.variants or [])
+                   if isinstance(v, dict) and v.get("key") == _asked), None)
+        if _v is None:
+            results.append(_refused(
+                platform, ValueError(f"no render called {_asked!r} on this piece"),
+                chapter_index=0, chapter_title="", variant=_asked))
+            return []
+        _renders = [_v]
+    else:
+        _renders = [artwork_reader.variant_for_rating(
+            artwork, getattr(poster, "max_rating", "adult"))]
+    return _renders
+
+
+def _prepare_render(artwork, platform: str, poster, variant, *, multi: bool, account_id,
+                    description_overrides, extras, results: list[dict[str, Any]],
+                    wm_temps: list[str] | None):
+    """``(package, errors)`` for one render on one site: build, extras, watermark, then the
+    poster's own ``refusal()`` / ``validate()``. ``(None, [])`` when the render's file is gone
+    (refused into *results*). The publish and the pre-check (055) both run this, so a check
+    can't pass what the post refuses. *wm_temps* None skips the watermark (the check writes
+    no temp files; the stamp barely moves the size check)."""
+    from posting import artwork_reader
+    try:
+        package = artwork_reader.build_artwork_package(
+            artwork, platform,
+            description_override=(description_overrides or {}).get(platform),
+            variant_key=(variant or {}).get("key") or None,
+            multi_render=multi,
+            account_id=account_id)
+    except FileNotFoundError as e:
+        # A render that vanished between the selection and the build. One platform's
+        # missing file must not take the rest of the run down with it.
+        results.append(_refused(platform, e,
+                                chapter_index=0, chapter_title="",
+                                variant=(variant or {}).get("label")
+                                        or (variant or {}).get("key") or ""))
+        logger.warning("Artwork %s on %s: %s", artwork.name, platform, e)
+        return None, []
+    if variant:
+        logger.info("Artwork %s on %s: posting the %r render (rated %s)", artwork.name,
+                    platform, variant.get("label") or variant.get("key"),
+                    variant.get("rating") or artwork.rating)
+    if extras:
+        package.extra.update(extras)
+    if platform in _ANNOUNCES_LAST:
+        package.extra["run_links"] = _run_links(results)
+
+    # Watermark (gap-wave-5 §1): swap in a stamped temp copy before
+    # validation (so the size check sees the real bytes) and post that.
+    # No-op / never raises when disabled or on any PIL error. Temps are
+    # collected and deleted after the whole loop (a retry within an
+    # iteration re-posts the same package, so they must outlive it).
+    if wm_temps is not None:
+        from posting import watermark
+        _wm_path, _wm_tmp = watermark.apply(package.file_path)
+        if _wm_tmp:
+            package.file_path = _wm_path
+            wm_temps.append(_wm_tmp)
+
+    refusal = poster.refusal(package) if hasattr(poster, "refusal") else None   # media kind, then rating (4.21.0)
+    return package, ([refusal] if refusal else poster.validate(package))
+
+
+def publish_check(artwork_name: str, platforms: list[str], *, account_ids: dict | None = None,
+                  persona_id: int | None = None, renders: list[str] | None = None,
+                  variant_overrides: dict[str, str] | None = None) -> dict:
+    """What each site would refuse or leave out, before Post is pressed (055, US2).
+
+    The same steps ``post_artwork`` runs before sending (account, render pick, package build,
+    ``refusal()``, ``validate()``) with nothing sent, no log row and no watermark temp file.
+    Returns ``{problems: {site: [sentence]}, left_out: {site: [{tag, rule}]},
+    tag_counts: {site: n}}``; a site with nothing to say is absent. Raises FileNotFoundError
+    for an unknown piece."""
+    from posting import artwork_reader, e621_tags
+    artwork = artwork_reader.load_artwork(artwork_name)
+    account_ids = account_ids or {}
+    problems: dict[str, list[str]] = {}
+    left_out: dict[str, list[dict]] = {}
+    counts: dict[str, int] = {}
+    for platform in dict.fromkeys(platforms or []):
+        said: list[str] = []
+        lost: list[dict] = []
+        if not _poster_class_known(platform):
+            problems[platform] = [f"Unknown platform: {platform}"]
+            continue
+        try:
+            # create=False: a check writes nothing, not even a default account row.
+            account_id = _resolve_account_id(platform, account_ids.get(platform), persona_id,
+                                             create=False)
+            poster = _get_poster(platform, account_id)
+        except ValueError as e:
+            problems[platform] = [str(e)]
+            continue
+        refused: list[dict[str, Any]] = []
+        chosen = _site_renders(artwork, platform, poster, variant_overrides, renders, refused)
+        for variant in chosen:
+            package, errors = _prepare_render(
+                artwork, platform, poster, variant, multi=len(chosen) > 1, account_id=account_id,
+                description_overrides=None, extras=None, results=refused, wm_temps=None)
+            if package is None:
+                continue
+            said += errors
+            lost += _tags_left_out(package, PostResult(success=False), platform)
+            if platform == "e621":
+                sent, e6_lost = e621_tags.prepare(package.tags)
+                lost += e6_lost
+            else:
+                from posting import tag_budget
+                sent = tag_budget.fit(package.tags, platform)
+            counts[platform] = len(sent)
+        said += [str(r.get("error")) for r in refused if r.get("error")]
+        if said:
+            problems[platform] = list(dict.fromkeys(said))
+        if lost:
+            left_out[platform] = list({(d["tag"], d["rule"]): d for d in lost}.values())
+    return {"problems": problems, "left_out": left_out, "tag_counts": counts}
+
+
 async def post_artwork(
     artwork_name: str,
     platforms: list[str],
@@ -727,8 +1031,13 @@ async def post_artwork(
     variant_overrides: dict[str, str] | None = None,
     renders: list[str] | None = None,
     announce_discord: bool | None = None,
+    pending: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     """Post one artwork (a single image) to multiple platforms.
+
+    Every site ends with exactly one final posting_log row (055): ``pending`` rows are written
+    first (or passed in by the background publish, which writes them before it returns) and
+    each site's finish updates its own.
 
     ``announce_discord`` is this publish's Discord choice (the tick on the artwork
     pages, spec 008): True / False, or None to follow the announce-on-publish switch.
@@ -766,9 +1075,24 @@ async def post_artwork(
     """
     from posting import artwork_reader
     account_ids = account_ids or {}
-    artwork = artwork_reader.load_artwork(artwork_name)
+    artwork = artwork_reader.load_artwork(artwork_name)   # an unknown piece raises before any row
+    if pending is None:
+        pending = write_pending(artwork_name, platforms, account_ids)
     results: list[dict[str, Any]] = []
+    try:
+        return await _post_artwork(artwork, artwork_name, platforms, results, pending,
+                                   extras=extras, account_ids=account_ids, persona_id=persona_id,
+                                   description_overrides=description_overrides,
+                                   variant_overrides=variant_overrides, renders=renders,
+                                   announce_discord=announce_discord)
+    finally:
+        _close_pending(pending, results)
 
+
+async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
+                        results: list[dict[str, Any]], pending: dict[str, int], *,
+                        extras, account_ids, persona_id, description_overrides,
+                        variant_overrides, renders, announce_discord) -> list[dict[str, Any]]:
     _wm_temps: list[str] = []   # watermark temp files, cleaned after the loop
     _act_prev = None
     for platform in _announcers_last(platforms):
@@ -797,51 +1121,9 @@ async def post_artwork(
         #
         # Precedence: an explicit `renders` list, then a named override for this site,
         # then the rating's pick. `None` in the list means the piece's own image.
-        _renders: list = []
-        _asked = (variant_overrides or {}).get(platform) or ""
-        if renders:
-            for _key in renders:
-                if _key == _AUTO_RENDER:
-                    _renders.append(artwork_reader.variant_for_rating(
-                        artwork, getattr(poster, "max_rating", "adult")))
-                    continue
-                if _key == _PRIMARY_RENDER:
-                    _renders.append(None)
-                    continue
-                _v = next((v for v in (artwork.variants or [])
-                           if isinstance(v, dict) and v.get("key") == _key), None)
-                if _v is None:
-                    results.append(_refused(
-                        platform, ValueError(f"no render called {_key!r} on this piece"),
-                        chapter_index=0, chapter_title="", variant=_key))
-                    continue
-                _renders.append(_v)
-            # Auto can resolve to a render that was also ticked by name — one submission,
-            # not two identical ones.
-            _seen, _uniq = set(), []
-            for _v in _renders:
-                _k = (_v or {}).get("key") or ""
-                if _k in _seen:
-                    continue
-                _seen.add(_k)
-                _uniq.append(_v)
-            _renders = _uniq
-            if not _renders:
-                continue          # every named render was unknown; already reported
-        elif _asked == _PRIMARY_RENDER:
-            _renders = [None]
-        elif _asked:
-            _v = next((v for v in (artwork.variants or [])
-                       if isinstance(v, dict) and v.get("key") == _asked), None)
-            if _v is None:
-                results.append(_refused(
-                    platform, ValueError(f"no render called {_asked!r} on this piece"),
-                    chapter_index=0, chapter_title="", variant=_asked))
-                continue
-            _renders = [_v]
-        else:
-            _renders = [artwork_reader.variant_for_rating(
-                artwork, getattr(poster, "max_rating", "adult"))]
+        _renders = _site_renders(artwork, platform, poster, variant_overrides, renders, results)
+        if not _renders:
+            continue          # every named render was unknown; already reported
 
         # Several renders to ONE site is several uploads where there used to be one.
         # FurAffinity enforces 70 seconds between posts; post_artwork was the only
@@ -852,45 +1134,12 @@ async def post_artwork(
             if _ri:
                 await poster._rate_limit()
             _multi = len(_renders) > 1
-            try:
-                package = artwork_reader.build_artwork_package(
-                    artwork, platform,
-                    description_override=(description_overrides or {}).get(platform),
-                    variant_key=(_variant or {}).get("key") or None,
-                    multi_render=_multi,
-                    account_id=account_id)
-            except FileNotFoundError as e:
-                # A render that vanished between the selection and the build. One platform's
-                # missing file must not take the rest of the run down with it.
-                results.append(_refused(platform, e,
-                                        chapter_index=0, chapter_title="",
-                                        variant=(_variant or {}).get("label")
-                                                or (_variant or {}).get("key") or ""))
-                logger.warning("Artwork %s on %s: %s", artwork_name, platform, e)
-                continue
-            if _variant:
-                logger.info("Artwork %s on %s: posting the %r render (rated %s)", artwork_name,
-                            platform, _variant.get("label") or _variant.get("key"),
-                            _variant.get("rating") or artwork.rating)
-            if extras:
-                package.extra.update(extras)
-            if platform in _ANNOUNCES_LAST:
-                package.extra["run_links"] = _run_links(results)
-
-            # Watermark (gap-wave-5 §1): swap in a stamped temp copy before
-            # validation (so the size check sees the real bytes) and post that.
-            # No-op / never raises when disabled or on any PIL error. Temps are
-            # collected and deleted after the whole loop (a retry within an
-            # iteration re-posts the same package, so they must outlive it).
-            from posting import watermark
-            _wm_path, _wm_tmp = watermark.apply(package.file_path)
-            if _wm_tmp:
-                package.file_path = _wm_path
-                _wm_temps.append(_wm_tmp)
-
-            # Validate
-            refusal = poster.refusal(package) if hasattr(poster, "refusal") else None   # media kind, then rating (4.21.0)
-            errors = [refusal] if refusal else poster.validate(package)
+            package, errors = _prepare_render(
+                artwork, platform, poster, _variant, multi=_multi, account_id=account_id,
+                description_overrides=description_overrides, extras=extras, results=results,
+                wm_temps=_wm_temps)
+            if package is None:
+                continue          # the render's file vanished; already reported
             if errors:
                 results.append({
                     "platform": platform,
@@ -904,13 +1153,13 @@ async def post_artwork(
                                artwork_name, platform, errors)
                 _log_validation_failure(platform, artwork_name, 0, errors,
                                         account_id=account_id,
-                                        content_type="artwork")
+                                        content_type="artwork", pending=pending)
                 continue
 
             # Post
             activity.step(platform, "Uploading",
                           ((_variant or {}).get("label") or (_variant or {}).get("key") or "") if _multi else None)
-            result = await poster.post(package)
+            result = _confirmed(await poster.post(package), poster)
 
             # Compute file hash for change detection (the image itself)
             from posting.sync import hash_file
@@ -921,7 +1170,9 @@ async def post_artwork(
             #   2. Rate-limit / transient errors → backoff retry
             queued_for_desktop = False
             retry_queued = False
-            if not result.success:
+            gave_up = ""
+            # Unconfirmed (055): the upload may exist — no desktop queue, no retry.
+            if not result.success and not result.unconfirmed:
                 from posting.scheduler import _runtime_mode
                 if poster.requires_mode == "desktop" and _runtime_mode == "server":
                     conn = get_connection()
@@ -951,6 +1202,9 @@ async def post_artwork(
                         content_type="artwork", account_id=account_id,
                         variant_key=(_variant or {}).get("key") or "",
                     )
+                    if not retry_queued:
+                        gave_up = _gave_up(artwork_name, 0, platform, "post", result.error,
+                                           content_type="artwork", account_id=account_id)
 
             # Record in database (content_type='artwork' so it never collides with
             # a same-named story and the Stories views never show it).
@@ -974,20 +1228,15 @@ async def post_artwork(
                     word_count=0,
                     status=("draft" if getattr(result, "needs_attention", "") else "posted") if result.success else "failed",
                 )
-                posting_queries.log_posting_action(
-                    conn, platform, artwork_name, 0,
-                    action="post",
-                    account_id=account_id,
-                    content_type="artwork",
-                    # needs_attention (4.60.0): on the site, but the owner must finish it (the bell lists it)
-                    status=("needs_attention" if getattr(result, "needs_attention", "") else "success")
-                    if result.success else ("queued_desktop" if queued_for_desktop else "failed"),
-                    pub_id=pub_id,
-                    external_id=result.external_id,
-                    external_url=result.external_url,
-                    error_message=getattr(result, "needs_attention", "") or result.error,
-                    duration_seconds=result.duration_seconds,
-                )
+                # needs_attention (4.60.0): on the site, but the owner must finish it (the bell lists it)
+                _status, _msg = _final_status(result, queued_for_desktop, gave_up)
+                _log_final(conn, pending, platform, artwork_name, _status,
+                           account_id=account_id,
+                           pub_id=pub_id,
+                           external_id=result.external_id,
+                           external_url=result.external_url,
+                           error_message=_msg,
+                           duration_seconds=result.duration_seconds)
                 # Publishing IS mastering (spec §6.1): the artwork folder IS the
                 # Masterpiece (Phase 0), so a successful upload becomes a member with
                 # linked_via='publication'. This is what makes a fresh "New Masterpiece"
@@ -1021,7 +1270,9 @@ async def post_artwork(
                 "account_id": account_id,      # spec 021: the comment goes out as the same account
                 "external_id": result.external_id,
                 "external_url": result.external_url,
-                "error": result.error,
+                "error": gave_up or result.error,
+                "unconfirmed": result.unconfirmed,
+                "tags_left_out": _tags_left_out(package, result, platform),
                 "attention": getattr(result, "needs_attention", "") or "",
                 "duration": result.duration_seconds,
                 # Which render went to this site — "" for the primary (4.33.0).

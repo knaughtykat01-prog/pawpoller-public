@@ -2,6 +2,16 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.87.0] - 2026-10-24 - Every site reports back
+
+> - Every site you post to now says how it went, in the results and in the bell, even if you closed the page.
+> - If a site takes the upload but sends back no link, PawPoller says so and asks you to check the site before posting again. It won't post it twice.
+> - When PawPoller gives up retrying a site, the bell says so, with the last reason.
+> - A post cut off by PawPoller restarting shows as "not sent" in the bell. Nothing is re-posted on its own.
+> - Tags sent to e621 are now written the way e621 wants them: lower case, underscores for spaces.
+> - Tags a site won't accept (an accent on e621, a very long tag on Itaku) are named on the result, with the reason.
+> - Before you press Publish, the confirmation lists each site that would refuse the piece, and why.
+
 ## [4.86.0] - 2026-10-23 - Start here
 
 > - PawPoller now opens on a Start screen that asks what you came to do: post, schedule, write, see your numbers or set up a site.
@@ -164,9 +174,3 @@ Generated from the release notes: each version's plain-language summary.
 > - The Test button shows "FurAffinity bot check" in that case: your login is fine, so there's no need to paste new cookies.
 > - While FurAffinity is blocking, PawPoller pauses FA checks and tries again later, waiting longer each time (up to a day), as FurAffinity asks.
 > - You get one message when FA starts blocking and one when it's reachable again.
-
-## [4.77.5] - 2026-10-16 - X waits out its limit properly
-
-> - X polls that hit X's rate limit now wait for it to reset instead of giving up halfway and saving only part of your posts.
-> - If X still hasn't reset in time, the poll is marked as limited and tries again next time, instead of making things worse.
-> - Fixed the weekly Telegram digest, which stopped sending once a Telegram channel or Facebook page had stats.
