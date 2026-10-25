@@ -1,3 +1,4 @@
+// @ts-check
 /* ── Item prev/next — the back-bar every item page shares (4.34.3) ────────
  *
  * UNIFORMITEM contract §2, "fixed navigation": every item page carries prev/next
@@ -37,12 +38,14 @@
         _href: null,
         _routeTest: null,
 
-        /* Render the counter + arrows into the page's existing `.work-back`.
+        /** Render the counter + arrows into the page's existing `.work-back`.
          *
          * Returns true when it mounted. A caller that cannot supply a list (a deep
          * link with nothing cached and a failed fetch) simply does not call this,
          * and the page keeps the plain back link it already had — an absent
-         * counter is honest, whereas arrows that cannot step are not. */
+         * counter is honest, whereas arrows that cannot step are not.
+         * @param {{names?: string[], current?: string, href?: (name: string) => string,
+         *          routeTest?: (hash: string) => boolean, container?: Element}} [opts] */
         mount({ names, current, href, routeTest, container } = {}) {
             this._reset();
             if (!Array.isArray(names) || !names.length || typeof href !== 'function') return false;

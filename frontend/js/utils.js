@@ -306,8 +306,27 @@ const Utils = {
     },
 
     escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        if (str == null || str === false) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    },
+
+    /* ── html`…` (ESCHELPER, 4.88.0) ──────────────────────────
+     * Escape-by-default markup: every ${value} is escaped unless it's Utils.raw(…) or
+     * another html`` result, so pieces nest. Arrays join (each item by the same rule);
+     * null/undefined/false render nothing. Returns a raw marker — `el.innerHTML = x` and
+     * `${x}` both stringify it. URLs from outside still go through Utils.safeUrl first.
+     * Use it for new markup and when touching an old innerHTML string; no big-bang. */
+    html(strings, ...vals) {
+        let out = strings[0];
+        vals.forEach((v, i) => { out += Utils._htmlPart(v) + strings[i + 1]; });
+        return Utils.raw(out);
+    },
+    raw(s) { return new Utils._Raw(s); },
+    _Raw: class { constructor(s) { this.s = String(s ?? ''); } toString() { return this.s; } },
+    _htmlPart(v) {
+        if (v instanceof Utils._Raw) return v.s;
+        if (Array.isArray(v)) return v.map(Utils._htmlPart).join('');
+        return Utils.escapeHtml(v);
     },
 
     /* ── safeUrl ──────────────────────────────────────────────

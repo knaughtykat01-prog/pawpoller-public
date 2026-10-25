@@ -408,7 +408,7 @@ def _start_poll_orchestrator():
 
         results = []
         for g in grouped:
-            if isinstance(g, Exception):
+            if isinstance(g, BaseException):   # incl. CancelledError, which isn't an Exception
                 logger.warning("Poll task group crashed: %s", describe_error(g))
                 continue
             results.extend(g)
@@ -611,7 +611,7 @@ def _start_server(host: str, port: int):
 
 # ── Main ──────────────────────────────────────────────────────
 
-def _reset_password() -> int:
+def _reset_password(port: int | None = None) -> int:
     """Set a new dashboard password from the machine's own console (4.34.1, PWRESET).
 
     There was no way back from a forgotten password on a frozen install. The old guides
@@ -634,26 +634,58 @@ def _reset_password() -> int:
     """
     import getpass
 
+    # Spec 058 FR-008: PawPoller still running would write its own settings over the new
+    # password. It checks the usual port and the one this command was given (--port N), so a
+    # server started on another port is seen too (SEC058). ponytail: only sees this machine,
+    # so a Docker reset in its own container can't tell; the Docker steps stop the app first.
+    if _app_running(config.DASHBOARD_PORT, port or config.DASHBOARD_PORT):
+        # Plain ASCII: an old console code page garbles arrows (SEC058).
+        print("PawPoller is still open. Close it (right-click the tray icon, then Quit), then run this again.")
+        return 1
+    import warnings
     try:
-        pw = getpass.getpass("New dashboard password: ")
-        again = getpass.getpass("Type it again: ")
+        with warnings.catch_warnings():
+            # getpass falls back to SHOWING what is typed when it can't hide it, with only a warning.
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            pw = getpass.getpass("New dashboard password: ")
+            again = getpass.getpass("Type it again: ")
+    except getpass.GetPassWarning:
+        print("This window can't hide what you type, so nothing was asked. Run it in a normal terminal window.")
+        return 1
     except (EOFError, KeyboardInterrupt):
         print("")
-        print("Cancelled — nothing was changed.")
+        print("Cancelled. Nothing was changed.")
         return 1
     if pw != again:
-        print("Those did not match — nothing was changed.")
+        print("Those did not match. Nothing was changed.")
         return 1
     if len(pw) < 8:
-        print("Too short — use at least 8 characters. Nothing was changed.")
+        print("Too short: use at least 8 characters. Nothing was changed.")
         return 1
     try:
         config.save_settings({"auth_password_hash": config.hash_password(pw)})
+        config.rotate_session_secret()   # every signed-in browser is signed out, as the emailed reset does
     except Exception as e:
         print(f"Could not save the new password: {e}")
         return 1
     print("Password changed. Start PawPoller again and sign in with it.")
+    print("If someone else may have got in, open Settings, then Security, then API keys, and remove any you don't recognise.")
     return 0
+
+
+def _app_running(*ports: int) -> bool:
+    """Whether PawPoller answers on any of these ports on this machine (default: the dashboard's)."""
+    import urllib.error
+    import urllib.request
+    for port in dict.fromkeys(ports or (config.DASHBOARD_PORT,)):
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1)
+            return True
+        except urllib.error.HTTPError:
+            return True   # it answered, with an error: still running
+        except Exception:
+            continue
+    return False
 
 
 def main():
@@ -669,7 +701,7 @@ def main():
     args = parser.parse_args()
 
     if args.reset_password:
-        raise SystemExit(_reset_password())
+        raise SystemExit(_reset_password(args.port))
 
     # SECURITY: don't silently expose an unauthenticated dashboard.
     if args.host not in ("127.0.0.1", "::1", "localhost") and not config.is_dashboard_auth_required():

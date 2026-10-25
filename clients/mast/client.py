@@ -450,7 +450,7 @@ class MastClient:
         mime = mimetypes.guess_type(image_path)[0] or "image/jpeg"
         headers = {"Authorization": f"Bearer {self.access_token}"}
         try:
-            with open(image_path, "rb") as f:
+            with open(image_path, "rb") as f:  # noqa: ASYNC230
                 files = {"file": (os.path.basename(image_path), f, mime)}
                 data = {"description": description} if description else None
                 resp = await self._http.post(

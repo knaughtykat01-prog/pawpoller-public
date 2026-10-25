@@ -313,3 +313,17 @@ def test_youtube_is_registered_everywhere():
     assert "ytPollLogTable(polls)" in comp and "ytTopList(" in comp
     api_js = (root / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
     assert "ytConnect(data)" in api_js and "getYTAuthorizeUrl" in api_js
+
+
+def test_switching_account_forgets_the_old_channel(monkeypatch):
+    # The reused client cached the first account's channel, so a second YouTube account
+    # polled and stored the first one's videos (the reset cleared a field that doesn't exist).
+    from polling import yt_poller, loop_bound
+    c = YtClient(client_id="i", client_secret="s", access_token="a1", refresh_token="r1", expires_at=0.0)
+    c._channel = {"id": "UC_first"}
+    monkeypatch.setattr(yt_poller, "_yt_client", c)
+    monkeypatch.setattr(loop_bound, "reusable", lambda cl: cl is not None)
+    monkeypatch.setattr(loop_bound, "pin", lambda cl: cl)
+    got = yt_poller._get_or_create_client({"yt_client_id": "i", "yt_client_secret": "s",
+                                           "yt_access_token": "a2", "yt_refresh_token": "r2"})
+    assert got is c and c._channel is None and c.refresh_token == "r2"

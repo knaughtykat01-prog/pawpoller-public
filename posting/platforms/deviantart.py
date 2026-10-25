@@ -276,7 +276,7 @@ class DeviantArtPoster(PlatformPoster):
                 # Literature: read story content + create the deviation.
                 body = ""
                 if package.file_path:
-                    with open(package.file_path, "r", encoding="utf-8") as f:
+                    with open(package.file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
                         body = f.read()
                 if not body:
                     body = package.description
@@ -388,7 +388,7 @@ class DeviantArtPoster(PlatformPoster):
             # did not, which is how an artwork package's image reached open().
             skip_content = bool(package.extra.get("skip_content_refresh", False))
             if package.file_path and not skip_content:
-                with open(package.file_path, "r", encoding="utf-8") as f:
+                with open(package.file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
                     body = f.read()
 
             is_mature, _, _ = _rating_to_da(package.rating)
@@ -486,7 +486,7 @@ class DeviantArtPoster(PlatformPoster):
 
             client, token = await self._ensure_client()
 
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
                 body = f.read()
 
             resp = await client.oauth_update_literature(

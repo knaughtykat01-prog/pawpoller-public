@@ -304,9 +304,9 @@ class YtClient:
                            category_id: str = DEFAULT_CATEGORY, privacy: str = "private",
                            made_for_kids: bool = False, mime: str = "video/mp4") -> dict:
         """The resumable upload. Returns {"success", "id", "url", "privacy"} or {"success": False, "error"}."""
-        if not os.path.isfile(file_path):
+        if not os.path.isfile(file_path):  # noqa: ASYNC240
             return {"success": False, "error": f"file not found: {file_path}"}
-        size = os.path.getsize(file_path)
+        size = os.path.getsize(file_path)  # noqa: ASYNC240
         if size > MAX_BYTES:
             return {"success": False, "error": "YouTube takes files up to 256 GB"}
         meta = {"snippet": {"title": (title or os.path.basename(file_path))[:TITLE_MAX], "description": description or "",
@@ -325,7 +325,7 @@ class YtClient:
         session = r.headers["location"]
         body: dict = {}
         async with httpx.AsyncClient(timeout=CHUNK_TIMEOUT) as up:
-            with open(file_path, "rb") as fh:
+            with open(file_path, "rb") as fh:  # noqa: ASYNC230
                 offset = 0
                 while offset < size:
                     blob = fh.read(CHUNK)
@@ -354,9 +354,9 @@ class YtClient:
         return {"success": True, "id": vid, "url": parsed["link"], "privacy": parsed["privacy"] or meta["status"]["privacyStatus"]}
 
     async def set_thumbnail(self, video_id: str, image_path: str) -> dict:
-        if not os.path.isfile(image_path) or os.path.getsize(image_path) > THUMB_MAX_BYTES:
+        if not os.path.isfile(image_path) or os.path.getsize(image_path) > THUMB_MAX_BYTES:  # noqa: ASYNC240
             return {"success": False, "error": "thumbnail missing or over 2 MB"}
-        with open(image_path, "rb") as fh:
+        with open(image_path, "rb") as fh:  # noqa: ASYNC230
             data = fh.read()
         try:
             r = await self._request("POST", f"{UPLOAD_BASE}/thumbnails/set", params={"videoId": video_id, "uploadType": "media"},

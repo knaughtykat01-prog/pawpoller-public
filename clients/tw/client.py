@@ -669,7 +669,7 @@ class TWClient:
         try:
             url = "https://upload.x.com/1.1/media/upload.json"
             headers = await self._write_headers("POST", url)
-            with open(image_path, "rb") as f:
+            with open(image_path, "rb") as f:  # noqa: ASYNC230
                 files = {"media": (os.path.basename(image_path), f, mime)}
                 resp = await self._http.post(url, files=files, timeout=120.0, headers=headers)
             if resp.status_code != 200:
@@ -701,10 +701,10 @@ class TWClient:
         import os
         if not (self.auth_token and self.ct0):
             return None
-        if not os.path.isfile(video_path):
+        if not os.path.isfile(video_path):  # noqa: ASYNC240
             self.last_error = f"File not found: {video_path}"
             return None
-        size = os.path.getsize(video_path)
+        size = os.path.getsize(video_path)  # noqa: ASYNC240
         mime = mimetypes.guess_type(video_path)[0] or "video/mp4"
         url = "https://upload.x.com/1.1/media/upload.json"
         try:
@@ -722,7 +722,7 @@ class TWClient:
                 self.last_error = "X accepted the video INIT but returned no media id"
                 return None
             # APPEND — one multipart request per segment.
-            with open(video_path, "rb") as fh:
+            with open(video_path, "rb") as fh:  # noqa: ASYNC230
                 index = 0
                 while True:
                     blob = fh.read(self.VIDEO_SEGMENT)

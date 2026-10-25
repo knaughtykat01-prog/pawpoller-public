@@ -336,7 +336,7 @@ class FurAffinityPoster(PlatformPoster):
             fa = await client._get_fa_http()
 
             import os
-            with open(file_path, "rb") as f:
+            with open(file_path, "rb") as f:  # noqa: ASYNC230
                 file_data = f.read()
 
             edit_url = f"https://www.furaffinity.net/controls/submissions/changestory/{external_id}/"

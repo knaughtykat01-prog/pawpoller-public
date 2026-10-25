@@ -181,6 +181,23 @@ def get_snapshots(conn: sqlite3.Connection, submission_id: int, start: str | Non
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
+CHART_POINTS = 300
+
+
+def thin_series(snaps: list[dict], n: int = CHART_POINTS) -> list[dict]:
+    """Every site's /aggregate series, cut to about *n* evenly spaced polls for its chart (CHARTTHIN).
+
+    A seat's Overview built 27,256 points for charts a few hundred pixels wide. The series are
+    running totals in time order and are only ever drawn, so an even sample that keeps the first
+    and last poll draws the same line. ponytail: even spacing, not LTTB; a one-poll spike between
+    samples can drop out, so switch if a chart ever needs short-lived peaks.
+    """
+    if not isinstance(snaps, list) or len(snaps) <= n:
+        return snaps
+    step = (len(snaps) - 1) / (n - 1)
+    return [snaps[round(i * step)] for i in range(n)]
+
+
 def get_aggregate_snapshots(conn: sqlite3.Connection, start: str | None = None, end: str | None = None, account_id: int | None = None) -> list[dict]:
     """Aggregate time-series: sum of views/faves/comments across ALL submissions per poll timestamp.
 

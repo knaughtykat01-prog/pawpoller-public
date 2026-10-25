@@ -81,7 +81,8 @@ window.Artwork = {
             <div class="page-header">
                 <h1>New artwork</h1>
                 <p class="muted"><a href="#/library/type/artwork">← Back to Library</a>
-                    · <a href="#/artwork/quick">⚡ Quick publish</a> for the one-screen version</p>
+                    · <a href="#/artwork/quick">⚡ Quick publish</a> for the one-screen version
+                    · <a href="#" data-pb-import>Bring in from PostyBirb</a></p>
             </div>
             <div class="artwork-upload">
                 <div class="artwork-upload-col">
@@ -107,6 +108,7 @@ window.Artwork = {
                         <label class="field">Description
                             <textarea id="art-desc" rows="4" placeholder="Caption / description"></textarea>
                         </label>
+                        <button type="button" class="btn btn-sm" data-saved-desc="art-desc">📝 Saved description</button>
                         <label class="field">Alt text <span class="muted">(describes the image for screen readers; used on Bluesky)</span>
                             <input type="text" id="art-alt" placeholder="e.g. A grey wolf in a red jacket grins at the viewer">
                         </label>
@@ -123,6 +125,7 @@ window.Artwork = {
                             <textarea id="art-tags" rows="2" placeholder="tag one, tag two, tag three"></textarea>
                         </label>
                         <button type="button" class="btn btn-sm" id="art-tag-browse">🏷️ Browse tag library</button>
+                        <button type="button" class="btn btn-sm" data-tag-group="art-tags">➕ Tag group</button>
                     </div>
                     <div class="card">
                         <h3>Publish to</h3>

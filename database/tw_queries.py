@@ -193,6 +193,15 @@ def get_tw_last_poll_by_account(conn: sqlite3.Connection) -> dict[int, str]:
     return {r["account_id"]: r["last_poll"] for r in rows if r["last_poll"]}
 
 
+def tw_came_back_empty_before(conn: sqlite3.Connection, account_id: int, log_id: int) -> bool:
+    """Whether this account's previous finished X check also brought back no tweets and wasn't a
+    clean success (RATEWATCHMOVE: an empty, throttled check twice running reads as failed)."""
+    row = conn.execute(
+        "SELECT status, submissions_found FROM tw_poll_log WHERE account_id = ? AND id < ? "
+        "AND status != 'running' ORDER BY id DESC LIMIT 1", (account_id, log_id)).fetchone()
+    return bool(row) and row["status"] in ("partial", "failed") and not row["submissions_found"]
+
+
 def get_tw_poll_log(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
     rows = conn.execute("SELECT * FROM tw_poll_log ORDER BY started_at DESC LIMIT ?", (limit,)).fetchall()
     return [dict(r) for r in rows]

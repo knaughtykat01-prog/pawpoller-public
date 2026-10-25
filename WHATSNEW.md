@@ -2,6 +2,36 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.88.0] - 2026-10-25 - Sign in without copying, and bring in PostyBirb
+
+> - On the desktop app, press Sign in for FurAffinity, X, Newgrounds or Itaku and sign in on the site's own page. Nothing to copy.
+> - On a server or hosted seat, press Sign in with the PawPoller app: type the code it shows into the desktop app and sign in there.
+> - PawPoller checks the sign-in belongs to the right account before saving it, so a mix-up can't connect the wrong one.
+> - Copying cookies is still there under Other ways to connect, and the guides now have the Firefox steps too.
+> - Bring your PostyBirb submissions into your Library any time: Settings → Data → Bring in from PostyBirb.
+> - Each one keeps its picture, title, description, tags and rating. Anything already in your Library is skipped.
+> - On a server or hosted seat, upload a zip of your PostyBirb folder. It is deleted as soon as you finish.
+> - Logins from PostyBirb are never ticked for you: tick only the accounts that are yours.
+> - New: saved descriptions and tag groups. Drop one into any piece from the description or tags box; manage them in Settings → Saved text.
+> - PostyBirb's description templates and tag groups come in too, and PostyBirb descriptions now arrive as plain text, not web code.
+> - When you run PawPoller yourself, your account no longer needs an email. Leave it blank and nothing is sent anywhere.
+> - Forgot your password with no email? The sign-in page now shows the exact steps to set a new one on the machine PawPoller runs on.
+> - On Windows, a new Start menu item, Reset PawPoller password, does it without typing a command.
+> - You can add or remove your account email in Settings → Security. Hosted seats still need one.
+> - Instagram posts from the desktop app work again for people who use the PawPoller relay. Nothing to change or update.
+> - When the relay is down, the error now says so in one plain sentence instead of showing a web page's code.
+> - The Overview's charts load faster on a hosted seat: each one now draws about 300 points instead of thousands.
+> - When X sends back nothing on two checks in a row, PawPoller now says so plainly and tells you to sign in to X again.
+> - Taking your email off a self-hosted PawPoller sends a clear "email removed" message, with how to get back in.
+> - The password reset in a terminal refuses to run if it can't hide what you type, and now notices PawPoller open on any port.
+> - Small security tidy-ups: plainer error messages, and the Instagram relay counts IPv6 callers fairly.
+> - Fixed importing a story from SquidgeWorld, which failed every time.
+> - Story imports keep their chapter headings, and a stray "<" in the text no longer swallows the words after it.
+> - Podcast alerts in Telegram now show a name and an icon.
+> - With two YouTube accounts, the second one no longer picks up the first one's videos and subscriber count.
+> - "Publish draft" on a site without drafts now says so instead of showing an error page.
+> - Uploading or posting big images and videos no longer pauses the rest of the app while the file loads.
+
 ## [4.87.1] - 2026-10-24 - Setup stays open
 
 > - Leaving setup part-way no longer looks like finishing it: a strip at the top says setup isn't done, with a button back.
@@ -171,10 +201,3 @@ Generated from the release notes: each version's plain-language summary.
 
 > - Fixed posting new works to AO3 (and SquidgeWorld), which failed with "auth_error" whenever the site was showing a banner.
 > - When AO3 turns a work down (a missing title, a tag too long), PawPoller now says why and doesn't keep retrying it.
-
-## [4.78.0] - 2026-10-16 - Back on AO3
-
-> - AO3 works again: PawPoller now connects the way a current web browser does, so AO3's bot protection stops turning it away.
-> - The AO3 Test button always answers within a minute, and says plainly when AO3 isn't responding instead of showing a Cloudflare error page.
-> - Hosted seats: the server operator can now pause one site for every seat at once, for example while a site asks tools to stop. A paused site shows as skipped, "paused by the server operator".
-> - Small security tidy-ups to Rule34 connecting, file names on exports and the Inbox.

@@ -37,7 +37,7 @@ _GOOD = {"username": "SecondFur", "email": "Owner@Example.com", "password": "cor
 
 
 @pytest.mark.parametrize("change, field", [
-    ({"email": ""}, "email"), ({"email": "not-an-email"}, "email"),
+    ({"email": "not-an-email"}, "email"),   # a blank email: tests/test_email_optional.py (spec 058)
     ({"username": ""}, "username"), ({"username": "a b"}, "username"),
     ({"password": "short", "confirm": "short"}, "password"), ({"confirm": "different"}, "confirm"),
 ])

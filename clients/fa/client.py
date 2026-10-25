@@ -25,6 +25,7 @@ cookies for other parts of the system.
 
 from __future__ import annotations
 import asyncio
+from pathlib import Path
 import json
 import logging
 import os
@@ -882,13 +883,12 @@ class FAClient:
         logger.info("FA: Got upload form key")
 
         # Step 2: POST /submit/upload with file
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        file_data = await asyncio.to_thread(Path(file_path).read_bytes)
         filename = os.path.basename(file_path)
 
         upload_files = {"submission": (filename, file_data)}
-        if thumbnail_path and os.path.isfile(thumbnail_path):
-            with open(thumbnail_path, "rb") as tf:
+        if thumbnail_path and os.path.isfile(thumbnail_path):  # noqa: ASYNC240
+            with open(thumbnail_path, "rb") as tf:  # noqa: ASYNC230
                 upload_files["thumbnail"] = (os.path.basename(thumbnail_path), tf.read())
 
         upload_data = {
@@ -1138,7 +1138,6 @@ class FAClient:
         )
 
         # Check for success
-        final_url = str(resp.url)
         if resp.status_code >= 400:
             raise RuntimeError(f"FA: Edit POST failed — status {resp.status_code}")
 

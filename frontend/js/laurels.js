@@ -435,7 +435,7 @@ window.Laurels = {
     _medal(m) {
         return `
             <div class="lr-medal ${m.earned ? 'is-earned' : 'is-locked'}">
-                <div class="lr-medal-ico" aria-hidden="true">${m.icon}</div>
+                <div class="lr-medal-ico" aria-hidden="true">${this.esc(m.icon)}</div>
                 <div class="lr-medal-name">${this.esc(m.name)}</div>
                 <div class="lr-medal-desc">${this.esc(m.desc)}</div>
                 ${m.earned && m.earned_at ? `<div class="lr-medal-sub">${m.dated_exactly ? 'Earned' : 'Before'} ${this.esc(Utils.time.format(m.earned_at, { day: 'numeric', month: 'short', year: 'numeric' }))}</div>`

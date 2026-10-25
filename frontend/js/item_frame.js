@@ -1,3 +1,4 @@
+// @ts-check
 /* ── The item frame — one shape for every item page (4.34.4) ──────────────
  *
  * UNIFORMITEM phase 2. The back-bar left first, as `item_nav.js` in 4.34.3; this

@@ -7,6 +7,7 @@ Tracks views, reach, likes, comments, saved, shares. Post IDs are numeric media 
 
 from __future__ import annotations
 import asyncio
+import ipaddress
 import re
 import csv
 import io
@@ -20,6 +21,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from starlette.concurrency import run_in_threadpool
 
 from database.db import get_connection
+from database.queries import thin_series
 from database import ig_queries
 from polling.ig_poller import run_ig_poll_cycle, ig_poll_progress
 from polling.background import spawn_poll
@@ -141,8 +143,8 @@ async def ig_stash_pubmedia(file: UploadFile = File(...)):
         raise HTTPException(413, "Image too large (max 12 MB)")
     try:
         token = ig_media.stash_bytes(data)
-    except Exception as e:
-        raise HTTPException(400, f"Could not process the file: {e}")
+    except Exception:
+        raise HTTPException(400, "That file isn't a picture PawPoller can read.")
     return {"token": token, "url": ig_media.public_url(base, token)}
 
 
@@ -166,17 +168,30 @@ def _client_ip(request: Request) -> str:
     PAWPOLLER_FORWARDED_IPS — the real peer when nothing is trusted, and the forwarded
     address only when the proxy is.
     """
-    return request.client.host if request.client else "?"
+    host = request.client.host if request.client else "?"
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    # An IPv6 caller is usually handed a whole /64, and could rotate through it past the cap (SEC048).
+    return f"{ipaddress.ip_network(f'{ip}/64', strict=False)}" if ip.version == 6 and not ip.ipv4_mapped else host
+
+
+def forget_old_addresses(now: float | None = None) -> None:
+    """Drop every address whose window has passed (LEGALPAGES, 4.58.0): the privacy policy says the
+    relay keeps an address only for the 10-minute rate window. Runs on every upload, and once a
+    minute on the standalone relay (spec 048), so a quiet relay doesn't keep the last sender."""
+    window = config.IG_RELAY_PER_IP[1]
+    now = time.time() if now is None else now
+    # list(): the relay's sweep thread runs this while an upload may add an address (security review, 048).
+    for k in [k for k, v in list(_RELAY_HITS.items()) if not v or now - v[-1] >= window]:
+        _RELAY_HITS.pop(k, None)
 
 
 def _relay_rate_ok(ip: str, now: float | None = None) -> bool:
     limit, window = config.IG_RELAY_PER_IP
     now = time.time() if now is None else now
-    # Forget every address whose window has passed, on every call (LEGALPAGES, 4.58.0): the privacy
-    # policy says the relay keeps an address only for the 10-minute rate window. Before, stale
-    # addresses were dropped only once the table passed 5,000, so they stayed until a restart.
-    for k in [k for k, v in _RELAY_HITS.items() if not v or now - v[-1] >= window]:
-        _RELAY_HITS.pop(k, None)
+    forget_old_addresses(now)
     hits = [t for t in _RELAY_HITS.get(ip, []) if now - t < window]
     if len(hits) >= limit:
         _RELAY_HITS[ip] = hits
@@ -259,8 +274,8 @@ async def ig_relay(request: Request):
             token = await run_in_threadpool(ig_media.stash_bytes, data, config.IG_RELAY_MAX_PIXELS)
         except ig_media.TooManyPixels:
             raise HTTPException(413, f"Image too large (max {config.IG_RELAY_MAX_PIXELS // 1_000_000} megapixels)")
-        except Exception as e:
-            raise HTTPException(400, f"Could not process the file: {e}")
+        except Exception:
+            raise HTTPException(400, "That file isn't a picture PawPoller can read.")
     logger.info("IG relay: hosting one image (%d KB) for a remote install", len(data) // 1024)
     return {"url": ig_media.public_url(base, token), "expires_in": ig_media.TTL_SECONDS}
 
@@ -527,7 +542,7 @@ def get_ig_aggregate(
 ):
     conn = get_connection()
     try:
-        return {"snapshots": ig_queries.get_ig_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(ig_queries.get_ig_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/ig/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))

@@ -16,6 +16,7 @@ Key details:
 
 from __future__ import annotations
 import asyncio
+from pathlib import Path
 import logging
 from typing import Any
 
@@ -467,8 +468,7 @@ class IKClient:
             raise RuntimeError(f"Itaku takes images and videos, not {kind!r}")
         collection, field, web_seg = self._COLLECTIONS[kind]
 
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        file_data = await asyncio.to_thread(Path(file_path).read_bytes)
 
         filename = os.path.basename(file_path)
         tag_json = [{"name": t} for t in (tags or [])]

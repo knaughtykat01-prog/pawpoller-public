@@ -287,9 +287,10 @@ def get_artwork_archive_path() -> Path:
     data_dir = Path("/app/data")
     if data_dir.is_dir():
         return data_dir / "artwork"
-    # Maintainer's dev checkout only — skipped on every real install.
+    # Maintainer's dev checkout only — skipped on every real install, and never under the
+    # test suite (spec 060: a test whose archive setting was missing wrote into the real one).
     dev = Path(config.resource_path(".")).parent / "m_x" / "Archives" / "Artwork"
-    if dev.is_dir():
+    if dev.is_dir() and os.environ.get("PAWPOLLER_TEST_MODE") != "1":
         return dev
     # Generic per-user default (mirrors the Docker /app/data/artwork convention).
     default = config.DATA_DIR / "artwork"

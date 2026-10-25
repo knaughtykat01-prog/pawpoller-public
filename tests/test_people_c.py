@@ -18,7 +18,7 @@ from tests.test_x_artwork_announce import _pkg, tw  # noqa: F401
 
 # ── Bluesky DIDs ─────────────────────────────────────────────────────────────
 
-def test_a_did_is_stored_once_and_forgotten_when_the_handle_is_edited(conn):
+def test_a_did_is_stored_once_and_forgotten_when_the_handle_is_edited(conn):  # noqa: F811
     key = aq.upsert_artist(conn, "SecondFur", handles={"bsky": "@second.fur.example"})
     conn.commit()
     assert aq.remember_bsky_did(conn, "Second.Fur.Example", "did:plc:aaa") == 1
@@ -33,7 +33,7 @@ def test_a_did_is_stored_once_and_forgotten_when_the_handle_is_edited(conn):
     assert key
 
 
-def test_a_mention_uses_the_stored_did_and_needs_no_lookup(conn, monkeypatch):
+def test_a_mention_uses_the_stored_did_and_needs_no_lookup(conn, monkeypatch):  # noqa: F811
     from clients.bsky.client import BskyClient
     aq.upsert_artist(conn, "SecondFur", handles={"bsky": "second.fur.example"})
     aq.remember_bsky_did(conn, "second.fur.example", "did:plc:stored")
@@ -50,7 +50,7 @@ def test_a_mention_uses_the_stored_did_and_needs_no_lookup(conn, monkeypatch):
     assert facets and facets[0]["features"][0]["did"] == "did:plc:stored" and looked_up == []
 
 
-def test_a_fresh_resolve_is_remembered_for_a_registry_handle(conn, monkeypatch):
+def test_a_fresh_resolve_is_remembered_for_a_registry_handle(conn, monkeypatch):  # noqa: F811
     from clients.bsky.client import BskyClient
     aq.upsert_artist(conn, "SecondFur", handles={"bsky": "second.fur.example"})
     conn.commit()
@@ -66,7 +66,7 @@ def test_a_fresh_resolve_is_remembered_for_a_registry_handle(conn, monkeypatch):
 
 # ── X photo tags ─────────────────────────────────────────────────────────────
 
-def test_only_consented_x_handles_reach_the_package(conn, archive):
+def test_only_consented_x_handles_reach_the_package(conn, archive):  # noqa: F811
     k2 = aq.upsert_artist(conn, "SecondFur", handles={"tw": "@SecondFur"}, mention={"tw": True})
     k3 = aq.upsert_artist(conn, "ThirdFur", handles={"tw": "ThirdFur"})                # mention off
     conn.commit()
@@ -77,7 +77,7 @@ def test_only_consented_x_handles_reach_the_package(conn, archive):
     assert "tw_photo_tags" not in ar.build_artwork_package(ar.load_artwork("Tagged"), "bsky").extra
 
 
-def test_the_poster_tags_only_when_the_option_is_on(tw):
+def test_the_poster_tags_only_when_the_option_is_on(tw):  # noqa: F811
     poster, made, img = tw
     asyncio.run(poster.post(_pkg(file_path=img, extra={"tw_photo_tags": ["SecondFur", "Nobody"]})))
     assert made[0].tagged is None and not any(c[0] == "lookup" for c in made[0].calls)   # off by default
@@ -93,7 +93,7 @@ def test_the_client_caps_tags_at_ten():
 
 # ── the self-link ────────────────────────────────────────────────────────────
 
-def test_a_self_drawn_piece_names_you_on_an_announcer_only_when_asked(conn, archive):
+def test_a_self_drawn_piece_names_you_on_an_announcer_only_when_asked(conn, archive):  # noqa: F811
     ink, tg = _persona_with_account(conn, "Inkwolf", platform="tg")
     key = aq.upsert_artist(conn, "Inkwolf", handles={"tg": "inkwolf"}, persona_id=ink)
     conn.commit()
@@ -105,7 +105,7 @@ def test_a_self_drawn_piece_names_you_on_an_announcer_only_when_asked(conn, arch
     assert "Art by" in pkg.description and "inkwolf" in pkg.description
 
 
-def test_the_self_link_never_reaches_a_gallery_site(conn, archive):
+def test_the_self_link_never_reaches_a_gallery_site(conn, archive):  # noqa: F811
     ink, e6 = _persona_with_account(conn, "Inkwolf")
     key = aq.upsert_artist(conn, "Inkwolf", handles=INK["handles"], persona_id=ink)
     conn.commit()

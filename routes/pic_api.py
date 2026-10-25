@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 import config
 from database import pic_queries
 from database.db import get_connection
+from database.queries import thin_series
 from polling.background import spawn_poll
 from polling.pic_poller import pic_poll_progress, run_pic_poll_cycle
 
@@ -198,7 +199,7 @@ def get_pic_aggregate(start: Optional[str] = Query(None), end: Optional[str] = Q
                       account_id: int | None = Query(None)):
     conn = get_connection()
     try:
-        return {"snapshots": pic_queries.get_pic_aggregate(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(pic_queries.get_pic_aggregate(conn, start, end, account_id=account_id))}
     finally:
         conn.close()
 

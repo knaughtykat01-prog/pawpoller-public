@@ -1307,6 +1307,7 @@ const API = {
     addAccountEmail(email, current_password) { return this.post('/api/auth/email', { email, current_password }, { quiet: [400, 401] }); },
     acceptLegal(terms_version, privacy_version, hosted_version) { return this.post('/api/legal/accept', { terms_version, privacy_version, hosted_version }, { quiet: [409] }); },
     // The account email's codes (4.68.0, spec 033 phase 6)
+    removeAccountEmail(password) { return this.post('/api/auth/email/remove', { password }, { quiet: [401, 403] }); },
     sendEmailCode() { return this.post('/api/auth/email/send-code', {}, { quiet: [400, 429] }); },
     confirmEmail(code) { return this.post('/api/auth/email/confirm', { code }, { quiet: [400] }); },
     resetRequest(who) { return this.post('/api/auth/reset-request', { who }, { quiet: [429] }); },
@@ -1315,6 +1316,39 @@ const API = {
     pbScan() { return this.get('/api/pb-import/scan'); },
     pbApply(ids) { return this.post('/api/pb-import/apply', { ids }); },
     pbSkip() { return this.post('/api/pb-import/skip', {}); },
+    // Spec 060: the PostyBirb library, and (server/seat) an uploaded PostyBirb folder. `uid` null = this computer.
+    pbSubmissions(uid, page) { return this.get(uid ? `/api/pb-import/uploads/${uid}/submissions` : '/api/pb-import/submissions', { page: page || 0 }); },
+    pbSubmissionsApply(uid, body) { return this.post(uid ? `/api/pb-import/uploads/${uid}/submissions/apply` : '/api/pb-import/submissions/apply', body); },
+    pbSubmissionsStatus() { return this.get('/api/pb-import/submissions/status'); },
+    pbThumbUrl(uid, id) { return uid ? `/api/pb-import/uploads/${uid}/thumb/${encodeURIComponent(id)}` : `/api/pb-import/thumb/${encodeURIComponent(id)}`; },
+    pbLogins(uid) { return uid ? this.get(`/api/pb-import/uploads/${uid}/logins`) : this.pbScan(); },
+    pbLoginsApply(uid, ids) { return uid ? this.post(`/api/pb-import/uploads/${uid}/logins/apply`, { ids }) : this.pbApply(ids); },
+    pbUploadStart() { return this.post('/api/pb-import/uploads', {}); },
+    pbUploadFinish(uid) { return this.post(`/api/pb-import/uploads/${uid}/finish`, {}); },
+    pbUploadCancel(uid) { return this.del(`/api/pb-import/uploads/${uid}`); },
+    /* One zip into the session, in pieces under Cloudflare's 100 MB limit (the move flow's shape). */
+    async pbUploadFile(uid, file, onProgress) {
+        const st = await this.post(`/api/pb-import/uploads/${uid}/files`, { size: file.size });
+        let at = st.received, tries = 0;
+        onProgress && onProgress(at, file.size);
+        while (at < file.size) {
+            const piece = file.slice(at, Math.min(at + st.piece_bytes, file.size));
+            try {
+                const r = await fetch(`/api/pb-import/uploads/${uid}/files/${st.file}?offset=${at}`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: piece,
+                });
+                const data = await r.json().catch(() => ({}));
+                if (r.status === 409 && data.detail && typeof data.detail.received === 'number') at = data.detail.received;
+                else if (!r.ok) throw Object.assign(new Error((data && data.detail) || `Upload stopped (${r.status}).`), { fatal: r.status < 500 });
+                else at = data.received;
+                tries = 0;
+            } catch (err) {
+                if (err.fatal || ++tries > 5) throw err.fatal ? err : new Error('The connection keeps dropping. Start the upload again.');
+                await new Promise(res => setTimeout(res, 2000 * tries));
+            }
+            onProgress && onProgress(at, file.size);
+        }
+    },
     dashboardLogout() { return this.post('/api/auth/dashboard-logout'); },
     dashboardChangePassword(data) { return this.post('/api/auth/dashboard-change-password', data); },
     totpSetup() { return this.post('/api/auth/totp-setup'); },
@@ -1563,6 +1597,13 @@ const API = {
 
     /* ── Browser login (embedded pywebview popup) ────────────── */
     getBrowserLoginPlatforms() { return this.get('/api/settings/browser-login/platforms'); },
+    // Spec 059: Sign in for a server — one-time codes and the owner's plain-http opt-in.
+    makeSigninCode(platform, accountId = null, username = '') {
+        return this.post('/api/settings/signin-codes', { platform, account_id: accountId, username });
+    },
+    getSigninCode(id) { return this.get(`/api/settings/signin-codes/${encodeURIComponent(id)}`); },
+    getSigninHelperHttp() { return this.get('/api/settings/signin-helper-http'); },
+    setSigninHelperHttp(body) { return this.put('/api/settings/signin-helper-http', body); },
     // accountId (4.6.3): save the captured cookies under THAT account's keys;
     // null = the platform's default slot, as before.
     browserLogin(platform, extraFields = {}, accountId = null) {

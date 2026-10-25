@@ -34,6 +34,7 @@ from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse
 
 from database.db import get_connection
+from database.queries import thin_series
 from database import ws_queries
 from polling.ws_poller import run_ws_poll_cycle, ws_poll_progress
 from polling.background import spawn_poll
@@ -344,7 +345,7 @@ def get_ws_aggregate(
     """
     conn = get_connection()
     try:
-        return {"snapshots": ws_queries.get_ws_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(ws_queries.get_ws_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/ws/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))

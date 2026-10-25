@@ -124,7 +124,7 @@ class InkbunnyPoster(PlatformPoster):
             # Step 2: Read story content from BBCode file for the story text field
             story_text = None
             if package.file_path and package.file_type == "bbcode":
-                with open(package.file_path, "r", encoding="utf-8") as f:
+                with open(package.file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
                     story_text = f.read()
 
             # Step 3: Set metadata. Visibility chosen based on draft mode.
@@ -196,7 +196,7 @@ class InkbunnyPoster(PlatformPoster):
                 and package.file_path
                 and package.file_type == "bbcode"
             ):
-                with open(package.file_path, "r", encoding="utf-8") as f:
+                with open(package.file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
                     story_text = f.read()
 
             await client.edit_submission(
@@ -272,7 +272,7 @@ class InkbunnyPoster(PlatformPoster):
         _t = self._start_timer()
         try:
             client = await self._ensure_client()
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
                 story_text = f.read()
             await client.edit_submission(
                 int(external_id),

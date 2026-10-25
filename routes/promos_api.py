@@ -18,6 +18,7 @@ Routes (literal paths before ``/{promo_id}``):
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -292,9 +293,9 @@ async def create_promo(spec: str = Form(...), png: UploadFile = File(...),
         png_file = f"{pid}.png"
         bg_file = f"{pid}-bg{bg_ext}" if bg_ext else None
         d = promos_dir()
-        _write(d / png_file, png_bytes)
+        await asyncio.to_thread(_write, d / png_file, png_bytes)
         if bg_file:
-            _write(d / bg_file, bg_bytes)
+            await asyncio.to_thread(_write, d / bg_file, bg_bytes)
         pdb.set_files(conn, pid, png_file, bg_file)
         row = pdb.get_promo(conn, pid)
     finally:
@@ -370,11 +371,11 @@ async def update_promo(promo_id: int, spec: str = Form(...), png: UploadFile = F
         if bg_ext:
             _remove(bg_file)
             bg_file = f"{promo_id}-bg{bg_ext}"
-            _write(d / bg_file, bg_bytes)
+            await asyncio.to_thread(_write, d / bg_file, bg_bytes)
         elif clear_background in ("1", "true", "yes"):
             _remove(bg_file)
             bg_file = None
-        _write(d / row["png_file"], png_bytes)
+        await asyncio.to_thread(_write, d / row["png_file"], png_bytes)
         pdb.update_promo(conn, promo_id, story_name=story_name, title=title[:200], spec_json=json.dumps(parsed),
                          width=w, height=h, bg_file=bg_file)
         row = pdb.get_promo(conn, promo_id)

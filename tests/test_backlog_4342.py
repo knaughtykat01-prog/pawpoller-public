@@ -191,7 +191,6 @@ class TestAHandleIsAnIdentityNotAServer:
     def test_an_existing_install_heals_without_reconnecting(self):
         """The session check already calls validate_session -- persisting there means
         nobody has to know to go and press Connect again."""
-        import inspect
         from polling import session_check
         src = inspect.getsource(session_check._validate)
         i = src.index('elif code == "mast"')

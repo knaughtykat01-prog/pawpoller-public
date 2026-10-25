@@ -292,7 +292,7 @@ def top_pieces(conn, changes_by_site: dict, start: datetime, end: datetime, limi
         x = g["gain"]
         return (x["views"] + x["score"] + 5 * x["faves"] + 10 * x["comments"], x["views"])
     out = []
-    for key, g in sorted(groups.items(), key=lambda kv: rank(kv[1]), reverse=True)[:limit]:
+    for _key, g in sorted(groups.items(), key=lambda kv: rank(kv[1]), reverse=True)[:limit]:
         ref = g["ref"]
         piece = {"gain": g["gain"], "milestones": g["milestones"][:2],
                  "sites": [{"platform": c, "label": pm.BY_CODE[c].label_for(_headline_metric(c)), "gain": n}

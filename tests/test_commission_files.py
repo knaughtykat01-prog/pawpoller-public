@@ -11,7 +11,7 @@ from database import commissions_queries as cq
 def test_archive_hides_from_default_list():
     conn = get_connection()
     try:
-        a = cq.create_commission(conn, client_name="active")
+        cq.create_commission(conn, client_name="active")
         b = cq.create_commission(conn, client_name="done")
         conn.commit()
         cq.set_archived(conn, b, True)

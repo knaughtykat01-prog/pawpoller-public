@@ -779,8 +779,8 @@ def _best_windows(grid, limit: int = 3) -> list[dict]:
         best, d, h = max(seeds, key=lambda s: (s[0], -s[1], -s[2]))   # ties: earliest day, hour
 
         def ok(x):
-            return (0 <= x < 24 and med[d][x] is not None and (d, x) not in used
-                    and med[d][x] >= 0.85 * best)
+            return (0 <= x < 24 and med[d][x] is not None and (d, x) not in used  # noqa: B023
+                    and med[d][x] >= 0.85 * best)  # noqa: B023
         h0 = h1 = h
         while ok(h0 - 1):
             h0 -= 1

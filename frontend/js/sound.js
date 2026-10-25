@@ -1,3 +1,4 @@
+// @ts-check
 /* Sounds (spec 049, TEXTURE) — one gate for every sound the app plays.
  *
  *   Sound.play(name)   name = a file stem in /sounds/ (see sounds/SOURCES.md)

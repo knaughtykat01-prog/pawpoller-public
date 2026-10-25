@@ -145,7 +145,7 @@ def _fake_client(remote_manifest, art_root, story_root):
     class _R:
         def __init__(self, code, content=b"", payload=None):
             self.status_code, self.content, self._p = code, content, payload
-        def json(self): return self._p
+        def json(self): return self._p  # noqa: F811
         text = ""
 
     class _Client:

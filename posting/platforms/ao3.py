@@ -577,7 +577,7 @@ class AO3Poster(PlatformPoster):
                 chapter_1_title = ""
                 content = self._read_full_story_html(story)
                 if not content and package.file_path:
-                    with open(package.file_path, "r", encoding="utf-8") as f:
+                    with open(package.file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
                         content = f.read()
                 if not content:
                     return PostResult(
@@ -735,7 +735,7 @@ class AO3Poster(PlatformPoster):
                             position=ch.index,
                             publish=publish_this_chapter,
                         )
-                    except Exception as ch_err:
+                    except Exception:
                         # Checkpoint partial progress before bubbling the
                         # failure up — the retry will pick up from the next
                         # missing chapter rather than recreating the work.
@@ -1015,7 +1015,7 @@ class AO3Poster(PlatformPoster):
         try:
             client = await self._ensure_client()
 
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
                 content = f.read()
 
             chapters = await client.get_chapter_ids(external_id)

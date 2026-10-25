@@ -16,6 +16,7 @@ from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse
 
 from database.db import get_connection
+from database.queries import thin_series
 from database import fn_queries
 from polling.fn_poller import run_fn_poll_cycle, fn_poll_progress
 from polling.background import spawn_poll
@@ -272,7 +273,7 @@ def get_fn_aggregate(start: Optional[str] = Query(None), end: Optional[str] = Qu
                      account_id: int | None = Query(None)):
     conn = get_connection()
     try:
-        return {"snapshots": fn_queries.get_fn_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(fn_queries.get_fn_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/fn/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))

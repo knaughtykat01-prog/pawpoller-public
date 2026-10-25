@@ -122,7 +122,6 @@ class TestTheRebuildSwapIsOneTransaction:
 
     def test_all_three_swaps_are_wrapped(self):
         from database import db as db_module
-        src = inspect.getsource(db_module)
         for fn in ("_rebuild_publications", "_rebuild_publications_content_type",
                    "_rebuild_publications_variant_key"):
             body = inspect.getsource(getattr(db_module, fn))
@@ -147,9 +146,7 @@ class TestTheRebuildSwapIsOneTransaction:
         c.execute("CREATE TABLE publications (pub_id INTEGER PRIMARY KEY, story_name TEXT)")
         c.execute("INSERT INTO publications (story_name) VALUES ('keep me')")
         # No content_type column and no *_new table: the vk rebuild will raise part-way.
-        with pytest.raises(Exception):
+        with pytest.raises(sqlite3.OperationalError):
             db_module._rebuild_publications_variant_key(c, None)
-            c.execute("DROP TABLE publications_vk_new")
-            raise RuntimeError("forced")
         rows = [r[0] for r in c.execute("SELECT story_name FROM publications")]
         assert rows == ["keep me"], "the original table must survive a failed swap"

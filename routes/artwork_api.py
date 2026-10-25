@@ -11,6 +11,7 @@ artwork-scoped publications/log, image serving, and desktop⇄server media sync.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -198,7 +199,7 @@ async def upload_artwork(
     if kind != "image" and not thumb_bytes:
         raise HTTPException(400, detail=f"A {kind} piece needs a poster image — the page makes one when you pick the file")
     try:
-        name = artwork_reader.create_artwork(
+        name = await asyncio.to_thread(artwork_reader.create_artwork,
         title=meta.get("title", ""),
         image_filename=file.filename or "image.png",
         image_bytes=image_bytes,
@@ -324,7 +325,7 @@ async def set_poster(name: str, file: UploadFile = File(...), media: str = Form(
     while target.exists():
         target = folder / f"poster_v{n}{ext}"
         n += 1
-    target.write_bytes(data)
+    await asyncio.to_thread(target.write_bytes, data)
     updates = {"thumbnail": target.name}
     meta = _parse_metadata(media)
     if art.media_kind != "image":
@@ -955,16 +956,17 @@ async def artwork_sync_upload(file: UploadFile = File(...)):
 
     try:
         contents = await file.read()
-        buf = io.BytesIO(contents)
-        with tarfile.open(fileobj=buf, mode="r:gz") as tar:
-            # 3.6.0: was a substring test for "/" and ".." — which passes a
-            # Windows absolute path ("C:\...", no leading slash, no dots) and
-            # anything that reaches outside via a link already on disk. The
-            # shared helper resolves each member against the base instead.
-            try:
+        def _extract():   # a whole archive: off the event loop
+            with tarfile.open(fileobj=io.BytesIO(contents), mode="r:gz") as tar:
+                # 3.6.0: was a substring test for "/" and ".." — which passes a
+                # Windows absolute path ("C:\...", no leading slash, no dots) and
+                # anything that reaches outside via a link already on disk. The
+                # shared helper resolves each member against the base instead.
                 mirror_core.safe_extract(tar, archive_path)
-            except mirror_core.MirrorSecurityError as e:
-                raise HTTPException(400, detail=str(e))
+        try:
+            await asyncio.to_thread(_extract)
+        except mirror_core.MirrorSecurityError as e:
+            raise HTTPException(400, detail=str(e))
         art_dirs = [d for d in archive_path.iterdir()
                     if d.is_dir() and not d.name.startswith(".")]
         return {

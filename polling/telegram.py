@@ -139,8 +139,8 @@ async def send_telegram(text: str) -> bool:
 
 # ── Poll cycle summary ───────────────────────────────────────
 
-PLATFORM_EMOJI = {"ib": "🐾", "fa": "🦊", "ws": "🦎", "sf": "🐺", "sqw": "🦑", "ao3": "📖", "da": "🎨", "wp": "📙", "ik": "🎯", "bsky": "🦋", "tw": "🐦", "mast": "🐘", "tum": "📘", "pix": "🖌", "thr": "🧵", "ig": "📷", "e621": "🐉", "fn": "🌐", "fbr": "🖼", "r34": "🔞", "sc": "🎵", "ng": "🎬", "yt": "📺", "pic": "🎥", "ttv": "🟣", "tg": "✈️", "fb": "👥"}
-PLATFORM_NAME = {"ib": "Inkbunny", "fa": "FurAffinity", "ws": "Weasyl", "sf": "SoFurry", "sqw": "SquidgeWorld", "ao3": "AO3", "da": "DeviantArt", "wp": "Wattpad", "ik": "Itaku", "bsky": "Bluesky", "tw": "X/Twitter", "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads", "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "r34": "Rule34.xxx", "sc": "SoundCloud", "ng": "Newgrounds", "yt": "YouTube", "pic": "Picarto", "ttv": "Twitch", "tg": "Telegram", "fb": "Facebook"}
+PLATFORM_EMOJI = {"ib": "🐾", "fa": "🦊", "ws": "🦎", "sf": "🐺", "sqw": "🦑", "ao3": "📖", "da": "🎨", "wp": "📙", "ik": "🎯", "bsky": "🦋", "tw": "🐦", "mast": "🐘", "tum": "📘", "pix": "🖌", "thr": "🧵", "ig": "📷", "e621": "🐉", "fn": "🌐", "fbr": "🖼", "r34": "🔞", "sc": "🎵", "ng": "🎬", "yt": "📺", "pic": "🎥", "ttv": "🟣", "tg": "✈️", "fb": "👥", "pod": "🎙"}
+PLATFORM_NAME = {"ib": "Inkbunny", "fa": "FurAffinity", "ws": "Weasyl", "sf": "SoFurry", "sqw": "SquidgeWorld", "ao3": "AO3", "da": "DeviantArt", "wp": "Wattpad", "ik": "Itaku", "bsky": "Bluesky", "tw": "X/Twitter", "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads", "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "r34": "Rule34.xxx", "sc": "SoundCloud", "ng": "Newgrounds", "yt": "YouTube", "pic": "Picarto", "ttv": "Twitch", "tg": "Telegram", "fb": "Facebook", "pod": "Podcast"}
 
 
 # ── Persona / account context (multi-account notification labelling) ─────────
@@ -659,7 +659,7 @@ async def check_goals() -> None:
                         pass
             else:
                 if g["platform"] == "all":
-                    for plat_key, tbl in table_map.items():
+                    for _plat_key, tbl in table_map.items():
                         try:
                             r = conn.execute(f"SELECT COALESCE(SUM({metric}), 0) as total FROM {tbl}").fetchone()
                             current += r["total"]

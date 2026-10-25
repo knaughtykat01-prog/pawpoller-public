@@ -19,6 +19,7 @@ import secrets
 import threading
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Request, HTTPException
@@ -107,13 +108,17 @@ def dashboard_status(request: Request):
     settings = config.get_settings()
     totp_enabled = bool(settings.get("auth_totp_secret") and settings.get("auth_totp_enabled"))
     turnstile_site_key = settings.get("turnstile_site_key", "")
+    reset_email = bool(auth_required and settings.get("auth_email") and _mail_ready())
 
     return {
         "auth_required": auth_required,
         "authenticated": authenticated,
         "totp_enabled": totp_enabled,
-        # 4.68.0: "Forgot your password?" — only when a confirmed email can be mailed.
-        "reset_available": bool(auth_required and settings.get("auth_email") and _mail_ready()),
+        # Spec 058: the emailed code needs a confirmed email that can be mailed; "Forgot your
+        # password?" always shows, and install_kind picks the console steps (hosted: none).
+        "reset_email": reset_email,
+        "reset_available": reset_email,   # the 4.68.0 name, for older frontends
+        "install_kind": _install_kind(),
         # Remaining 2FA backup codes (gap-wave-4) — only meaningful to an
         # authenticated caller; drives the "regenerate" nudge in Settings.
         "backup_codes_remaining": (
@@ -304,35 +309,38 @@ def _dashboard_setup(request: Request, body: dict):
     # required email, the address password resets will go to once it is confirmed. Each
     # refusal names its field so the form can point at it.
     username = str(body.get("username") or "").strip()
-    email = normalise_email(body.get("email"))
+    typed = str(body.get("email") or "").strip()
+    email = normalise_email(typed)
     password = body.get("password", "")
     confirm = body.get("confirm", "")
 
     if not _USERNAME_RE.fullmatch(username):
         raise HTTPException(400, {"field": "username",
                                   "message": "Choose a username of 3 to 32 letters, numbers, dots, dashes or underscores."})
-    if not email:
+    # Spec 058: required on a hosted seat, optional when you host PawPoller yourself. Something
+    # typed that isn't an address is refused either way, so a typo never becomes "no email".
+    if not email and (typed or _email_required()):
         raise HTTPException(400, {"field": "email", "message": "Enter an email address, like name@example.com."})
     if len(password) < 8:
         raise HTTPException(400, {"field": "password", "message": "Use at least 8 characters."})
     if password != confirm:
         raise HTTPException(400, {"field": "confirm", "message": "The two passwords don't match."})
 
-    config.save_settings({
-        "auth_username": username,
-        "auth_password_hash": config.hash_password(password),
-        "auth_email_pending": email,
-    })
+    account = {"auth_username": username, "auth_password_hash": config.hash_password(password)}
+    if email:
+        account["auth_email_pending"] = email
+    config.save_settings(account)
     config.invalidate_auth_required_cache()
     logger.info("Dashboard account created for user '%s'", _sanitize_for_log(username))
-    import account_mail
-    account_mail.send_code("confirm", email)   # no-op when mail isn't available; the email waits
+    if email:
+        import account_mail
+        account_mail.send_code("confirm", email)   # no-op when mail isn't available; the email waits
     # Signing up signs you in. "Keep me signed in" = the existing 30-day session.
     return _session_response(request, username, bool(body.get("remember")), f"Welcome, {username}!")
 
 
 @dashboard_auth_router.post("/email")
-def set_account_email(body: dict):
+def set_account_email(request: Request, body: dict):
     """Add or change the account email (4.67.0, spec 033 US1 / spec 023 FR-009).
 
     Needs the current password. The address waits for confirmation (the confirm link
@@ -340,6 +348,7 @@ def set_account_email(body: dict):
     """
     s = config.get_settings()
     if not config.verify_password(str(body.get("current_password") or ""), s.get("auth_password_hash") or _DUMMY_HASH):
+        _wrong_password(request)
         raise HTTPException(401, {"field": "current", "message": "That isn't your current password."})
     email = normalise_email(body.get("email"))
     if not email:
@@ -348,6 +357,26 @@ def set_account_email(body: dict):
     logger.info("Auth: account email set, waiting for confirmation")
     import account_mail
     return {"status": "waiting", "sent": account_mail.send_code("confirm", email)}
+
+
+@dashboard_auth_router.post("/email/remove")
+def remove_account_email(request: Request, body: dict):
+    """Take the email off the account (spec 058): self-hosted installs only, with the password.
+
+    The confirmed address hears about it first, so a stolen session can't remove it
+    quietly. Waiting codes go with it, so a reset code sent earlier stops working.
+    """
+    if _email_required():
+        raise HTTPException(403, {"field": "", "message": "A hosted seat keeps an email so it can reset your password."})
+    s = config.get_settings()
+    if not config.verify_password(str(body.get("password") or ""), s.get("auth_password_hash") or _DUMMY_HASH):
+        _wrong_password(request)
+        raise HTTPException(401, {"field": "password", "message": "That password isn't right."})
+    import account_mail
+    account_mail.notice("email_removed", s.get("auth_email") or "")   # the confirmed address only
+    config.delete_settings_keys(["auth_email", "auth_email_pending", "auth_code_confirm", "auth_code_reset"])
+    logger.info("Auth: account email removed")
+    return {"email": "none"}
 
 
 @dashboard_auth_router.post("/email/send-code")
@@ -488,6 +517,34 @@ def _pb_present() -> bool:
     return pb_import.present()
 
 
+def _email_required() -> bool:
+    """Spec 058: a hosted seat must keep an email; a self-hosted install may have none."""
+    import legal
+    return legal.hosted()
+
+
+def _kind_signals() -> dict:
+    import legal
+    import server_updater
+    from posting.scheduler import detect_runtime_mode
+    return {"hosted": legal.hosted(), "desktop": detect_runtime_mode() == "desktop",
+            "docker": Path("/.dockerenv").exists(), "service": server_updater.managed()}
+
+
+def _install_kind() -> str:
+    """Which reset steps the Forgot page shows (spec 058). Hosted first: a seat runs in Docker
+    too, but its person can't reach the box, so it gets no console steps."""
+    s = _kind_signals()
+    return next((k for k in ("hosted", "desktop", "docker", "service") if s.get(k)), "other")
+
+
+def _wrong_password(request: Request) -> None:
+    """A wrong current password from a signed-in session counts toward the sign-in lockout
+    (spec 058 FR-SEC-004): otherwise a stolen session could guess the password freely."""
+    from dashboard import _record_auth_failure
+    _record_auth_failure(request.client.host if request.client else "unknown")
+
+
 def _mail_ready() -> bool:
     import account_mail
     return account_mail.ready()
@@ -521,7 +578,8 @@ def signup_status(request: Request):
     out = {"account": account, "authenticated": authenticated,
            "legal": legal.current(), "runtime_mode": detect_runtime_mode(),
            # 4.70.0 (spec 034): a hosted seat, and whether its invite link can still be used.
-           "hosted": legal.hosted(), "claim": not account and _claim_state() == "open"}
+           "hosted": legal.hosted(), "claim": not account and _claim_state() == "open",
+           "email_required": _email_required()}
     from dashboard import _client_is_loopback
     if authenticated or (not account and _client_is_loopback(request)):
         # No account yet: only the person at the machine sees the rest.
@@ -555,7 +613,7 @@ def dashboard_logout(request: Request):
 # -- Change Password ---------------------------------------------------------
 
 @dashboard_auth_router.post("/dashboard-change-password")
-def dashboard_change_password(body: dict):
+def dashboard_change_password(request: Request, body: dict):
     """Change the dashboard password.  Requires current password."""
     current = body.get("current_password", "")
     new_password = body.get("new_password", "")
@@ -573,6 +631,7 @@ def dashboard_change_password(body: dict):
     if not stored_hash:
         raise HTTPException(400, "No password configured.")
     if not config.verify_password(current, stored_hash):
+        _wrong_password(request)
         raise HTTPException(401, "Current password is incorrect.")
 
     config.save_settings({"auth_password_hash": config.hash_password(new_password)})

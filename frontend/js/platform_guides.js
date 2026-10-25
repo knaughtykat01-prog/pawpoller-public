@@ -20,12 +20,15 @@
 (function () {
   'use strict';
 
-  // Reusable snippet: how to copy a cookie value from a browser (FA/DA/X).
-  const COOKIE_HOWTO =
-    'To read a cookie: log in on a desktop browser, press <b>F12</b> to open ' +
-    'DevTools, go to <b>Application</b> (Chrome/Edge) or <b>Storage</b> (Firefox) ' +
-    '&rarr; <b>Cookies</b> &rarr; the site, then copy the <b>Value</b> of each ' +
-    'named cookie.';
+  // How to copy cookies out of a browser, one action per step, with the Firefox path beside
+  // the Chrome/Edge one (FFCOOKIES, spec 059). `names` is markup for the cookie names.
+  const cookieSteps = (site, names, { img }) => [
+    { t: 'Open the developer tools', b: 'On the ' + site + ' page, press <b>F12</b> (on a Mac: <b>Cmd + Option + I</b>). A panel opens beside or under the page.' },
+    { t: 'Chrome or Edge: open the cookie list', b: 'Click the <b>Application</b> tab (it may be behind <b>&raquo;</b>), then <b>Cookies</b> on the left, then the ' + site + ' address under it. A table of names and values appears.', img },
+    { t: 'Firefox: open the cookie list', b: 'Click the <b>Storage</b> tab, then <b>Cookies</b> on the left, then the ' + site + ' address under it. A table of names and values appears.' },
+    { t: 'Copy the values', b: 'Find ' + names + ' in the <b>Name</b> column. Double-click each one&rsquo;s <b>Value</b> and copy it. Treat them like a password: anyone holding them is signed in as you.' },
+  ];
+  const APP_FIRST = (site) => ({ t: 'Easiest: press Sign in', b: 'In the PawPoller desktop app, press <b>Sign in</b> beside ' + site + ' and sign in in the window that opens. On a server or seat, press <b>Sign in with the PawPoller app</b> and follow the code on screen. Then you can skip the rest of these steps.' });
 
   const GUIDES = {
 
@@ -55,11 +58,12 @@
       summary: 'Track your FA gallery stats via your session cookies.',
       need: ['A FurAffinity account', 'Your logged-in cookies (a and b)'],
       steps: [
+        APP_FIRST('FurAffinity'),
         { t: 'Log into FurAffinity', b: 'Sign in at furaffinity.net in a desktop browser.',
           link: { label: 'furaffinity.net', url: 'https://www.furaffinity.net' },
           img: { src: '/img/guides/fa/login.png', alt: 'FurAffinity\'s login form: Username, Password and the Cloudflare human check under them' } },
-        { t: 'Copy the a and b cookies', b: COOKIE_HOWTO + ' You need the two cookies named <code>a</code> and <code>b</code>.',
-          img: { src: '/img/guides/fa/devtools-cookies.png', alt: 'FurAffinity with DevTools open on Application → Cookies, the a and b rows named, their values blurred here' } },
+        ...cookieSteps('FurAffinity', 'the two cookies named <code>a</code> and <code>b</code>',
+          { img: { src: '/img/guides/fa/devtools-cookies.png', alt: 'FurAffinity with DevTools open on Application → Cookies, the a and b rows named, their values blurred here' } }),
         { t: 'Connect in PawPoller', b: 'Paste the <code>a</code> and <code>b</code> values into the FurAffinity fields in Settings.' },
       ],
       paste: 'Settings → FurAffinity → Cookie a + Cookie b',
@@ -136,8 +140,8 @@
         { t: 'Choose how to log in', b: 'Easiest is your AO3 <b>username + password</b>. Alternatively you can paste the <code>_otwarchive_session</code> cookie.',
           img: { src: '/img/guides/ao3/login-filled.png', alt: 'AO3\'s Log in form with the username typed in' } },
         { t: 'Or log in with Remember me', b: 'If you prefer the cookie: log in to AO3 on a desktop browser with the <b>Remember me</b> box ticked.' },
-        { t: 'Copy the two cookies', b: 'Press <b>F12</b> &rarr; <b>Application</b> (Chrome/Edge) or <b>Storage</b> (Firefox) &rarr; <b>Cookies</b> &rarr; the AO3 site. Copy the value of <code>_otwarchive_session</code>, then the value of <code>remember_user_token</code>.',
-          img: { src: '/img/guides/ao3/devtools-cookies.png', alt: 'AO3 with DevTools open on Application → Cookies, the _otwarchive_session row visible' } },
+        ...cookieSteps('AO3', '<code>_otwarchive_session</code>, then <code>remember_user_token</code>,',
+          { img: { src: '/img/guides/ao3/devtools-cookies.png', alt: 'AO3 with DevTools open on Application → Cookies, the _otwarchive_session row visible' } }),
         { t: 'Connect in PawPoller', b: 'Enter your username + password (or the two cookies) in the AO3 fields in Settings.',
           img: { src: '/img/guides/ao3/logged-in.png', alt: 'What a working login looks like on AO3: the Successfully logged in banner over your dashboard' } },
       ],
@@ -249,11 +253,12 @@
       summary: 'Track views/likes/replies and post to X — via your session cookies.',
       need: ['An X account', 'Two logged-in cookies: auth_token and ct0'],
       steps: [
+        APP_FIRST('X'),
         { t: 'Log into X', b: 'Sign in at x.com in a desktop browser.',
           link: { label: 'x.com', url: 'https://x.com' },
           img: { src: '/img/guides/tw/sign-in.png', alt: 'X\'s sign-in dialog: phone, Google or Apple, or e-mail / username then Continue' } },
-        { t: 'Copy auth_token and ct0', b: COOKIE_HOWTO + ' You need the cookies named <code>auth_token</code> and <code>ct0</code>.',
-          img: { src: '/img/guides/tw/devtools-cookies.png', alt: 'X with DevTools open on Application → Cookies, the auth_token and ct0 rows named, their values blurred here' } },
+        ...cookieSteps('X', 'the cookies named <code>auth_token</code> and <code>ct0</code>',
+          { img: { src: '/img/guides/tw/devtools-cookies.png', alt: 'X with DevTools open on Application → Cookies, the auth_token and ct0 rows named, their values blurred here' } }),
         { t: 'Connect in PawPoller', b: 'Paste both cookies and the X username to track in Settings.' },
       ],
       paste: 'Settings → X/Twitter → auth_token + ct0 (+ target user)',
@@ -559,6 +564,7 @@
       summary: 'Track your Art, Audio and Movie Portal submissions, and publish artwork, audio and video pieces as new projects.',
       need: ['A Newgrounds account', 'A desktop browser with DevTools (F12)'],
       steps: [
+        APP_FIRST('Newgrounds'),
         { t: 'Sign in on the website', b: 'Newgrounds has no API, so PawPoller uses your browser session. Log in at newgrounds.com.',
           link: { label: 'newgrounds.com', url: 'https://www.newgrounds.com' },
           img: { src: '/img/guides/ng/sign-in.png', alt: 'Newgrounds Passport: Username or Email, Password, Sign In With Newgrounds' } },
@@ -566,7 +572,7 @@
           img: { src: '/img/guides/ng/verify-code.png', alt: 'Newgrounds Passport asking for the Authentication Code it e-mailed (address blurred here)' } },
         { t: 'Copy the cookie header', b: 'Press <b>F12</b> &rarr; <b>Network</b>, reload the page, click the top <b>Doc</b> request (newgrounds.com), and under <b>Request Headers</b> copy the whole value of <code>cookie</code>.',
           img: { src: '/img/guides/ng/network-cookie.png', alt: 'Newgrounds with DevTools open on Network → the document request → Request Headers, the whole cookie value blurred here' } },
-        { t: 'Connect in PawPoller', b: 'Paste the cookie header in Settings (or use the browser login on the desktop app).' },
+        { t: 'Connect in PawPoller', b: 'In Settings, open <b>Other ways to connect</b> under Newgrounds and paste the cookie header.' },
       ],
       paste: 'Settings → Platforms → Newgrounds → Cookie header (or Browser login)',
       renew: { when: 'When the session expires or you log out', how: 'Sign in again and paste a fresh cookie header.' },

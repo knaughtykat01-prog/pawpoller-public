@@ -170,7 +170,16 @@ def path_for(token: str) -> Path | None:
             break
     if not _TOKEN_RE.match(token):
         return None
-    return _find(token)
+    p = _find(token)
+    # Expired is gone (spec 048): sweep() only runs on the next stash, so a quiet
+    # server would otherwise keep serving a picture past the 15 minutes it promises.
+    try:
+        if p and time.time() - p.stat().st_mtime > _TTL_SECONDS:
+            p.unlink()
+            return None
+    except OSError:
+        return None
+    return p
 
 
 def ext_for(token: str) -> str:

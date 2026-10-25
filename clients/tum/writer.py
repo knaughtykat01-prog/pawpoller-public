@@ -135,7 +135,7 @@ class TumWriter:
         handles = []
         try:
             for ident, path in (files or {}).items():
-                fh = open(path, "rb")
+                fh = open(path, "rb")  # noqa: ASYNC230
                 handles.append(fh)
                 parts.append((ident, (os.path.basename(path), fh, _mime(path))))
             r = await self._call("POST", f"/blog/{self.blog}/posts", files=parts)
@@ -158,7 +158,7 @@ class TumWriter:
             handles = []
             try:
                 for ident, path in files.items():
-                    fh = open(path, "rb")
+                    fh = open(path, "rb")  # noqa: ASYNC230
                     handles.append(fh)
                     parts.append((ident, (os.path.basename(path), fh, _mime(path))))
                 r = await self._call("PUT", f"/blog/{self.blog}/posts/{post_id}", files=parts)

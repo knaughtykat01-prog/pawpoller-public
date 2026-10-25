@@ -1,3 +1,4 @@
+// @ts-check
 /* ── Error popup — achievement-style error cards (2.159.0) ──────────
  *
  * When an API action fails, show a card in the same visual language as the

@@ -1,3 +1,4 @@
+// @ts-check
 /* Board polish — C2 redesign phase 3 (spec docs/specs/c2_detail_redesign.md §8).
  *
  * Shared by the masterpiece board (masterpieces.js) and the story board

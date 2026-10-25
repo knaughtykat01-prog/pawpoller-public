@@ -56,3 +56,6 @@ CLAUDE.md
 .coverage
 coverage.json
 htmlcov/
+
+# The GCP VM runs the Instagram relay only (spec 048); update.sh refuses there
+.relay-only

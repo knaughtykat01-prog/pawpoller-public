@@ -33,7 +33,7 @@ PURPOSES = ("confirm", "reset")
 # pool, so without it parallel guesses each read tries=0 and the 5-try limit is void (4.69.0 review).
 # Not config's settings lock — get_settings takes that one, so holding it here would deadlock.
 _LOCK = threading.Lock()
-NOTICES = ("password_changed", "email_changed", "verified")
+NOTICES = ("password_changed", "email_changed", "email_removed", "verified")
 
 
 def ready() -> bool:
@@ -60,6 +60,8 @@ def _post(to: str, purpose: str, code: str = "") -> bool:
     except httpx.HTTPError as e:
         logger.warning("Account mail (%s) not sent: %s", purpose, type(e).__name__)
         return False
+    if r.status_code == 400 and purpose == "email_removed":
+        return _post(to, "email_changed")          # a Tech Centre before 0.6.1 doesn't know this notice
     if r.status_code != 200:
         logger.warning("Account mail (%s) refused: HTTP %s", purpose, r.status_code)
         return False

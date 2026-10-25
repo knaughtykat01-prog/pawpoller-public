@@ -20,6 +20,7 @@ from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse
 
 from database.db import get_connection
+from database.queries import thin_series
 from database import mast_queries
 from polling.mast_poller import run_mast_poll_cycle, mast_poll_progress
 from polling.background import spawn_poll
@@ -303,7 +304,7 @@ def get_mast_aggregate(
 ):
     conn = get_connection()
     try:
-        return {"snapshots": mast_queries.get_mast_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(mast_queries.get_mast_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/mast/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))

@@ -305,7 +305,7 @@ const App = {
         try {
             const su = await API.getSignupStatus();
             this._signup = su;
-            if (!su.account || (su.authenticated && (su.legal.needs_accept || su.email === 'none'
+            if (!su.account || (su.authenticated && (su.legal.needs_accept || (su.email === 'none' && su.email_required)
                     || App._verifyDue(su)))) {
                 window.location.hash = '#/signup';
                 this.route();
@@ -2492,6 +2492,7 @@ const App = {
         { key: 'platforms', group: 'Publishing', label: 'Platforms', blurb: 'Connect a site once; it then shows up in the publish pickers and polls on the Polling schedule.' },
         { key: 'publishing', group: 'Publishing', label: 'Publishing defaults', blurb: '' },
         { key: 'comments', group: 'Publishing', label: 'Comment templates', blurb: 'A comment under your own post, from the same account \u2014 saved wording, and what each site gets by default.' },
+        { key: 'savedtext', group: 'Publishing', label: 'Saved text', blurb: 'Descriptions and tag groups you use often, ready to drop into a piece.' },
         { key: 'trello', group: 'Publishing', label: 'Trello', blurb: 'Your Trello boards inside PawPoller, kept in step both ways.' },
         { key: 'polling', group: 'Monitoring', label: 'Polling', blurb: 'How often the numbers come in.' },
         { key: 'notifications', group: 'Monitoring', label: 'Notifications', blurb: 'Who gets told, and about what.' },
@@ -2730,12 +2731,11 @@ const App = {
         }
 
         // Use cached dashboard status from init(), fall back to fresh fetch
-        let totpEnabled = false, turnstileSiteKey = '', resetAvailable = false;
+        let totpEnabled = false, turnstileSiteKey = '';
         try {
             const status = this._dashboardStatus || await API.getDashboardStatus();
             totpEnabled = status.totp_enabled;
             turnstileSiteKey = status.turnstile_site_key || '';
-            resetAvailable = !!status.reset_available;
         } catch { /* proceed with defaults */ }
 
         if (this._stale(_rt)) return;
@@ -2764,7 +2764,7 @@ const App = {
                     </label>
                     <button class="btn btn-primary login-btn" id="dash-login-submit">Sign In</button>
                     <div class="login-error" id="dash-login-error"></div>
-                    ${resetAvailable ? '<p class="signup-hint"><a href="#" id="dash-login-forgot">Forgot your password?</a></p>' : ''}
+                    <p class="signup-hint"><a href="#" id="dash-login-forgot">Forgot your password?</a></p>
                 </div>
             </div>
         `);
@@ -2862,10 +2862,10 @@ const App = {
 
     /* PostyBirb import (4.69.0, spec 033 phase 8): the ticked list, then each account's result
        with its login tested. Used by the sign-up screen and Settings → Accounts. */
-    async _pbImportPanel(host, onDone) {
+    async _pbImportPanel(host, onDone, uid) {
         const esc = (v) => Utils.escapeHtml(String(v ?? ''));
         let r;
-        try { r = await API.pbScan(); }
+        try { r = await API.pbLogins(uid || null); }
         catch (e) { host.innerHTML = `<p class="login-error">${esc(e.message)}</p><button class="btn" id="pb-done">Continue</button>`;
             host.querySelector('#pb-done').addEventListener('click', onDone); return; }
         const rows = r.accounts || [];
@@ -2876,11 +2876,12 @@ const App = {
             return;
         }
         host.innerHTML = `
-            <fieldset class="pb-list"><legend class="signup-hint">Untick any you don't want.</legend>
+            <fieldset class="pb-list"><legend class="signup-hint">Tick the accounts that are yours.</legend>
             ${rows.map(a => `<label class="signup-switch${a.portable ? '' : ' pb-off'}">
-                <input type="checkbox" value="${esc(a.pb_id)}"${a.portable ? ' checked' : ' disabled'}>
+                <input type="checkbox" value="${esc(a.pb_id)}"${a.portable ? '' : ' disabled'}>
                 <span><strong>${esc(a.site)}</strong>${a.name && a.name !== a.site ? ` — ${esc(a.name)}` : ''}
-                ${a.portable ? '' : `<br><span class="signup-hint">${esc(a.reason)}</span>`}</span></label>`).join('')}
+                ${a.portable ? '' : `<br><span class="signup-hint">${esc(a.reason)}</span>`}
+                ${a.portable && a.check_mine ? `<br><span class="signup-hint">PostyBirb has more than one ${esc(a.site)} account. Check each is yours.</span>` : ''}</span></label>`).join('')}
             </fieldset>
             <p class="signup-hint">A copied sign-in is the same session PostyBirb uses. If you sign out of a site in either app, sign in again in both.</p>
             <div class="signup-actions">
@@ -2893,7 +2894,7 @@ const App = {
             const ids = [...host.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
             if (!ids.length) { host.querySelector('#pb-error').textContent = 'Tick at least one, or choose Not now.'; return; }
             let res;
-            try { res = (await API.pbApply(ids)).results || []; }
+            try { res = (await API.pbLoginsApply(uid || null, ids)).results || []; }
             catch (e) { host.querySelector('#pb-error').textContent = e.message; return; }
             host.innerHTML = `<ul class="signup-list" aria-live="polite">${res.map(x => `<li data-pb-result="${esc(x.account_id || '')}">
                 <strong>${esc(x.site)}</strong>${x.name ? ` — ${esc(x.name)}` : ''}:
@@ -2913,17 +2914,156 @@ const App = {
         });
     },
 
-    /* Settings → Accounts → Import from PostyBirb, in a dialog. */
-    openPbImport(onClose) {
+    /* Settings → Data / Accounts / New artwork → Bring in from PostyBirb, in a dialog. Two parts:
+       Library (spec 060: submissions become pieces) and Logins (4.69.0). On a server or seat the
+       person uploads a zip of the PostyBirb folder first (spec 060 US2); it is deleted after. */
+    openPbImport(onClose, start) {
         if (document.getElementById('pb-import')) return;
         const ov = document.createElement('div');
         ov.className = 'modal-overlay open';
         ov.id = 'pb-import';
-        ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="pb-import-h" style="max-width:560px">
-            <div class="modal-header"><h3 id="pb-import-h" style="margin:0">Import from PostyBirb</h3></div>
+        ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="pb-import-h" style="max-width:680px">
+            <div class="modal-header"><h3 id="pb-import-h" style="margin:0">Bring in from PostyBirb</h3>
+                <button type="button" class="btn btn-sm" id="pb-close" aria-label="Close">✕</button></div>
             <div class="modal-body" id="pb-import-body"><p class="signup-hint">Looking…</p></div></div>`;
         document.body.appendChild(ov);
-        this._pbImportPanel(ov.querySelector('#pb-import-body'), () => { ov.remove(); if (onClose) onClose(); });
+        const body = ov.querySelector('#pb-import-body');
+        let uid = null;
+        const close = async () => {
+            if (uid) { try { await API.pbUploadCancel(uid); } catch (e) { /* swept within 30 minutes anyway */ } }
+            ov.remove(); if (onClose) onClose();
+        };
+        ov.querySelector('#pb-close').addEventListener('click', close);
+        const tabs = (which) => {
+            body.innerHTML = `<div class="pb-tabs" role="tablist" style="display:flex;gap:8px;margin-bottom:12px">
+                <button type="button" class="btn btn-sm${which === 'library' ? ' btn-primary' : ''}" data-pb-tab="library" role="tab">Library</button>
+                <button type="button" class="btn btn-sm${which === 'logins' ? ' btn-primary' : ''}" data-pb-tab="logins" role="tab">Logins</button></div>
+                <div id="pb-tab-body"></div>`;
+            body.querySelectorAll('[data-pb-tab]').forEach(b => b.addEventListener('click', () => tabs(b.dataset.pbTab)));
+            const host = body.querySelector('#pb-tab-body');
+            if (which === 'logins') this._pbImportPanel(host, close, uid);
+            else this._pbLibraryPanel(host, uid, close);
+        };
+        if (App._runtimeMode === 'server') this._pbUploadPanel(body, (id) => { uid = id; tabs(start || 'library'); });
+        else tabs(start || 'library');
+    },
+
+    /* Server/seat: what to zip, then a resumable upload. Calls done(uid) once the server has read it. */
+    _pbUploadPanel(host, done) {
+        const esc = (v) => Utils.escapeHtml(String(v ?? ''));
+        host.innerHTML = `
+            <p>Your PostyBirb library is on your computer, so send this server a copy of its folder.</p>
+            <p class="signup-hint"><strong>The zip holds your site logins.</strong> It is only sent over a secure connection,
+                read once, and deleted as soon as you finish. Left unused for 30 minutes, it can't be used and is deleted soon after.</p>
+            <details open><summary><strong>Windows</strong></summary><ol class="signup-hint">
+                <li>Open File Explorer and go to <b>Documents</b>. You'll see a folder called <b>PostyBirb</b>.</li>
+                <li>Right-click <b>PostyBirb</b>, choose <b>Send to</b>, then <b>Compressed (zipped) folder</b>. A <b>PostyBirb.zip</b> appears beside it.</li>
+                <li>For your logins too: type <code>%APPDATA%\\postybirb-plus</code> in the address bar and press Enter.</li>
+                <li>Right-click <b>Partitions</b>, choose <b>Send to</b>, then <b>Compressed (zipped) folder</b>. You'll see <b>Partitions.zip</b>.</li></ol></details>
+            <details><summary><strong>Mac</strong></summary><ol class="signup-hint">
+                <li>In Finder, open <b>Documents</b>. Right-click <b>PostyBirb</b> and choose <b>Compress "PostyBirb"</b>.</li>
+                <li>For your logins too: press <b>Cmd + Shift + G</b>, type <code>~/Library/Application Support/postybirb-plus</code>, press Enter.</li>
+                <li>Right-click <b>Partitions</b> and choose <b>Compress "Partitions"</b>.</li></ol></details>
+            <details><summary><strong>Linux</strong></summary><ol class="signup-hint">
+                <li>In your file manager, open <b>Documents</b>, right-click <b>PostyBirb</b> and choose <b>Compress</b> (pick .zip).</li>
+                <li>For your logins too: open <code>~/.config/postybirb-plus</code> (show hidden files with Ctrl+H) and compress <b>Partitions</b> the same way.</li></ol></details>
+            <p><label class="btn btn-primary">Choose the zip (or both zips)
+                <input type="file" id="pb-up-file" accept=".zip,application/zip" multiple hidden></label></p>
+            <p class="signup-hint" id="pb-up-msg" role="status" aria-live="polite"></p>`;
+        const msg = host.querySelector('#pb-up-msg');
+        host.querySelector('#pb-up-file').addEventListener('change', async (e) => {
+            const files = [...e.target.files].slice(0, 2);
+            if (!files.length) return;
+            let uid;
+            try {
+                uid = (await API.pbUploadStart()).uid;
+                for (const [n, f] of files.entries()) {
+                    await API.pbUploadFile(uid, f, (at, size) => {
+                        msg.textContent = `Sending ${files.length > 1 ? `zip ${n + 1} of ${files.length}` : 'the zip'}: ${Math.floor(at * 100 / size)}%`;
+                    });
+                }
+                msg.textContent = 'Reading it…';
+                await API.pbUploadFinish(uid);
+                done(uid);
+            } catch (err) {
+                let m = String(err.message || err).replace(/^API \d+:\s*/, '');
+                try { m = JSON.parse(m).detail || m; } catch (x) { /* plain */ }
+                msg.innerHTML = `<span class="login-error">${esc(m)}</span>`;
+                if (uid) { try { await API.pbUploadCancel(uid); } catch (x) { /* swept anyway */ } }
+            }
+        });
+    },
+
+    /* Spec 060 US1: PostyBirb submissions, a page at a time; tick, tick all, import, results. */
+    async _pbLibraryPanel(host, uid, onDone) {
+        const esc = (v) => Utils.escapeHtml(String(v ?? ''));
+        let page = 0, all = false, extras = true;
+        const picked = new Set();
+        const go = async () => {
+            if (!all && !picked.size && !extras) { host.querySelector('#pb-lib-error').textContent = 'Tick at least one.'; return; }
+            try { await API.pbSubmissionsApply(uid, { ...(all ? { all: true } : { ids: [...picked] }), extras }); }
+            catch (e) { host.querySelector('#pb-lib-error').textContent = e.message; return; }
+            host.innerHTML = '<p class="signup-hint" role="status" aria-live="polite" id="pb-lib-progress">Bringing them in…</p>';
+            let st;
+            for (;;) {
+                await new Promise(res => setTimeout(res, 1000));
+                try { st = await API.pbSubmissionsStatus(); } catch (e) { continue; }
+                if (st.state !== 'running') break;
+                const p = host.querySelector('#pb-lib-progress');
+                if (p && st.total) p.textContent = `Bringing them in: ${st.done} of ${st.total}…`;
+            }
+            if (st.state === 'failed') { host.innerHTML = `<p class="login-error">The import stopped (${esc(st.error)}). Nothing was changed in PostyBirb.</p>`; return; }
+            const res = st.results || [];
+            const added = res.filter(x => x.status === 'added').length;
+            const ex = st.extras;
+            host.innerHTML = `${res.length ? `<p><strong>${added} added to your Library, ${res.length - added} skipped.</strong></p>` : ''}
+                ${ex ? `<p><strong>${ex.descriptions.added} saved description${ex.descriptions.added === 1 ? '' : 's'} and ${ex.tag_groups.added} tag group${ex.tag_groups.added === 1 ? '' : 's'} added</strong>${ex.descriptions.skipped + ex.tag_groups.skipped ? ` (${ex.descriptions.skipped + ex.tag_groups.skipped} already here)` : ''}${ex.descriptions.full + ex.tag_groups.full ? `; ${ex.descriptions.full + ex.tag_groups.full} left out: you can keep up to 200 of each` : ''}. Find them in Settings → Saved text.</p>` : ''}
+                <ul class="signup-list" style="max-height:50vh;overflow:auto">${res.map(x => `<li><strong>${esc(x.title || 'Untitled')}</strong>:
+                    ${x.status === 'added' ? 'added' + (x.note ? ` (${esc(x.note)})` : '') : esc(x.reason)}</li>`).join('')}</ul>
+                <div class="signup-actions"><a class="btn" href="#/library/type/artwork" id="pb-lib-see">See the Library</a>
+                <button class="btn btn-primary" type="button" id="pb-lib-done">Done</button></div>`;
+            host.querySelector('#pb-lib-done').addEventListener('click', onDone);
+            host.querySelector('#pb-lib-see').addEventListener('click', onDone);
+        };
+        const load = async () => {
+            host.innerHTML = '<p class="signup-hint">Looking…</p>';
+            let r;
+            try { r = await API.pbSubmissions(uid, page); }
+            catch (e) { host.innerHTML = `<p class="login-error">${esc(e.message)}</p>`; return; }
+            const nd = r.extras?.descriptions || 0, ng = r.extras?.tag_groups || 0;
+            if (!r.total && !nd && !ng) {
+                host.innerHTML = `<p class="signup-hint">${esc(r.message || 'PostyBirb has no submissions to bring in.')}</p>`;
+                return;
+            }
+            if (!nd && !ng) extras = false;
+            const pages = Math.ceil(r.total / (r.page_size || 100));
+            host.innerHTML = `
+                <p class="signup-hint">${r.total} submission${r.total === 1 ? '' : 's'} in PostyBirb. Each one you tick becomes a piece in your Library, with its file, title, description, tags and rating. PostyBirb isn't changed.</p>
+                ${nd || ng ? `<label class="signup-switch"><input type="checkbox" id="pb-extras"${extras ? ' checked' : ''}> <span>Also bring in ${nd} saved description${nd === 1 ? '' : 's'} and ${ng} tag group${ng === 1 ? '' : 's'}</span></label>` : ''}
+                ${r.total ? `<label class="signup-switch"><input type="checkbox" id="pb-all"${all ? ' checked' : ''}> <span>Tick all ${r.total} (on every page)</span></label>` : ''}
+                <div class="pb-subs" style="max-height:50vh;overflow:auto">${r.items.map(i => `
+                    <label class="signup-switch${i.skip || i.others ? ' pb-off' : ''}" style="align-items:center">
+                        <input type="checkbox" value="${esc(i.id)}"${i.skip ? ' disabled' : ''}${!i.skip && !i.others && (all || picked.has(i.id)) ? ' checked' : ''}>
+                        ${i.thumb ? `<img src="${esc(API.pbThumbUrl(uid, i.id))}" alt="" loading="lazy" style="width:48px;height:48px;object-fit:cover;border-radius:4px">` : '<span style="width:48px"></span>'}
+                        <span><strong>${esc(i.title || 'Untitled')}</strong> <span class="signup-hint">${esc(i.rating || 'no rating')} · ${i.tags} tag${i.tags === 1 ? '' : 's'}</span>
+                        ${i.skip ? `<br><span class="signup-hint">${esc(i.skip)}</span>` : ''}
+                        ${i.others ? '<br><span class="signup-hint">Only set up for an account marked Never post here. Tick it only if it is yours.</span>' : ''}
+                        ${i.extreme ? '<br><span class="signup-hint">Rated extreme in PostyBirb; it comes in as adult.</span>' : ''}</span></label>`).join('')}</div>
+                ${pages > 1 ? `<p><button class="btn btn-sm" id="pb-prev"${page ? '' : ' disabled'}>Previous</button>
+                    Page ${page + 1} of ${pages} <button class="btn btn-sm" id="pb-next"${page + 1 < pages ? '' : ' disabled'}>Next</button></p>` : ''}
+                <div class="signup-actions"><button class="btn btn-primary" type="button" id="pb-lib-go">Bring them in</button></div>
+                <div class="login-error" id="pb-lib-error" role="alert"></div>`;
+            host.querySelectorAll('.pb-subs input').forEach(c => c.addEventListener('change', () => {
+                if (c.checked) picked.add(c.value);
+                else { picked.delete(c.value); all = false; const a = host.querySelector('#pb-all'); if (a) a.checked = false; }
+            }));
+            host.querySelector('#pb-all')?.addEventListener('change', (e) => { all = e.target.checked; picked.clear(); load(); });
+            host.querySelector('#pb-extras')?.addEventListener('change', (e) => { extras = e.target.checked; });
+            host.querySelector('#pb-prev')?.addEventListener('click', () => { page--; load(); });
+            host.querySelector('#pb-next')?.addEventListener('click', () => { page++; load(); });
+            host.querySelector('#pb-lib-go').addEventListener('click', go);
+        };
+        load();
     },
 
     /* X / Bluesky posting defaults (4.69.0, spec 033 US5): after a site is first connected or
@@ -2994,8 +3134,98 @@ const App = {
 
     /* Forgot password (4.68.0, spec 033 phase 6): name or email → a code to the
        account's confirmed email → the code and a new password. The first answer never
-       says whether the name matched. Every signed-in session ends on success. */
-    _renderPasswordReset() {
+       says whether the name matched. Every signed-in session ends on success.
+       Spec 058: without a confirmed email, numbered steps for the reset on the machine
+       itself, per install kind (a hosted seat gets "ask the person who runs it"). The
+       commands match docs/SETUP.md (tests/test_email_optional.py pins them). */
+    _resetSteps(kind) {
+        const li = (items) => '<ol class="signup-steps">' + items.map(t => `<li>${t}</li>`).join('') + '</ol>';
+        const after = '<p class="signup-hint">This signs out every browser. If you think someone else got in, open '
+            + '<b>Settings → Security → API keys</b> afterwards and remove any you don\'t recognise.</p>'
+            + '<p class="signup-hint">Lost your two-step app and backup codes as well? This doesn\'t turn two-step off, so it can\'t get you back in.</p>';
+        if (kind === 'hosted') return '<p class="signup-lead">Ask the person who runs your PawPoller seat to reset it for you.</p>';
+        if (kind === 'docker') return li([
+            'Log in to the server and go into PawPoller\'s folder (<code>cd pawpoller-public</code>).',
+            'Stop PawPoller: <code>docker compose -f docker-compose.image.yml stop pawpoller</code>',
+            'Set the new password. It asks twice and shows nothing while you type: '
+                + '<code>docker compose -f docker-compose.image.yml run --rm pawpoller python server.py --reset-password</code>',
+            'Start PawPoller again: <code>docker compose -f docker-compose.image.yml start pawpoller</code>',
+            'Sign in with the new password.']) + after;
+        if (kind === 'desktop' && /Windows/.test(navigator.userAgent)) return li([
+            'Close PawPoller: right-click its icon by the clock and choose <b>Quit</b>.',
+            'Open the <b>Start</b> menu and click <b>Reset PawPoller password</b>. A small window opens.',
+            'Type your new password and press Enter. Nothing shows while you type; that\'s on purpose.',
+            'Type it again and press Enter, then press Enter to close the window.',
+            'Open PawPoller and sign in with the new password.'])
+            + '<p class="signup-hint">No shortcut (a portable copy)? Run <code>PawPoller.exe --reset-password</code> from a Command Prompt.</p>' + after;
+        const code = (c) => `<code>${c}</code>`;
+        if (kind === 'service' && /Windows/.test(navigator.userAgent)) return li([
+            'Open the Start menu, type <b>cmd</b>, right-click <b>Command Prompt</b> and choose <b>Run as administrator</b>.',
+            'Stop PawPoller: ' + code('schtasks /end /tn "PawPoller Server"'),
+            'Point at its data: ' + code('set PAWPOLLER_APPDATA_DIR=C:\\ProgramData\\PawPoller-Server\\data'),
+            'Set the new password. It asks twice and shows nothing while you type: ' + code('"C:\\ProgramData\\PawPoller-Server\\current\\PawPoller-Server.exe" --reset-password'),
+            'Start PawPoller again: ' + code('schtasks /run /tn "PawPoller Server"'),
+            'Sign in with the new password.']) + after;
+        if (kind === 'service') return li([
+            'Stop PawPoller: ' + code('sudo systemctl stop pawpoller-server'),
+            'Set the new password. It asks twice and shows nothing while you type: ' + code('sudo -u pawpoller sh -c \'set -a; . /etc/pawpoller-server.env; exec "$PAWPOLLER_SERVER_ROOT/current/PawPoller-Server" --reset-password\''),
+            'Start PawPoller again: ' + code('sudo systemctl start pawpoller-server'),
+            'Sign in with the new password.']) + after;
+        return li([
+            'Stop PawPoller on the machine it runs on.',
+            'In PawPoller\'s folder, run <code>python server.py --reset-password</code> '
+                + '(or the PawPoller program with <code>--reset-password</code>) and answer its two questions.',
+            'Start PawPoller again and sign in with the new password.']) + after;
+    },
+
+    /* Settings → Security → Email (spec 058): a self-hosted install may add an email
+       (then the sign-up screen asks for the code) or remove it with the password. Hosted
+       seats keep theirs, so the card stays hidden there. */
+    async _loadEmailSection() {
+        let su;
+        try { su = await API.getSignupStatus(); } catch { return; }
+        const box = document.getElementById('sec-email'), body = document.getElementById('sec-email-body');
+        if (!box || !su.authenticated || su.email_required) return;
+        box.hidden = false;
+        const esc = (v) => Utils.escapeHtml(String(v ?? ''));
+        const msgOf = (e) => { let m = e.message.replace(/^API \d+:\s*/, ''); try { m = JSON.parse(m).detail ?? m; } catch {} return m?.message || m; };
+        document.getElementById('sec-email-badge').textContent = su.email === 'none' ? 'none' : su.email;
+        const pw = '<input type="password" id="sec-email-pw" class="search-input" placeholder="Your password" style="max-width:300px" autocomplete="current-password">';
+        body.innerHTML = su.email === 'none' ? `
+            <p style="font-size:13px;color:var(--text-muted)">Optional. With an email, a forgotten password can be reset by a code
+            instead of on the machine PawPoller runs on. It's sent through the PawPoller Project's mail service (noreply@pawpoller.com) and used for nothing else.</p>
+            <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px">
+                <input type="email" id="sec-email-new" class="search-input" placeholder="name@example.com" style="max-width:300px" autocomplete="email">${pw}</div>
+            <div style="margin-top:12px;display:flex;align-items:center;gap:12px">
+                <button class="btn btn-primary" id="sec-email-btn">Add an email</button><span id="sec-email-msg" style="font-size:13px"></span></div>` : `
+            <p style="font-size:13px;color:var(--text-muted)">${su.email === 'waiting' ? `Waiting for the code sent to <strong>${esc(su.email_waiting)}</strong>.` : 'Your account has a confirmed email.'}
+            Removing it means a forgotten password is reset on the machine PawPoller runs on. The address hears about it first.</p>
+            <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px">${pw}</div>
+            <div style="margin-top:12px;display:flex;align-items:center;gap:12px">
+                <button class="btn btn-secondary" id="sec-email-btn">Remove email</button><span id="sec-email-msg" style="font-size:13px"></span></div>`;
+        document.getElementById('sec-email-btn').addEventListener('click', async (ev) => {
+            const msg = document.getElementById('sec-email-msg'), pwv = document.getElementById('sec-email-pw').value;
+            ev.target.disabled = true; msg.textContent = '';
+            try {
+                if (su.email === 'none') {
+                    await API.addAccountEmail(document.getElementById('sec-email-new').value.trim(), pwv);
+                    this.navigate('/signup');   // the sign-up screen asks for the emailed code
+                    return;
+                }
+                await API.removeAccountEmail(pwv);
+                this._loadEmailSection();
+            } catch (e) { msg.textContent = msgOf(e); msg.style.color = 'var(--danger)'; ev.target.disabled = false; }
+        });
+    },
+
+    async _renderPasswordReset() {
+        const _rt = this._routeToken();
+        let st = this._dashboardStatus;
+        try { st = await API.getDashboardStatus(); } catch { /* the cached copy, if any */ }
+        if (this._stale(_rt)) return;
+        st = st || {};
+        const byEmail = !!(st.reset_email ?? st.reset_available);
+        const steps = this._resetSteps(st.install_kind || 'other');
         const err = (raw) => {
             let d = String(raw || '').replace(/^API \d+:\s*/, '');
             try { d = JSON.parse(d).detail ?? d; } catch (e) { /* plain text */ }
@@ -3004,7 +3234,8 @@ const App = {
         this._setContent(`
             <div class="login-screen"><div class="login-card signup-card">
                 <h2>Reset your password</h2>
-                <form id="reset-ask" novalidate>
+                ${byEmail ? '' : steps}
+                <form id="reset-ask" novalidate ${byEmail ? '' : 'hidden'}>
                     <div class="login-field"><label for="reset-who">Your username or email</label>
                         <input type="text" id="reset-who" class="search-input" autocomplete="username" required style="width:100%"></div>
                     <button class="btn btn-primary login-btn" type="submit">Email me a code</button>
@@ -3020,6 +3251,7 @@ const App = {
                     <button class="btn btn-primary login-btn" type="submit">Change password</button>
                 </form>
                 <div class="login-error" id="reset-error" role="alert"></div>
+                ${byEmail && st.install_kind !== 'hosted' ? `<details><summary>Or set a new one on the machine PawPoller runs on</summary>${steps}</details>` : ''}
                 <p class="signup-hint"><a href="#" id="reset-back">Back to sign in</a></p>
             </div></div>`);
         const errEl = document.getElementById('reset-error');
@@ -3045,7 +3277,7 @@ const App = {
                 document.getElementById('dash-login-error').textContent = r.message;
             } catch (e) { errEl.textContent = err(e.message); }
         });
-        document.getElementById('reset-who').focus();
+        if (byEmail) document.getElementById('reset-who').focus();
     },
 
     /* ── First sign-up (4.67.0, spec 033) ─────────────────────
@@ -3066,7 +3298,7 @@ const App = {
         if (su.account && !su.authenticated) { this.navigate('/dashboard-login'); return; }
 
         let screen = !su.account ? 'account'
-            : su.email === 'none' ? 'email'
+            : su.email === 'none' && su.email_required ? 'email'
             : this._verifyDue(su) ? 'verify'
             : su.legal.needs_accept ? 'legal' : '';
         let setupDone = true;
@@ -3127,10 +3359,12 @@ const App = {
                         <input type="text" id="signup-username" class="search-input" autocomplete="username" required
                             aria-describedby="signup-username-hint" style="width:100%">
                         <div class="signup-hint" id="signup-username-hint">3 to 32 letters, numbers, dots, dashes or underscores.</div></div>
-                    <div class="login-field"><label for="signup-email">Email</label>
-                        <input type="email" id="signup-email" class="search-input" autocomplete="email" required
+                    <div class="login-field"><label for="signup-email">Email${su.email_required ? '' : ' (optional)'}</label>
+                        <input type="email" id="signup-email" class="search-input" autocomplete="email" ${su.email_required ? 'required' : ''}
                             aria-describedby="signup-email-hint" style="width:100%">
-                        <div class="signup-hint" id="signup-email-hint">Only for resetting your password and security notices. Never marketing.</div></div>
+                        <div class="signup-hint" id="signup-email-hint">${su.email_required
+                            ? 'Only for resetting your password and security notices. Never marketing.'
+                            : "Optional. Used only to reset a forgotten password and for security notices. PawPoller sends it through the PawPoller Project's mail service (noreply@pawpoller.com). Without one, you reset your password on the machine PawPoller runs on."}</div></div>
                     <div class="login-field"><label for="signup-password">Password</label>
                         <input type="password" id="signup-password" class="search-input" autocomplete="new-password" required
                             aria-describedby="signup-strength" style="width:100%">
@@ -6470,8 +6704,11 @@ const App = {
         });
         this._loadAccountName();
         document.addEventListener('click', (e) => {     // PostyBirb import from Accounts or Settings → Data
-            if (!e.target.closest('[data-pb-import]')) return;
-            this.openPbImport(() => { if (location.hash.startsWith('#/accounts')) window.Accounts?._refresh(); });
+            const trigger = e.target.closest('[data-pb-import]');
+            if (!trigger) return;
+            e.preventDefault();                          // the New artwork link is an <a href="#">
+            this.openPbImport(() => { if (location.hash.startsWith('#/accounts')) window.Accounts?._refresh(); },
+                              trigger.dataset.pbImport || undefined);
         });
     },
 
@@ -7095,7 +7332,7 @@ const App = {
         const have = new Set((this._dashboardLayout || []).map(w => w.id));
         const cards = meta.map(m => `
             <button class="dash-catcard${have.has(m.id) ? ' in' : ''}" data-cat="${m.id}"${have.has(m.id) ? ' disabled' : ''}>
-                <span class="dash-catico">${m.icon}</span>
+                <span class="dash-catico">${Utils.escapeHtml(String(m.icon ?? ''))}</span>
                 <span class="dash-catmeta"><b>${m.title}</b><span>${m.desc}</span></span>
                 ${have.has(m.id) ? '<span class="dash-cattick">✓</span>' : ''}
             </button>`).join('');
@@ -17094,19 +17331,20 @@ const App = {
                     <span id="backup-msg" style="font-size:13px;margin-top:8px;display:block"></span>
                 </div>
 
-                ${App._runtimeMode === 'server' ? '' : `<div class="settings-section" id="pb-section">
+                <div class="settings-section" id="pb-section">
                     <h3>Bring things in from PostyBirb</h3>
                     <div class="settings-row">
                         <div>
-                            <span class="settings-label">Import from PostyBirb</span>
+                            <span class="settings-label">Bring in from PostyBirb</span>
                             <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
-                                Copies the site logins PostyBirb has on this computer. Run it again any time to pick up
-                                accounts you've added in PostyBirb since. Accounts that already have a login here are left alone.
+                                Your PostyBirb submissions become Library pieces, and its site logins can come too.
+                                ${App._runtimeMode === 'server' ? 'You send this server a zip of your PostyBirb folder; it is deleted after.'
+                                : 'Reads PostyBirb on this computer; it is never changed.'} Run it any time. Anything already here is skipped.
                             </div>
                         </div>
-                        <button type="button" class="btn btn-secondary" data-pb-import>Import</button>
+                        <button type="button" class="btn btn-secondary" data-pb-import>Bring in</button>
                     </div>
-                </div>`}
+                </div>
 
                 <div class="settings-section" id="move-section">
                     <h3>Moving to another PawPoller</h3>
@@ -17424,6 +17662,11 @@ const App = {
                     </div>
                 </details>
 
+                <details class="settings-accordion" id="sec-email" hidden>
+                    <summary>Email <span id="sec-email-badge" class="summary-meta"></span></summary>
+                    <div class="accordion-body" id="sec-email-body"></div>
+                </details>
+
                 <details class="settings-accordion">
                     <summary>Two-Factor Authentication <span id="sec-totp-badge" class="summary-meta"></span></summary>
                     <div class="accordion-body" id="sec-totp-body">
@@ -17437,6 +17680,25 @@ const App = {
                         <p style="color:var(--text-muted);font-size:13px">Loading API keys...</p>
                     </div>
                 </details>
+
+                ${App._runtimeMode === 'server' ? `
+                <details class="settings-accordion">
+                    <summary>Sign-ins over plain http <span id="sec-http-badge" class="summary-meta"></span></summary>
+                    <div class="accordion-body" id="sec-http-body">
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:8px">When the PawPoller app on your computer signs in for this server, the sign-in travels to the server. Over https it is encrypted. Over plain http (an address like http://192.168.1.20:8420) it is not: anyone else on your home network could copy it and post as you.</p>
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Leave this off if you can reach this server over https or Tailscale. Turn it on only for a server in your own home.</p>
+                    <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px">
+                        <label style="font-size:13px;color:var(--text-muted)" for="sec-http-pw">Your PawPoller password</label>
+                        <input type="password" id="sec-http-pw" class="search-input" style="max-width:300px" autocomplete="current-password">
+                    </div>
+                    <label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px;font-size:13px"><input type="checkbox" id="sec-http-risk"> I understand that sign-ins over plain http can be copied by others on my network.</label>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="sec-http-on">Allow plain http</button>
+                        <button class="btn btn-secondary" id="sec-http-off">Turn off</button>
+                        <span id="sec-http-msg" style="font-size:13px" role="status"></span>
+                    </div>
+                    </div>
+                </details>` : ''}
 
                 <details class="settings-accordion">
                     <summary>Cloudflare Turnstile</summary>
@@ -17736,16 +17998,16 @@ const App = {
                     </div>
                     ` : `
                     ${_browserLoginAvailable ? `
-                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Log in to FurAffinity in the popup window. Your cookies will be captured automatically.</p>
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Sign in to FurAffinity in the PawPoller window that opens, the same way you always do. It closes by itself when you're in.</p>
                     <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
                         <input type="text" id="fa-browser-username" class="search-input" placeholder="FA username">
                     </div>
                     <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                        <button class="btn btn-primary" id="fa-browser-login-btn">Login via Browser</button>
-                        <button class="btn btn-outline" id="fa-manual-toggle" style="font-size:12px">Enter cookies manually</button>
+                        <button class="btn btn-primary" id="fa-browser-login-btn">Sign in</button>
                         <span id="fa-msg" style="font-size:13px"></span>
                     </div>
-                    <div id="fa-manual-section" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+                    <details class="other-ways" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px"><summary style="cursor:pointer;font-size:13px;color:var(--text-muted)">Other ways to connect</summary><div style="margin-top:10px">
+                    <div id="fa-manual-section">
                         <p style="color:var(--text-muted);font-size:12px;margin-bottom:8px">Manual entry: open FA in your browser, find your <code style="background:var(--bg-tertiary);padding:2px 4px;border-radius:3px">a</code> and <code style="background:var(--bg-tertiary);padding:2px 4px;border-radius:3px">b</code> cookie values.</p>
                         <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
                             <input type="text" id="fa-username" class="search-input" placeholder="FA username">
@@ -17753,8 +18015,17 @@ const App = {
                             <input type="text" id="fa-cookie-b" class="search-input" placeholder="Cookie b value">
                         </div>
                         <div style="margin-top:8px"><button class="btn btn-primary" id="fa-connect-btn">Connect</button></div>
-                    </div>
+                    </div></div></details>
                     ` : `
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Sign in on the PawPoller app on your computer: it opens the real sign-in page, then sends the sign-in here. No copying.</p>
+                    <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
+                        <input type="text" id="fa-signin-username" class="search-input" placeholder="FA username">
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" data-signin-code="fa" data-signin-user="fa-signin-username">Sign in with the PawPoller app</button>
+                    </div>
+                    <div class="signin-code-panel" data-signin-panel="fa"></div>
+                    <details class="other-ways" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px"><summary style="cursor:pointer;font-size:13px;color:var(--text-muted)">Other ways to connect</summary><div style="margin-top:10px">
                     <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Connect your FurAffinity account using browser cookies. <a href="https://www.furaffinity.net/login/" target="_blank" style="color:var(--accent)">Open FA login page</a>, log in, then find your <code style="background:var(--bg-tertiary);padding:2px 4px;border-radius:3px">a</code> and <code style="background:var(--bg-tertiary);padding:2px 4px;border-radius:3px">b</code> cookie values in DevTools (F12 > Application > Cookies).</p>
                     <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
                         <input type="text" id="fa-username" class="search-input" placeholder="FA username">
@@ -17764,7 +18035,7 @@ const App = {
                     <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
                         <button class="btn btn-primary" id="fa-connect-btn">Connect</button>
                         <span id="fa-msg" style="font-size:13px"></span>
-                    </div>
+                    </div></div></details>
                     `}
                     `}
                     </div>
@@ -18085,6 +18356,27 @@ const App = {
                         <span id="ik-msg" style="font-size:13px"></span>
                     </div>
                     ` : `
+                    ${_browserLoginAvailable ? `
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Sign in to Itaku in the PawPoller window that opens. That lets PawPoller track <em>and</em> post, with nothing to copy.</p>
+                    <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
+                        <input type="text" id="ik-browser-username" class="search-input" placeholder="Itaku username">
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="ik-browser-login-btn">Sign in</button>
+                        <span id="ik-signin-msg" style="font-size:13px"></span>
+                    </div>
+                    ` : `
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Sign in on the PawPoller app on your computer: it opens the real sign-in page, then sends the sign-in here. No copying.</p>
+                    <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
+                        <input type="text" id="ik-signin-username" class="search-input" placeholder="Itaku username">
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" data-signin-code="ik" data-signin-user="ik-signin-username">Sign in with the PawPoller app</button>
+                    </div>
+                    <div class="signin-code-panel" data-signin-panel="ik"></div>
+                    
+                    `}
+                    <details class="other-ways" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px"><summary style="cursor:pointer;font-size:13px;color:var(--text-muted)">Other ways to connect</summary><div style="margin-top:10px">
                     <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Enter the username to <strong>track</strong> Itaku. To also <strong>post</strong> to Itaku, add your auth token (copied from your logged-in Itaku session) — tracking works without it.</p>
                     <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
                         <input type="text" id="ik-target-user" class="search-input" placeholder="Itaku username to track">
@@ -18093,7 +18385,7 @@ const App = {
                     <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
                         <button class="btn btn-primary" id="ik-connect-btn">Connect</button>
                         <span id="ik-msg" style="font-size:13px"></span>
-                    </div>
+                    </div></div></details>
                     `}
                     </div>
                 </details>
@@ -18404,16 +18696,16 @@ const App = {
                     </div>
                     ` : `
                     ${_browserLoginAvailable ? `
-                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Log in to X/Twitter in the popup window. Your auth cookies will be captured automatically.</p>
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Sign in to X in the PawPoller window that opens, the same way you always do. It closes by itself when you're in.</p>
                     <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
                         <input type="text" id="tw-browser-username" class="search-input" placeholder="Username to track (without @)">
                     </div>
                     <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                        <button class="btn btn-primary" id="tw-browser-login-btn">Login via Browser</button>
-                        <button class="btn btn-outline" id="tw-manual-toggle" style="font-size:12px">Enter cookies manually</button>
+                        <button class="btn btn-primary" id="tw-browser-login-btn">Sign in</button>
                         <span id="tw-msg" style="font-size:13px"></span>
                     </div>
-                    <div id="tw-manual-section" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+                    <details class="other-ways" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px"><summary style="cursor:pointer;font-size:13px;color:var(--text-muted)">Other ways to connect</summary><div style="margin-top:10px">
+                    <div id="tw-manual-section">
                         <p style="color:var(--text-muted);font-size:12px;margin-bottom:8px">Manual entry: open x.com, press F12, go to Application > Cookies, and copy the auth_token and ct0 values.</p>
                         <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
                             <input type="text" id="tw-auth-token" class="search-input" placeholder="auth_token cookie">
@@ -18421,8 +18713,17 @@ const App = {
                             <input type="text" id="tw-target-user" class="search-input" placeholder="Username to track (without @)">
                         </div>
                         <div style="margin-top:8px"><button class="btn btn-primary" id="tw-connect-btn">Connect</button></div>
-                    </div>
+                    </div></div></details>
                     ` : `
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Sign in on the PawPoller app on your computer: it opens the real sign-in page, then sends the sign-in here. No copying.</p>
+                    <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
+                        <input type="text" id="tw-signin-username" class="search-input" placeholder="Username to track (without @)">
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" data-signin-code="tw" data-signin-user="tw-signin-username">Sign in with the PawPoller app</button>
+                    </div>
+                    <div class="signin-code-panel" data-signin-panel="tw"></div>
+                    <details class="other-ways" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px"><summary style="cursor:pointer;font-size:13px;color:var(--text-muted)">Other ways to connect</summary><div style="margin-top:10px">
                     <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Connect to X/Twitter using browser cookies. <a href="https://x.com/i/flow/login" target="_blank" style="color:var(--accent)">Open X login page</a>, log in, then press F12, go to Application > Cookies, and copy the auth_token and ct0 values.</p>
                     <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
                         <input type="text" id="tw-auth-token" class="search-input" placeholder="auth_token cookie">
@@ -18432,7 +18733,7 @@ const App = {
                     <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
                         <button class="btn btn-primary" id="tw-connect-btn">Connect</button>
                         <span id="tw-msg" style="font-size:13px"></span>
-                    </div>
+                    </div></div></details>
                     `}
                     `}
                     </div>
@@ -18618,21 +18919,29 @@ const App = {
                         <input type="text" id="ng-browser-username" class="search-input" placeholder="Newgrounds username">
                     </div>
                     <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                        <button class="btn btn-primary" id="ng-browser-login-btn">Login via Browser</button>
-                        <button class="btn btn-outline" id="ng-manual-toggle" style="font-size:12px">Paste the cookie instead</button>
+                        <button class="btn btn-primary" id="ng-browser-login-btn">Sign in</button>
                         <span id="ng-msg" style="font-size:13px"></span>
                     </div>
-                    <div id="ng-manual-section" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
                     ` : `
-                    <div id="ng-manual-section">
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Sign in on the PawPoller app on your computer: it opens the real sign-in page, then sends the sign-in here. No copying.</p>
+                    <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
+                        <input type="text" id="ng-signin-username" class="search-input" placeholder="Newgrounds username">
+                    </div>
+                    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-primary" data-signin-code="ng" data-signin-user="ng-signin-username">Sign in with the PawPoller app</button>
+                    </div>
+                    <div class="signin-code-panel" data-signin-panel="ng"></div>
+                    
                     `}
+                    <details class="other-ways" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px"><summary style="cursor:pointer;font-size:13px;color:var(--text-muted)">Other ways to connect</summary><div style="margin-top:10px">
+                    <div id="ng-manual-section">
                         <p style="color:var(--text-muted);font-size:12px;margin-bottom:8px">Sign in at <a href="https://www.newgrounds.com/passport" target="_blank" style="color:var(--accent)">newgrounds.com</a>, then copy the whole cookie header for newgrounds.com from DevTools (F12 &rarr; Network &rarr; any request &rarr; Request Headers &rarr; <code style="background:var(--bg-tertiary);padding:2px 4px;border-radius:3px">cookie</code>).</p>
                         <div style="display:flex;flex-direction:column;gap:8px;max-width:400px">
                             <input type="text" id="ng-username" class="search-input" placeholder="Newgrounds username">
                             <input type="password" id="ng-cookie" class="search-input" placeholder="Cookie string (name=value; name=value; …)" autocomplete="off">
                         </div>
                         <div style="margin-top:8px;display:flex;align-items:center;gap:8px"><button class="btn btn-primary" id="ng-connect-btn">Connect</button>${_browserLoginAvailable ? '' : '<span id="ng-msg" style="font-size:13px"></span>'}</div>
-                    </div>
+                    </div></div></details>
                     `}
                     </div>
                 </details>
@@ -18949,6 +19258,7 @@ const App = {
                 if (page === 'polling') this._loadPollingTab();
                 if (page === 'privacy' && window.Privacy) window.Privacy.mount(document.querySelector('.settings-page[data-page="privacy"]'));
                 if (page === 'comments' && window.Comments) window.Comments.mountSettings(document.querySelector('.settings-page[data-page="comments"]'));
+                if (page === 'savedtext' && window.SavedText) window.SavedText.mountSettings(document.querySelector('.settings-page[data-page="savedtext"]'));
                 window.scrollTo({ top: 0 });
             };
             rail?.addEventListener('click', (e) => {
@@ -18974,6 +19284,7 @@ const App = {
             if (_settingsPage === 'polling') this._loadPollingTab();
             if (_settingsPage === 'privacy' && window.Privacy) window.Privacy.mount(document.querySelector('.settings-page[data-page="privacy"]'));
             if (_settingsPage === 'comments' && window.Comments) window.Comments.mountSettings(document.querySelector('.settings-page[data-page="comments"]'));
+            if (_settingsPage === 'savedtext' && window.SavedText) window.SavedText.mountSettings(document.querySelector('.settings-page[data-page="savedtext"]'));
 
             // Platforms pane: sort the platform accordions A→Z + give each a logo
             // and a centred title. Runs regardless of the active tab (the pane is
@@ -19652,6 +19963,29 @@ const App = {
             });
 
             // FA Browser Login: opens pywebview popup, auto-captures cookies
+            // Spec 059: Itaku through the window (its token comes from page storage).
+            document.getElementById('ik-browser-login-btn')?.addEventListener('click', async (e) => {
+                const username = document.getElementById('ik-browser-username')?.value.trim();
+                const msg = document.getElementById('ik-signin-msg');
+                if (!username) { msg.textContent = 'Enter your Itaku username first.'; return; }
+                e.target.disabled = true;
+                msg.textContent = 'Sign in in the window that opens…';
+                try {
+                    const r = await API.browserLogin('ik', { ik_target_user: username });
+                    if (r.ok) { msg.textContent = 'Signed in.'; this.renderSettings(); }
+                    else msg.textContent = r.message || 'Sign-in cancelled.';
+                } catch (err) {
+                    msg.textContent = (err.message || String(err)).replace(/^API \d+:\s*/, '');
+                }
+                e.target.disabled = false;
+            });
+            // Spec 059: on a server or seat, "Sign in with the PawPoller app" shows a one-time code.
+            document.querySelectorAll('[data-signin-code]').forEach(btn => btn.addEventListener('click', () => {
+                const plat = btn.dataset.signinCode;
+                const panel = document.querySelector(`[data-signin-panel="${plat}"]`);
+                const username = document.getElementById(btn.dataset.signinUser)?.value.trim() || '';
+                if (panel && window.SigninHelper) SigninHelper.codePanel(panel, { platform: plat, username, onDone: () => this.renderSettings() });
+            }));
             const faBrowserLoginBtn = document.getElementById('fa-browser-login-btn');
             if (faBrowserLoginBtn) {
                 faBrowserLoginBtn.addEventListener('click', async () => {
@@ -19671,14 +20005,14 @@ const App = {
                             setTimeout(() => this.renderSettings(), 1000);
                         } else {
                             if (msg) { msg.textContent = result.message || 'Login cancelled.'; msg.style.color = 'var(--text-muted)'; }
-                            faBrowserLoginBtn.textContent = 'Login via Browser';
+                            faBrowserLoginBtn.textContent = 'Sign in';
                             faBrowserLoginBtn.disabled = false;
                         }
                     } catch (err) {
                         let detail = err.message.replace(/^API \d+:\s*/, '');
                         try { detail = JSON.parse(detail).detail || detail; } catch {}
                         if (msg) { msg.textContent = detail; msg.style.color = 'var(--danger)'; }
-                        faBrowserLoginBtn.textContent = 'Login via Browser';
+                        faBrowserLoginBtn.textContent = 'Sign in';
                         faBrowserLoginBtn.disabled = false;
                     }
                 });
@@ -19704,14 +20038,14 @@ const App = {
                             setTimeout(() => this.renderSettings(), 1000);
                         } else {
                             if (msg) { msg.textContent = result.message || 'Login cancelled.'; msg.style.color = 'var(--text-muted)'; }
-                            daBrowserLoginBtn.textContent = 'Login via Browser';
+                            daBrowserLoginBtn.textContent = 'Sign in';
                             daBrowserLoginBtn.disabled = false;
                         }
                     } catch (err) {
                         let detail = err.message.replace(/^API \d+:\s*/, '');
                         try { detail = JSON.parse(detail).detail || detail; } catch {}
                         if (msg) { msg.textContent = detail; msg.style.color = 'var(--danger)'; }
-                        daBrowserLoginBtn.textContent = 'Login via Browser';
+                        daBrowserLoginBtn.textContent = 'Sign in';
                         daBrowserLoginBtn.disabled = false;
                     }
                 });
@@ -19737,14 +20071,14 @@ const App = {
                             setTimeout(() => this.renderSettings(), 1000);
                         } else {
                             if (msg) { msg.textContent = result.message || 'Login cancelled.'; msg.style.color = 'var(--text-muted)'; }
-                            twBrowserLoginBtn.textContent = 'Login via Browser';
+                            twBrowserLoginBtn.textContent = 'Sign in';
                             twBrowserLoginBtn.disabled = false;
                         }
                     } catch (err) {
                         let detail = err.message.replace(/^API \d+:\s*/, '');
                         try { detail = JSON.parse(detail).detail || detail; } catch {}
                         if (msg) { msg.textContent = detail; msg.style.color = 'var(--danger)'; }
-                        twBrowserLoginBtn.textContent = 'Login via Browser';
+                        twBrowserLoginBtn.textContent = 'Sign in';
                         twBrowserLoginBtn.disabled = false;
                     }
                 });
@@ -21226,14 +21560,14 @@ const App = {
                             setTimeout(() => this.renderSettings(), 1000);
                         } else {
                             if (msg) { msg.textContent = result.message || 'Login cancelled.'; msg.style.color = 'var(--text-muted)'; }
-                            ngBrowserLoginBtn.textContent = 'Login via Browser';
+                            ngBrowserLoginBtn.textContent = 'Sign in';
                             ngBrowserLoginBtn.disabled = false;
                         }
                     } catch (err) {
                         let detail = err.message.replace(/^API \d+:\s*/, '');
                         try { detail = JSON.parse(detail).detail || detail; } catch {}
                         if (msg) { msg.textContent = detail; msg.style.color = 'var(--danger)'; }
-                        ngBrowserLoginBtn.textContent = 'Login via Browser';
+                        ngBrowserLoginBtn.textContent = 'Sign in';
                         ngBrowserLoginBtn.disabled = false;
                     }
                 });
@@ -22013,6 +22347,40 @@ const App = {
 
             // ── Security tab event handlers ──────────────────────────
 
+            // Spec 059 (FR-SEC-007): the owner's opt-in to plain-http hand-overs. Off by default.
+            if (document.getElementById('sec-http-body')) {
+                const badge = document.getElementById('sec-http-badge');
+                const msg = document.getElementById('sec-http-msg');
+                const show = (s) => {
+                    badge.textContent = s.allow_http ? 'On' : 'Off';
+                    if (s.hosted) {
+                        document.getElementById('sec-http-body').replaceChildren(
+                            Object.assign(document.createElement('p'), { textContent: 'Hosted seats always use https.', style: 'font-size:13px' }));
+                    }
+                };
+                API.getSigninHelperHttp().then(show).catch(() => {});
+                const send = async (body) => {
+                    msg.textContent = '';
+                    try {
+                        show(await API.setSigninHelperHttp(body));
+                        document.getElementById('sec-http-pw').value = '';
+                        msg.textContent = body.allow ? 'Plain http is allowed for sign-ins.' : 'Plain http is off.';
+                        msg.style.color = 'var(--success)';
+                    } catch (err) {
+                        let m = err.message.replace(/^API \d+:\s*/, '');
+                        try { m = JSON.parse(m).detail || m; } catch {}
+                        msg.textContent = m;
+                        msg.style.color = 'var(--danger)';
+                    }
+                };
+                document.getElementById('sec-http-on').addEventListener('click', () => send({
+                    allow: true,
+                    password: document.getElementById('sec-http-pw').value,
+                    accept_risk: document.getElementById('sec-http-risk').checked,
+                }));
+                document.getElementById('sec-http-off').addEventListener('click', () => send({ allow: false }));
+            }
+
             // Change Password
             document.getElementById('sec-change-pw-btn')?.addEventListener('click', async () => {
                 const btn = document.getElementById('sec-change-pw-btn');
@@ -22038,6 +22406,9 @@ const App = {
                 }
                 btn.disabled = false;
             });
+
+            // Account email — optional on self-host (spec 058)
+            this._loadEmailSection();
 
             // TOTP 2FA — load status and render appropriate UI
             this._loadTotpSection();

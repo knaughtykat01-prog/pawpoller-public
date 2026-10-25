@@ -158,49 +158,13 @@ def _bbcode_to_markdown(bbcode: str) -> str:
 
 
 def _html_to_markdown(html_content: str) -> str:
-    """Convert HTML to basic markdown for MASTER.md.
+    """Convert HTML to basic markdown for MASTER.md (SoFurry/AO3/Wattpad story bodies).
 
-    Handles common HTML elements found in SoFurry story content. Like the
-    BBCode converter, this is intentionally simple.
+    One pass via the PostyBirb importer's parser: the old regex chain went far slower than
+    linear on unclosed tags (SEC060). Uncapped, since these are the owner's own stories.
     """
-    text = html_content
-
-    # Remove script/style blocks
-    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.IGNORECASE | re.DOTALL)
-
-    # Headings: <h1>-<h6> → # markers
-    for i in range(1, 7):
-        text = re.sub(rf'<h{i}[^>]*>(.*?)</h{i}>', rf'\n{"#" * i} \1\n', text, flags=re.IGNORECASE | re.DOTALL)
-
-    # Bold: <b>, <strong> → **...**
-    text = re.sub(r'<(?:b|strong)[^>]*>(.*?)</(?:b|strong)>', r'**\1**', text, flags=re.IGNORECASE | re.DOTALL)
-    # Italic: <i>, <em> → *...*
-    text = re.sub(r'<(?:i|em)[^>]*>(.*?)</(?:i|em)>', r'*\1*', text, flags=re.IGNORECASE | re.DOTALL)
-
-    # Line breaks: <br> → newline
-    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
-    # Paragraphs: <p>...</p> → double newline
-    text = re.sub(r'<p[^>]*>(.*?)</p>', r'\n\n\1\n\n', text, flags=re.IGNORECASE | re.DOTALL)
-    # Horizontal rules: <hr> → ---
-    text = re.sub(r'<hr[^>]*/?>', '\n---\n', text, flags=re.IGNORECASE)
-
-    # Links: <a href="X">text</a> → [text](X)
-    text = re.sub(r'<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>', r'[\2](\1)', text, flags=re.IGNORECASE | re.DOTALL)
-
-    # Strip all remaining HTML tags
-    text = re.sub(r'<[^>]+>', '', text)
-
-    # Decode HTML entities
-    import html
-    text = html.unescape(text)
-
-    # Normalise whitespace
-    text = text.replace('\r\n', '\n').replace('\r', '\n')
-    # Collapse excessive blank lines (3+ → 2)
-    text = re.sub(r'\n{3,}', '\n\n', text)
-
-    return text.strip()
+    from pb_import import _markdown
+    return _markdown(html_content.replace("\r\n", "\n").replace("\r", "\n"), limit=None)
 
 
 # ---------------------------------------------------------------------------
@@ -366,13 +330,6 @@ async def import_from_inkbunny(submission_id: str) -> dict:
     password = settings.get("password", "")
     if not username or not password:
         raise RuntimeError("Inkbunny credentials not configured — set up in Settings")
-
-    # Look up the submission in the local DB first for basic metadata
-    conn = get_connection()
-    try:
-        db_sub = queries.get_submission(conn, int(submission_id))
-    finally:
-        conn.close()
 
     async def _ib_fetch(client) -> dict:
         # Reuse the cached session ID (SID) the poller writes to the DB
@@ -1028,7 +985,8 @@ async def import_from_squidgeworld(submission_id: str) -> dict:
     )
     from clients.sqw.client import SquidgeWorldClient
 
-    direct_client = _get_sqw_client(settings)
+    direct_client = _get_sqw_client(settings, sqw_username, sqw_password,
+                                    settings.get("sqw_target_user", "") or sqw_username)
     try:
         html_text, is_draft = await _fetch_sqw_work(direct_client, submission_id)
     except Exception as e:

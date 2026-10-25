@@ -83,7 +83,7 @@ logger = logging.getLogger("main")
 def _start_digest_scheduler():
     """Run periodic Telegram digest in its own daemon thread."""
     import asyncio
-    from datetime import datetime, timezone
+    from datetime import timezone
     from polling.telegram import send_digest_report
 
     def _get_digest_interval() -> int:
@@ -246,6 +246,16 @@ def _show_window(icon=None, item=None):
         _tray_icon.visible = False  # Hide the tray icon until next minimize
 
 
+def _open_signin_helper(icon=None, item=None):
+    """Tray → "Sign in for a server…" (spec 059): show the window on the desktop's helper screen."""
+    _show_window()
+    if _window is not None:
+        try:
+            _window.evaluate_js("window.SigninHelper && SigninHelper.openDesktop()")
+        except Exception as e:
+            logger.debug("could not open the sign-in helper: %s", e)
+
+
 def _quit_app(icon=None, item=None):
     """Full exit -- destroy window and stop tray icon.
 
@@ -261,7 +271,7 @@ def _quit_app(icon=None, item=None):
         _window.destroy()  # Unblocks webview.start() in main()
 
 
-def _create_tray_icon():
+def _create_tray_icon(helper: bool = False):
     """Create the pystray system tray icon (not yet started).
 
     The icon is created here but NOT run -- main() starts it in a separate
@@ -273,6 +283,8 @@ def _create_tray_icon():
     image = _load_tray_image()
     menu = pystray.Menu(
         MenuItem("Show", _show_window, default=True),  # default=True: double-click action
+        # 059: the standalone desktop only (a connected window shows the server's page, no helper).
+        *([MenuItem("Sign in for a server…", _open_signin_helper)] if helper else []),
         MenuItem("Quit", _quit_app),
     )
     icon = pystray.Icon("PawPoller", image, "PawPoller", menu)
@@ -363,6 +375,41 @@ def _sync_settings_on_startup():
         logger.warning("Settings sync: pull failed (server unreachable?): %s", e)
 
 
+def _console_open(name: str, mode: str):
+    return open(name, mode, encoding="utf-8", errors="replace")
+
+
+def _open_reset_console(kernel32=None, frozen_windows=None) -> bool:
+    """Give `--reset-password` a window on the Windows desktop build (spec 058 FR-SEC-001).
+
+    The build has no console (pawpoller.spec console=False), so the prompts went nowhere. Always
+    a NEW console: attaching to the Command Prompt that started us would share its keyboard (a
+    windowed program doesn't make the shell wait), splitting the password between the two.
+    Only stdout/stderr are pointed at it. stdin stays as it is: getpass reads the console
+    directly only while `sys.stdin is sys.__stdin__`, and otherwise shows what's typed.
+    """
+    if frozen_windows is None:
+        frozen_windows = sys.platform == "win32" and getattr(sys, "frozen", False)
+    if not frozen_windows:
+        return False
+    if kernel32 is None:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+    if not kernel32.AllocConsole():
+        return False
+    sys.stdout = _console_open("CONOUT$", "w")
+    sys.stderr = _console_open("CONOUT$", "w")
+    return True
+
+
+def _wait_for_enter() -> None:
+    """Keep the reset's window open until it has been read."""
+    import msvcrt
+    print("Press Enter to close.", flush=True)
+    while msvcrt.getwch() not in ("\r", "\n"):
+        pass
+
+
 def main():
     """Entry: the update gate first, then whichever mode this install is in."""
     # Locked out of your own install? (4.34.1, PWRESET) There was no way back from a
@@ -373,7 +420,13 @@ def main():
     # with that already has the vault and the database sitting in the data directory.
     if "--reset-password" in sys.argv[1:]:
         import server
-        raise SystemExit(server._reset_password())
+        own = _open_reset_console()
+        if not own and sys.platform == "win32" and getattr(sys, "frozen", False):
+            raise SystemExit(1)   # no window to ask in: getpass would wait unseen
+        rc = server._reset_password()
+        if own:
+            _wait_for_enter()
+        raise SystemExit(rc)
     try:
         import update_gate
         _gate = update_gate.run()
@@ -520,7 +573,7 @@ def run_standalone():
         threading.Thread(target=_target, daemon=True, name=_name).start()
 
     # --- Step 3: System tray icon (initially hidden) ---
-    _tray_icon = _create_tray_icon()
+    _tray_icon = _create_tray_icon(helper=True)
     # pystray's default setup callback sets visible=True, which would show
     # the tray icon immediately.  We pass a no-op lambda to override that
     # behaviour so the icon starts HIDDEN and only appears when the user
@@ -632,6 +685,48 @@ def run_standalone():
                 return open_fa_journal(str(title or ""), str(message or ""), str(rating or "0"), _posted)
             except Exception as e:
                 return {"ok": False, "message": str(e)}
+
+        # Spec 059 — Sign in for a server. Here only, never on the connected window's AgentApi,
+        # so a server's own page can't call it; and the confirmation is a native dialog raised
+        # in Python, so a script calling this still has to get past the person (M-new-1).
+        def helper_signin(self, server, code):
+            import desktop_agent
+            from auth.browser_login import login_via_browser
+
+            def _confirm(title, message):
+                win = webview.windows[0] if webview.windows else None
+                return win.create_confirmation_dialog(title, message) if win else None
+            try:
+                return desktop_agent.helper_signin(
+                    str(server or ""), str(code or ""), confirm=_confirm, queue=_helper_sender.queue,
+                    login_fn=lambda p: login_via_browser(p, account_id=None, save=False))
+            except Exception as e:
+                logger.error("Sign in for a server failed: %s", type(e).__name__)
+                return {"ok": False, "message": "Something went wrong. Try again."}
+
+        def helper_http_ok(self, server, yes=True):
+            # The yes is asked in a native dialog, so a script in this window can't give it (SEC059).
+            import desktop_agent
+            if yes:
+                win = webview.windows[0] if webview.windows else None
+                host = desktop_agent.ascii_host(str(server or ""))
+                if not win or win.create_confirmation_dialog(
+                        "Allow plain http?",
+                        f"Allow sign-ins without encryption for {host}? Only say yes for a server in your "
+                        f"own home.") is not True:
+                    return {"ok": False, "servers": desktop_agent.http_ok_list()}
+            return {"ok": True, "servers": desktop_agent.set_http_ok(str(server or ""), bool(yes))}
+
+        def helper_http_ok_list(self):
+            import desktop_agent
+            return desktop_agent.http_ok_list()
+
+        def helper_status(self):
+            return {"pending": _helper_sender.queue.pending_count(), "message": _helper_sender.last_message}
+
+    import desktop_agent as _da
+    _helper_sender = _da.HelperSender()
+    _helper_sender.start()
 
     logger.info("Opening native window at %s", url)
     _window = webview.create_window(

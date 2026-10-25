@@ -1,3 +1,4 @@
+// @ts-check
 /*
  * Settings → Privacy (4.44.0, spec 011 — data classification).
  *

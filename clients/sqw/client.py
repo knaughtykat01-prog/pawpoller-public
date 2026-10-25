@@ -1254,7 +1254,7 @@ class SquidgeWorldClient:
         import tempfile, time
         debug_path = f"{tempfile.gettempdir()}/sqw_create_debug_{int(time.time())}.html"
         try:
-            with open(debug_path, "w", encoding="utf-8") as f:
+            with open(debug_path, "w", encoding="utf-8") as f:  # noqa: ASYNC230
                 f.write(f"<!-- final_url: {final_url} -->\n")
                 f.write(f"<!-- status: {resp.status_code} -->\n")
                 f.write(resp.text)

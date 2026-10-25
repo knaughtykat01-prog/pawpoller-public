@@ -164,6 +164,10 @@ def test_the_server_wants_an_email(mails, monkeypatch):
     monkeypatch.setattr(dashboard, "SIGNUP_GATES", True)
     c = _client()
     _signed_up(c)
+    monkeypatch.setenv("PAWPOLLER_HOSTED", "1")   # spec 058: self-host may have no email
+    import legal
+    c_ = legal.current()   # the seat's own Terms
+    legal.accept(c_["terms"], c_["privacy"], c_["hosted"])
     config.delete_settings_keys(["auth_email", "auth_email_pending"])
     r = c.get("/api/settings/preferences")
     assert r.status_code == 403 and r.json()["error"] == "email"
@@ -239,3 +243,23 @@ def test_a_code_is_not_valid_while_it_is_being_sent(mails, monkeypatch):
                         lambda to, purpose, code="": seen.append(account_mail.check_code(purpose, code)) or True)
     assert account_mail.send_code("reset", "owner@example.com")
     assert seen == [None]
+
+
+def test_email_removed_falls_back_on_an_older_tech_centre(monkeypatch):
+    """SEC058: a Tech Centre before 0.6.1 refuses the email_removed notice (400); the old
+    'email changed' text goes out instead, so the two deploy in either order."""
+    import account_mail
+    import techcentre
+
+    class R:
+        def __init__(self, code):
+            self.status_code = code
+    sent = []
+
+    def post(url, json, **k):
+        sent.append(json["purpose"])
+        return R(400 if json["purpose"] == "email_removed" else 200)
+    monkeypatch.setattr(techcentre, "TECH_CENTRE_URL", "https://tc.example.com")
+    monkeypatch.setattr(account_mail.httpx, "post", post)
+    assert account_mail._post("owner@example.com", "email_removed") is True
+    assert sent == ["email_removed", "email_changed"]

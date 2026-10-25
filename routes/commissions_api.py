@@ -4,6 +4,7 @@ Single self-contained resource (no polymorphic members like Collections). Money
 is data only — no payment integration. `artwork_name` deep-links a delivered
 piece; `deliver_sites` is a JSON array of platform codes from the poster set.
 """
+import asyncio
 import logging
 import os
 import re
@@ -222,7 +223,7 @@ async def upload_file(cid: int, file: UploadFile = File(...)):
     folder = _files_dir(cid)
     folder.mkdir(parents=True, exist_ok=True)
     name = _dedupe_name(folder, _safe_name(file.filename))
-    (folder / name).write_bytes(data)
+    await asyncio.to_thread((folder / name).write_bytes, data)
     return {"status": "uploaded", "filename": name, "size": len(data)}
 
 

@@ -1503,8 +1503,8 @@ async def publish_check(story_name: str):
                 "tag_count": len(package.tags),
                 "file_path": package.file_path or "",
                 "file_size": (
-                    os.path.getsize(package.file_path)
-                    if package.file_path and os.path.isfile(package.file_path)
+                    os.path.getsize(package.file_path)  # noqa: ASYNC240
+                    if package.file_path and os.path.isfile(package.file_path)  # noqa: ASYNC240
                     else 0
                 ),
                 "requires_mode": poster.requires_mode,
@@ -1522,10 +1522,10 @@ async def publish_check(story_name: str):
                 if (
                     existing["status"] == "posted"
                     and package.file_path
-                    and os.path.isfile(package.file_path)
+                    and os.path.isfile(package.file_path)  # noqa: ASYNC240
                     and existing.get("file_hash")
                 ):
-                    current_hash = hash_file(package.file_path)
+                    current_hash = await _asyncio.to_thread(hash_file, package.file_path)
                     if current_hash and current_hash != existing["file_hash"]:
                         drift = True
 
@@ -1871,8 +1871,8 @@ async def publish(story_name: str, req: PublishRequest):
                 "rating": package.rating,
                 "file_path": package.file_path,
                 "file_size": (
-                    os.path.getsize(package.file_path)
-                    if package.file_path and os.path.isfile(package.file_path)
+                    os.path.getsize(package.file_path)  # noqa: ASYNC240
+                    if package.file_path and os.path.isfile(package.file_path)  # noqa: ASYNC240
                     else 0
                 ),
                 "word_count": package.word_count,
@@ -1906,6 +1906,11 @@ async def publish(story_name: str, req: PublishRequest):
             poster = manager._get_poster(req.platform)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Unknown platform: {e}")
+        if not hasattr(poster, "publish_draft"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{req.platform} has no draft to publish",
+            )
         result = await poster.publish_draft(existing["external_id"])
         return {
             "ok": result.success,

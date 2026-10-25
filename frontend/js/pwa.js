@@ -1,3 +1,4 @@
+// @ts-check
 /* PWA glue — registers the service worker and keeps the mobile status-bar tint
  * (<meta name="theme-color">) in sync with whichever theme is active, since the
  * manifest's theme_color is static. External file so it's covered by the strict

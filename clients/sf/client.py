@@ -38,6 +38,7 @@ Gotchas that cost real debugging (all recorded in the API map):
 
 from __future__ import annotations
 import asyncio
+from pathlib import Path
 import json
 import logging
 import os
@@ -562,8 +563,7 @@ class SoFurryClient:
         extension when not given, so the same call carries stories and artwork.
         """
         await self._require_token()
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        file_data = await asyncio.to_thread(Path(file_path).read_bytes)
         if len(file_data) < SF_MIN_CONTENT_BYTES:
             raise SoFurryError(
                 f"SF rejects content under {SF_MIN_CONTENT_BYTES} bytes; "
@@ -731,7 +731,7 @@ class SoFurryClient:
             category=category, sub_type=sub_type, rating=rating, privacy=privacy,
         )
 
-        if thumbnail_path and os.path.isfile(thumbnail_path):
+        if thumbnail_path and os.path.isfile(thumbnail_path):  # noqa: ASYNC240
             logger.warning(
                 "SF: custom thumbnail ignored for %s — the official API has no "
                 "thumbnail upload endpoint; set it in the SoFurry UI if needed.",

@@ -124,7 +124,7 @@ class TelegramPoster(PlatformPoster):
                                   duration_seconds=self._elapsed(_t))
 
             is_media = bool(package.file_path and package.media_kind in ("video", "audio")
-                            and os.path.isfile(package.file_path))
+                            and os.path.isfile(package.file_path))  # noqa: ASYNC240
             is_art = bool(package.file_path
                           and (package.file_type.lower() in _IMAGE_TYPES or is_media))
             # An image announces itself; since 4.19.0 a video / audio piece is SENT
@@ -139,13 +139,13 @@ class TelegramPoster(PlatformPoster):
             if is_media:
                 result = await client.create_media_post(
                     text, package.file_path, package.media_kind,
-                    poster=package.thumbnail_path if package.thumbnail_path and os.path.isfile(package.thumbnail_path) else None,
+                    poster=package.thumbnail_path if package.thumbnail_path and os.path.isfile(package.thumbnail_path) else None,  # noqa: ASYNC240
                     meta={"duration_s": package.duration_s, "width": package.width, "height": package.height},
                     spoiler=opts["spoiler"], silent=opts["silent"], protect=opts["protect"],
                     as_document=opts["document"], pin=opts["pin"],
                     title=package.title or "", performer=_performer(package))
             else:
-                images = [image] if image and os.path.isfile(image) else []
+                images = [image] if image and os.path.isfile(image) else []  # noqa: ASYNC240
                 result = await client.create_post(
                     text, image_paths=images, spoiler=opts["spoiler"],
                     silent=opts["silent"], protect=opts["protect"],

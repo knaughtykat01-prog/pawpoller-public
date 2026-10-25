@@ -403,7 +403,7 @@ _SETTINGS = (
     )),
     # Preferences.
     *(S(k, _PREF) for k in (
-        "announce_defaults", "comment_templates", "comment_defaults", "journal_templates", "auto_backup_dir", "auto_backup_enabled", "auto_backup_interval_hours",
+        "announce_defaults", "saved_descriptions", "tag_groups", "comment_templates", "comment_defaults", "journal_templates", "auto_backup_dir", "auto_backup_enabled", "auto_backup_interval_hours",
         "auto_backup_keep", "auto_sync_enabled", "auto_update", "board_track", "credits", "credential_mode",
         "da_client_id", "sc_client_id", "yt_client_id", "ttv_client_id", "dashboard_layout", "dashboard_progress_added", "discord_announce_on_publish",
         "display_timezone", "email_digest_enabled", "overnight_show_after", "email_digest_interval_days", "hidden_platforms",
@@ -415,6 +415,8 @@ _SETTINGS = (
         "update_skip_version", "watcher_notifications_enabled", "tech_reports", "tech_usage", "consent_records", "age_band",
         "legal_accepted", "legal_history",   # Terms + Privacy accepted, and when (4.67.0, spec 033)
         "auth_mail_log",   # when account emails were last sent, for the send limit (4.68.0)
+        "signin_helper_allow_http",   # the owner allowed sign-in hand-overs over plain http at home (spec 059)
+        "signin_helper_http_ok",   # this desktop's own yes to plain http, per server address (spec 059)
         "levels_enabled",   # gamification on/off; absent = never asked = off (spec 050, NOFUN 4.85.0)
         "home_screen",   # what the app opens on: "start" (absent) or "overview" (spec 053)
         "rewards_equipped",   # the ring + level-up style in use (spec 051)
@@ -496,7 +498,13 @@ _PATHS = (
     P("data/tech_state.json", _HOUSE, "The install's id and the Tech Centre's last answers.", backup="derivable"),
     P("data/fa_standdown.json", _HOUSE, "When FurAffinity's bot check last turned PawPoller away, and when to try again.",
       backup="derivable"),
-    P("data/agent_queue.json", _HOUSE, "Jobs waiting for the desktop helper.", backup="derivable"),
+    # 059: the waiting jobs carry site sign-ins, so they are encrypted with the vault key and kept out of backups.
+    P("data/agent_queue.json", _SECRET, "Jobs waiting for the desktop helper (sign-ins in them are encrypted).",
+      backup="derivable"),
+    P("data/helper_queue.json", _SECRET, "Sign-ins waiting to reach a server, for up to ten minutes (encrypted).",
+      backup="derivable"),
+    P("data/pb_upload/", _SECRET, "A PostyBirb folder you uploaded, with its sign-ins, while it is brought in. "
+      "Deleted when the import ends or is cancelled, or within the hour if left unused.", backup="derivable"),
     P("data/diagnostics_results.json", _HOUSE, "The last self-test results.", backup="derivable"),
     P("data/.update-request", _HOUSE, "An update asked for from the dashboard.", backup="derivable"),
     P("data/.update-agent-seen", _HOUSE, "When the update helper last checked in.", backup="derivable"),

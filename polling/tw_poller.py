@@ -232,7 +232,13 @@ async def run_tw_poll_cycle(account_id: int | None = None, force_full: bool = Fa
             _throttled = getattr(client, "throttled", False)
             _status = "partial" if _throttled else "success"
             _msg = "Rate-limited (429) — tweets may be incomplete" if _throttled else None
-            _update_tw_progress("complete", message="Rate-limited — data may be incomplete" if _throttled else "No tweets found.")
+            if _throttled and tw_queries.tw_came_back_empty_before(conn, account_id, log_id):
+                # Nothing at all, twice running: not a busy moment but a sign-in X no longer takes.
+                _status = "failed"
+                _msg = ("X sent back nothing on the last two checks. Sign in to X again from Accounts "
+                        "(or paste fresh cookies), then test the account.")
+            _update_tw_progress("complete", message=_msg if _status == "failed" else
+                                ("Rate-limited — data may be incomplete" if _throttled else "No tweets found."))
             tw_queries.finish_tw_poll_log(conn, log_id, _status, error_message=_msg,
                                           duration_seconds=time.time() - start_time,
                                           backend=client.backend_used, **stats)

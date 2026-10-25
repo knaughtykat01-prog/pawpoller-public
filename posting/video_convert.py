@@ -48,7 +48,7 @@ async def gif_to_mp4(path: str) -> str:
     except subprocess.TimeoutExpired:
         os.remove(out)
         raise RuntimeError("Turning the GIF into video took too long (over 2 minutes)")
-    if r.returncode != 0 or not os.path.getsize(out):
+    if r.returncode != 0 or not os.path.getsize(out):  # noqa: ASYNC240
         os.remove(out)
         logger.error("GIF → MP4 failed: %s", (r.stderr or b"").decode(errors="replace")[-500:])
         raise RuntimeError("Couldn't turn the GIF into video")

@@ -1,3 +1,4 @@
+// @ts-check
 /* Connected-desktop bridge (SYNCTRUTH, 4.13.0).
  *
  * When this page is shown inside the PawPoller desktop app in *connected* mode, the app

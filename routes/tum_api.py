@@ -18,6 +18,7 @@ from fastapi import APIRouter, Query, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 
 from database.db import get_connection
+from database.queries import thin_series
 from database import tum_queries
 from polling.tum_poller import run_tum_poll_cycle, tum_poll_progress
 from polling.background import spawn_poll
@@ -256,7 +257,7 @@ def get_tum_aggregate(
 ):
     conn = get_connection()
     try:
-        return {"snapshots": tum_queries.get_tum_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(tum_queries.get_tum_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/tum/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))

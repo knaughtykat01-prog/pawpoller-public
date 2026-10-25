@@ -19,10 +19,12 @@ Endpoints (Graph API v25.0, checked 2026-10-07):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import mimetypes
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -173,8 +175,8 @@ class FbClient:
 
     async def _upload_photo(self, path: str, caption: str, published: bool) -> dict:
         mime = mimetypes.guess_type(path)[0] or "image/jpeg"
-        with open(path, "rb") as fh:
-            files = {"source": (os.path.basename(path), fh.read(), mime)}
+        blob = await asyncio.to_thread(Path(path).read_bytes)
+        files = {"source": (os.path.basename(path), blob, mime)}
         data = self._tok({"published": "true" if published else "false"})
         if caption and published:
             data["caption"] = caption
@@ -203,8 +205,8 @@ class FbClient:
 
     async def post_video(self, path: str, title: str, description: str) -> dict:
         mime = mimetypes.guess_type(path)[0] or "video/mp4"
-        with open(path, "rb") as fh:
-            files = {"source": (os.path.basename(path), fh.read(), mime)}
+        blob = await asyncio.to_thread(Path(path).read_bytes)
+        files = {"source": (os.path.basename(path), blob, mime)}
         data = self._tok({"description": description})
         if title:
             data["title"] = title
@@ -246,7 +248,7 @@ class FbClient:
         bad: set[str] = set()
         for i in range(0, len(posts), 25):
             chunk = posts[i:i + 25]
-            for attempt in range(3):
+            for _attempt in range(3):
                 reqs = []
                 for p in chunk:
                     pid = p["id"]

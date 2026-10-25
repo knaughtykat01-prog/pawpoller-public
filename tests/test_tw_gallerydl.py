@@ -569,3 +569,24 @@ async def test_a_timed_out_rate_limit_wait_skips_the_graphql_fallback(monkeypatc
     finally:
         await c.close()
     assert c.throttled is True and c.backend_used == "gallerydl:limited"
+
+
+def test_an_empty_throttled_check_after_another_reads_as_failed():
+    """RATEWATCHMOVE follow-up: one empty, throttled X check is 'partial'; the second in a row is a
+    sign-in X no longer takes, so the poller marks it failed. The query decides 'in a row'."""
+    from database.db import get_connection, init_db
+    from database import tw_queries
+    init_db()
+    conn = get_connection()
+    try:
+        first = tw_queries.start_tw_poll_log(conn, 7)
+        assert not tw_queries.tw_came_back_empty_before(conn, 7, first)            # nothing before it
+        tw_queries.finish_tw_poll_log(conn, first, "partial", submissions_found=0)
+        second = tw_queries.start_tw_poll_log(conn, 7)
+        assert tw_queries.tw_came_back_empty_before(conn, 7, second)
+        assert not tw_queries.tw_came_back_empty_before(conn, 8, second)          # another account's checks don't count
+        tw_queries.finish_tw_poll_log(conn, second, "partial", submissions_found=12)
+        third = tw_queries.start_tw_poll_log(conn, 7)
+        assert not tw_queries.tw_came_back_empty_before(conn, 7, third)           # the last one found tweets
+    finally:
+        conn.close()

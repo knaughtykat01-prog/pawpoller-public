@@ -20,6 +20,7 @@ from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse
 
 from database.db import get_connection
+from database.queries import thin_series
 from database import ik_queries
 from polling.ik_poller import run_ik_poll_cycle, ik_poll_progress
 from polling.background import spawn_poll
@@ -116,7 +117,6 @@ async def ik_set_token(body: dict):
         config.delete_settings_keys(["ik_auth_token"])
         return {"status": "cleared", "message": "Auth token cleared — tracking only"}
 
-    from clients.ik.client import IKClient
     settings = config.get_settings()
     client = IKClient(settings.get("ik_target_user", ""))
     try:
@@ -315,7 +315,7 @@ def get_ik_aggregate(
 ):
     conn = get_connection()
     try:
-        return {"snapshots": ik_queries.get_ik_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(ik_queries.get_ik_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/ik/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))

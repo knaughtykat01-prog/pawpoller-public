@@ -1043,6 +1043,7 @@ window.Masterpieces = {
                         <input class="mp-input" id="mp-e-title" value="${this.esc(m.title || '')}"></label>
                     <label class="mp-field"><span>Description</span>
                         <textarea class="mp-input" id="mp-e-desc" rows="4">${this.esc(m.description || '')}</textarea></label>
+                    <div><button class="btn btn-sm" type="button" data-saved-desc="mp-e-desc">📝 Saved description</button></div>
                     <label class="mp-field"><span>Alt text
                             <span class="muted">(for screen readers; used as the Bluesky image description)</span></span>
                         <input class="mp-input" id="mp-e-alt" value="${this.esc(m.alt_text || '')}"
@@ -1069,7 +1070,8 @@ window.Masterpieces = {
         return `
             <section class="card" aria-labelledby="mp-sec-tags">
                 <div class="sec-title"><h2 id="mp-sec-tags">Tags</h2>
-                    <button class="btn btn-sm btn-browse" data-mp-tagbrowse type="button" title="Pick from the tag library">🏷️ Browse library</button></div>
+                    <span><button class="btn btn-sm btn-browse" data-mp-tagbrowse type="button" title="Pick from the tag library">🏷️ Browse library</button>
+                    <button class="btn btn-sm btn-browse" data-tag-group="mp-e-tags" type="button">➕ Tag group</button></span></div>
                 <p class="sec-note">Tag it fully — each site takes what it can. Drag to reorder: a site that caps tags keeps the first ones.</p>
                 <div class="tagblock">
                     <div class="tagbar"><span class="tagcount"><b id="mp-tagcount">${tagList.length}</b> tags · <b id="mp-corecount">–</b> core</span></div>

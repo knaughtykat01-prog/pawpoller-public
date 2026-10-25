@@ -260,8 +260,8 @@ async def t_epub_generator(ctx: TestContext) -> None:
         )
         out_path = build_epub(story_dir)
         epub_path = Path(out_path)
-        assert epub_path.is_file(), f"epub not produced at {epub_path}"
-        size = epub_path.stat().st_size
+        assert epub_path.is_file(), f"epub not produced at {epub_path}"  # noqa: ASYNC240
+        size = epub_path.stat().st_size  # noqa: ASYNC240
         ctx.detail("bytes", size)
         assert size > 1000, "EPUB suspiciously small"
         with zipfile.ZipFile(epub_path) as z:

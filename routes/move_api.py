@@ -18,6 +18,7 @@ Logs carry sizes and outcomes only — never the phrase, a login or a file name 
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -398,13 +399,15 @@ async def upload_piece(uid: str, request: Request, offset: int):
         buf += chunk
         if len(buf) > room:
             raise HTTPException(413, detail="That piece is too big.")
-    with _UPLOAD_LOCK:
-        now = _status(d)["received"]
-        if now != offset:                              # another PUT for this offset got here first
-            raise HTTPException(409, detail={"message": "Out of step; carry on from here.", "received": now})
-        with open(d / "file.part", "ab") as f:
-            f.write(buf)
-        os.utime(d / "upload.json")                    # "stale" counts from the last piece, not the first
+    def _append():                                     # up to a 32 MB write: off the event loop
+        with _UPLOAD_LOCK:
+            now = _status(d)["received"]
+            if now != offset:                          # another PUT for this offset got here first
+                raise HTTPException(409, detail={"message": "Out of step; carry on from here.", "received": now})
+            with open(d / "file.part", "ab") as f:
+                f.write(buf)
+            os.utime(d / "upload.json")                # "stale" counts from the last piece, not the first
+    await asyncio.to_thread(_append)
     return {"received": offset + len(buf)}
 
 

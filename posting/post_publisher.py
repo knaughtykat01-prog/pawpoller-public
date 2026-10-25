@@ -195,7 +195,7 @@ def preview(body: str, platforms: list[str], bindings=None, image_count: int = 0
         warns: list[dict] = []
 
         def w(level, msg):
-            warns.append({"level": level, "text": msg})
+            warns.append({"level": level, "text": msg})  # noqa: B023
 
         acct_id, creds = _resolve_creds(plat, account_ids.get(plat), settings)
         connected = all(creds.get(k) for k in _REQUIRED_CREDS.get(plat, ()))
@@ -275,7 +275,7 @@ async def _relay_stash_image(server_url: str, api_key: str, path: str) -> str:
     """
     import httpx
     from pathlib import Path
-    data = Path(path).read_bytes()
+    data = Path(path).read_bytes()  # noqa: ASYNC240
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     url = server_url.rstrip("/") + "/api/ig/pubmedia"
     async with httpx.AsyncClient(timeout=90.0) as http:

@@ -1,0 +1,8 @@
+# RUFFWIDE (4.88.0): gated by `deploy/release.py check`. Existing hits carry `# noqa`, so only
+# new code is held. Not here: B904 (raise HTTPException inside except — every route does it),
+# B008 (FastAPI Depends()/Query() defaults), B905 (zip strict), F401/F541 (noise).
+extend-exclude = ["_archive", "build", "dist", ".plan", "handoff"]
+
+[lint]
+select = ["F", "B", "ASYNC"]
+ignore = ["F401", "F541", "B904", "B008", "B905"]

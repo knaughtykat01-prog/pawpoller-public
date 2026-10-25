@@ -924,7 +924,6 @@ async def trigger_session_check():
     where the manual poll triggers do not.
     """
     from polling.session_check import check_all
-    from polling.background import spawn
     spawn(check_all(), "manual-session-check")
     return {"status": "started"}
 
@@ -1610,7 +1609,7 @@ def get_aggregate(
     """
     conn = get_connection()
     try:
-        return {"snapshots": queries.get_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": queries.thin_series(queries.get_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))
@@ -3436,10 +3435,10 @@ async def restore_backup(file: UploadFile = File(...)):
         # SQLite from replaying them against the restored database.
         wal_path = Path(str(config.DB_PATH) + "-wal")
         shm_path = Path(str(config.DB_PATH) + "-shm")
-        if wal_path.exists():
-            wal_path.unlink()
-        if shm_path.exists():
-            shm_path.unlink()
+        if wal_path.exists():  # noqa: ASYNC240
+            wal_path.unlink()  # noqa: ASYNC240
+        if shm_path.exists():  # noqa: ASYNC240
+            shm_path.unlink()  # noqa: ASYNC240
         init_db()
         return {"status": "restored", "tables_found": len(tables)}
     finally:
@@ -3546,7 +3545,7 @@ async def stream_logs(
                     # to backfill (the new file is the head we want).
                     last_size = 0
                 if stat.st_size > last_size:
-                    with open(log_path, "rb") as f:
+                    with open(log_path, "rb") as f:  # noqa: ASYNC230
                         f.seek(last_size)
                         chunk = f.read(stat.st_size - last_size)
                     last_size = stat.st_size
@@ -3826,7 +3825,7 @@ def get_historical_analytics(weeks: int = Query(12)):
         _off = int(datetime.now(config.display_zone()).utcoffset().total_seconds() // 60)
         _shift = f"'{_off:+d} minutes'"
         month_data = {}
-        for plat, snap_t, _, v_col, f_col, c_col in table_pairs:
+        for _plat, snap_t, _, v_col, f_col, c_col in table_pairs:
             try:
                 # Build column expressions, using 0 for missing columns
                 v_expr = f"MAX({v_col}) - MIN({v_col})" if v_col else "0"
@@ -3896,7 +3895,7 @@ def get_historical_analytics(weeks: int = Query(12)):
 
         # Weekly growth report
         weekly = {}
-        for plat, snap_t, _, v_col, f_col, c_col in table_pairs:
+        for _plat, snap_t, _, v_col, f_col, c_col in table_pairs:
             try:
                 v_expr = f"MAX({v_col}) - MIN({v_col})" if v_col else "0"
                 f_expr = f"MAX({f_col}) - MIN({f_col})" if f_col else "0"

@@ -81,7 +81,7 @@ async def t_story_json_valid(ctx: TestContext) -> None:
     timeout_seconds=60.0,
 )
 async def t_pawsync_dry_run(ctx: TestContext) -> None:
-    script = Path(__file__).resolve().parent.parent.parent / "deploy" / "pawsync.py"
+    script = Path(__file__).resolve().parent.parent.parent / "deploy" / "pawsync.py"  # noqa: ASYNC240
     if not script.is_file():
         raise ctx.skip(f"pawsync.py not present at {script}")
     proc = await asyncio.create_subprocess_exec(

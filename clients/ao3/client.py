@@ -401,7 +401,6 @@ class AO3Client:
         narrow — we want politeness, not unpredictability that could hammer
         AO3 with an unlucky 0.7×–1.3× sequence.
         """
-        import config
         base = config.AO3_REQUEST_DELAY_SECONDS
         await asyncio.sleep(base * random.uniform(0.7, 1.3))
 
@@ -1137,7 +1136,7 @@ class AO3Client:
         import tempfile, time
         debug_path = f"{tempfile.gettempdir()}/ao3_create_debug_{int(time.time())}.html"
         try:
-            with open(debug_path, "w", encoding="utf-8") as f:
+            with open(debug_path, "w", encoding="utf-8") as f:  # noqa: ASYNC230
                 f.write(f"<!-- final_url: {final_url} -->\n")
                 f.write(f"<!-- status: {resp.status_code} -->\n")
                 f.write(body)
@@ -1887,7 +1886,7 @@ class AO3Client:
                     f"{tempfile.gettempdir()}/ao3_chapter_debug_"
                     f"{work_id}_{int(time.time())}.html"
                 )
-                with open(dump_path, "w", encoding="utf-8") as f:
+                with open(dump_path, "w", encoding="utf-8") as f:  # noqa: ASYNC230
                     f.write(resp.text)
                 logger.error(
                     "AO3: Dumped failed chapter response to %s", dump_path

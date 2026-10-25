@@ -28,6 +28,13 @@ set -euo pipefail
 
 cd "$(cd "$(dirname "$0")" && pwd)"   # repo root (this script lives here)
 
+# The GCP VM runs the Instagram relay only (spec 048). The full app there double-polled
+# the operator's accounts, so this script must never bring it back.
+if [ -e .relay-only ]; then
+  echo "This machine runs the PawPoller relay only. Update it with deploy/relay/README.md, not update.sh." >&2
+  exit 1
+fi
+
 PORT="${PAWPOLLER_PORT:-8420}"
 HEALTH="http://127.0.0.1:${PORT}/api/health"
 LOCK="${TMPDIR:-/tmp}/pawpoller-update.lock"

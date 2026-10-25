@@ -14,6 +14,7 @@ to avoid unnecessary login round-trips for workflows that don't need comments.
 
 from __future__ import annotations
 import asyncio
+from pathlib import Path
 import html
 import logging
 import os
@@ -586,13 +587,12 @@ class InkbunnyClient:
         if not self.sid:
             raise RuntimeError("Not logged in — call ensure_session() first")
 
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        file_data = await asyncio.to_thread(Path(file_path).read_bytes)
 
         filename = os.path.basename(file_path)
         files = {"uploadedfile[0]": (filename, file_data)}
-        if thumbnail_path and os.path.isfile(thumbnail_path):
-            with open(thumbnail_path, "rb") as tf:
+        if thumbnail_path and os.path.isfile(thumbnail_path):  # noqa: ASYNC240
+            with open(thumbnail_path, "rb") as tf:  # noqa: ASYNC230
                 thumb_data = tf.read()
             # 4.19.2: the Library's poster may be a JPEG (a video frame) — label it
             # honestly rather than as image/png regardless.
@@ -663,11 +663,11 @@ class InkbunnyClient:
         files: dict = {}
         if file_paths:
             for i, fp in enumerate(file_paths):
-                with open(fp, "rb") as f:
+                with open(fp, "rb") as f:  # noqa: ASYNC230
                     files[f"uploadedfile[{i}]"] = (os.path.basename(fp), f.read())
 
-        if thumbnail_path and os.path.isfile(thumbnail_path):
-            with open(thumbnail_path, "rb") as tf:
+        if thumbnail_path and os.path.isfile(thumbnail_path):  # noqa: ASYNC240
+            with open(thumbnail_path, "rb") as tf:  # noqa: ASYNC230
                 thumb_data = tf.read()
             ext = os.path.splitext(thumbnail_path)[1].lower().lstrip(".")
             mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif"}.get(ext, "image/png")

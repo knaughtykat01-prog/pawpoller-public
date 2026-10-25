@@ -55,7 +55,7 @@ _STATUS_MAP = {
     timeout_seconds=300.0,
 )
 async def t_pytest(ctx: TestContext) -> None:
-    repo_root = Path(__file__).resolve().parent.parent.parent
+    repo_root = Path(__file__).resolve().parent.parent.parent  # noqa: ASYNC240
     pytest_dir = repo_root / "tests"
     if not pytest_dir.is_dir():
         raise ctx.skip(f"no tests/ directory at {pytest_dir}")

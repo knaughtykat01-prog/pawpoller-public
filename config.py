@@ -823,6 +823,11 @@ SYNC_EXCLUDE = frozenset({
     "auth_code_confirm",
     "auth_code_reset",
     "auth_mail_log",
+    # 059: "allow sign-in over plain http on my home network" is the owner's own risk choice,
+    # made with their password; a paired desktop's push must never switch it on.
+    "signin_helper_allow_http",
+    # 059: a desktop's own yes to plain http for a server address. Per device by definition.
+    "signin_helper_http_ok",
     # ── Filesystem locations: they describe THIS box, not the install ──
     # `C:\Users\...\Archives` means nothing on a Linux VM and `/app/data/artwork`
     # means nothing on Windows, yet all four of these cross the sync today. The
@@ -1125,14 +1130,15 @@ def is_trusted_transport(url: str) -> tuple[bool, str]:
     if parts.scheme == "https":
         return True, "https"
     host = parts.hostname.lower()
-    if host in ("localhost", "::1") or host.startswith("127."):
-        return True, "loopback"
-    if host.endswith(".ts.net"):
-        return True, "tailscale name"
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
         ip = None
+    # 059 (L-r2-3): the parsed address, not `host.startswith("127.")`, which trusted 127.evil.example.
+    if host == "localhost" or (ip is not None and ip.is_loopback):
+        return True, "loopback"
+    if host.endswith(".ts.net"):
+        return True, "tailscale name"
     if ip is not None and (ip in ipaddress.ip_network(_TAILSCALE_V4) or ip in ipaddress.ip_network(_TAILSCALE_V6)):
         return True, "tailscale address"
     return False, ("plain http:// is only allowed to localhost or over Tailscale "
@@ -1373,7 +1379,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.87.1"
+APP_VERSION = "4.88.0"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).

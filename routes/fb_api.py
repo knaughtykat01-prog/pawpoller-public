@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 import config
 from database.db import get_connection
+from database.queries import thin_series
 
 logger = logging.getLogger(__name__)
 fb_router = APIRouter(prefix="/api/fb")
@@ -231,7 +232,7 @@ def get_fb_aggregate(start: str | None = Query(None), end: str | None = Query(No
     from database import fb_queries
     conn = get_connection()
     try:
-        return {"snapshots": fb_queries.get_aggregate(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(fb_queries.get_aggregate(conn, start, end, account_id=account_id))}
     finally:
         conn.close()
 

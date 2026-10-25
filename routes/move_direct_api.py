@@ -450,19 +450,22 @@ async def _direct_piece(uid: str, request: Request, offset: int):
         raise HTTPException(403, detail="That piece doesn't match this seat's code.")
     if len(plain) != min(move_api.PIECE_BYTES, st["size"] - offset):
         raise HTTPException(400, detail="That piece is the wrong size.")
-    with move_api._UPLOAD_LOCK:
-        now = move_api._status(d)["received"]
-        if now != offset:
-            raise HTTPException(409, detail={"message": "Out of step; carry on from here.", "received": now})
-        with open(d / "file.part", "ab") as f:
-            f.write(plain)
-        received = offset + len(plain)
-        if received == st["size"]:
-            meta["arrived_at"] = time.time()
-            (d / "upload.json").write_text(json.dumps(meta), "utf-8")
-            logger.info("Direct move: arrived (%d bytes).", received)
-        else:
-            os.utime(d / "upload.json")
+    def _append() -> int:                               # up to a 32 MB write: off the event loop
+        with move_api._UPLOAD_LOCK:
+            now = move_api._status(d)["received"]
+            if now != offset:
+                raise HTTPException(409, detail={"message": "Out of step; carry on from here.", "received": now})
+            with open(d / "file.part", "ab") as f:
+                f.write(plain)
+            received = offset + len(plain)
+            if received == st["size"]:
+                meta["arrived_at"] = time.time()
+                (d / "upload.json").write_text(json.dumps(meta), "utf-8")
+                logger.info("Direct move: arrived (%d bytes).", received)
+            else:
+                os.utime(d / "upload.json")
+            return received
+    received = await asyncio.to_thread(_append)
     return {"received": received, "arrived": received == st["size"]}
 
 
@@ -574,7 +577,7 @@ def _drive(state: dict, path: Path) -> None:
                     raise _Cancelled()
                 f.seek(sent)
                 sealed = seal_piece(seal_key, prefix, sent // piece, uid, size, f.read(min(piece, size - sent)))
-                r = _retrying(lambda: call("PUT", f"/api/move/direct/{uid}", f"offset={sent}", sealed), state,
+                r = _retrying(lambda: call("PUT", f"/api/move/direct/{uid}", f"offset={sent}", sealed), state,  # noqa: B023
                               ok=(200, 409))
                 body = r.json()
                 if r.status_code == 409:

@@ -152,14 +152,13 @@ class FakeHttp:
             def raise_for_status(self_):
                 pass
 
-            def json(self_):
+            def json(self_):  # noqa: F811
                 return self.release
         return R()
 
     def stream(self, method, url):
         self.calls.append(url)
         data = self.files[url]
-        fake = self
 
         class S:
             def __enter__(self_):

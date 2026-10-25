@@ -28,6 +28,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, Response, Streami
 import config
 from database import ttv_queries
 from database.db import get_connection
+from database.queries import thin_series
 from polling import golive
 from polling.background import spawn_poll
 from polling.ttv_poller import TOKEN_FIELDS, make_client, run_ttv_poll_cycle, save_tokens, ttv_poll_progress
@@ -468,7 +469,7 @@ def get_ttv_aggregate(start: Optional[str] = Query(None), end: Optional[str] = Q
                       account_id: int | None = Query(None)):
     conn = get_connection()
     try:
-        return {"snapshots": ttv_queries.get_ttv_aggregate(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(ttv_queries.get_ttv_aggregate(conn, start, end, account_id=account_id))}
     finally:
         conn.close()
 

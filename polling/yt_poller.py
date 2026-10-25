@@ -82,7 +82,7 @@ def _get_or_create_client(creds: dict) -> YtClient:
             _yt_client.refresh_token = creds["yt_refresh_token"]
             _yt_client.access_token = creds.get("yt_access_token", "")
             _yt_client.expires_at = 0.0
-            _yt_client._me = None
+            _yt_client._channel = None
     _yt_client.tokens_changed = False
     return loop_bound.pin(_yt_client)
 

@@ -27,6 +27,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 import config
 from database import yt_queries
 from database.db import get_connection
+from database.queries import thin_series
 from polling.background import spawn_poll
 from polling.yt_poller import run_yt_poll_cycle, yt_poll_progress
 
@@ -370,7 +371,7 @@ def get_yt_aggregate(start: Optional[str] = Query(None), end: Optional[str] = Qu
                      account_id: int | None = Query(None)):
     conn = get_connection()
     try:
-        return {"snapshots": yt_queries.get_yt_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(yt_queries.get_yt_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/yt/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))

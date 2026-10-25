@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import re
 import threading
 from http.cookies import SimpleCookie
 
@@ -34,16 +35,41 @@ logger = logging.getLogger(__name__)
 # Cookie helpers
 # ---------------------------------------------------------------------------
 
-def _flatten_cookies(cookie_list: list[SimpleCookie]) -> dict[str, str]:
+def _domain_matches(domain: str, base: str) -> bool:
+    """True when a cookie/host *domain* is *base* or a subdomain of it, at a dot boundary
+    (so ``evilfuraffinity.net`` is not ``furaffinity.net``)."""
+    d = (domain or "").strip().lower().lstrip(".")
+    return bool(d) and (d == base or d.endswith("." + base))
+
+
+def _host_is(url: str, base: str) -> bool:
+    """The page's host is *base* or a subdomain of it (a parsed host, never a substring)."""
+    from urllib.parse import urlsplit
+    try:
+        return _domain_matches(urlsplit(url or "").hostname or "", base)
+    except ValueError:
+        return False
+
+
+def _flatten_cookies(cookie_list: list[SimpleCookie], base: str | None = None) -> dict[str, str]:
     """Convert pywebview's list-of-SimpleCookie into a flat {name: value} dict.
 
     pywebview.Window.get_cookies() returns a list where each element is a
     SimpleCookie containing exactly one key.  We iterate all of them and
     merge into a single dict for easy lookup by cookie name.
+
+    With *base* (spec 059, H-new-1) only that site's own cookies are kept, and a
+    cookie with no domain is dropped. On Linux the Qt backend returns EVERY cookie
+    in the shared webview store, including the dashboard's ``pp_session`` and other
+    sites' sign-ins; DeviantArt and Newgrounds join all of them into one string, so
+    without this a hand-over carried them all. It runs before ``success_check``, so
+    a foreign ``a``/``b`` or ``auth_token`` can't confirm a sign-in either.
     """
     flat: dict[str, str] = {}
     for sc in cookie_list:
         for name, morsel in sc.items():
+            if base is not None and not _domain_matches(morsel["domain"], base):
+                continue
             flat[name] = morsel.value
     return flat
 
@@ -61,14 +87,20 @@ def _flatten_cookies(cookie_list: list[SimpleCookie]) -> dict[str, str]:
 #   fields        -- Optional list of extra fields the user must provide
 #                    before launching the browser (e.g. username to track).
 #                    Each is {id, label, placeholder, required}.
+#   domain        -- The site's registrable domain. Only its cookies are read,
+#                    and the success checks test the page's parsed host (059).
+#   extract_js    -- Optional (059): {key, expr, valid}. Once success_check
+#                    passes, ``expr`` runs in the page (window.evaluate_js); the
+#                    result is kept under ``key`` only if ``valid`` returns it.
+#                    For a token held in page storage rather than a cookie.
 
 PLATFORM_LOGIN: dict[str, dict] = {
     "ib": {
         "name": "Inkbunny",
         "url": "https://inkbunny.net/login.php",
+        "domain": "inkbunny.net",
         "success_check": lambda cookies, url: (
-            "/login.php" not in (url or "")
-            and "inkbunny.net" in (url or "")
+            "/login.php" not in (url or "") and _host_is(url, "inkbunny.net")
         ),
         "extract": lambda cookies, url: {},
         # Inkbunny's API mints its own SID via api_login.php with
@@ -80,8 +112,9 @@ PLATFORM_LOGIN: dict[str, dict] = {
     "fa": {
         "name": "FurAffinity",
         "url": "https://www.furaffinity.net/login/",
+        "domain": "furaffinity.net",
         "success_check": lambda cookies, url: (
-            "a" in cookies and "b" in cookies
+            "a" in cookies and "b" in cookies and _host_is(url, "furaffinity.net")
         ),
         "extract": lambda cookies, url: {
             "fa_cookie_a": cookies.get("a", ""),
@@ -94,7 +127,10 @@ PLATFORM_LOGIN: dict[str, dict] = {
     "da": {
         "name": "DeviantArt",
         "url": "https://www.deviantart.com/users/login",
-        "success_check": lambda cookies, url: "auth_secure" in cookies or "auth" in cookies,
+        "domain": "deviantart.com",
+        "success_check": lambda cookies, url: (
+            ("auth_secure" in cookies or "auth" in cookies) and _host_is(url, "deviantart.com")
+        ),
         "extract": lambda cookies, url: {
             # DA uses full cookie string -- rebuild it from all cookies
             "da_cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
@@ -110,8 +146,9 @@ PLATFORM_LOGIN: dict[str, dict] = {
     "tw": {
         "name": "X / Twitter",
         "url": "https://x.com/i/flow/login",
+        "domain": "x.com",
         "success_check": lambda cookies, url: (
-            "auth_token" in cookies
+            "auth_token" in cookies and _host_is(url, "x.com")
         ),
         "extract": lambda cookies, url: {
             "tw_auth_token": cookies.get("auth_token", ""),
@@ -131,7 +168,8 @@ PLATFORM_LOGIN: dict[str, dict] = {
     "ws": {
         "name": "Weasyl",
         "url": "https://www.weasyl.com/signin",
-        "success_check": lambda cookies, url: "WZL" in cookies,
+        "domain": "weasyl.com",
+        "success_check": lambda cookies, url: "WZL" in cookies and _host_is(url, "weasyl.com"),
         "extract": lambda cookies, url: {},
         # Weasyl uses API keys, not cookies -- browser login captures nothing useful
         # but we include it so users can verify their account works.
@@ -140,9 +178,9 @@ PLATFORM_LOGIN: dict[str, dict] = {
     "ao3": {
         "name": "Archive of Our Own",
         "url": "https://archiveofourown.org/users/login",
-        "success_check": lambda cookies, url: (
-            "user_credentials" in cookies or
-            ("/users/login" not in (url or "") and "archiveofourown.org" in (url or ""))
+        "domain": "archiveofourown.org",
+        "success_check": lambda cookies, url: _host_is(url, "archiveofourown.org") and (
+            "user_credentials" in cookies or "/users/login" not in (url or "")
         ),
         "extract": lambda cookies, url: {},
         # AO3 uses username/password stored in settings, not browser cookies
@@ -151,9 +189,9 @@ PLATFORM_LOGIN: dict[str, dict] = {
     "sqw": {
         "name": "SquidgeWorld",
         "url": "https://squidgeworld.org/users/login",
+        "domain": "squidgeworld.org",
         "success_check": lambda cookies, url: (
-            "/users/login" not in (url or "") and
-            "squidgeworld.org" in (url or "")
+            "/users/login" not in (url or "") and _host_is(url, "squidgeworld.org")
         ),
         "extract": lambda cookies, url: {},
         "fields": [],
@@ -166,8 +204,9 @@ PLATFORM_LOGIN: dict[str, dict] = {
     "ng": {
         "name": "Newgrounds",
         "url": "https://www.newgrounds.com/passport",
+        "domain": "newgrounds.com",
         "success_check": lambda cookies, url: (
-            bool(cookies) and "newgrounds.com" in (url or "")
+            bool(cookies) and _host_is(url, "newgrounds.com")
             and "/passport" not in (url or "") and "/login" not in (url or "")
         ),
         "extract": lambda cookies, url: {
@@ -178,7 +217,38 @@ PLATFORM_LOGIN: dict[str, dict] = {
             {"id": "ng_username", "label": "Newgrounds username", "placeholder": "Your Newgrounds username", "required": True},
         ],
     },
+    # Itaku (spec 059): the API token sits in the page's Local Storage under ``token`` (the
+    # Itaku guide's screenshot), not in a cookie, so ``extract_js`` reads it once the page has
+    # left the sign-in screen. Anything that isn't a plain token string is refused, and the
+    # value is never logged.
+    "ik": {
+        "name": "Itaku",
+        "url": "https://itaku.ee/login",
+        "domain": "itaku.ee",
+        "success_check": lambda cookies, url: (
+            _host_is(url, "itaku.ee") and "/login" not in (url or "") and "/sign-up" not in (url or "")
+        ),
+        "extract": lambda cookies, url: {},
+        "extract_js": {"key": "ik_auth_token", "expr": "window.localStorage.getItem('token')",
+                       "valid": lambda v: _clean_token(v)},
+        "fields": [
+            {"id": "ik_target_user", "label": "Itaku username", "placeholder": "Your Itaku username", "required": True},
+        ],
+    },
 }
+
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.\-]{16,256}$")
+
+
+def _clean_token(value) -> str:
+    """A page-storage token, or "" when it isn't one: a string of token characters, at
+    most 256 long, with any JSON quotes taken off. Never log the value."""
+    if not isinstance(value, str):
+        return ""
+    v = value.strip()
+    if len(v) >= 2 and v[0] == v[-1] == '"':
+        v = v[1:-1]
+    return v if _TOKEN_RE.match(v) else ""
 
 
 def get_supported_platforms() -> list[dict]:
@@ -190,14 +260,49 @@ def get_supported_platforms() -> list[dict]:
     result = []
     for code, cfg in PLATFORM_LOGIN.items():
         # Only include platforms where browser login captures useful cookies
-        extract_test = cfg["extract"]({}, "")
         result.append({
             "code": code,
             "name": cfg["name"],
-            "has_cookie_extraction": bool(extract_test is not None),
+            # 059: true only where the window keeps something (it was always true: `{} is not None`).
+            "has_cookie_extraction": bool(saved_keys(code)),
             "fields": cfg.get("fields", []),
         })
     return result
+
+
+# ---------------------------------------------------------------------------
+# What a browser sign-in may save (spec 059, C1 / FR-SEC-001)
+# ---------------------------------------------------------------------------
+
+MAX_VALUE_LEN = 8 * 1024
+
+
+def saved_keys(platform: str) -> set[str]:
+    """The secrets the window itself captures for *platform* (cookies, page-storage token).
+    Empty for the check-only sites (Inkbunny, Weasyl, AO3, SquidgeWorld)."""
+    cfg = PLATFORM_LOGIN.get(platform) or {}
+    if not cfg:
+        return set()
+    keys = set(cfg["extract"]({}, "").keys())
+    if cfg.get("extract_js"):
+        keys.add(cfg["extract_js"]["key"])
+    return keys & set(config.PLATFORM_CREDENTIAL_FIELDS.get(platform, []))
+
+
+def identity_keys(platform: str) -> set[str]:
+    """The account-name fields the person types (``fa_username``, ``tw_target_user``…)."""
+    cfg = PLATFORM_LOGIN.get(platform) or {}
+    return {f["id"] for f in cfg.get("fields", [])} & set(config.PLATFORM_CREDENTIAL_FIELDS.get(platform, []))
+
+
+def check_creds(platform: str, creds: dict) -> None:
+    """Raise ValueError unless every key is one of *platform*'s own sign-in fields and every
+    value is a string of at most 8 KB. Without this a hand-over could write any setting —
+    ``auth_password_hash`` included, as a bare key for a default account."""
+    allowed = saved_keys(platform) | identity_keys(platform)
+    for k, v in creds.items():
+        if k not in allowed or not isinstance(v, str) or len(v) > MAX_VALUE_LEN:
+            raise ValueError("That isn't a sign-in for this site.")
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +319,7 @@ def _save_browser_creds(platform: str, creds: dict, account_id: int | None) -> d
     a pasted credential; without one (the platform-level button) the default
     slot is still the target, as before. Returns the keys written.
     """
+    check_creds(platform, creds)   # every caller: the local window, a connected desktop, the helper (059)
     payload = dict(creds)
     if account_id is not None:
         from database.db import get_connection
@@ -236,6 +342,7 @@ def login_via_browser(
     extra_fields: dict[str, str] | None = None,
     timeout: int = 300,
     account_id: int | None = None,
+    save: bool = True,
 ) -> dict | None:
     """Open a pywebview popup for the given platform's login page.
 
@@ -247,6 +354,9 @@ def login_via_browser(
         platform: Platform code (e.g. "fa", "da", "tw").
         extra_fields: Additional field values from the UI (e.g. username).
         timeout: Max seconds to wait for login (default 300 = 5 minutes).
+        account_id: which account row the result belongs to (None = default slot).
+        save: False returns the credentials without saving them here; a connected
+            desktop or the sign-in helper hands them to a server instead (059).
 
     Returns:
         Dict of extracted credentials on success, None on cancel/timeout.
@@ -312,9 +422,15 @@ def login_via_browser(
             try:
                 cookies_raw = window.get_cookies()
                 url = window.get_current_url() or ""
-                cookies = _flatten_cookies(cookies_raw)
+                cookies = _flatten_cookies(cookies_raw, plat_cfg.get("domain"))
                 if plat_cfg["success_check"](cookies, url):
                     creds = plat_cfg["extract"](cookies, url)
+                    js = plat_cfg.get("extract_js")
+                    if js:
+                        value = js["valid"](window.evaluate_js(js["expr"]))
+                        if not value:
+                            continue        # not signed in yet (or not a token): keep waiting
+                        creds[js["key"]] = value
                     logger.info(
                         "Browser login success for %s (%d cookie keys extracted)",
                         platform, len(creds),
@@ -354,7 +470,7 @@ def login_via_browser(
         creds.update(extra_fields)
 
     # Save to settings.json — under the chosen account's keys (4.6.3).
-    if creds:
+    if creds and save:
         written = _save_browser_creds(platform, creds, account_id)
         logger.info("Saved browser login credentials for %s (account %s): %s",
                     platform, account_id if account_id is not None else "default", list(written.keys()))

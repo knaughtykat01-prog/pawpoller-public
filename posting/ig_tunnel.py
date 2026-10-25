@@ -108,7 +108,7 @@ async def download_helper(http=None) -> dict:
         async with client.stream("GET", url) as r:
             if r.status_code != 200:
                 raise RuntimeError(f"Cloudflare's release download answered HTTP {r.status_code}.")
-            with open(part, "wb") as fh:
+            with open(part, "wb") as fh:  # noqa: ASYNC230
                 async for chunk in r.aiter_bytes(1 << 16):
                     digest.update(chunk)
                     fh.write(chunk)

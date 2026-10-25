@@ -1019,7 +1019,7 @@ async def replace_masterpiece_image(name: str, file: UploadFile = File(...)):
     finally:
         conn.close()
 
-    images = sorted(f.name for f in folder.iterdir()
+    images = sorted(f.name for f in folder.iterdir()  # noqa: ASYNC240
                     if f.suffix.lower() in artwork_reader.IMAGE_EXTENSIONS)
     logger.info("Masterpiece %s: hero image %s -> %s", name, previous, target.name)
     return {"status": "replaced", "name": name, "image": target.name,

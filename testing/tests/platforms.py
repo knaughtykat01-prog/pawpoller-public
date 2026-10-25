@@ -581,8 +581,8 @@ async def t_tw_auth(ctx: TestContext) -> None:
     from clients.tw.client import TWClient
 
     s = config.get_settings()
-    async with TWClient(s["tw_auth_token"], s["tw_ct0"]) as cli:
-        ok = await cli.validate_cookies(s["tw_target_user"])
+    async with TWClient(s["tw_auth_token"], s["tw_ct0"], s["tw_target_user"]) as cli:
+        ok = await cli.validate_cookies()
         ctx.detail("validated", ok)
         assert ok, "TW cookies did not validate"
 
@@ -599,7 +599,7 @@ async def t_tw_discovery(ctx: TestContext) -> None:
     from clients.tw.client import TWClient
 
     s = config.get_settings()
-    async with TWClient(s["tw_auth_token"], s["tw_ct0"]) as cli:
+    async with TWClient(s["tw_auth_token"], s["tw_ct0"], s["tw_target_user"]) as cli:
         method = (
             getattr(cli, "get_user_tweets", None)
             or getattr(cli, "list_user_tweets", None)

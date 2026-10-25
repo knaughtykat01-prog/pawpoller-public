@@ -73,7 +73,7 @@ async def upload_to_host(endpoint: str, path: str, api_key: str = "", http=None)
     answers with. Raises ``RuntimeError`` carrying the host's own sentence."""
     import httpx
     from pathlib import Path
-    data = Path(path).read_bytes()
+    data = Path(path).read_bytes()  # noqa: ASYNC240
     headers = {"X-PawPoller-Version": config.APP_VERSION}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -84,16 +84,19 @@ async def upload_to_host(endpoint: str, path: str, api_key: str = "", http=None)
         resp = await client.post(endpoint, files={"file": (Path(path).name, data, "application/octet-stream")},
                                  headers=headers)
     except Exception as e:
-        raise RuntimeError(f"could not reach {_host_of(endpoint)}: {type(e).__name__}") from e
+        raise RuntimeError(f"{_host_of(endpoint)} isn't answering right now") from e
     finally:
         if own:
             await client.aclose()
     if resp.status_code != 200:
-        detail = ""
+        # Spec 048: a proxy's error page is HTML, and its text ended up in the user's
+        # error. Only a JSON `detail` (the host's own sentence) is ever shown.
         try:
-            detail = (resp.json() or {}).get("detail") or ""
+            detail = str((resp.json() or {}).get("detail") or "")
         except Exception:
-            detail = resp.text[:120]
+            if resp.status_code in (502, 503, 504):
+                raise RuntimeError(f"{_host_of(endpoint)} isn't answering right now (HTTP {resp.status_code})")
+            detail = ""
         raise RuntimeError(f"{_host_of(endpoint)} answered HTTP {resp.status_code}"
                            + (f": {detail}" if detail else ""))
     url = (resp.json() or {}).get("url")

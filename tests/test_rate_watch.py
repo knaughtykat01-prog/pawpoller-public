@@ -102,9 +102,10 @@ def test_a_move_records_when_it_was_brought_in():
     assert 'final["moved_in_at"]' in src
     assert 'since=settings.get("moved_in_at")' in open("routes/api.py", encoding="utf-8").read()
 
-def test_record_skip_keeps_seven_days():
+def test_record_skip_keeps_seven_days(monkeypatch):
     from database.db import get_connection
     from polling import last_check
+    monkeypatch.setattr(last_check, "_skips", {})     # it remembers skips in memory too; don't leak "fa" into later tests
     conn = get_connection()
     conn.execute("DELETE FROM turn_skips")
     conn.execute("INSERT INTO turn_skips(site, at) VALUES('fa', '2000-01-01T00:00:00Z')")

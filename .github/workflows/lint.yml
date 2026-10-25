@@ -19,7 +19,7 @@ jobs:
         run: pip install ruff
 
       - name: Ruff check
-        run: ruff check --select F --ignore F401,F841,F541,F811 .
+        run: ruff check .   # rules live in ruff.toml
 
   js-syntax:
     runs-on: ubuntu-latest

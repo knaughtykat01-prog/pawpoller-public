@@ -1,3 +1,4 @@
+// @ts-check
 /* ── Lazy vendor groups — load a page's heavy libraries when it opens (4.40.0) ──
  *
  * Spec 007 (specs/007-public-hygiene, contracts/lazy-vendor.md). The story

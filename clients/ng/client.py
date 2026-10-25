@@ -356,7 +356,7 @@ class NgClient:
         spec = PORTALS.get(portal)
         if not spec:
             return {"success": False, "error": f"unknown Newgrounds portal {portal!r}"}
-        if not os.path.isfile(file_path):
+        if not os.path.isfile(file_path):  # noqa: ASYNC240
             return {"success": False, "error": f"file not found: {file_path}"}
         page = await self._get_text(f"{BASE}{spec['new']}")
         m = _UEK_RE.search(page)
@@ -390,11 +390,11 @@ class NgClient:
             w, h = _image_size(file_path)
             form.update({"width": str(w), "height": str(h), "link_icon": "1",
                          "cropdata": '{"x":0,"y":0,"width":%d,"height":%d}' % (w, h)})
-        fh = open(file_path, "rb")
+        fh = open(file_path, "rb")  # noqa: ASYNC230
         files[spec["file_field"]] = (os.path.basename(file_path), fh, "application/octet-stream")
         fh_icon = None
-        if icon_path and os.path.isfile(icon_path):
-            fh_icon = open(icon_path, "rb")
+        if icon_path and os.path.isfile(icon_path):  # noqa: ASYNC240
+            fh_icon = open(icon_path, "rb")  # noqa: ASYNC230
             files["thumbnail"] = (os.path.basename(icon_path), fh_icon, "image/jpeg")
         try:
             up = await self._post_json(edit_url, form, files=files, timeout=UPLOAD_TIMEOUT)

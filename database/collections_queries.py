@@ -231,7 +231,7 @@ def rollup_collection(conn: sqlite3.Connection, cid: int) -> dict | None:
     story = None
 
     for m in members:
-        mtype, mref, role = m["member_type"], m["member_ref"], m.get("role", "")
+        mtype, mref = m["member_type"], m["member_ref"]
         if mtype == "submission":
             platform, _, sid = mref.partition(":")
             loc = _location_from_submission(conn, platform, sid, source="submission")

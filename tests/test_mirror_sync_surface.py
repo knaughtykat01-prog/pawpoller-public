@@ -286,6 +286,10 @@ def test_the_frontend_never_tells_anyone_to_run_the_script():
     """The runbook is the thing being replaced. If a UI string still names the
     CLI or the environment variable, the terminal has not gone away."""
     src = _strip_js_comments(_js("app.js"))
+    # The password reset on an installed server (spec 058) has to name the data folder: it
+    # runs with the app stopped, so there is no UI to do it from. That's not the mirror.
+    import re
+    src = re.sub(r"\n    _resetSteps\(kind\) \{.*?\n    \},", "", src, flags=re.DOTALL)
     assert "mirror_pull.py" not in src
     assert "PAWPOLLER_APPDATA_DIR" not in src
 

@@ -60,7 +60,7 @@ async def sync_settings(req: SyncRequest) -> SyncResponse:
         raise HTTPException(status_code=400, detail="Push requires non-empty settings")
 
     incoming_keys = set(req.settings.keys()) - config.SYNC_EXCLUDE
-    merged = config.merge_synced_settings(req.settings, req.timestamp)
+    config.merge_synced_settings(req.settings, req.timestamp)
     data, mtime = config.get_settings_for_sync()
     logger.info("Settings sync push: %d keys merged", len(incoming_keys))
 
@@ -487,7 +487,6 @@ async def pair_test(req: PairingTestRequest):
     if not url or not api_key:
         return {"ok": False, "error": "URL and API key are required"}
 
-    is_loopback = "localhost" in url or "127.0.0.1" in url
     tailscale = tailscale_state(url)          # 4.14.0: HOSTFREE §4 — say whether the tunnel is up
     # 4.11.0: same rule as auto_sync, now shared — https, loopback, or Tailscale.
     ok, why = config.is_trusted_transport(url)
@@ -592,7 +591,7 @@ async def browser_login(platform: str, req: BrowserLoginRequest | None = None):
         raise HTTPException(status_code=400, detail=str(e))
 
     if creds is None:
-        return {"ok": False, "message": "Login cancelled or timed out."}
+        return {"ok": False, "message": "Sign-in cancelled or not finished, so nothing was saved. Try again, or use Other ways to connect."}
 
     return {
         "ok": True,

@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -231,8 +232,8 @@ class FurbooruClient:
         }
         for i, src in enumerate([u for u in (sources or []) if u][:15]):
             data[f"image[sources][{i}][source]"] = src
-        with open(file_path, "rb") as fh:
-            files = {"image[image]": (os.path.basename(file_path), fh.read())}
+        blob = await asyncio.to_thread(Path(file_path).read_bytes)
+        files = {"image[image]": (os.path.basename(file_path), blob)}
         try:
             r = await self._http().post(f"{self.base_url}/api/v1/json/images",
                                         params={"key": self.api_key}, data=data, files=files)

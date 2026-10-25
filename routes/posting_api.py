@@ -1094,7 +1094,7 @@ def save_posting_settings(body: dict):
 # ── Claim: Retroactive sync ───────────────────────────────────
 
 @posting_router.post("/claim")
-def claim_submissions(body: dict = {}):
+def claim_submissions(body: dict = {}):  # noqa: B006
     """Claim existing platform submissions into the publications registry.
 
     Scans platform submission tables, matches to archive stories, and creates
@@ -1363,7 +1363,6 @@ def get_sync_status():
                     try:
                         full_path = entry / fmt_file if not os.path.isabs(fmt_file) else Path(fmt_file)
                         if full_path.is_file():
-                            current = _hash_file(str(full_path))
                             # We don't have the old hash stored yet, so compare against pub timestamp
                             # If the file's mtime is newer than last_updated, it's changed
                             import datetime

@@ -77,7 +77,7 @@ class InstagramPoster(PlatformPoster):
             is_video = _is_video(package)
             # A Reel hosts the video AND its poster (the cover frame) — 4.20.1.
             to_host = [path] + ([package.thumbnail_path] if is_video and package.thumbnail_path
-                                and os.path.isfile(package.thumbnail_path) else [])
+                                and os.path.isfile(package.thumbnail_path) else [])  # noqa: ASYNC240
             from posting import activity   # spec 017: Instagram's real stages (no-ops outside a job)
             activity.step("ig", "Uploading", "Putting the file where Instagram can fetch it")
             try:

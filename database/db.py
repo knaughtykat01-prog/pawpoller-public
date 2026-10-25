@@ -1910,7 +1910,7 @@ def _board_track_columns(conn: sqlite3.Connection) -> None:
             if not _table_exists(conn, dst):
                 sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
                                    (src,)).fetchone()[0]
-                conn.execute(pattern.sub(lambda m: names[m.group(1)], sql))
+                conn.execute(pattern.sub(lambda m: names[m.group(1)], sql))  # noqa: B023
             got = {r[1] for r in conn.execute(f"PRAGMA table_info({dst})").fetchall()}
             for r in conn.execute(f"PRAGMA table_info({src})").fetchall():
                 if r[1] not in got:   # (cid, name, type, notnull, default, pk)

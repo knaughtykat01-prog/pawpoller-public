@@ -81,7 +81,7 @@ async def media_upload(file: UploadFile = File(...), kind: str = Form("inbox"), 
     INBOX.mkdir(parents=True, exist_ok=True)
     tmp = INBOX / f".upload-{threading.get_ident()}-{id(file)}.part"
     try:
-        with open(tmp, "wb") as out:
+        with open(tmp, "wb") as out:  # noqa: ASYNC230
             while True:
                 chunk = await file.read(1 << 20)
                 if not chunk:

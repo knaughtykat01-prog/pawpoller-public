@@ -24,3 +24,6 @@ dist/
 docs/HANDOFF.md
 docs/BACKLOG.md
 docs/documentation_guide.md
+
+# The VM relay marker (spec 048): never baked into an image
+.relay-only

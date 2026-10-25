@@ -319,7 +319,7 @@ async def t_tag_db_files(ctx: TestContext) -> None:
     ]
     found = []
     missing = []
-    base = Path(__file__).resolve().parent.parent.parent
+    base = Path(__file__).resolve().parent.parent.parent  # noqa: ASYNC240
     for rel in candidates:
         p = base / rel
         # Also try resource_path / app root for frozen builds

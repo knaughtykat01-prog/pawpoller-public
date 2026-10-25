@@ -88,6 +88,8 @@ Source: "..\dist\{#MyAppName}\*"; DestDir: "{app}"; Flags: ignoreversion recurse
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 ; Optional desktop shortcut (driven by Tasks)
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+; Spec 058: the console password reset, without typing a command (opens its own window)
+Name: "{autoprograms}\Reset {#MyAppName} password"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--reset-password"
 ; Uninstall entry under Start Menu — convenience
 Name: "{autoprograms}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 

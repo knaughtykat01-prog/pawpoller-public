@@ -592,7 +592,20 @@ This is the same on every path.
 
 **Step 2. Open it in Settings.** Go to **Settings → Platforms** and click the site.
 
-**Step 3. Follow its guide.** Click **📖 Setup guide** on the site's card. Each guide has pictures
+**Step 3. Sign in, if the site offers it.** FurAffinity, X, Newgrounds, Itaku and a few others
+have a **Sign in** button.
+
+- **On the desktop app:** press **Sign in**. The site's own sign-in page opens in a PawPoller
+  window. Sign in the way you always do. The window closes by itself when you're in.
+- **On a server or a hosted seat:** type your username, then press **Sign in with the PawPoller
+  app**. A six-character code appears, good for ten minutes. On your computer, open the PawPoller
+  desktop app, go to **Accounts → Sign in for a server** (or the tray icon's menu), and type the
+  server's address and the code. A box asks you to confirm, then the site's sign-in page opens.
+  Sign in there. **You'll see:** "Connected as YourName ✓" on the server.
+- **No Sign in button, or it didn't work?** Open **Other ways to connect** under the site and
+  follow its guide (next step).
+
+**Step 3b. Or follow its guide.** Click **📖 Setup guide** on the site's card. Each guide has pictures
 and shows exactly where to find what the site needs. (Every guide is also on the **Getting
 Started** page in the side menu, and each one can be opened as a PDF to print.)
 
@@ -610,6 +623,40 @@ site's account.
 
 You don't need to connect all twenty. Connect what you use.
 
+### Already use PostyBirb?
+
+PawPoller can bring your PostyBirb submissions in as Library pieces (file, title, description, tags and rating), and
+copy the site logins PostyBirb has. PostyBirb itself is never changed. Run it any time; anything already in PawPoller
+is skipped.
+
+**On the desktop app:**
+
+1. Close PostyBirb (it holds its files open while it runs).
+2. Go to **Settings → Data → Bring in from PostyBirb** and press **Bring in**.
+3. **Library:** tick the submissions you want (or **Tick all**), then press **Bring them in**. You'll see each one
+   listed as added or skipped, with the reason.
+4. **Logins:** open the **Logins** tab. Nothing is ticked for you: tick only the accounts that are yours, then press
+   **Bring them over**.
+
+Your PostyBirb **description templates** and **tag groups** come along with the Library step (the box **Also bring
+in … saved descriptions and … tag groups** is ticked for you; untick it to leave them). Afterwards:
+
+- In a piece's description box, press **📝 Saved description** and choose one. It goes in where your cursor is.
+- By a piece's tags, press **➕ Tag group** and choose one. Its tags are added; ones already there are skipped.
+- To rename, change or delete them, go to **Settings → Saved text**. You can also make new ones there.
+
+**On a server or a hosted seat** the server can't see your computer, so you send it a zip of PostyBirb's folder:
+
+1. On your computer, zip the **PostyBirb** folder from **Documents** (Windows: right-click it, **Send to →
+   Compressed (zipped) folder**). The steps for Mac and Linux are on the screen.
+2. For your logins too, zip PostyBirb's **Partitions** folder as well (Windows: `%APPDATA%\postybirb-plus`).
+3. In PawPoller, go to **Settings → Data → Bring in from PostyBirb**, press **Bring in** and choose the zip (or both
+   zips). You'll see the upload's progress, then the same Library and Logins lists as on the desktop.
+
+The zip holds your site logins. It only goes over a secure connection (https, Tailscale, or the server itself), is
+read once, and is deleted as soon as you finish or close the window. Left unused for 30 minutes, it can't be used
+any more and is deleted soon after (within the hour).
+
 ---
 
 ## Platform credentials
@@ -626,18 +673,18 @@ its **🔑 Credentials** button on the same page.)
 | Platform | To poll stats | To post & edit | Where to get it |
 |---|---|---|---|
 | **Inkbunny** | Username + password | *same* | Your IB login — then tick **Enable API access** in IB's account settings, or nothing will work |
-| **FurAffinity** | Username + `a` and `b` cookies | *same* | Log in to FA, then DevTools → Application → Cookies → `furaffinity.net` → copy `a` and `b`. On the desktop app, **Login via Browser** captures them for you |
+| **FurAffinity** | Username + `a` and `b` cookies | *same* | Log in to FA, then DevTools → Application (Firefox: Storage) → Cookies → `furaffinity.net` → copy `a` and `b`. Easiest: press **Sign in** (desktop app) or **Sign in with the PawPoller app** (server or seat) |
 | **SoFurry** | Personal Access Token | *same* | sofurry.com → Settings → Developer → New token ([direct link](https://sofurry.com/settings/pat-create)). **No password needed**, and 2FA accounts work fine — a token never logs in. Your handle is read from the token |
 | **Weasyl** | API key | *same* | weasyl.com → Settings → API Keys → generate. The username is discovered from the key |
 | **AO3** | Username + password | *same* | Your AO3 login. The account you log in with can differ from the one whose works you track |
 | **SquidgeWorld** | Username + password | *same* | Your SqW login. Same split as AO3 — logging in and posting can be different accounts |
 | **DeviantArt** | App `client_id` + `client_secret` | **plus** a one-time **Authorise posting** | deviantart.com/developers/apps → Register Application (Client type: **Confidential**) → copy both values, and enter the DA username to track. Then **Authorise posting** on the account. ⚠ See [DeviantArt: authorise from the right account](#deviantart-authorise-from-the-right-account) — this step is easy to get wrong |
 | **e621** | Username + API key | *same* | e621 → Account → **Manage API Access**. This is an API key, **not** your password |
-| **Itaku** | Handle only — no login | **plus** an auth token | Polling a public gallery needs nothing at all. To post or edit, log in at itaku.ee and copy the auth token from your browser session |
+| **Itaku** | Handle only — no login | **plus** an auth token | Polling a public gallery needs nothing at all. To post or edit, press **Sign in** (or **Sign in with the PawPoller app** on a server), or copy the auth token from your browser session |
 | **FurryNetwork** | Refresh token | *same* | ⚠ **Email + password no longer works** — FN put its password login behind a CAPTCHA in August 2026. Log in at furrynetwork.com, then DevTools → Application → copy the `refresh_token` out of the stored session |
 | **Bluesky** | Handle + app password | *same* | bsky.app → Settings → App Passwords → generate. Use the app password, never your real one |
 | **Mastodon** | Instance URL + access token | **token needs `write:statuses` + `write:media`** | Your instance → Preferences → Development → New application. ⚠ A read-only token polls fine and then fails every post |
-| **X / Twitter** | `auth_token` + `ct0` cookies | *same* | DevTools → Application → Cookies → `x.com` → copy both. ⚠ See [Credentials that expire](#credentials-that-expire) — X allows one session per browser |
+| **X / Twitter** | `auth_token` + `ct0` cookies | *same* | Easiest: press **Sign in**, as for FurAffinity. Or DevTools → Application (Firefox: Storage) → Cookies → `x.com` → copy both. ⚠ See [Credentials that expire](#credentials-that-expire) — X allows one session per browser |
 | **Tumblr** | OAuth consumer key + blog name | **plus** consumer secret, OAuth token and token secret | tumblr.com/oauth/apps → register an app. Polling needs only the "OAuth Consumer Key"; posting needs the full OAuth 1.0a set |
 | **Threads** | Token with `threads_basic` (+ `threads_manage_insights`) | — (analytics only) | A Meta app at developers.facebook.com — the same one as Instagram. **[Step-by-step with screenshots: THREADS_SETUP.md](THREADS_SETUP.md)**. Long-lived tokens last ~60 days, and PawPoller extends them for you |
 | **Instagram** | Token with `instagram_business_basic` + `instagram_business_manage_insights` | **plus `instagram_business_content_publish`** | The most involved of the twenty — **[full step-by-step: INSTAGRAM_SETUP.md](INSTAGRAM_SETUP.md)**. In short: a Meta app, and a **Business or Creator** account (a personal one cannot be used at all). ⚠ Do the setup in **Edge or Firefox, not Chrome** — Chrome breaks Meta's token generator silently |
@@ -727,35 +774,62 @@ Your key can read but not post. Check that site's row in [Platform credentials](
 
 **I forgot my password.**
 
-- **Path C:** log in to the server (Step C3), go into the folder (`cd pawpoller-public`), and run
-  this with your new password in place of `NEW-PASSWORD`:
+If your account has a confirmed email, press **Forgot your password?** on the sign-in page and
+PawPoller emails you a code. Without an email, set a new password on the machine PawPoller runs on.
+The sign-in page shows the same steps.
 
-  ```bash
-  docker compose -f docker-compose.image.yml exec pawpoller python -c "import config; config.save_settings({'auth_username': 'admin', 'auth_password_hash': config.hash_password('NEW-PASSWORD')})"
-  ```
+- **Path A (the app on your computer, Windows):**
+  1. Close PawPoller: right-click its icon by the clock and choose **Quit**.
+  2. Open the **Start** menu and click **Reset PawPoller password**. A small window opens.
+  3. Type your new password and press Enter. Nothing shows while you type; that's on purpose.
+  4. Type it again and press Enter. You'll see *Password changed.* Press Enter to close the window.
+  5. Open PawPoller and sign in with the new password.
 
-  Log in with `admin` and the new password straight away; no restart is needed. (Changing
-  `DASHBOARD_PASSWORD` in `.env` does **not** work once a password exists. That line is only read
-  the very first time.)
-- **Path A (the app on your computer):** close PawPoller, then open a Command Prompt and run the
-  app with `--reset-password`:
+  No shortcut (a portable copy)? Open a Command Prompt and run the app with `--reset-password`:
 
   ```
   "C:\Program Files\PawPoller\PawPoller.exe" --reset-password
   ```
 
-  It asks for the new password twice, then closes. Start PawPoller normally and sign in with it.
+- **Path B (your own computer as a server):**
+  - **Windows:** open the Start menu, type `cmd`, right-click **Command Prompt** and choose
+    **Run as administrator**. Then type these one at a time, pressing Enter after each:
 
-- **Path B (your own computer as a server):** the same, using the server program:
+    ```
+    schtasks /end /tn "PawPoller Server"
+    set PAWPOLLER_APPDATA_DIR=C:\ProgramData\PawPoller-Server\data
+    "C:\ProgramData\PawPoller-Server\current\PawPoller-Server.exe" --reset-password
+    schtasks /run /tn "PawPoller Server"
+    ```
 
-  ```
-  "C:\Program Files\PawPoller\PawPoller-Server.exe" --reset-password
-  ```
+    The third one asks for the new password twice and shows nothing while you type.
+  - **Linux:** in a terminal, one at a time:
 
-  You'll see *Password changed.* Start it again and sign in.
+    ```
+    sudo systemctl stop pawpoller-server
+    sudo -u pawpoller sh -c 'set -a; . /etc/pawpoller-server.env; exec "$PAWPOLLER_SERVER_ROOT/current/PawPoller-Server" --reset-password'
+    sudo systemctl start pawpoller-server
+    ```
 
-  You have to be sitting at that computer — this only works from its own keyboard, never over the
-  network. It never asks for your old password, so a forgotten one is not a problem.
+  You'll see *Password changed.* Sign in with the new password.
+
+- **Path C (a server with Docker):**
+  1. Log in to the server (Step C3) and go into the folder: `cd pawpoller-public`
+  2. Stop PawPoller:
+     `docker compose -f docker-compose.image.yml stop pawpoller`
+  3. Set the new password. It asks twice and shows nothing while you type:
+     `docker compose -f docker-compose.image.yml run --rm pawpoller python server.py --reset-password`
+  4. Start PawPoller again:
+     `docker compose -f docker-compose.image.yml start pawpoller`
+  5. Sign in with the new password.
+
+  (Changing `DASHBOARD_PASSWORD` in `.env` does **not** work once a password exists. That line is
+  only read the very first time.)
+
+Every way of resetting signs out every browser that was signed in. You have to be at that machine
+(or logged in to it): this never works over the network, and it never asks for your old password.
+If you think someone else got in, open **Settings → Security → API keys** afterwards and remove any
+you don't recognise.
 
 **The phone can't open my address (Paths B and C).**
 Open the Tailscale app on the phone and check it says **Connected**, and that it's signed in to the
@@ -958,7 +1032,32 @@ server {
 With either, leave `PAWPOLLER_BIND` alone. The proxy reaches PawPoller over the server's own
 loopback connection, and port 8420 stays closed to the world. Only set `PAWPOLLER_BIND=0.0.0.0` if
 you know why you need it and have a password set. On Docker, add the `PAWPOLLER_FORWARDED_IPS` line
-from [Step 5](#use-a-web-address-you-already-own) as well.
+from [Step 5](#use-a-web-address-you-already-own) as well. Without it, every visitor looks like the
+proxy to PawPoller, so one person's wrong sign-in codes count against everyone. Put the proxy's
+own address there, never `*`.
+
+### Sign-in codes over plain http (home network only)
+
+The desktop app's **Sign in for a server** sends your site sign-in to the server. Over https or
+Tailscale that trip is encrypted. Over a plain address like `http://192.168.1.20:8420` it is not:
+anyone else on the same Wi-Fi could copy it and post as you. So PawPoller refuses plain http by
+default.
+
+If you can't use https or Tailscale, you can allow it for a server in your own home:
+
+1. On the server, open **Settings → Security → Sign-ins over plain http**.
+2. Type your PawPoller password and tick the box saying you understand the risk.
+3. Press **Allow plain http**.
+4. On your computer, when you first sign in for that server, PawPoller asks once more. Press
+   **Yes, allow plain http for this server**.
+
+It only works for home-network addresses (like `192.168.…`, `10.…` or a `.local` name), never for
+an address on the internet, and never on a hosted seat. **Better:** Tailscale (two devices: the
+server and your computer) or a web address with https. Turn it off again on the same screen.
+
+If a web server on the same machine passes plain-http visitors on to PawPoller, PawPoller sees them
+all as the machine itself and can't tell they arrived unencrypted. Your computer's own check still
+refuses anything that isn't a home address, but serve the proxy over https.
 
 ## Update from the dashboard (Docker)
 

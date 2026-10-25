@@ -497,7 +497,7 @@ class E621Client:
                 import os
                 fname = os.path.basename(file_path)
                 mime = mimetypes.guess_type(fname)[0] or "application/octet-stream"
-                fh = open(file_path, "rb")
+                fh = open(file_path, "rb")  # noqa: ASYNC230
                 files = {"upload[file]": (fname, fh, mime)}
             else:
                 data["upload[direct_url]"] = direct_url

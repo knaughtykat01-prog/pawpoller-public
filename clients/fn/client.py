@@ -435,10 +435,10 @@ class FnClient:
         ``PATCH /{collection}/{id}`` with the metadata."""
         if collection not in ("artwork", "multimedia"):
             return {"success": False, "error": f"unknown FurryNetwork collection {collection!r}"}
-        if not os.path.isfile(file_path):
+        if not os.path.isfile(file_path):  # noqa: ASYNC240
             return {"success": False, "error": f"file not found: {file_path}"}
         await self._ensure_token()
-        size = os.path.getsize(file_path)
+        size = os.path.getsize(file_path)  # noqa: ASYNC240
         filename = os.path.basename(file_path)
         total_chunks = max(1, (size + UPLOAD_CHUNK - 1) // UPLOAD_CHUNK)
         identifier = f"{size}-{filename.replace('.', '')}"
@@ -448,7 +448,7 @@ class FnClient:
         new_id = ""
         # A 200 MB video is ~400 chunks; the per-request timeout covers one chunk.
         async with httpx.AsyncClient(timeout=UPLOAD_TIMEOUT) as up:
-            with open(file_path, "rb") as fh:
+            with open(file_path, "rb") as fh:  # noqa: ASYNC230
                 for chunk_no in range(1, total_chunks + 1):
                     blob = fh.read(UPLOAD_CHUNK)
                     params = {

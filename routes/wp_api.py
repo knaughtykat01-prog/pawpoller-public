@@ -19,6 +19,7 @@ from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse
 
 from database.db import get_connection
+from database.queries import thin_series
 from database import wp_queries
 from polling.wp_poller import run_wp_poll_cycle, wp_poll_progress
 from polling.background import spawn_poll
@@ -259,7 +260,7 @@ def get_wp_aggregate(
 ):
     conn = get_connection()
     try:
-        return {"snapshots": wp_queries.get_wp_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(wp_queries.get_wp_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/wp/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))

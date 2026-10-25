@@ -29,7 +29,7 @@ def test_operator_key_from_file(monkeypatch, tmp_path):
 
 def test_malformed_operator_key_fails_fast(monkeypatch):
     monkeypatch.setenv("PAWPOLLER_VAULT_KEY", "not-a-valid-fernet-key")
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError, match="not a valid Fernet key"):
         config._get_vault_key()
 
 

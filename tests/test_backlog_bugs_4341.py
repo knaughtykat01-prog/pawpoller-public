@@ -179,7 +179,7 @@ class TestThereIsAWayBackFromAForgottenPassword:
         import server
         src = inspect.getsource(server.main)
         assert '"--reset-password"' in src
-        assert "_reset_password()" in src
+        assert "_reset_password(args.port)" in src     # 4.88.0: it checks the --port given too
 
     def test_the_desktop_takes_it_too(self):
         src = open("main.py", encoding="utf-8").read()

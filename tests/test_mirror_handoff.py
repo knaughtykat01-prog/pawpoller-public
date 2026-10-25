@@ -273,7 +273,7 @@ class TestReporting:
         assert len(handoff.pending_reports(conn, "https://srv")) == 1
 
     def test_the_report_carries_natural_keys_and_the_opaque_handle(self, conn):
-        qid = self._imported(conn)
+        self._imported(conn)
         row = handoff.pending_reports(conn)[0]
         payload = handoff.build_report(conn, row)
         assert payload["origin_queue_id"] == 77
@@ -283,7 +283,7 @@ class TestReporting:
         assert "account_id" not in payload
 
     def test_a_failed_job_reports_as_failure(self, conn):
-        qid = self._imported(conn, status="failed")
+        self._imported(conn, status="failed")
         payload = handoff.build_report(conn, handoff.pending_reports(conn)[0])
         assert payload["success"] is False
 

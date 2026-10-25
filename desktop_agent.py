@@ -86,13 +86,50 @@ def retire_local_database(data_dir: Path, now=None) -> list[str]:
 
 # ── the queue ────────────────────────────────────────────────────────────────
 
-class Queue:
-    """Persistent FIFO of things to deliver. One JSON file, rewritten atomically."""
+SECRET_KINDS = ("cookies", "helper")
 
-    def __init__(self, path: Path | None = None):
+
+def _vault_cipher():
+    from cryptography.fernet import Fernet
+    return Fernet(config._get_vault_key())
+
+
+class Queue:
+    """Persistent FIFO of things to deliver. One JSON file, rewritten atomically.
+
+    Items that carry a site sign-in (``cookies``, ``helper``) keep their payload encrypted
+    with the install's vault key (spec 059): the file holds ``{"enc": …}``, never a cookie,
+    code or server address. Plaintext items left by an older version are re-written on load.
+    """
+
+    def __init__(self, path: Path | None = None, cipher=None):
         self.path = Path(path) if path else QUEUE_PATH
         self._lock = threading.RLock()
+        self._cipher = cipher
         self._items: list[dict] = self._load()
+        if any(i.get("kind") in SECRET_KINDS and "enc" not in (i.get("payload") or {}) for i in self._items):
+            for i in self._items:
+                if i.get("kind") in SECRET_KINDS and "enc" not in (i.get("payload") or {}):
+                    i["payload"] = self._seal(i.get("payload") or {})
+            self._save()
+
+    def _c(self):
+        if self._cipher is None:
+            self._cipher = _vault_cipher()
+        return self._cipher
+
+    def _seal(self, payload: dict) -> dict:
+        return {"enc": self._c().encrypt(json.dumps(payload).encode()).decode()}
+
+    def _open(self, item: dict) -> dict:
+        out = dict(item)
+        p = item.get("payload") or {}
+        if "enc" in p:
+            try:
+                out["payload"] = json.loads(self._c().decrypt(p["enc"].encode()))
+            except Exception:
+                out["payload"] = {}          # a key that changed: the item can't be sent, drain drops it
+        return out
 
     def _load(self) -> list[dict]:
         try:
@@ -116,7 +153,8 @@ class Queue:
         with self._lock:
             if dedup_key:
                 self._items = [i for i in self._items if i.get("dedup_key") != dedup_key]
-            item = {"id": uuid.uuid4().hex[:12], "kind": kind, "payload": payload, "dedup_key": dedup_key,
+            stored = self._seal(payload) if kind in SECRET_KINDS else payload
+            item = {"id": uuid.uuid4().hex[:12], "kind": kind, "payload": stored, "dedup_key": dedup_key,
                     "created": time.time(), "attempts": 0, "next_at": 0.0, "last_error": ""}
             self._items.append(item)
             if len(self._items) > MAX_QUEUE:
@@ -126,7 +164,7 @@ class Queue:
 
     def pending(self) -> list[dict]:
         with self._lock:
-            return [dict(i) for i in self._items]
+            return [self._open(i) for i in self._items]
 
     def pending_count(self) -> int:
         with self._lock:
@@ -135,7 +173,7 @@ class Queue:
     def due(self, now: float | None = None) -> list[dict]:
         now = time.time() if now is None else now
         with self._lock:
-            return [dict(i) for i in self._items if float(i.get("next_at") or 0) <= now]
+            return [self._open(i) for i in self._items if float(i.get("next_at") or 0) <= now]
 
     def remove(self, item_id: str) -> None:
         with self._lock:
@@ -223,8 +261,9 @@ class Agent:
                 if self.server_reachable():
                     try:
                         callback()
-                    finally:
-                        return
+                    except Exception:   # was a return-in-finally that hid the error entirely
+                        logger.exception("agent reach callback failed")
+                    return
                 self._stop.wait(interval)
         threading.Thread(target=_poll, daemon=True, name="agent-reach").start()
 
@@ -322,7 +361,9 @@ class Agent:
         fn = self._login_fn
         if fn is None:
             from auth.browser_login import login_via_browser
-            fn = login_via_browser
+            # Keywords (059, L7): positionally `account_id` landed in the `timeout` slot, and the
+            # popup also saved a copy on this desktop. The server is where the login belongs.
+            fn = lambda p, e, a: login_via_browser(p, e, account_id=a, save=False)  # noqa: E731
         try:
             creds = fn(platform, extra_fields or {}, account_id)
         except Exception as e:
@@ -358,6 +399,271 @@ class Agent:
         return {"server_url": self.server_url, "pending": self.queue.pending_count(),
                 "last_contact": self.last_contact, "last_error": self.last_error,
                 "version": config.APP_VERSION}
+
+
+# ── Sign in for a server (spec 059) ──────────────────────────────────────────
+# The desktop half of the sign-in helper: a server's code → that site's own sign-in page in a
+# PawPoller window → the result handed to the server. It never touches the Agent above, whose
+# client carries this desktop's pairing key (H3): helper requests go out with no Authorization
+# header, no redirects followed and certificates always checked, and waiting hand-overs live
+# in their own encrypted queue with their own sender, which runs in standalone mode too.
+
+HELPER_QUEUE_PATH = config.DATA_DIR / "helper_queue.json"
+HELPER_TTL = 600
+HOME_NETWORKS = tuple(__import__("ipaddress").ip_network(n) for n in (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "fc00::/7", "fe80::/10"))
+
+MSG_TLS = "Your server needs https or Tailscale for this. Other ways to connect still work."
+MSG_BAD_CODE = "That code isn't valid or has run out. Make a new one on your server."
+MSG_AWAY = "Your server isn't answering. Try again when it is."
+MSG_CANCELLED = "Sign-in cancelled."
+
+
+def helper_client():
+    import httpx
+    return httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=False, verify=True,
+                        headers={"User-Agent": f"PawPoller-desktop/{config.APP_VERSION}"})
+
+
+def _origin(server: str) -> str:
+    from urllib.parse import urlsplit
+    p = urlsplit((server or "").strip())
+    host = (p.hostname or "").lower()
+    if ":" in host:
+        host = f"[{host}]"
+    return f"{p.scheme.lower()}://{host}" + (f":{p.port}" if p.port else "")
+
+
+def _on_home_list(ip) -> bool:
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    if ip.is_unspecified:
+        return False
+    return any(ip in n for n in HOME_NETWORKS if n.version == ip.version)
+
+
+def home_address(server: str, resolve=None) -> str | None:
+    """For a plain-http *server*: the origin to connect to when its address is on this home
+    network, else None. An IP literal must be on the explicit home list (not
+    ``ipaddress.is_private``, which also says yes to 203.0.113.x and 0.0.0.0). A ``.local`` name
+    is resolved ONCE, every address it gives must be on the list, and the returned origin uses
+    that address, so a DNS change between this check and the send can't redirect it. Any other
+    name is refused."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlsplit
+    p = urlsplit((server or "").strip())
+    host = (p.hostname or "").lower()
+    if p.scheme != "http" or not host:
+        return None
+    port = f":{p.port}" if p.port else ""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None:
+        return _origin(server) if _on_home_list(ip) else None
+    if not host.endswith(".local"):
+        return None
+    try:
+        infos = (resolve or socket.getaddrinfo)(host, p.port or 80)
+        addrs = {ipaddress.ip_address(i[4][0].split("%")[0]) for i in infos}
+    except (OSError, ValueError):
+        return None
+    if not addrs or not all(_on_home_list(a) for a in addrs):
+        return None
+    a = sorted(addrs, key=lambda x: (x.version, str(x)))[0]
+    return f"http://{a}{port}" if a.version == 4 else f"http://[{a}]{port}"
+
+
+def clean_label(text, limit: int = 60) -> str:
+    """Server text for a native dialog: Qt's message box guesses rich text, so markup
+    characters, control, format and line/paragraph separators all go (L-r2-1)."""
+    import unicodedata
+    s = "".join(ch for ch in str(text or "") if ch not in "<>&"
+                and unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp"))
+    return " ".join(s.split())[:limit]
+
+
+def ascii_host(server: str) -> str:
+    from urllib.parse import urlsplit
+    host = urlsplit((server or "").strip()).hostname or ""
+    try:
+        return host.encode("idna").decode("ascii")
+    except UnicodeError:
+        return host.encode("ascii", "replace").decode()
+
+
+def http_ok_list(settings: dict | None = None) -> list[str]:
+    s = config.get_settings() if settings is None else settings
+    return [str(x) for x in (s.get("signin_helper_http_ok") or []) if isinstance(x, str)]
+
+
+def set_http_ok(server: str, yes: bool) -> list[str]:
+    """This desktop's own yes to plain http for *server* (M-r3-1). Kept here, never synced."""
+    o = _origin(server)
+    items = [x for x in http_ok_list() if x != o]
+    if yes:
+        items.append(o)
+    config.save_settings({"signin_helper_http_ok": items})
+    return items
+
+
+def _detail(r) -> str:
+    try:
+        d = r.json().get("detail")
+        return d if isinstance(d, str) else ""
+    except Exception:
+        return ""
+
+
+def helper_signin(server: str, code: str, *, confirm, login_fn, http=None, queue: "Queue | None" = None,
+                  settings: dict | None = None, resolve=None, now: float | None = None) -> dict:
+    """The whole hand-over (contracts/http.md, desktop side). *confirm(title, message)* is the
+    native dialog and only ``True`` goes on; *login_fn(platform)* opens the window and returns
+    the creds without saving them here (or None)."""
+    from auth.browser_login import PLATFORM_LOGIN, identity_keys
+    server = (server or "").strip().rstrip("/")
+    trusted, _ = config.is_trusted_transport(server)
+    base = _origin(server)              # only scheme://host:port, the host the dialog names
+    plain_http = False
+    if not trusted:
+        pinned = home_address(server, resolve=resolve)
+        if not pinned:
+            return {"ok": False, "message": MSG_TLS}
+        # This computer's own yes first, so the code never crosses plain http without it (SEC059).
+        if _origin(server) not in http_ok_list(settings):
+            return {"ok": False, "needs_http_ok": True,
+                    "message": "Sign-in over plain http needs a yes on this computer first."}
+        base, plain_http = pinned, True
+    client = http or helper_client()
+    try:
+        try:
+            r = client.post(f"{base}/api/signin-helper/lookup", json={"code": code})
+        except Exception:
+            return {"ok": False, "message": MSG_AWAY}
+        if r.status_code == 404:
+            return {"ok": False, "message": MSG_BAD_CODE}
+        if r.status_code != 200:
+            return {"ok": False, "message": _detail(r) or MSG_AWAY}
+        info = r.json() or {}
+        platform = str(info.get("platform") or "")
+        cfg = PLATFORM_LOGIN.get(platform)
+        if not cfg:
+            return {"ok": False, "message": "This PawPoller doesn't know that site. Update the desktop app."}
+        if plain_http and info.get("allow_http") is not True:
+            return {"ok": False, "message": MSG_TLS}
+        site, host, label = cfg["name"], ascii_host(server), clean_label(info.get("account_label"))
+        if plain_http:
+            title = "Sign in without encryption?"
+            text = (f"Server: {host}\nThis sends your {site} sign-in to {host} without encryption. Anyone else "
+                    f"on this network could copy it and post as you. Only continue if you're at home on the "
+                    f"same network as your server, not on café, work or shared Wi-Fi.\nAccount: {label}")
+        else:
+            title = f"Sign in to {site}?"
+            text = f"Sign in to {site} on {host} for {label}?"
+        if confirm(title, text) is not True:
+            return {"ok": False, "message": MSG_CANCELLED}
+        creds = login_fn(platform)
+        if not creds:
+            return {"ok": False, "message": MSG_CANCELLED}
+        creds = {k: v for k, v in dict(creds).items() if k not in identity_keys(platform)}
+        payload = {"server": base, "code": code, "cookies": creds}
+        ok, status, detail = _send_helper(client, payload)
+        if ok:
+            who = detail
+            return {"ok": True, "message": f"Connected as {who}. Saved on your server." if who
+                    else "Connected. Saved on your server."}
+        if status:
+            return {"ok": False, "message": detail or MSG_AWAY}
+        if plain_http:
+            return {"ok": False, "message": MSG_AWAY}       # never queued over plain http (L-r3-3)
+        q = queue or Queue(HELPER_QUEUE_PATH)
+        try:   # the server's word, capped: a fake server can't keep a hand-over alive (SEC059)
+            ttl = min(max(float(info.get("expires_in") or HELPER_TTL), 0.0), HELPER_TTL)
+        except (TypeError, ValueError):
+            ttl = HELPER_TTL
+        expires = (time.time() if now is None else now) + ttl
+        q.add("helper", dict(payload, expires_at=expires))
+        return {"ok": True, "queued": True,
+                "message": "Signed in. Your server isn't answering; it'll be sent when it is (within the code's 10 minutes)."}
+    finally:
+        if http is None:
+            client.close()
+
+
+def _send_helper(client, payload: dict) -> tuple[bool, int, str]:
+    """(ok, HTTP status or 0 when unreachable, handle on success / the server's sentence)."""
+    try:
+        r = client.post(f"{payload['server']}/api/signin-helper/result",
+                        json={"code": payload["code"], "cookies": payload.get("cookies") or {}})
+    except Exception:
+        return False, 0, ""
+    if r.status_code == 200:
+        return True, 200, str((r.json() or {}).get("handle") or "")
+    if r.status_code == 404:
+        return False, 404, MSG_BAD_CODE
+    return False, r.status_code, _detail(r)
+
+
+class HelperSender:
+    """Delivers waiting hand-overs (kind ``helper``) with the key-less helper client; drops any
+    whose code has run out, on a timer, sent or not. Started by the standalone desktop (main.py);
+    connected mode never queues a hand-over."""
+
+    def __init__(self, queue: "Queue | None" = None, http=None, interval: float = DRAIN_INTERVAL, notify=None):
+        self.queue = queue or Queue(HELPER_QUEUE_PATH)
+        self._http = http
+        self._interval = interval
+        self._notify = notify               # called with a sentence when an item is dropped or delivered
+        self._stop = threading.Event()
+        self.last_message = ""              # shown on the desktop's helper screen
+
+    def _say(self, message: str) -> None:
+        self.last_message = message
+        if self._notify:
+            self._notify(message)
+
+    def drain(self, now: float | None = None) -> int:
+        now = time.time() if now is None else now
+        sent = 0
+        for item in self.queue.pending():
+            p = item.get("payload") or {}
+            if now >= float(p.get("expires_at") or 0) or not p.get("server"):
+                self.queue.remove(item["id"])
+                self._say("That code ran out before your server answered. Make a new one.")
+                continue
+            if float(item.get("next_at") or 0) > now:
+                continue
+            client = self._http or helper_client()
+            try:
+                ok, status, detail = _send_helper(client, p)
+            finally:
+                if self._http is None:
+                    client.close()
+            if ok:
+                self.queue.remove(item["id"])
+                sent += 1
+                self._say(f"Connected as {detail}. Saved on your server." if detail else "Connected.")
+            elif status:
+                self.queue.remove(item["id"])        # the server answered and refused: never retried
+                self._say(detail or MSG_BAD_CODE)
+            else:
+                self.queue.failed(item["id"], "unreachable", now)
+        return sent
+
+    def start(self) -> None:
+        def _loop():
+            while not self._stop.wait(self._interval):
+                try:
+                    if self.queue.pending_count():
+                        self.drain()
+                except Exception as e:
+                    logger.debug("helper drain failed: %s", e)
+        threading.Thread(target=_loop, daemon=True, name="signin-helper").start()
+
+    def stop(self) -> None:
+        self._stop.set()
 
 
 # ── pywebview bridge ─────────────────────────────────────────────────────────

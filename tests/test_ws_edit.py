@@ -161,7 +161,7 @@ def test_the_poster_edit_replaces_metadata_file_and_cover(tmp_path, monkeypatch)
             return {"url": f"https://www.weasyl.com/submission/{sid}"}
 
         async def reupload_file(self, sid, path):
-            did.append(("file", open(path, encoding="utf-8").read()))
+            did.append(("file", open(path, encoding="utf-8").read()))  # noqa: ASYNC230
 
         async def reupload_cover(self, sid, path):
             did.append("cover")

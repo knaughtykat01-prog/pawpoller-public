@@ -20,6 +20,14 @@ import desktop_agent as da
 from routes import media_api, settings_api
 
 
+@pytest.fixture(autouse=True)
+def _test_vault(monkeypatch):
+    """Queued sign-ins are encrypted with the vault key (spec 059): never the real one in a test."""
+    from cryptography.fernet import Fernet
+    key = Fernet.generate_key()
+    monkeypatch.setattr(da, "_vault_cipher", lambda: Fernet(key))
+
+
 # ── the mode ─────────────────────────────────────────────────────────────────
 
 def test_connected_is_a_valid_mode_and_the_server_polls():
@@ -74,7 +82,7 @@ class FakeResp:
     def __init__(self, status, body=None, text=""):
         self.status_code, self._body, self.text = status, body, text
 
-    def json(self):
+    def json(self):  # noqa: F811
         return self._body
 
 
@@ -93,7 +101,7 @@ class FakeHttp:
             return FakeResp(200, {"exists": sha in self.known, "path": f"/srv/inbox/{sha[:16]}_x" if sha in self.known else None})
         return FakeResp(404)
 
-    def post(self, url, json=None, data=None, files=None, **kw):
+    def post(self, url, json=None, data=None, files=None, **kw):  # noqa: F811
         if not self.up:
             raise ConnectionError("down")
         if url.endswith("/browser-login/result"):
@@ -143,7 +151,7 @@ def test_drain_drops_permanent_refusals_but_keeps_auth_and_outages(tmp_path):
             super().__init__(up=True)
             self.status = status
 
-        def post(self, url, json=None, data=None, files=None, **kw):
+        def post(self, url, json=None, data=None, files=None, **kw):  # noqa: F811
             return FakeResp(self.status, text="Account 5 is not a da account" if self.status == 400 else "nope")
 
     for status, kept in ((400, False), (422, False), (401, True), (429, True), (503, True)):

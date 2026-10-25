@@ -22,6 +22,7 @@ from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse
 
 from database.db import get_connection
+from database.queries import thin_series
 from database import sf_queries
 from polling.sf_poller import run_sf_poll_cycle, sf_poll_progress
 from polling.background import spawn_poll
@@ -294,7 +295,7 @@ def get_sf_aggregate(
 ):
     conn = get_connection()
     try:
-        return {"snapshots": sf_queries.get_sf_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(sf_queries.get_sf_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/sf/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))

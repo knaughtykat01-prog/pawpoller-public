@@ -260,6 +260,11 @@ def run_auto_backup_scheduler():
     Ticks every 30 min; each tick self-throttles on the enabled flag +
     last_auto_backup_at, so it's near-free when off or not yet due."""
     import time as _time
+    try:
+        import pb_upload
+        pb_upload.sweep(everything=True)   # spec 060: no uploaded PostyBirb logins survive a restart
+    except Exception as e:
+        logger.warning("Clearing PostyBirb uploads failed: %s", type(e).__name__)
     _time.sleep(120)  # let settings seed on startup
     while True:
         try:
@@ -275,6 +280,11 @@ def run_auto_backup_scheduler():
             move_api.prune_stale()   # spec 035: unfinished moves and unfetched moving files, after a day
         except Exception as e:
             logger.warning("Clearing old moves failed: %s", type(e).__name__)
+        try:
+            import pb_upload
+            pb_upload.sweep()        # spec 060: idle PostyBirb uploads (each call also refuses one idle 30 min)
+        except Exception as e:
+            logger.warning("Clearing PostyBirb uploads failed: %s", type(e).__name__)
         _time.sleep(30 * 60)
 
 

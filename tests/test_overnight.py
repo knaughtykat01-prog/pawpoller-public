@@ -182,8 +182,10 @@ def test_the_api_opens_once_then_notes_the_visit(monkeypatch):
     assert overnight_api.auto() == {"show": False}
     overnight_api.seen({"show_after": "morning"})
     assert store["overnight_show_after"] == "morning"
-    with pytest.raises(Exception):
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as e:
         overnight_api.seen({"show_after": "<script>"})
+    assert e.value.status_code == 400
 
 
 def test_nothing_happened_means_no_sheet(monkeypatch):

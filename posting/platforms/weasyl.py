@@ -144,7 +144,7 @@ class WeasylPoster(PlatformPoster):
                 with _publishable(package.file_path) as f:
                     await client.reupload_file(external_id, f)
             is_image = (package.file_type or "").lower() in ("png", "jpg", "jpeg", "gif", "webp")
-            if package.thumbnail_path and os.path.isfile(package.thumbnail_path) and not is_image:
+            if package.thumbnail_path and os.path.isfile(package.thumbnail_path) and not is_image:  # noqa: ASYNC240
                 await client.reupload_cover(external_id, package.thumbnail_path)
             return PostResult(success=True, external_id=external_id, external_url=result.get("url", ""),
                               duration_seconds=self._elapsed(_t))

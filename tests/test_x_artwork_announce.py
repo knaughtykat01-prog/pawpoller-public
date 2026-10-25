@@ -204,7 +204,6 @@ class TestXPoster:
 
     def test_a_failed_upload_reports_what_x_said_and_sends_no_tweet(self, tw):
         poster, made, img = tw
-        poster_client_flag = {"fail_upload": True}
         import clients.tw.client as twc
         orig = twc.TWClient
 

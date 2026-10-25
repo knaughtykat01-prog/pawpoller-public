@@ -24,6 +24,7 @@ Key details:
 
 from __future__ import annotations
 import asyncio
+from pathlib import Path
 import html
 import json
 import logging
@@ -1030,8 +1031,7 @@ class DAClient:
         if not access_token:
             raise RuntimeError("DA: OAuth2 access token required")
         import os
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        file_data = await asyncio.to_thread(Path(file_path).read_bytes)
         filename = os.path.basename(file_path)
         ext = os.path.splitext(filename)[1].lstrip(".").lower()
         mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",

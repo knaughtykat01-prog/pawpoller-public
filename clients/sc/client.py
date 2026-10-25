@@ -285,7 +285,7 @@ class ScClient:
                            tags: list[str] | None = None, genre: str = "", sharing: str = "public",
                            artwork_path: str | None = None, artist: str = "") -> dict:
         """``POST /tracks`` multipart. Returns {"success", "id", "url"} or {"success": False, "error"}."""
-        if not os.path.isfile(file_path):
+        if not os.path.isfile(file_path):  # noqa: ASYNC240
             return {"success": False, "error": f"file not found: {file_path}"}
         await self._ensure_token()
         fields = {
@@ -301,11 +301,11 @@ class ScClient:
         if artist:
             fields["track[artist]"] = artist
         files: dict[str, Any] = {}
-        fh_audio = open(file_path, "rb")
+        fh_audio = open(file_path, "rb")  # noqa: ASYNC230
         files["track[asset_data]"] = (os.path.basename(file_path), fh_audio, "application/octet-stream")
         fh_art = None
-        if artwork_path and os.path.isfile(artwork_path):
-            fh_art = open(artwork_path, "rb")
+        if artwork_path and os.path.isfile(artwork_path):  # noqa: ASYNC240
+            fh_art = open(artwork_path, "rb")  # noqa: ASYNC230
             files["track[artwork_data]"] = (os.path.basename(artwork_path), fh_art, "image/jpeg")
         try:
             async with httpx.AsyncClient(timeout=UPLOAD_TIMEOUT) as up:
@@ -346,8 +346,8 @@ class ScClient:
             fields["track[sharing]"] = "private" if sharing == "private" else "public"
         files: dict[str, Any] = {}
         fh_art = None
-        if artwork_path and os.path.isfile(artwork_path):
-            fh_art = open(artwork_path, "rb")
+        if artwork_path and os.path.isfile(artwork_path):  # noqa: ASYNC240
+            fh_art = open(artwork_path, "rb")  # noqa: ASYNC230
             files["track[artwork_data]"] = (os.path.basename(artwork_path), fh_art, "image/jpeg")
         try:
             r = await self._request("PUT", f"tracks/{urllib.parse.quote(str(track_id), safe='')}",

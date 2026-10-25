@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -166,7 +166,7 @@ def test_round_trip_keeps_the_seats_sign_in_and_brings_the_library(two, tmp_path
     # The logins are locked under the SEAT's key: the vault opens with it and not with the old one.
     vault = json.loads((new.data / "settings.vault.json").read_text())["encrypted"].encode()
     assert "fa-secret-a" in Fernet(new.key.encode()).decrypt(vault).decode()
-    with pytest.raises(Exception):
+    with pytest.raises(InvalidToken):
         Fernet(old.key.encode()).decrypt(vault)
 
     assert new.titles() == ["Sample Story", "Second Piece"]

@@ -29,6 +29,7 @@ from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import Response, StreamingResponse
 
 from database.db import get_connection
+from database.queries import thin_series
 from database import fa_queries
 from polling.fa_poller import run_fa_poll_cycle, fa_poll_progress
 from polling.background import spawn_poll
@@ -374,7 +375,7 @@ def get_fa_aggregate(
     With *account_id* set, the totals are scoped to that account."""
     conn = get_connection()
     try:
-        return {"snapshots": fa_queries.get_fa_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(fa_queries.get_fa_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/fa/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))

@@ -239,7 +239,10 @@ def test_the_api_saves_choices_and_moves_rows_when_count_changes():
     assert r["moved"] == 1
     t = api.get_track(aid)
     assert t["saved"] and t["settings"]["artist_tags"] == ["ink_wolf"] and t["found"]["posts"] == 1
-    with pytest.raises(Exception):
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as e:
         api.put_track(aid, {"artist_tags": ["<b>"]})
-    with pytest.raises(Exception):
+    assert e.value.status_code == 400
+    with pytest.raises(HTTPException) as e:
         api.get_track(999999)
+    assert e.value.status_code == 404

@@ -14,6 +14,7 @@ ws_comments table in the database schema.
 
 from __future__ import annotations
 import asyncio
+from pathlib import Path
 import logging
 import os
 import re
@@ -360,8 +361,7 @@ class WeasylClient:
         # Step 1: Get CSRF token from the submit page
         csrf = await self._get_csrf_token("https://www.weasyl.com/submit/literary")
 
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        file_data = await asyncio.to_thread(Path(file_path).read_bytes)
 
         filename = os.path.basename(file_path)
         form_data = {
@@ -377,10 +377,10 @@ class WeasylClient:
             form_data["folderid"] = str(folder_id)
 
         files = {"submitfile": (filename, file_data)}
-        if cover_path and os.path.isfile(cover_path):
+        if cover_path and os.path.isfile(cover_path):  # noqa: ASYNC240
             # BOTH slots (4.54.3): Weasyl shows coverfile on the page but makes no gallery
             # thumbnail from it — the first live story got the default placeholder.
-            with open(cover_path, "rb") as cf:
+            with open(cover_path, "rb") as cf:  # noqa: ASYNC230
                 cover = cf.read()
             mime = _image_mime(cover_path)
             files["coverfile"] = (os.path.basename(cover_path), cover, mime)
@@ -399,7 +399,7 @@ class WeasylClient:
         submission_id = _submitted_id(final_url, resp.text)
         if submission_id:
             logger.info("WS: Submitted literary work — id=%s", submission_id)
-            if cover_path and os.path.isfile(cover_path):
+            if cover_path and os.path.isfile(cover_path):  # noqa: ASYNC240
                 try:
                     await self.thumbnail_from_cover(submission_id)
                 except Exception as e:   # the post itself succeeded
@@ -428,8 +428,7 @@ class WeasylClient:
         """
         csrf = await self._get_csrf_token("https://www.weasyl.com/submit/visual")
 
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        file_data = await asyncio.to_thread(Path(file_path).read_bytes)
         filename = os.path.basename(file_path)
 
         form_data = {
@@ -445,8 +444,8 @@ class WeasylClient:
             form_data["folderid"] = str(folder_id)
 
         files = {"submitfile": (filename, file_data)}
-        if thumbnail_path and os.path.isfile(thumbnail_path):
-            with open(thumbnail_path, "rb") as tf:
+        if thumbnail_path and os.path.isfile(thumbnail_path):  # noqa: ASYNC240
+            with open(thumbnail_path, "rb") as tf:  # noqa: ASYNC230
                 files["thumbfile"] = (os.path.basename(thumbnail_path), tf.read(), "image/png")
 
         resp = await self._http.post(
@@ -489,8 +488,7 @@ class WeasylClient:
         """
         csrf = await self._get_csrf_token("https://www.weasyl.com/submit/multimedia")
 
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        file_data = await asyncio.to_thread(Path(file_path).read_bytes)
 
         filename = os.path.basename(file_path)
         form_data = {
@@ -506,8 +504,8 @@ class WeasylClient:
             form_data["folderid"] = str(folder_id)
 
         files = {"submitfile": (filename, file_data, "audio/mpeg")}
-        if cover_path and os.path.isfile(cover_path):
-            with open(cover_path, "rb") as cf:
+        if cover_path and os.path.isfile(cover_path):  # noqa: ASYNC240
+            with open(cover_path, "rb") as cf:  # noqa: ASYNC230
                 cover = cf.read()
             mime = _image_mime(cover_path)
             files["coverfile"] = (os.path.basename(cover_path), cover, mime)
@@ -525,7 +523,7 @@ class WeasylClient:
         submission_id = _submitted_id(final_url, resp.text)
         if submission_id:
             logger.info("WS: Submitted multimedia work — id=%s", submission_id)
-            if cover_path and os.path.isfile(cover_path):
+            if cover_path and os.path.isfile(cover_path):  # noqa: ASYNC240
                 try:
                     await self.thumbnail_from_cover(submission_id)
                 except Exception as e:   # the post itself succeeded

@@ -98,7 +98,7 @@ class TestTheRouteRefusesAPersonaThatIsNotYours:
         """An arbitrary integer would render a blank badge rather than a wrong one,
         which is harder to notice than a refusal."""
         src = open("routes/characters_api.py", encoding="utf-8").read()
-        i = src.index("def upsert_character") if "def upsert_character" in src else 0
+        src = src[src.index("def upsert_character"):]
         assert "not one of your personas" in src
         assert "personas_db.list_personas" in src
 
@@ -127,7 +127,7 @@ class TestTheUiNeedsNoSetup:
         treats an absent field as 'leave alone' — so a character moved from a friend
         to yourself would claim both."""
         src = open("frontend/js/characters.js", encoding="utf-8").read()
-        i = src.index("data-ch-owner=")
+        assert "data-ch-owner=" in src
         block = src[src.index("const osel"):]
         assert "body.persona_id = null" in block
         assert "body.owner_key = ''" in block

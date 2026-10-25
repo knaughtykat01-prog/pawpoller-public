@@ -18,11 +18,11 @@ from fastapi.responses import StreamingResponse
 import config
 
 from database.db import get_connection
+from database.queries import thin_series
 from database import ao3_queries
 from polling.ao3_poller import run_ao3_poll_cycle, ao3_poll_progress
 from polling.background import spawn_poll
 from clients.ao3.client import AO3Client
-import config
 
 logger = logging.getLogger(__name__)
 ao3_router = APIRouter(prefix="/api/ao3")
@@ -296,7 +296,7 @@ def get_ao3_aggregate(
 ):
     conn = get_connection()
     try:
-        return {"snapshots": ao3_queries.get_ao3_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(ao3_queries.get_ao3_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/ao3/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))

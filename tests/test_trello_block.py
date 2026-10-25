@@ -46,7 +46,7 @@ class TestStripping:
         assert card_block.strip(desc) == original
 
     def test_a_description_with_no_block_is_untouched(self):
-        assert card_block.strip("just text") == "just text"
+        assert card_block.strip("just text") == "just text"  # noqa: B005
 
     def test_an_empty_description_is_not_an_error(self):
         assert card_block.strip("") == ""

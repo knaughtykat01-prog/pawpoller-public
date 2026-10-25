@@ -13,6 +13,7 @@ Key details:
 
 from __future__ import annotations
 import asyncio
+from pathlib import Path
 import logging
 from typing import Any
 
@@ -767,7 +768,7 @@ class BskyClient:
         if not await self.ensure_logged_in():
             self.last_error = "Bluesky login failed"
             return None
-        if not os.path.isfile(file_path):
+        if not os.path.isfile(file_path):  # noqa: ASYNC240
             self.last_error = f"File not found: {file_path}"
             return None
         token = await self.get_service_auth(f"did:web:{self._pds_host}", "com.atproto.repo.uploadBlob")
@@ -777,8 +778,7 @@ class BskyClient:
         name = secrets.token_urlsafe(9) + os.path.splitext(file_path)[1].lower()
         url = f"{self.VIDEO_HOST}/app.bsky.video.uploadVideo?did={quote(self._did)}&name={quote(name)}"
         try:
-            with open(file_path, "rb") as fh:
-                data = fh.read()
+            data = await asyncio.to_thread(Path(file_path).read_bytes)
             resp = await self._http.post(url, content=data,
                                          headers={"Authorization": f"Bearer {token}", "Content-Type": mime_type},
                                          timeout=900.0)
@@ -838,8 +838,7 @@ class BskyClient:
             logger.error("BSKY: Not logged in, cannot upload blob")
             return None
 
-        with open(file_path, "rb") as f:
-            file_data = f.read()
+        file_data = await asyncio.to_thread(Path(file_path).read_bytes)
 
         headers = {
             "Authorization": f"Bearer {self._access_jwt}",
@@ -1122,7 +1121,6 @@ class BskyClient:
         import re as _re
         facets = []
         for m in _re.finditer(r'#([A-Za-z][^\s#]*)', text):
-            tag_text = m.group(0)      # includes '#'
             tag = m.group(1).rstrip('.,!?;:)\'"')   # trim trailing punctuation
             if not tag:
                 continue

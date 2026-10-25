@@ -265,7 +265,7 @@ def test_merge_carries_absorbs_own_variants(client):
     which silently deleted the other variant images)."""
     keep = _make_art(title="Alpha")
     absorb = _make_art(title="Bravo", colour=(20, 200, 90))
-    rough_img = _declare(client, absorb, "rough", "Rough")   # absorb's OWN variant
+    _declare(client, absorb, "rough", "Rough")   # absorb's OWN variant
     conn = get_connection()
     mq.add_member(conn, absorb, "fa", "100")                    # absorb primary
     mq.add_member(conn, absorb, "ib", "200", variant_key="rough")  # absorb's rough

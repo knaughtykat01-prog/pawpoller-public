@@ -22,7 +22,9 @@ window.Accounts = {
         if (App._stale(_rt)) return;
         app.innerHTML = `
             <div class="page-header acct-head"><h1>Accounts</h1>${App._runtimeMode === 'server' ? ''
-                : '<button type="button" class="btn btn-secondary btn-sm" data-pb-import>Import from PostyBirb</button>'}</div>
+                : '<button type="button" class="btn btn-secondary btn-sm" data-pb-import="logins">Import from PostyBirb</button>'}${
+                (window.SigninHelper && SigninHelper.hasDesktop())
+                ? ' <button type="button" class="btn btn-secondary btn-sm" data-signin-helper>Sign in for a server</button>' : ''}</div>
             <p class="acct-intro muted">Run more than one account per platform. Each platform's
             default account keeps your existing credentials; add extra accounts below. Group accounts
             across platforms into a <strong>persona</strong> for scoped views and per-persona digests.</p>
@@ -35,6 +37,8 @@ window.Accounts = {
                 owners, shown only to identify each service. PawPoller is not affiliated with them.</p>
             </div>`;
 
+        // Spec 059: the desktop signs in for a server or seat with that server's one-time code.
+        app.querySelector('[data-signin-helper]')?.addEventListener('click', () => SigninHelper.openDesktop());
         this._renderFaPollingToggle(document.getElementById('fa-polling-card'));
         await this._refresh();
     },
@@ -208,7 +212,7 @@ window.Accounts = {
                 <button id="acct-pb-import" class="btn">Import from PostyBirb</button>
                 <span class="muted">Brings over the logins PostyBirb has on this computer. PostyBirb is only read, never changed.</span>
             </div>`}`;
-        el.querySelector('#acct-pb-import')?.addEventListener('click', () => App.openPbImport(() => this._refresh()));
+        el.querySelector('#acct-pb-import')?.addEventListener('click', () => App.openPbImport(() => this._refresh(), 'logins'));
 
         const platformSel = el.querySelector('#acct-platform');
         const renderFields = () => this._renderCredFields(
@@ -468,15 +472,27 @@ window.Accounts = {
         const fields = ((this._meta || {}).platform_fields || {})[platform] || [];
         const bl = this._browserLogin || {};
         const canBrowser = !!bl.available && (bl.platforms || []).some(p => (p.code || p) === platform);
+        // Spec 059: a server or seat signs in through the desktop app with a one-time code.
+        const canCode = !bl.available && ['fa', 'tw', 'ng', 'ik'].includes(platform);
+        const otherWays = canBrowser || canCode;
         const panel = document.createElement('div');
         panel.className = 'acct-cred-editor acct-form';
         panel.style.cssText = 'margin:6px 0 12px;padding:12px;border:1px solid var(--border);border-radius:8px';
         panel.innerHTML = `
             <p style="font-size:13px;margin:0 0 4px">
-                Credentials for <strong>${this.esc(acctName)}</strong>
+                Sign-in for <strong>${this.esc(acctName)}</strong>
                 <span class="muted">(#${this.esc(String(accountId))})</span>
             </p>
-            <p class="muted" style="font-size:12px;margin:0 0 8px">
+            ${otherWays ? `<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">
+                ${canBrowser ? `<button class="btn btn-sm btn-primary" data-cred-browser
+                    title="Opens the site's own sign-in page; what it keeps is saved to THIS account">Sign in</button>` : ''}
+                ${canCode ? `<button class="btn btn-sm btn-primary" data-cred-code>Sign in with the PawPoller app</button>` : ''}
+                <button class="btn btn-sm" data-cred-cancel>Cancel</button>
+                <span class="acct-cred-msg muted" style="font-size:12px"></span>
+            </div>
+            <div class="signin-code-panel" data-cred-code-panel></div>
+            <details class="other-ways" style="margin-top:8px"><summary style="cursor:pointer;font-size:12px" class="muted">Other ways to connect</summary>` : ''}
+            <p class="muted" style="font-size:12px;margin:8px 0 8px">
                 Fields left empty keep their current value — paste only what
                 changed. For FurAffinity, copy cookies <code>a</code> and
                 <code>b</code> from a browser signed in
@@ -492,19 +508,22 @@ window.Accounts = {
                 </label>`).join('')
               || '<span class="muted">No credential fields for this platform.</span>'}
             <div style="display:flex;gap:8px;margin-top:8px">
-                <button class="btn btn-sm btn-primary" data-cred-save>Save</button>
-                ${canBrowser ? `<button class="btn btn-sm" data-cred-browser
-                    title="Open the site's login page; the cookies captured are saved to THIS account">Login via Browser</button>` : ''}
-                <button class="btn btn-sm" data-cred-cancel>Cancel</button>
-                <span class="acct-cred-msg muted" style="font-size:12px"></span>
-            </div>`;
+                <button class="btn btn-sm ${otherWays ? '' : 'btn-primary'}" data-cred-save>Save</button>
+                ${otherWays ? '' : `<button class="btn btn-sm" data-cred-cancel>Cancel</button>
+                <span class="acct-cred-msg muted" style="font-size:12px"></span>`}
+            </div>
+            ${otherWays ? '</details>' : ''}`;
         row.after(panel);
 
         panel.querySelector('[data-cred-cancel]').addEventListener('click', () => panel.remove());
+        panel.querySelector('[data-cred-code]')?.addEventListener('click', () => {
+            const box = panel.querySelector('[data-cred-code-panel]');
+            if (window.SigninHelper) SigninHelper.codePanel(box, { platform, accountId: Number(accountId), onDone: () => this.render() });
+        });
         panel.querySelector('[data-cred-browser]')?.addEventListener('click', async (e) => {
             const msg = panel.querySelector('.acct-cred-msg');
             e.target.disabled = true;
-            msg.textContent = 'A login window will open — sign in AS this account, then it closes itself.';
+            msg.textContent = 'A sign-in window will open — sign in AS this account, then it closes itself.';
             try {
                 const r = await API.browserLogin(platform, {}, Number(accountId));
                 msg.textContent = r.ok ? 'Saved to this account — press Test to confirm who it is signed in as.'

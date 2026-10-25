@@ -69,7 +69,9 @@ from routes.privacy_api import privacy_router
 from routes.tech_api import tech_router
 from routes.legal_api import legal_router
 from routes.pb_import_api import pb_import_router
+from routes.library_api import library_router
 from routes.media_api import media_router
+from routes.signin_helper_api import signin_helper_router
 from routes.promos_api import promos_router
 from routes.podcast_api import podcast_router, feed_router
 from routes.backup_api import backup_router
@@ -522,6 +524,12 @@ _AUTH_EXEMPT_PATHS = frozenset({
     # hands an image to this server to host for Meta. Gated in the route itself
     # by `ig_relay_open`, a size cap, an image check and a per-address rate limit.
     "/api/ig/relay",
+    # Spec 059: a desktop app with no session here hands over ONE site sign-in with a
+    # one-time code. Exact paths only (never a prefix); the code travels in the body; the
+    # routes cap the body, limit per address and across everyone, and save only that site's
+    # own sign-in fields for the code's account after the site's own account check.
+    "/api/signin-helper/lookup",
+    "/api/signin-helper/result",
     # 4.32.0: the host update-agent has no session cookie. This endpoint is
     # gated instead by a loopback check inside the route (only a process on the
     # host can reach it), so a remote client can never claim/trigger an update.
@@ -710,8 +718,9 @@ async def session_auth_middleware(request: Request, call_next):
                         "error": "terms", "detail": "Accept the current Terms of use to carry on."})
                 # 4.68.0: an account with no email at all (made before 4.67.0) adds one first.
                 # Waiting-to-be-confirmed counts: confirming is nagged, never a lock-out.
+                # Spec 058: only where an email is required (a hosted seat); self-host may have none.
                 _s = config.get_settings()
-                if not (_s.get("auth_email") or _s.get("auth_email_pending")):
+                if legal.hosted() and not (_s.get("auth_email") or _s.get("auth_email_pending")):
                     return JSONResponse(status_code=403, content={
                         "error": "email", "detail": "Add an email to your PawPoller account to carry on."})
             return await call_next(request)
@@ -760,8 +769,10 @@ app.include_router(r34_router)   # Rule34.xxx routes (/api/r34/*), tracking only
 app.include_router(tg_router)    # Telegram channel analytics (/api/tg/*)
 app.include_router(tech_router)  # Tech Centre consent/status/reports (/api/tech/*)
 app.include_router(legal_router)  # Terms + Privacy acceptance (/api/legal/*, spec 033)
+app.include_router(library_router)  # Saved descriptions + tag groups (/api/library/*, spec 060 US3)
 app.include_router(pb_import_router)  # PostyBirb login import (/api/pb-import/*, spec 033 phase 8)
 app.include_router(media_router) # Connected-desktop uploads into the inbox (/api/media/*)
+app.include_router(signin_helper_router)  # Sign in for a server: codes + the desktop's hand-over (spec 059)
 app.include_router(posting_router)  # Posting module routes (/api/posting/*)
 app.include_router(artwork_router)  # Artwork hub routes (/api/artwork/*)
 app.include_router(posts_router)    # Posts (microblog) module routes (/api/posts/*)

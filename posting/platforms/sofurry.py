@@ -485,7 +485,7 @@ class SoFurryPoster(PlatformPoster):
                         title = _strip_chapter_prefix(ch.title) or None
                         try:
                             if pos < len(old_ids):
-                                with open(ch_path, "r", encoding="utf-8") as fh:
+                                with open(ch_path, "r", encoding="utf-8") as fh:  # noqa: ASYNC230
                                     body = fh.read()
                                 await client.update_content(
                                     external_id, old_ids[pos],
@@ -624,7 +624,7 @@ class SoFurryPoster(PlatformPoster):
                 if old_content_ids:
                     # Replace the FIRST item in place; any others belong to a
                     # chaptered work and are handled by the chapter-aware path.
-                    with open(file_path, "r", encoding="utf-8") as fh:
+                    with open(file_path, "r", encoding="utf-8") as fh:  # noqa: ASYNC230
                         body = fh.read()
                     await client.update_content(external_id, old_content_ids[0],
                                                 body_html=body)

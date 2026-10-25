@@ -1,3 +1,4 @@
+// @ts-check
 /* Field-scoped search for the Library — e621/GitHub-style `field:value` terms.
  *
  * The shelf search was a substring match on title + name. That is fine for

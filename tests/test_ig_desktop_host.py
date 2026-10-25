@@ -150,6 +150,37 @@ class TestUploadToHost:
             asyncio.run(ig_host.upload_to_host("https://h/api/ig/relay", image, http=http))
         assert "h answered HTTP 403: This PawPoller server does not host" in str(ei.value)
 
+    # Spec 048: the relay's proxy answered 502 with an HTML page, and the page's text
+    # landed in the user's error. A host that's down reads as one plain sentence.
+    @pytest.mark.parametrize("status, body, want", [
+        (502, "<html><body>502 Bad Gateway</body></html>", "h isn't answering right now (HTTP 502)"),
+        (504, "<html>Gateway Timeout</html>", "h isn't answering right now (HTTP 504)"),
+        (500, "<html><b>Internal</b></html>", "h answered HTTP 500"),
+    ])
+    def test_an_html_error_page_never_reaches_the_user(self, image, status, body, want):
+        async def h(req):
+            return httpx.Response(status, text=body, headers={"content-type": "text/html"})
+        http = httpx.AsyncClient(transport=httpx.MockTransport(h))
+        with pytest.raises(RuntimeError) as ei:
+            asyncio.run(ig_host.upload_to_host("https://h/api/ig/relay", image, http=http))
+        assert str(ei.value) == want and "<" not in str(ei.value)
+
+    def test_a_host_that_doesnt_answer_says_so(self, image):
+        async def h(req):
+            raise httpx.ConnectTimeout("timed out")
+        http = httpx.AsyncClient(transport=httpx.MockTransport(h))
+        with pytest.raises(RuntimeError) as ei:
+            asyncio.run(ig_host.upload_to_host("https://h/api/ig/relay", image, http=http))
+        assert str(ei.value) == "h isn't answering right now"
+
+    def test_a_json_refusal_keeps_its_sentence(self, image):
+        async def h(req):
+            return httpx.Response(413, json={"detail": "Image too large (max 12 MB)"})
+        http = httpx.AsyncClient(transport=httpx.MockTransport(h))
+        with pytest.raises(RuntimeError) as ei:
+            asyncio.run(ig_host.upload_to_host("https://h/api/ig/relay", image, http=http))
+        assert str(ei.value) == "h answered HTTP 413: Image too large (max 12 MB)"
+
 
 # ── the open relay route ─────────────────────────────────────────────────────
 
@@ -349,7 +380,7 @@ class TestTunnelHelper:
         assert c.post("/api/ig/tunnel-helper/test").json()["error"] == "PermissionError: Access is denied"
 
     def test_pinned_assets_look_like_real_pins(self):
-        for key, (asset, sha) in config.IG_TUNNEL_HELPER_ASSETS.items():
+        for asset, sha in config.IG_TUNNEL_HELPER_ASSETS.values():
             assert asset.startswith("cloudflared-") and len(sha) == 64 and int(sha, 16)
         assert ("Windows", "AMD64") in config.IG_TUNNEL_HELPER_ASSETS
         assert ("Linux", "x86_64") in config.IG_TUNNEL_HELPER_ASSETS
@@ -483,3 +514,16 @@ def test_the_relay_forgets_an_address_once_its_window_passes():
     assert "203.0.113.5" in ig_api._RELAY_HITS
     assert ig_api._relay_rate_ok("198.51.100.7", now=1000.0 + window)
     assert "203.0.113.5" not in ig_api._RELAY_HITS
+
+
+def test_the_relay_counts_an_ipv6_caller_by_its_64():
+    """SEC048: a caller handed a /64 can't rotate addresses inside it past the per-address cap."""
+    from types import SimpleNamespace
+    from routes import ig_api
+
+    def who(host):
+        return ig_api._client_ip(SimpleNamespace(client=SimpleNamespace(host=host)))
+    assert who("2001:db8:1:2::1") == who("2001:db8:1:2:ffff::9") == "2001:db8:1:2::/64"
+    assert who("2001:db8:1:3::1") != who("2001:db8:1:2::1")
+    assert who("203.0.113.5") == "203.0.113.5" and who("::ffff:203.0.113.5") == "::ffff:203.0.113.5"
+    assert who("testclient") == "testclient"

@@ -1,3 +1,4 @@
+// @ts-check
 /* Start — "What would you like to do?" (spec 053, TASKHOME).
  *
  * The first screen used to be the Overview for everyone: stats, charts, levels. A writer who
@@ -81,7 +82,7 @@
         pick(kind, mode) {
             if (!window.WorkPicker) return;
             const schedule = mode === 'schedule';
-            WorkPicker.open({
+            window.WorkPicker.open({
                 title: kind === 'story' ? 'Which story?' : 'Which piece?',
                 filters: [kind], multi: false, pickOnClick: true,
                 confirmLabel: schedule ? 'Schedule this' : 'Post this',

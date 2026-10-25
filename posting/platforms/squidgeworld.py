@@ -351,7 +351,7 @@ class SquidgeWorldPoster(PlatformPoster):
             if not chapter_1_content:
                 # If the package supplied a file_path use it
                 if package.file_path:
-                    with open(package.file_path, "r", encoding="utf-8") as f:
+                    with open(package.file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
                         chapter_1_content = f.read()
                 else:
                     return PostResult(
@@ -494,7 +494,6 @@ class SquidgeWorldPoster(PlatformPoster):
             # SAFETY: Verify state didn't change unexpectedly
             if not allow_state_change:
                 await asyncio.sleep(1)
-                now_draft = await client.is_work_in_drafts(external_id)
                 now_published = await client.is_work_published(external_id)
                 if was_draft and now_published:
                     raise RuntimeError(
@@ -647,7 +646,7 @@ class SquidgeWorldPoster(PlatformPoster):
         _t = self._start_timer()
         try:
             client = await self._ensure_client()
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
                 content = f.read()
 
             chapters = await client.get_chapter_ids(external_id)

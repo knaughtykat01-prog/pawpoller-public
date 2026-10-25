@@ -30,6 +30,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 import config
 from database import sc_queries
 from database.db import get_connection
+from database.queries import thin_series
 from polling.background import spawn_poll
 from polling.sc_poller import run_sc_poll_cycle, sc_poll_progress
 
@@ -366,7 +367,7 @@ def get_sc_aggregate(start: Optional[str] = Query(None), end: Optional[str] = Qu
                      account_id: int | None = Query(None)):
     conn = get_connection()
     try:
-        return {"snapshots": sc_queries.get_sc_aggregate_snapshots(conn, start, end, account_id=account_id)}
+        return {"snapshots": thin_series(sc_queries.get_sc_aggregate_snapshots(conn, start, end, account_id=account_id))}
     except Exception as e:
         logger.error("Error in /api/sc/aggregate: %s", e, exc_info=True)
         raise HTTPException(500, detail=str(e))
