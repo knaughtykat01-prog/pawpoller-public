@@ -1,3 +1,4 @@
+// @ts-check
 /* ── The Platforms page (#/platforms, spec 020) ──────────────────
  *
  * Three parts, top to bottom: Needs attention (each problem in plain words with its fix),
@@ -168,7 +169,7 @@ window.PlatformsHub = (function () {
         const known = all.filter(p => window.platformByCode && window.platformByCode(p.code));   // registry sites only
         const visible = known.filter(p => shownCodes.has(p.code));
         const mine = visible.filter(p => p.configured);
-        const unset = visible.filter(p => !p.configured);
+        const unset = window.sortByPlatformName(visible.filter(p => !p.configured), p => p.code);
         const hidden = known.filter(p => !shownCodes.has(p.code));
         const attention = (data.attention || []).filter(a => shownCodes.has(a.code));
         const s = data.summary || {};
@@ -319,7 +320,7 @@ window.PlatformsHub = (function () {
                 move(code, act.dataset.act === 'up' ? -1 : 1, app);
             }
         });
-        root.addEventListener('keydown', (e) => {
+        root.addEventListener('keydown', (/** @type {KeyboardEvent} */ e) => {
             const m = e.target.closest('.ph-menu');
             if (!m) return;
             const items = [...m.querySelectorAll('[role="menuitem"]')];

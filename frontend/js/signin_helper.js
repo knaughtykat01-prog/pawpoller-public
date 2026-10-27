@@ -1,3 +1,4 @@
+// @ts-check
 /* Sign in for a server (spec 059).
  *
  * Two halves, one file:
@@ -53,7 +54,7 @@
         const code = el('div', { style: 'font:600 28px/1.2 ui-monospace,monospace;letter-spacing:6px;margin:4px 0 8px',
                                  text: made.code, 'aria-label': 'Sign-in code ' + made.code.split('').join(' ') });
         const steps = el('ol', { style: 'margin:0 0 8px 18px;padding:0;font-size:13px' },
-            el('li', { text: 'Open PawPoller on your computer.' }),
+            el('li', { text: 'Open the PawPoller desktop app on your computer (not this page in a browser).' }),
             el('li', { text: 'Choose "Sign in for a server" (Accounts page, or the tray menu).' }),
             el('li', { text: 'Type this server\'s address and the code above.' }));
         const left = el('p', { style: 'margin:0;font-size:12px;color:var(--text-muted)' });

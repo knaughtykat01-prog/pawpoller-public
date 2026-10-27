@@ -37,7 +37,7 @@ window.Collections = {
     },
 
     _platBadges(codes) {
-        return (codes || []).map(c => {
+        return window.sortByPlatformName(codes).map(c => {
             const p = this._plat(c);
             return `<span class="coll-plat" title="${this.esc(p.label)}">${p.emoji || this.esc((c || '').toUpperCase())}</span>`;
         }).join('');

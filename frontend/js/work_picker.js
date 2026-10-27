@@ -1,3 +1,4 @@
+// @ts-check
 /* WorkPicker — reusable visual picker modal for selecting works / submissions.
  *
  * Built to look and behave like the story-editor tag browser (metadata_editor.js):

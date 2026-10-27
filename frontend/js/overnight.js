@@ -1,3 +1,4 @@
+// @ts-check
 /* Overnight (spec 026): what happened while you were away, in one sheet.
  *
  * Opens by itself on the first visit after the "Show after" gap (the server decides: POST
@@ -58,7 +59,7 @@ const Overnight = {
     _span(d) {
         const T = Utils.time, s = T.parse(d.since), e = T.parse(d.until);
         if (d.capped) return `Since ${T.format(s, { weekday: 'long' })} (7 days)`;
-        const mins = Math.max(0, Math.round((e - s) / 60000));
+        const mins = Math.max(0, Math.round((+e - +s) / 60000));
         const f = v => T.format(v, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
         return `${f(s)} to ${f(e)} · ${Math.floor(mins / 60)} h ${mins % 60} m`;
     },

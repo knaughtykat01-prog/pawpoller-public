@@ -27,7 +27,8 @@ window.Accounts = {
                 ? ' <button type="button" class="btn btn-secondary btn-sm" data-signin-helper>Sign in for a server</button>' : ''}</div>
             <p class="acct-intro muted">Run more than one account per platform. Each platform's
             default account keeps your existing credentials; add extra accounts below. Group accounts
-            across platforms into a <strong>persona</strong> for scoped views and per-persona digests.</p>
+            across platforms into a <strong>persona</strong> for scoped views and per-persona digests.</p>${App._runtimeMode === 'server' && !window.pywebview
+                ? '<p class="acct-intro muted">To sign in to FurAffinity, X, Newgrounds or Itaku, press <strong>🔑 Sign in</strong> on the account, then <strong>Sign in with the PawPoller app</strong>.</p>' : ''}
             <div class="acct-page">
                 <section id="personas-card" class="acct-section">Loading…</section>
                 <section id="accounts-add" class="acct-section"></section>
@@ -392,9 +393,11 @@ window.Accounts = {
            keys. Renewing a non-default account's expired FA cookies there
            looked like it worked and changed nothing for the account that
            needed it; that is a mistake a real user made, not a hypothetical. */
-        const creds = `<button class="btn btn-sm" data-creds="${a.account_id}" data-platform="${a.platform}"
-                       title="Paste renewed cookies or tokens for THIS account">🔑
-                       Credentials</button>`;
+        // Named "Sign in" (SIGNINVISIBLE, 4.88.1): as "Credentials" nobody found the sign-in
+        // buttons inside it. On the four code sites it is the primary button on the card.
+        const creds = `<button class="btn btn-sm${['fa', 'tw', 'ng', 'ik'].includes(a.platform) ? ' btn-primary' : ''}"
+                       data-creds="${a.account_id}" data-platform="${a.platform}"
+                       title="Sign in to THIS account, or paste renewed cookies or tokens">🔑 Sign in</button>`;
         const test = `<button class="btn btn-sm" data-test-login="${a.account_id}" data-platform="${a.platform}"
                       title="Check whether this account's stored login still works">Test</button>
                       <span class="acct-test-status" data-test-status="${a.account_id}"></span>`;

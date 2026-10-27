@@ -182,8 +182,8 @@
                 b.chapters.add(p.chapter_index == null ? 0 : p.chapter_index);
                 b.rows.push(p);
             });
-            const published = (d.published_platforms && d.published_platforms.length)
-                ? d.published_platforms : Object.keys(byPlat);
+            const published = window.sortByPlatformName((d.published_platforms && d.published_platforms.length)
+                ? d.published_platforms : Object.keys(byPlat));
             const totals = {
                 views: Object.values(byPlat).reduce((s, b) => s + b.views, 0),
                 faves: Object.values(byPlat).reduce((s, b) => s + b.faves, 0),
@@ -353,7 +353,7 @@
         },
 
         _publishHtml(name, d) {
-            const un = d.unpublished_platforms || [];
+            const un = window.sortByPlatformName(d.unpublished_platforms || []);
             const rows = un.length
                 ? un.map(c => { const p = plat(c); return `<div class="plat-line">${p.emoji || ''} ${esc(p.label)}</div>`; }).join('')
                 : `<div class="muted" style="font-size:12.5px">On every site it is configured for.</div>`;
@@ -559,7 +559,7 @@
             (d.publications || []).filter(p => p.change_detected).forEach(p => {
                 (driftBy[p.platform] = driftBy[p.platform] || []).push(p.chapter_index == null ? 0 : p.chapter_index);
             });
-            Object.keys(driftBy).forEach(code => {
+            window.sortByPlatformName(Object.keys(driftBy)).forEach(code => {
                 const pl = plat(code);
                 const idxs = [...new Set(driftBy[code])].sort((a, b) => a - b);
                 const where = idxs.length === 1 ? ch(idxs[0])
@@ -648,7 +648,7 @@
                 return;
             }
             this._budget = d;
-            const rows = (d.platforms || []).map(p => {
+            const rows = window.sortByPlatformName(d.platforms || [], p => p.platform).map(p => {
                 const pl = plat(p.platform);
                 const trimmed = (p.dropped || []).length > 0;
                 const detail = p.override

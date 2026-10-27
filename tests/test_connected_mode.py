@@ -214,6 +214,17 @@ def test_offline_page_names_the_server(tmp_path):
     assert "box.ts.net" in html and "0 items" in html
 
 
+def test_an_instagram_relay_is_not_a_server(tmp_path):
+    """A moved PawPoller leaves its old address running only the relay; /api/health still says ok."""
+    class Relay(FakeHttp):
+        def get(self, url, **kw):
+            return FakeResp(200, {"status": "ok", "mode": "relay", "version": "4.88.0"})
+    ag = _agent(tmp_path, Relay())
+    assert ag.server_reachable() is False and ag.last_error == "relay"
+    assert "isn't a PawPoller any more" in da.offline_page("https://old.example", ag)
+    assert _agent(tmp_path, FakeHttp(up=True)).server_reachable() is True
+
+
 # ── the server's receiving routes ────────────────────────────────────────────
 
 @pytest.fixture

@@ -338,7 +338,10 @@ def _upload_dir(uid: str) -> Path:
 
 
 def _status(d: Path) -> dict:
-    meta = json.loads((d / "upload.json").read_text("utf-8"))
+    try:
+        meta = json.loads((d / "upload.json").read_text("utf-8"))
+    except FileNotFoundError:                       # cancelled while a piece streamed in
+        raise HTTPException(404, detail="No such upload. Start again.") from None
     part = d / "file.part"
     return {"id": meta["id"], "received": part.stat().st_size if part.is_file() else 0,
             "size": meta["size"], "name": meta["name"], "piece_bytes": PIECE_BYTES}
@@ -417,7 +420,8 @@ def upload_cancel(uid: str):
     _busy()
     try:
         direct = _is_direct(d)
-        shutil.rmtree(d, ignore_errors=True)
+        with _UPLOAD_LOCK:                           # not mid-append (SEC4880)
+            shutil.rmtree(d, ignore_errors=True)
         if direct:
             from routes import move_direct_api
             move_direct_api.forget_upload(uid)       # thrown away: its code is spent

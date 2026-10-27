@@ -2290,7 +2290,7 @@ window.Masterpieces = {
             return;
         }
         this._budget = d;
-        const rows = (d.platforms || []).map(p => {
+        const rows = window.sortByPlatformName(d.platforms || [], p => p.platform).map(p => {
             const label = this._PLATFORM_LABELS[p.platform] || p.platform;
             const trimmed = p.dropped.length > 0;
             const cls = p.override ? 'is-override' : (trimmed ? 'is-trimmed' : '');

@@ -1,3 +1,4 @@
+// @ts-check
 /* Progress (spec 052, WORKLEVELS): the level badge on Library covers, each work's Laurels card
  * (level, next step, "N× your usual", its medals) and the shared /api/progress read.
  *

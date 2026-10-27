@@ -23,6 +23,7 @@ dist/
 # instead, so a published image never contains it either.
 docs/HANDOFF.md
 docs/BACKLOG.md
+docs/BACKLOG_DONE.md
 docs/documentation_guide.md
 
 # The VM relay marker (spec 048): never baked into an image

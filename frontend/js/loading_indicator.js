@@ -1,3 +1,4 @@
+// @ts-check
 /* PawPoller loading + toast UI
  *
  * A toast stack in the bottom-right for success / error / info

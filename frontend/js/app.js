@@ -1907,7 +1907,7 @@ const App = {
         try {
             const prefs = await API.getPreferences();
             const haveCfWorker = !!prefs.cf_worker_configured;
-            const rows = platforms.map(p => {
+            const rows = window.sortByPlatformName(platforms, p => p.key).map(p => {
                 const settingKey = `${p.key}_use_cf_proxy`;
                 const checked = !!prefs[settingKey];
                 const dis = haveCfWorker ? '' : 'disabled';
@@ -1968,7 +1968,7 @@ const App = {
                 { key: 'pix', auth: auth.pixAuth?.has_credentials, name: 'Pixiv', statusFn: 'getPIXStatus', logFn: 'getPIXPollLog', tableFn: 'pixPollLogTable' },
                 { key: 'thr', auth: auth.thrAuth?.has_credentials, name: 'Threads', statusFn: 'getTHRStatus', logFn: 'getTHRPollLog', tableFn: 'thrPollLogTable' },
                 { key: 'ig', auth: auth.igAuth?.has_credentials, name: 'Instagram', statusFn: 'getIGStatus', logFn: 'getIGPollLog', tableFn: 'igPollLogTable' },
-                { key: 'tw', auth: auth.twAuth?.has_credentials, name: 'Twitter', statusFn: 'getTWStatus', logFn: 'getTWPollLog', tableFn: 'twPollLogTable' },
+                { key: 'tw', auth: auth.twAuth?.has_credentials, name: 'X / Twitter', statusFn: 'getTWStatus', logFn: 'getTWPollLog', tableFn: 'twPollLogTable' },
                 { key: 'e621', auth: auth.e621Auth?.has_credentials, name: 'e621', statusFn: 'getE621Status', logFn: 'getE621PollLog', tableFn: 'e621PollLogTable' },
                 { key: 'fn', auth: auth.fnAuth?.has_credentials, name: 'FurryNetwork', statusFn: 'getFNStatus', logFn: 'getFNPollLog', tableFn: 'fnPollLogTable' },
                 { key: 'sc', auth: auth.scAuth?.has_credentials, name: 'SoundCloud', statusFn: 'getSCStatus', logFn: 'getSCPollLog', tableFn: 'scPollLogTable' },
@@ -1984,7 +1984,8 @@ const App = {
                 // `configured` flag via PlatformHealth instead of _pollingAuth.
                 { key: 'tg', auth: !!(window.PlatformHealth && (window.PlatformHealth.get('tg') || {}).configured), name: 'Telegram', statusFn: 'getTGStatus', logFn: 'getTGPollLog', tableFn: 'tgPollLogTable' },
             ];
-            // Alphabetical by name (Inkbunny is rendered separately, first).
+            // Alphabetical by name; Inkbunny's accordion is built separately and slotted in
+            // by name below (SETUPALPHA — it used to sit first, ahead of the A–Z).
             platforms.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
             const connected = platforms.filter(p => p.auth);
 
@@ -2022,8 +2023,8 @@ const App = {
                 idx += 2;
             }
 
-            // Build Inkbunny accordion (grid wrapper opens here, 2.103.0)
-            let html = `<div class="polling-grid">
+            // Build Inkbunny accordion
+            const ibHtml = `
                 <details class="settings-accordion">
                     <summary><span class="status-dot ${lastPoll?.status === 'success' ? 'connected' : 'disconnected'}"></span>Inkbunny <span class="summary-meta">— ${lastPoll ? lastPoll.status + ' \u00b7 ' + Utils.formatDateTime(lastPoll.started_at) : 'Never polled'}</span>${pausedTag('ib')}</summary>
                     <div class="accordion-body">
@@ -2041,12 +2042,13 @@ const App = {
                     </div>
                 </details>`;
 
-            // Build each connected platform accordion
+            // Build each connected platform accordion, then slot Inkbunny in by name
+            const accordions = [{ name: 'Inkbunny', html: ibHtml }];
             for (const p of connected) {
                 const ps = pData[p.key].status;
                 const pl = pData[p.key].pollLog;
                 const lp = ps.last_poll || null;
-                html += `
+                accordions.push({ name: p.name, html: `
                 <details class="settings-accordion">
                     <summary><span class="status-dot ${lp?.status === 'success' ? 'connected' : 'disconnected'}"></span>${p.name} <span class="summary-meta">— ${lp ? lp.status + ' \u00b7 ' + Utils.formatDateTime(lp.started_at) : 'Never polled'}</span>${pausedTag(p.key)}</summary>
                     <div class="accordion-body">
@@ -2062,8 +2064,11 @@ const App = {
                     </div>
                     <div style="margin-top:12px">${this._pollLogTable(p)(pl.polls)}</div>
                     </div>
-                </details>`;
+                </details>` });
             }
+            accordions.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+            // grid wrapper (2.103.0)
+            let html = `<div class="polling-grid">${accordions.map(a => a.html).join('')}`;
             // 4.27.1: the platforms without credentials, so the list is the whole roster.
             const notConnected = platforms.filter(p => !p.auth);
             if (notConnected.length) {
@@ -2168,7 +2173,7 @@ const App = {
         const renderList = (sessions, credReport) => {
             const list = document.getElementById('session-status-list');
             if (!list) return;
-            const sessionRows = CHECKABLE.map((code) => {
+            const sessionRows = window.sortByPlatformName(CHECKABLE).map((code) => {
                 const s = sessions[code];
                 const status = (s && s.status) || 'unchecked';
                 const dot = DOT[status] || 'muted';
@@ -3943,7 +3948,7 @@ const App = {
     async renderSetupWizard({ resume = null } = {}) {
         const _rt = this._routeToken();   // route race guard (see _stale)
         /* Platform definitions for the platform-connect step — reuses emoji + colour from the nav grid */
-        const platforms = [
+        const platforms = window.sortByPlatformName([   // A–Z (SETUPALPHA)
             { key: 'ib', name: 'Inkbunny', emoji: '&#128062;', color: 'var(--platform-ib)', url: 'https://inkbunny.net/login.php' },
             { key: 'fa', name: 'FurAffinity', emoji: '&#129418;', color: 'var(--platform-fa)', url: 'https://www.furaffinity.net/login/' },
             { key: 'ws', name: 'Weasyl', emoji: '&#129422;', color: 'var(--platform-ws)', url: 'https://www.weasyl.com/signin' },
@@ -3972,7 +3977,7 @@ const App = {
             { key: 'ttv', name: 'Twitch', emoji: '&#128995;', color: '#9146ff', url: 'https://dev.twitch.tv/console/apps' },
             { key: 'fb', name: 'Facebook', emoji: '&#128101;', color: '#1877f2', url: 'https://www.facebook.com/' },
             { key: 'r34', name: 'Rule34.xxx', emoji: '&#128286;', color: '#aae5a3', url: 'https://rule34.xxx/' },
-        ];
+        ], p => p.key);
         /* What-you-make → the sites ticked on the sites step (4.66.0, spec 032). Social sites and
            Telegram suit everyone; gallery sites that also take writing count for stories. */
         const MAKE_SITES = {
@@ -24105,7 +24110,7 @@ const App = {
         const x = v => `${Number(v).toFixed(1)}×`;
         const days = this._WTP_DAYS;
 
-        const siteOpts = [['', 'All sites'], ...(d.sites || []).map(s => [s.code, s.label])]
+        const siteOpts = [['', 'All sites'], ...window.sortByPlatformName(d.sites || [], s => s.code).map(s => [s.code, s.label])]
             .map(([c, l]) => `<option value="${esc(c)}"${c === f.site ? ' selected' : ''}>${esc(l)}</option>`).join('');
         const bar = `<div class="wtp-bar">
             <select id="wtp-site" aria-label="Site" style="width:auto">${siteOpts}</select>
@@ -24306,7 +24311,7 @@ const App = {
                      style="width:100%;height:170px;object-fit:cover;display:block">`
                 : `<div style="height:170px;display:flex;align-items:center;justify-content:center;
                      background:var(--bg-glass);color:var(--text-muted);font-size:2rem">&#127912;</div>`;
-            const chips = (c.platforms || []).map(p => {
+            const chips = window.sortByPlatformName(c.platforms || [], p => p.platform).map(p => {
                 const label = this._platformLabels[p.platform] || (p.platform || '').toUpperCase();
                 return p.url
                     ? `<a class="chip" href="${Utils.escapeHtml(p.url)}" target="_blank" rel="noopener"

@@ -1,3 +1,4 @@
+// @ts-check
 /* TagPicker — reusable tag-library picker modal.
  *
  * Gives any screen the story-editor's tag-library experience WITHOUT touching the

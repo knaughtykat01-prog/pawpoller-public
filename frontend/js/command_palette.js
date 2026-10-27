@@ -1,3 +1,4 @@
+// @ts-check
 /* PawPoller command palette — Cmd+K / Ctrl+K to open.
  *
  * Quick-nav overlay modelled on the GitHub / VS Code / Linear style.

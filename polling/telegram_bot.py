@@ -490,7 +490,7 @@ async def _cmd_poll(token: str, chat_id: str, args: str) -> None:
         await _send(token, chat_id, "Usage: /poll [ib|fa|ws|sf|sqw|ao3|da|wp|ik|bsky|tw|all]")
         return
 
-    all_platforms = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky", "tw"]
+    all_platforms = ["ao3", "bsky", "da", "fa", "ib", "ik", "sf", "sqw", "wp", "ws", "tw"]   # A–Z by name (SETUPALPHA)
     targets = all_platforms if platform == "all" else [platform]
     name_map = {"ib": "Inkbunny", "fa": "FurAffinity", "ws": "Weasyl", "sf": "SoFurry", "sqw": "SquidgeWorld", "ao3": "AO3", "da": "DeviantArt", "wp": "Wattpad", "ik": "Itaku", "bsky": "Bluesky", "tw": "X/Twitter"}
 

@@ -1,3 +1,4 @@
+// @ts-check
 /* ===========================================================================
  * PawPoller — canonical platform registry
  * ---------------------------------------------------------------------------
@@ -153,6 +154,20 @@
     const byCode = {};
     PLATFORMS.forEach(p => { byCode[p.code] = p; });
 
+    /* sortByPlatformName(list, codeOf) — the same A–Z for lists that DON'T come from
+     * window.PLATFORMS: hand-written code arrays, server payloads, a piece's sites
+     * (SETUPALPHA, 4.88.1 — testers hunted three times for Inkbunny in an unsorted list).
+     * `codeOf` maps an item to its platform code; omit it for a plain array of codes.
+     * Returns a new array. A list the USER ordered (hub "My order", Telegram links)
+     * must not go through this. */
+    function sortByPlatformName(list, codeOf) {
+        const name = (x) => {
+            const c = codeOf ? codeOf(x) : x;
+            return ((byCode[c] && byCode[c].label) || String(c)).toLowerCase();
+        };
+        return (list || []).slice().sort((a, b) => name(a).localeCompare(name(b)));
+    }
+
     // Each platform's official logo, bundled under /img/platforms/. Itaku and
     // Weasyl ship SVGs (scalable); the rest are PNGs. Trademarks of their owners
     // — see the disclaimer on the Platforms hub.
@@ -257,5 +272,6 @@
     window.platformStat = platformStat;
     window.platformMetricLabel = platformMetricLabel;
     window.visiblePlatforms = visiblePlatforms;
+    window.sortByPlatformName = sortByPlatformName;
     window.isPlatformVisible = isPlatformVisible;
 })();

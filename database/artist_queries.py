@@ -24,16 +24,15 @@ import json
 import re
 import sqlite3
 
-# The platforms the registry actually carries handles for, most-covered first
-# (fa 30 · e621 25 · da 20 · tw 20 · bsky 18 · ib 8 · ws 6 · sf 3 · fn 2 · ik 2).
+# The platforms the registry actually carries handles for, A–Z by display name
+# (SETUPALPHA, 4.88.1; it was most-covered first, which nobody could scan).
 # Not a whitelist — an unknown platform is still stored — just the display order.
-# Instagram (3.13.0) is last because it is the newest and has no coverage yet,
-# not because it matters least. No migration was needed to add it: `platform`
+# Instagram (3.13.0) needed no migration either: `platform`
 # is a free TEXT column with no CHECK constraint and `upsert_artist` never
 # filtered against this tuple, so storage already accepted any code — this
 # list is what the UI offers, not what the table permits.
-KNOWN_PLATFORMS = ("fa", "e621", "da", "tw", "bsky", "ib", "ws", "sf", "fn",
-                   "ik", "ig", "tg")   # tg: 4.6.1 — a poster and a native @mention
+KNOWN_PLATFORMS = ("bsky", "da", "e621", "fa", "fn", "ib", "ig", "ik",
+                   "sf", "tg", "ws", "tw")   # tg: 4.6.1 — a poster and a native @mention
 
 _KEY_STRIP = re.compile(r"[^a-z0-9]+")
 

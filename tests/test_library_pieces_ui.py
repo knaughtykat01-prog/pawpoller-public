@@ -65,6 +65,7 @@ global.Utils = {{
     time: {{ parse: s => new Date(String(s).replace(' ', 'T') + 'Z'),
              format: (d, o) => d.toISOString() }},
 }};
+global.sortByPlatformName = list => [...list];   // platforms.js loads first in the app
 require({json.dumps(str(SQ))});
 require({json.dumps(str(SHELF))});
 const B = window.Bookshelf;

@@ -1,3 +1,4 @@
+// @ts-check
 /* PawPoller notification centre — the bell (top-right) + dropdown feed.
  *
  * One self-contained widget (like the toast stack / logs panel): it owns a

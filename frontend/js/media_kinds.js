@@ -1,3 +1,4 @@
+// @ts-check
 /* ── Media kinds (MEDIATYPES, 4.18.0) ─────────────────────────────────────────
  *
  * The browser half of posting/media_kinds.py: which extensions are images,

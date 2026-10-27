@@ -16,7 +16,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install linter
-        run: pip install ruff
+        run: pip install ruff==0.15.11   # keep in step with the local ruff (release.py lint gate)
 
       - name: Ruff check
         run: ruff check .   # rules live in ruff.toml

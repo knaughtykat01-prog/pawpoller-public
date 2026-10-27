@@ -1,3 +1,4 @@
+// @ts-check
 /* Inbox (gap G3) — the unified cross-platform comment feed.
  *
  * One place to see every comment on your work across every platform PawPoller

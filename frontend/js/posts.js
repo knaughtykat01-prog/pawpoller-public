@@ -13,8 +13,8 @@
  */
 window.Posts = {
 
-    /* Microblog platforms the module can post to, in the composer's order. */
-    _PLATFORMS: ['bsky', 'tw', 'mast', 'thr', 'tum', 'ig', 'tg', 'fb'],
+    /* Microblog platforms the module can post to, shown A–Z by name (SETUPALPHA). */
+    _PLATFORMS: window.sortByPlatformName(['bsky', 'tw', 'mast', 'thr', 'tum', 'ig', 'tg', 'fb']),
     /* Ticked by default — the rest need their posting creds set up first. */
     _DEFAULT_CHECKED: ['bsky', 'mast'],
     /* Post-only broadcast targets that aren't in the pollable window.PLATFORMS
@@ -309,7 +309,7 @@ window.Posts = {
     },
 
     _chips(p) {
-        const pubs = p.publications || [];
+        const pubs = window.sortByPlatformName(p.publications || [], pub => pub.platform);
         const out = pubs.map(pub => {
             const label = this.esc(this._label(pub.platform));
             if (pub.status === 'posted') {
@@ -1816,7 +1816,7 @@ window.Posts = {
      * A journal is a post with a title, for FurAffinity, Weasyl and DeviantArt. It shares the
      * Posts feed, scheduling, results and retry; this page is its composer. */
 
-    _JOURNAL_SITES: ['ws', 'da'],          // posted for you; FurAffinity is copied (its journal form needs a CAPTCHA)
+    _JOURNAL_SITES: ['da', 'ws'],        // posted for you; FurAffinity is copied (its journal form needs a CAPTCHA)
     _JOURNAL_LIMITS: { fa: 60, ws: 100, da: 50 },
 
     async renderJournal(editId) {

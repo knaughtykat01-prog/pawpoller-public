@@ -1325,16 +1325,16 @@ async def regenerate_all_cancel(run_id: str) -> dict:
 # Story posters that read package.extra["draft"] (spec 053). Keep in step with posting/platforms.
 DRAFT_PLATFORMS = ("ao3", "ib", "sf")
 
-PUBLISH_PLATFORMS = [
-    ("ib", "Inkbunny"),
+PUBLISH_PLATFORMS = [   # A–Z by name (SETUPALPHA): the matrix, Drip and the schedule sheet show this order
+    ("ao3", "AO3"),
+    ("bsky", "Bluesky"),
+    ("da", "DeviantArt"),
     ("fa", "FurAffinity"),
-    ("ws", "Weasyl"),
+    ("ib", "Inkbunny"),
+    ("ik", "Itaku"),
     ("sf", "SoFurry"),
     ("sqw", "SquidgeWorld"),
-    ("ao3", "AO3"),
-    ("da", "DeviantArt"),
-    ("ik", "Itaku"),
-    ("bsky", "Bluesky"),
+    ("ws", "Weasyl"),
 ]
 
 

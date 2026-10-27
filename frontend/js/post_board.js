@@ -1,3 +1,4 @@
+// @ts-check
 /* ── The Post board — #/posts/<id> (4.34.4, UNIFORMITEM phase 4) ──────────
  *
  * The one phase of that spec that is a FEATURE rather than a consolidation.

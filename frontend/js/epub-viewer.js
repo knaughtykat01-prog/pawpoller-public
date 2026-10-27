@@ -1,3 +1,4 @@
+// @ts-check
 // In-app EPUB viewer logic. Extracted to its own file so the page's
 // inline-script CSP hash doesn't have to maintain a second entry —
 // 'self' covers /js/ and /vendor/, so external files load freely.
@@ -192,7 +193,7 @@
         refreshAaMenuState();
     });
     document.addEventListener('click', (e) => {
-        if (!aaMenu.contains(e.target) && e.target !== aaBtn) {
+        if (!aaMenu.contains(/** @type {Node} */ (e.target)) && e.target !== aaBtn) {
             aaMenu.classList.remove('open');
         }
     });

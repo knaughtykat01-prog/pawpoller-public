@@ -513,3 +513,11 @@ def test_every_kept_key_is_in_the_data_map():
     missing = [k for k in move_api.KEEP_HERE - {"run_on_startup"}
                if not k.startswith("auth_") and datamap.setting_class(k) is None]
     assert not missing, missing
+
+
+def test_a_cancelled_upload_is_404_not_500(tmp_path):
+    # SEC4880: a piece landing after cancel removed the folder crashed in _status.
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as e:
+        move_api._status(tmp_path / "gone")
+    assert e.value.status_code == 404

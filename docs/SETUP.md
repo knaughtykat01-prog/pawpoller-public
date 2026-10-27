@@ -666,7 +666,7 @@ edited in place after posting. You only need credentials for the ones you use.
 
 Add them one at a time in **Settings → Platforms**, then press that account's **Test** button on
 the **Accounts** page before moving on. (To paste renewed cookies or tokens for one account, use
-its **🔑 Credentials** button on the same page.)
+its **🔑 Sign in** button on the same page.)
 
 ### What each platform needs
 

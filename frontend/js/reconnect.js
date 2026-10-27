@@ -1,3 +1,4 @@
+// @ts-check
 /* PawPoller quick-reconnect modal.
  *
  * When a platform's session goes expired/error (a dead cookie, an invalidated

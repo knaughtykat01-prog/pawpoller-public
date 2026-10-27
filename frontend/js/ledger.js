@@ -1,3 +1,4 @@
+// @ts-check
 /* ── Ledger — dated timelines (concept-layer Slice D · "Almanac") ─────────────
  *
  * A dated spine of typed events. Two scopes, one renderer:
@@ -187,7 +188,7 @@ window.Ledger = {
         if (!controls || !stream) return;
 
         // Platforms actually present in the feed → filter chips.
-        const platsPresent = [...new Set(this._events.map(e => e.platform).filter(c => c && c !== 'posting'))];
+        const platsPresent = window.sortByPlatformName([...new Set(this._events.map(e => e.platform).filter(c => c && c !== 'posting'))]);
         const seg = (id, label) => `<button class="led-seg ${this._filter === id ? 'is-active' : ''}" data-led-filter="${id}">${label}</button>`;
         controls.innerHTML = `
             <div class="led-controls">

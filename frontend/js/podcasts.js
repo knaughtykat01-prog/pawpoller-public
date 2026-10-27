@@ -1,3 +1,4 @@
+// @ts-check
 /* ── Podcasts (MEDIAPLATS §4, 4.21.1) ────────────────────────────────────────
  *
  * Feeds PawPoller serves itself: make a feed, publish audio pieces as episodes,

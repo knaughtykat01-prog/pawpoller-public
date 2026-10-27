@@ -1,3 +1,4 @@
+// @ts-check
 /* CharacterPicker — the character registry as a picker (4.33.0, backlog CHARREG).
  *
  * Characters used to be a comma-separated text box on each piece: no canonical
@@ -139,9 +140,9 @@
                     <button type="button" data-cp-un="${esc(l)}" aria-label="Remove">&times;</button>
                 </span>`).join('') || '<span class="muted" style="font-size:12px">Nobody selected</span>';
             countEl.textContent = `Selected: ${selected.size}`;
-            root.querySelector('[data-cp-count="all"]').textContent = rows.length;
-            root.querySelector('[data-cp-count="selected"]').textContent = selected.size;
-            root.querySelector('[data-cp-count="owned"]').textContent = rows.filter(r => r.owner).length;
+            root.querySelector('[data-cp-count="all"]').textContent = String(rows.length);
+            root.querySelector('[data-cp-count="selected"]').textContent = String(selected.size);
+            root.querySelector('[data-cp-count="owned"]').textContent = String(rows.filter(r => r.owner).length);
         }
 
         async function addTyped() {

@@ -92,6 +92,9 @@ PLATFORM_NAMES = {
     "ttv": "Twitch",
     "fb": "Facebook",
 }
+# A–Z by name (SETUPALPHA, 4.88.1): pickers render this dict in key order (Add account,
+# personas), so sort it once here rather than in each one.
+PLATFORM_NAMES = dict(sorted(PLATFORM_NAMES.items(), key=lambda kv: kv[1].lower()))
 
 # Predicate per platform: does settings hold credentials for a default account?
 # Mirrors the ``checks`` list in server.py ``_poll_all`` — keep the two in sync.

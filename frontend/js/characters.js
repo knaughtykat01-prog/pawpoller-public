@@ -1,3 +1,4 @@
+// @ts-check
 /* Characters — the registry as a page (4.33.0, backlog CHARREG).
  *
  * People answers "who drew this"; this answers "who is in it". Same page, different

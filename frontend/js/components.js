@@ -2001,7 +2001,7 @@ const Components = {
 
     confirmPublish(o) {
         const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
-        const targets = (o.targets || []);
+        const targets = window.sortByPlatformName(o.targets || [], t => t.code);   // A–Z (SETUPALPHA)
         const live = targets.filter(t => !t.disabled);
         const verb = o.verb || 'Publish';
         const noun = o.noun || 'sites';

@@ -2,6 +2,17 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.88.1] - 2026-10-27 - Sites in A–Z order
+
+> - Every list of sites is now in A–Z order, so you can find yours at a glance: setup, Accounts, posting, pickers and Settings.
+> - Inkbunny no longer jumps to the top of Settings → Polling; it sits in its place with the rest.
+> - Importing a story from SquidgeWorld while a second SquidgeWorld account is being checked no longer mixes the two up.
+> - Plain-text story summaries brought in from PostyBirb show symbols like & properly again.
+> - Small security tidy-ups in the story editor's error messages and in cancelling a move upload.
+> - Each account's sign-in button is now called Sign in (it was Credentials), and on FurAffinity, X, Newgrounds and Itaku it stands out.
+> - On a server or hosted seat, the Accounts page now says how to sign in to those four sites with the desktop app.
+> - If the desktop app is still connected to an old server address that now only runs the Instagram relay, it says so instead of showing a blank "Not Found" page.
+
 ## [4.88.0] - 2026-10-25 - Sign in without copying, and bring in PostyBirb
 
 > - On the desktop app, press Sign in for FurAffinity, X, Newgrounds or Itaku and sign in on the site's own page. Nothing to copy.
@@ -196,8 +207,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Fixed the Inbox site filter: after you filter to one site and answer everything there, the other sites stay in the list.
 > - The DeviantArt Test no longer says your cookie has expired when DeviantArt simply didn't answer.
 > - Small security tidy-ups to AO3 and SquidgeWorld page reading, moving to a hosted seat, and artwork syncing.
-
-## [4.78.1] - 2026-10-16 - AO3 posting fixed
-
-> - Fixed posting new works to AO3 (and SquidgeWorld), which failed with "auth_error" whenever the site was showing a banner.
-> - When AO3 turns a work down (a missing title, a tag too long), PawPoller now says why and doesn't keep retrying it.

@@ -139,3 +139,8 @@ def test_story_import_keeps_headings_and_bare_angles():
 def test_markdown_shapes():
     assert pb_import._markdown('<p>A <a href="https://example.com">link</a></p><ul><li>one</li></ul><script>x</script>') \
         == "A [link](https://example.com)\n\n- one"
+
+
+def test_plain_text_still_decodes_entities():
+    # SEC4880: the no-tag early return skipped entity decoding, so a summary kept "&amp;".
+    assert pb_import._markdown("Cats &amp; dogs &lt;3") == "Cats & dogs <3"

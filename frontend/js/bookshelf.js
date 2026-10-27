@@ -789,7 +789,7 @@ window.Bookshelf = {
     },
 
     _platIcons(codes, max = 8) {
-        return (codes || []).slice(0, max).map(c =>
+        return window.sortByPlatformName(codes).slice(0, max).map(c =>
             `<span class="book-plat" title="${this.esc(this._plat(c).label)}">${this._plat(c).emoji || this.esc(c)}</span>`).join('');
     },
 

@@ -246,6 +246,16 @@ class Agent:
         try:
             r = c.get(f"{self.server_url}/api/health", timeout=3.0)
             ok = r.status_code == 200
+            # An Instagram relay answers /api/health too but has no app behind it: the window
+            # would open onto a bare {"detail":"Not Found"}. Treat it as not a PawPoller.
+            if ok:
+                try:
+                    is_relay = (r.json() or {}).get("mode") == "relay"
+                except Exception:
+                    is_relay = False
+                if is_relay:
+                    self.last_error = "relay"
+                    return False
             if ok:
                 self.last_contact = time.time()
             return ok
@@ -741,12 +751,22 @@ def offline_page(server_url: str, agent: Agent | None = None) -> str:
     """What the window shows while the server cannot be reached; it swaps to the server itself."""
     import html
     pending = agent.queue.pending_count() if agent else 0
+    if agent and agent.last_error == "relay":
+        head = "This address isn't a PawPoller any more"
+        body = ("<p><code>{0}</code> only runs the Instagram relay now, so there is nothing here to open.</p>"
+                "<p>If your PawPoller moved (to a hosted seat, say), this app needs connecting to its new "
+                "address. The app can't do that by itself yet: ask in the PawPoller Discord and we'll walk "
+                "you through it.</p>").format(html.escape(server_url))
+    else:
+        head = "Your server isn't reachable yet"
+        body = ("<p>PawPoller is trying to open <code>{0}</code> and will switch over the moment it answers.</p>"
+                "<p>If it's a machine at home, check it's on and that Tailscale is connected on both ends.</p>"
+                ).format(html.escape(server_url))
     return f"""<!doctype html><html><head><meta charset="utf-8"><title>PawPoller</title>
 <style>body{{font:15px/1.5 system-ui,sans-serif;background:#0f1216;color:#e6e9ee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
 .card{{max-width:480px;padding:28px 32px;border:1px solid #262c35;border-radius:12px;background:#171b21}}h1{{font-size:20px;margin:0 0 8px}}
 p{{color:#8b95a5;margin:8px 0}}code{{color:#6cb2ff}}</style></head><body><div class="card">
-<h1>Your server isn't reachable yet</h1>
-<p>PawPoller is trying to open <code>{html.escape(server_url)}</code> and will switch over the moment it answers.</p>
-<p>If it's a machine at home, check it's on and that Tailscale is connected on both ends.</p>
+<h1>{head}</h1>
+{body}
 <p>{pending} item{'s' if pending != 1 else ''} waiting to be sent.</p>
 </div></body></html>"""

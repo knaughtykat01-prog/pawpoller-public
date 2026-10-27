@@ -1,3 +1,4 @@
+// @ts-check
 /* People — the registry as a page (3.11.0 as Artists; People since 4.6.0).
  *
  * 4.6.0: the registry holds everyone, not only artists — commissioners, the
@@ -36,9 +37,10 @@ window.Artists = {
     },
 
     PLATFORMS: [
-        ['fa', 'FurAffinity'], ['e621', 'e621'], ['da', 'DeviantArt'], ['tw', 'X / Twitter'],
-        ['bsky', 'Bluesky'], ['ib', 'Inkbunny'], ['ws', 'Weasyl'], ['sf', 'SoFurry'],
-        ['fn', 'FurryNetwork'], ['ik', 'Itaku'], ['ig', 'Instagram'], ['tg', 'Telegram'],
+        // A–Z by name (SETUPALPHA)
+        ['bsky', 'Bluesky'], ['da', 'DeviantArt'], ['e621', 'e621'], ['fa', 'FurAffinity'],
+        ['fn', 'FurryNetwork'], ['ib', 'Inkbunny'], ['ig', 'Instagram'], ['ik', 'Itaku'],
+        ['sf', 'SoFurry'], ['tg', 'Telegram'], ['ws', 'Weasyl'], ['tw', 'X / Twitter'],
     ],
 
     async render() {

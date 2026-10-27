@@ -168,6 +168,12 @@ def test_every_account_row_offers_credential_reentry():
     assert "data-creds" in src and "_editCredentials" in src
 
 
+def test_the_card_button_says_sign_in():
+    """Labelled "Credentials", the sign-in buttons inside it went unfound on a seat."""
+    src = _js()
+    assert "🔑 Sign in</button>" in src and "Credentials</button>" not in src
+
+
 def test_every_account_row_offers_a_login_test():
     src = _js()
     assert "data-test-login" in src and "testAccountLogin" in src

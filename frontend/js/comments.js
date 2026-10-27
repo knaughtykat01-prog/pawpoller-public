@@ -1,3 +1,4 @@
+// @ts-check
 /*
  * Paired comments (4.56.0, spec 021) — a comment under your own post, from the same account.
  *

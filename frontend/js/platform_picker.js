@@ -1,3 +1,4 @@
+// @ts-check
 /* ── Choose platforms (spec 020) ─────────────────────────────────
  *
  * The ONE "which sites do I use" control: the Platforms page opens it as a side panel
@@ -24,7 +25,8 @@ window.PlatformPicker = (function () {
     function groups() {
         const all = (window.PLATFORMS || []).map(p => p.code);
         const listed = new Set(GROUPS.flatMap(g => g.codes));
-        const out = GROUPS.map(g => ({ name: g.name, codes: g.codes.filter(c => all.includes(c)) }))
+        // A–Z inside each group (SETUPALPHA); `all` is already A–Z for "Other".
+        const out = GROUPS.map(g => ({ name: g.name, codes: window.sortByPlatformName(g.codes.filter(c => all.includes(c))) }))
             .filter(g => g.codes.length);
         const rest = all.filter(c => !listed.has(c));
         if (rest.length) out.push({ name: 'Other', codes: rest });

@@ -956,17 +956,12 @@ async def _fetch_sqw_work(client, submission_id: str) -> tuple[str, bool]:
 async def import_from_squidgeworld(submission_id: str) -> dict:
     """Download a SqW work — same OTW Rails layout as AO3, different host.
 
-    Reuses the persistent SquidgeWorldClient singleton from the poller
-    module so we share Anubis tokens + session cookies across import
-    calls (and across imports + poll cycles). Re-solving the Anubis
-    proof-of-work challenge for every import would be wasteful and
-    could trip the same kind of rate limiter that bites AO3 logins.
+    Uses a client of its own, not the poller's singleton: re-pointing
+    the singleton raced a concurrent poll of another SqW account.
     """
     existing = _find_existing_import("sqw", submission_id)
     if existing:
         return _existing_import_response(existing, "sqw", submission_id)
-
-    from polling.sqw_poller import _get_or_create_client as _get_sqw_client
 
     settings = config.get_settings()
     sqw_username = settings.get("sqw_username", "")
@@ -981,12 +976,20 @@ async def import_from_squidgeworld(submission_id: str) -> dict:
     # fresh proxy-equipped client.
     from polling.cf_proxy import (
         is_blocking_failure as _is_blk,
+        proxy_kwargs as _proxy_kw,
         proxy_kwargs_fallback as _proxy_fb,
     )
     from clients.sqw.client import SquidgeWorldClient
 
-    direct_client = _get_sqw_client(settings, sqw_username, sqw_password,
-                                    settings.get("sqw_target_user", "") or sqw_username)
+    # A client of its own: re-pointing the poller's shared singleton here
+    # would make a concurrent poll of another SqW account finish as this one
+    # (SEC4880). Costs one Anubis solve per import.
+    direct_client = SquidgeWorldClient(
+        username=sqw_username,
+        password=sqw_password,
+        target_user=settings.get("sqw_target_user", "") or sqw_username,
+        **_proxy_kw(settings, "sqw"),
+    )
     try:
         html_text, is_draft = await _fetch_sqw_work(direct_client, submission_id)
     except Exception as e:
@@ -1006,6 +1009,8 @@ async def import_from_squidgeworld(submission_id: str) -> dict:
             html_text, is_draft = await _fetch_sqw_work(proxy_client, submission_id)
         finally:
             await proxy_client.close()
+    finally:
+        await direct_client.close()
     parsed = _parse_otw_work_page(html_text)
 
     title = parsed["title"] or f"SqW_{submission_id}"

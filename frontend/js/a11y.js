@@ -1,3 +1,4 @@
+// @ts-check
 /*
  * Accessibility helpers (4.45.0, spec 012 — WCAG core principles in the app).
  *

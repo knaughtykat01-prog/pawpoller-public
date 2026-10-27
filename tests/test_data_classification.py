@@ -187,7 +187,10 @@ def test_restricted_settings_are_vault_held():
 def test_backup_coverage():
     """FR-010: nothing that can't be rebuilt is silently left out of backups."""
     backlog = ROOT / "docs" / "BACKLOG.md"
-    rows = set(re.findall(r"^\| ([A-Z0-9]+) \|", backlog.read_text(encoding="utf-8"), re.M)) if backlog.exists() else None
+    # shipped rows live in BACKLOG_DONE.md since the 2026-10-26 split
+    rows = set(re.findall(r"^\| ([A-Z0-9]+) \|", "".join(
+        p.read_text(encoding="utf-8") for p in (backlog, ROOT / "docs" / "BACKLOG_DONE.md") if p.exists()),
+        re.M)) if backlog.exists() else None
     for e in datamap.ENTRIES:
         route = e.backup_route
         assert route in datamap.BACKUP_ROUTES or route.startswith("gap:"), (e.name, route)

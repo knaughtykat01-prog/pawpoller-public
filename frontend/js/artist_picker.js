@@ -44,11 +44,11 @@
  *   });
  */
 (function () {
-    // Display order matches the registry's coverage, most-covered first.
+    // A–Z by name (SETUPALPHA; was most-covered first, which nobody could scan).
     const PLATFORMS = [
-        ['fa', 'FurAffinity'], ['e621', 'e621'], ['da', 'DeviantArt'], ['tw', 'X / Twitter'],
-        ['bsky', 'Bluesky'], ['ib', 'Inkbunny'], ['ws', 'Weasyl'], ['sf', 'SoFurry'],
-        ['fn', 'FurryNetwork'], ['ik', 'Itaku'], ['ig', 'Instagram'], ['tg', 'Telegram'],
+        ['bsky', 'Bluesky'], ['da', 'DeviantArt'], ['e621', 'e621'], ['fa', 'FurAffinity'],
+        ['fn', 'FurryNetwork'], ['ib', 'Inkbunny'], ['ig', 'Instagram'], ['ik', 'Itaku'],
+        ['sf', 'SoFurry'], ['tg', 'Telegram'], ['ws', 'Weasyl'], ['tw', 'X / Twitter'],
     ];
     // The roles a person can have on a piece other than "drew it" (the artist
     // stays its own field). Order = the featuring line's order.

@@ -174,7 +174,7 @@
         { t: 'Descriptions only: go to Network and refresh', b: 'In that panel, click the <b>Network</b> tab, then refresh the page (<b>F5</b>). A list of requests fills up.' },
         { t: 'Descriptions only: click the first request', b: 'Click the first line in the list, the one named <code>www.deviantart.com</code>. Details for it open on the side.' },
         { t: 'Descriptions only: copy the Cookie value', b: 'In those details, scroll to <b>Request Headers</b> and find the line called <b>Cookie</b>. Select the <b>whole</b> value after it (it is very long, with many <code>name=value;</code> parts) and copy it. Copy all of it, not one part.' },
-        { t: 'Descriptions only: paste it into PawPoller', b: 'In PawPoller, open your DeviantArt account\'s <b>Credentials</b>, paste the value into <code>da_cookie</code>, and press <b>Save</b>. Treat it like a password: anyone holding it is signed in as you.' },
+        { t: 'Descriptions only: paste it into PawPoller', b: 'In PawPoller, open your DeviantArt account\'s <b>🔑 Sign in</b>, paste the value into <code>da_cookie</code>, and press <b>Save</b>. Treat it like a password: anyone holding it is signed in as you.' },
         { t: 'Descriptions only: test it', b: 'Press the account\'s <b>Test</b> button. A green result means descriptions will sync. The cookie stops working when you sign out of DeviantArt in that browser, or after a few weeks. PawPoller then shows <b>DA-COOKIE-EXPIRED</b>: repeat these steps and paste the new value over the old one.' },
       ],
       paste: 'Settings → DeviantArt → client_id + client_secret + username to track',
@@ -748,7 +748,7 @@
         // 4.77.3: what the operator's own move ran into, so testers don't have to.
         { t: 'Check your sites',
           b: 'Open <b>Accounts</b> and press <b>Test</b> on each account. A ✓ means it\'s ready. If one says its ' +
-             'cookies or login have expired, copy fresh ones into that account\'s <b>Credentials</b> (each site\'s ' +
+             'cookies or login have expired, copy fresh ones into that account\'s <b>🔑 Sign in</b> (each site\'s ' +
              'guide shows how). <b>DeviantArt</b> needs two extra things on a new address: add your seat\'s ' +
              'address to your DeviantArt app (see the DeviantArt guide, step 6), then press <b>Authorise posting</b> ' +
              'again; and to change descriptions, paste a <code>da_cookie</code> (the DeviantArt guide shows how).' },

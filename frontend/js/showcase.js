@@ -1,3 +1,4 @@
+// @ts-check
 /* ── Showcase — the Library's XMB landing (2.158.0) ───────────────────────────
  *
  * the owner's PS3-XMB browse, placement #2 — AN OPTION, NEVER FORCED: the Library

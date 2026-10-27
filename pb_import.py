@@ -24,6 +24,7 @@ reader when someone has v4 accounts to test with.
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import logging
 import os
@@ -457,7 +458,7 @@ def _markdown(s: str, limit: int | None = 200_000) -> str:
     """PostyBirb's descriptions are HTML from its rich-text box; PawPoller's are Markdown.
     Story imports (`posting.importer`) use it too, uncapped: those are the owner's own files."""
     if "<" not in s:
-        return s
+        return html.unescape(s)   # plain text still carries entities (&amp;); the parser path decodes them too
     p = _ToMarkdown()
     # A "<" that never closes is text, not a tag: Python 3.10's parser rescans an unclosed tag
     # slowly enough to stall the server on a crafted file.

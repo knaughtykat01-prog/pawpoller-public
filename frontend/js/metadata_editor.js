@@ -62,7 +62,7 @@ const MetaEditor = {
     _chaptersLoaded: false,       // flip true once we have data at least once
     _expandedChapter: null,       // chapter index currently expanded (or null)
     _activeChapterTagPlatform: 'default', // sub-tab within chapter detail
-    _CHAPTER_TAG_PLATFORMS: ['default', 'sofurry', 'inkbunny', 'wattpad'],
+    _CHAPTER_TAG_PLATFORMS: ['default', 'inkbunny', 'sofurry', 'wattpad'],
 
     // Phase 5: Cover + Raw JSON
     _coverFilename: null,         // current metadata.images.cover
@@ -113,14 +113,13 @@ const MetaEditor = {
     // AO3 categories
     CATEGORIES: ['F/F', 'F/M', 'Gen', 'M/M', 'Multi', 'Other'],
 
-    // Platform keys (order controls render)
-    PLATFORMS: ['sofurry', 'inkbunny', 'squidgeworld', 'ao3', 'furaffinity', 'wattpad'],
+    // Platform keys (order controls render: A–Z by name, SETUPALPHA)
+    PLATFORMS: ['ao3', 'furaffinity', 'inkbunny', 'sofurry', 'squidgeworld', 'wattpad'],
 
-    // Platforms that show as tabs in the Tags section. Order matches
-    // PLATFORMS for the underlying posters with Default leading; new tabs
-    // (FA / Weasyl / AO3 / SQW) inherit from default on first load and
-    // become independent override lists once the user edits them.
-    TAG_PLATFORMS: ['default', 'sofurry', 'inkbunny', 'furaffinity', 'weasyl', 'ao3', 'squidgeworld', 'wattpad'],
+    // Platforms that show as tabs in the Tags section: Default leading, then
+    // A–Z by name; new tabs (FA / Weasyl / AO3 / SQW) inherit from default on
+    // first load and become independent override lists once the user edits them.
+    TAG_PLATFORMS: ['default', 'ao3', 'furaffinity', 'inkbunny', 'sofurry', 'squidgeworld', 'wattpad', 'weasyl'],
 
     // Platforms that receive cascaded tags when the user adds/removes a
     // tag from the Default tab. Broader than TAG_PLATFORMS so AO3, SQW,

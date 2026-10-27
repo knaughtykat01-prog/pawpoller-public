@@ -446,7 +446,7 @@ const Editor = {
 
         } catch (err) {
             if (App._stale(_rt)) return;
-            App._setContent(`<div class="empty-state"><h3>Error loading stories</h3><p>${err.message}</p></div>`);
+            App._setContent(Utils.html`<div class="empty-state"><h3>Error loading stories</h3><p>${err.message}</p></div>`);
         }
     },
 
@@ -1081,7 +1081,7 @@ const Editor = {
 
         } catch (err) {
             const container = document.getElementById('editor-cm-container');
-            if (container) container.innerHTML = `<p style="color:var(--color-error);padding:20px">Error loading: ${err.message}</p>`;
+            if (container) container.innerHTML = Utils.html`<p style="color:var(--color-error);padding:20px">Error loading: ${err.message}</p>`;
         }
     },
 
@@ -1662,7 +1662,7 @@ const Editor = {
                 }
             }
         } catch (err) {
-            if (mdPreview) mdPreview.innerHTML = `<p style="color:var(--color-error)">Error: ${err.message}</p>`;
+            if (mdPreview) mdPreview.innerHTML = Utils.html`<p style="color:var(--color-error)">Error: ${err.message}</p>`;
             [mdPreview, fmtSource, fmtPreview].forEach(el => { if (el) el.style.opacity = '1'; });
         }
     },
@@ -2088,7 +2088,7 @@ const Editor = {
             menu.dataset.populated = '1';
         } catch (err) {
             menu.innerHTML =
-                `<div class="downloads-empty">Error: ${err.message}</div>` + zipEntry;
+                Utils.html`<div class="downloads-empty">Error: ${err.message}</div>${Utils.raw(zipEntry)}`;
         }
     },
 
@@ -2694,7 +2694,7 @@ const Editor = {
             this._renderThemeGUI();
             this._updateUndoBtn();
         } catch (err) {
-            body.innerHTML = `<p style="color:var(--color-error)">Error: ${err.message}</p>`;
+            body.innerHTML = Utils.html`<p style="color:var(--color-error)">Error: ${err.message}</p>`;
         }
     },
 

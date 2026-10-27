@@ -472,7 +472,7 @@ window.Commissions = {
 
     /* All poster codes that can appear as a delivery target. Kept in sync with
      * posting/artwork_reader._ALL_POSTER_IDS. */
-    _deliverCodes: ['ib', 'fa', 'ws', 'sf', 'da', 'ik', 'bsky', 'e621', 'ig'],
+    _deliverCodes: window.sortByPlatformName(['ib', 'fa', 'ws', 'sf', 'da', 'ik', 'bsky', 'e621', 'ig']),   // A–Z (SETUPALPHA)
 
     /* Self-contained modal (CSP-safe: built + wired in JS, no inline handlers). */
     _modal(title, vals, onSave) {
