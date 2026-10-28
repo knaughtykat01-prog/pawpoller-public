@@ -1195,7 +1195,8 @@ def _collect_activity_events(limit: int = 30) -> list:
                     "timestamp": log.get("created_at"),
                     "platform": plat,
                     "account": names.get((plat, log.get("account_id")), ""),
-                    "kind": log.get("action") or "post",
+                    # a synced edit logs action "update"; that kind means "new release" to the bell
+                    "kind": "edit" if log.get("action") == "update" else (log.get("action") or "post"),
                     "status": _POST_STATUS_FOR_BELL.get(log.get("status"), log.get("status")),
                     "summary": _format_post_summary(
                         log, _work_title(log.get("content_type") or "", log.get("story_name") or "")),

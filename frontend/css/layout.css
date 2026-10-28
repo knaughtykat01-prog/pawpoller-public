@@ -480,6 +480,8 @@ body.sidebar-collapsed .poll-progress-bar { left: var(--sidebar-w-collapsed); }
     body.sidebar-open .hamburger-btn { left: calc(min(290px, 86vw) - 4px); z-index: 45; }
 
     .bottom-nav { display: flex; }
+    /* a field scrolled or focused into view stops above the fixed bottom nav, not behind it */
+    html { scroll-padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px) + 12px); }
 
     .main-col,
     body.sidebar-collapsed .main-col { margin-left: 0; }

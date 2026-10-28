@@ -133,6 +133,27 @@ def test_a_preview_names_each_refused_pair_instead_of_refusing(story, monkeypatc
     assert _rows() == []
 
 
+def test_a_refused_chapter_left_off_one_site_lets_the_rest_go(story, monkeypatch):
+    """WIREFLOW job 5: one chapter a site refuses no longer holds the whole run — leave just that
+    pair out and the other chapters (and sites) still schedule."""
+    _refuse_chapter(monkeypatch, 2)
+    r = _drip(skip=["2:ib"], dry_run=True)
+    assert r["problems"] == [] and r["rows"] == 3
+    assert {"chapter": 2, "platform": "ib", "reason": "left out"} in r["skipped"]
+    _drip(skip=["2:ib"])
+    assert sorted(x["chapter_index"] for x in _rows()) == [1, 3, 4]
+
+
+def test_skip_ignores_pairs_it_does_not_know(story):
+    r = _drip(skip=["9:ib", "1:zz", "x:ib", "", "1", "²:ib", "9" * 5000 + ":ib"], dry_run=True)
+    assert r["rows"] == 4
+
+
+def test_leaving_every_chapter_out_is_a_plain_refusal(story):
+    with pytest.raises(HTTPException):
+        _drip(skip=["1:ib", "2:ib", "3:ib", "4:ib"], dry_run=True)
+
+
 def test_a_moved_chapter_keeps_its_own_time_and_the_rest_keep_theirs(story):
     r = _drip(moves={2: "2031-01-20T18:30:00+00:00"})
     got = {row["chapter_index"]: row["scheduled_at"] for row in _rows()}

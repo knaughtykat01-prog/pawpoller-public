@@ -2,6 +2,17 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.88.3] - 2026-10-29 - Smoother posting flows
+
+> - Scheduling a piece of art for later works again (it stopped with a server error).
+> - Posting several pieces at once works out the plan as soon as it opens, so Queue no longer waits for Preview.
+> - Posting several pieces at once unticks a default site every piece is already on, and says which.
+> - When one chapter can't go to a site, scheduling a story can leave just that chapter off and keep the rest.
+> - A failed post's badge now says whether PawPoller will try again by itself, and the failure scrolls into view.
+> - Syncing an edit to your sites no longer pops a "new version available" message.
+> - On a phone, a box you scroll to no longer hides behind the bottom bar.
+> - The time-zone offer no longer covers a dialog's buttons.
+
 ## [4.88.2] - 2026-10-28 - Story imports keep your writing
 
 > - Creating a story from a Word .rtf file now brings in the whole text, italics and accents included (it used to come in empty).
@@ -206,9 +217,3 @@ Generated from the release notes: each version's plain-language summary.
 > - The server log now names the account on every line a poll writes, so you can tell whose poll did what.
 > - Clearer wording for the Cloudflare relay switches in Settings.
 > - Telegram notifications that Telegram turns away are now noted in the log instead of vanishing. Over-long digests are trimmed to fit, and alerts with odd characters in a title arrive as plain text.
-
-## [4.79.1] - 2026-10-16 - Small fixes
-
-> - Changing or removing your DeviantArt cookie now takes effect straight away, without a restart.
-> - A small security tidy-up to how AO3 error messages are read.
-> - Hosted seats: FurAffinity polling can go through the Cloudflare relay (the FA relay switch in Settings), for when FA's bot check blocks the home connection.

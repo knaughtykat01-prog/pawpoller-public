@@ -86,7 +86,7 @@
                 : series ? `${rows.length} chapters` : 'The whole story';
             const st = {
                 step: 1, picked: new Set(), start: T.pickerTomorrowAt('20:00'), every: 10080, vis: 'public',
-                moves: {}, problems: [], slots: null, error: '', seq: 0,
+                moves: {}, skips: new Set(), problems: [], slots: null, error: '', seq: 0,
             };
 
             const ov = document.createElement('div');
@@ -175,7 +175,7 @@
             const startDate = () => T.toUtc(st.start);
             const dripBody = (dry) => ({
                 platforms: [...st.picked], start: startDate().toISOString(), interval_minutes: st.every,
-                account_ids: accts(), persona_id: personaId(), only_new: true, moves: st.moves,
+                account_ids: accts(), persona_id: personaId(), only_new: true, moves: st.moves, skip: [...st.skips],
                 ...(dry ? { dry_run: true } : { draft: [...st.picked].some(draftFor) }),
             });
 
@@ -213,8 +213,11 @@
                 for (const el of ov.querySelectorAll('[data-problem]')) {
                     const ps = st.picked.has(el.dataset.problem) ? problemsFor(el.dataset.problem) : [];
                     el.hidden = !ps.length;
-                    el.innerHTML = ps.length ? `${esc(ps.map(p => `Ch ${p.chapter}: ${p.message}`).join(' · '))}
-                        <a href="#/editor/${enc(name)}" data-ss-fix>Fix in the editor</a>` : '';
+                    // Each problem names its chapter and offers to leave just that chapter off this site,
+                    // so one refusal doesn't hold the whole run (WIREFLOW job 5).
+                    el.innerHTML = ps.length ? `${ps.map(p => `${esc(`Ch ${p.chapter}: ${p.message}`)}
+                        <button type="button" class="linkish" data-ss-skip="${esc(p.chapter + ':' + p.platform)}">Leave Ch ${esc(String(p.chapter))} off ${esc(plat(p.platform).label)}</button>`).join(' · ')}
+                        · <a href="#/editor/${enc(name)}" data-ss-fix>Fix in the editor</a>` : '';
                 }
             };
 
@@ -284,7 +287,7 @@
                         ${st.moves[s.chapter] ? `<button type="button" class="linkish" data-ss-unmove="${s.chapter}">Put back</button>` : ''}</span>` : ''}
                     </li>`).join('')}</ol>`
                     + (st.skipped && st.skipped.length ? `<p class="muted ss-note">Skipped: ${st.skipped.map(s =>
-                        `ch ${s.chapter} on ${esc(plat(s.platform).label)} (${s.reason === 'posted' ? 'already there' : 'already scheduled'})`).join(', ')}</p>` : '')
+                        `ch ${s.chapter} on ${esc(plat(s.platform).label)} (${s.reason === 'posted' ? 'already there' : s.reason === 'left out' ? 'left out by you' : 'already scheduled'})`).join(', ')}</p>` : '')
                     + (series && !blocked() ? `<p class="ss-ok">✓ All ${st.rows} posts passed the site checks.</p>` : '');
             };
 
@@ -371,6 +374,7 @@
                 const b = e.target.closest('button, a');
                 if (!b) return;
                 if (b.matches('[data-ss-fix]')) { close(); return; }
+                if (b.matches('[data-ss-skip]')) { e.preventDefault(); st.skips.add(b.dataset.ssSkip); check(); return; }   // inside the site's <label>: don't untick it
                 if (b.matches('[data-ss-back]')) { if (st.step === 1) close(); else { st.step--; paint(); } return; }
                 if (b.matches('[data-ss-next]')) { if (st.step === 3) go(); else { st.step++; paint(); } return; }
                 if (b.dataset.every) { st.every = Number(b.dataset.every); st.moves = {}; check(); return; }

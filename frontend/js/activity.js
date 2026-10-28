@@ -162,8 +162,12 @@
             const j = failed[0], c = counts(j);
             cls = 'fail'; frac = 1; n = '!';
             t1 = c.n > 1 ? `Posted to ${c.n - c.bad} of ${c.n} sites` : `"${j.title}" failed`;
-            const bad = sites(j).filter(l => l.state === 'failed').map(lineLabel);
-            t2 = `${bad.join(', ')} failed · open to retry`;
+            const badLines = sites(j).filter(l => l.state === 'failed');
+            // Promise only what the tray offers (WIREFLOW job 9): Retry shows only where it can't double-post.
+            const how = j.can_retry && badLines.some(l => l.retryable !== false) ? 'open to retry'
+                : badLines.every(l => /try again by itself/.test(l.error || '')) ? 'PawPoller will try again'
+                : 'open for details';
+            t2 = `${badLines.map(lineLabel).join(', ')} failed · ${how}`;
         } else if (fresh.length) {
             const j = fresh[0], c = counts(j);
             cls = 'done'; frac = 1; n = '✓';

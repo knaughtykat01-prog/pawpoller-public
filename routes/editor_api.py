@@ -2195,6 +2195,9 @@ class DripRequest(BaseModel):
     dry_run: bool = False         # validate + compute the slots, schedule nothing (the preview)
     draft: bool | None = None     # public/draft choice stored on every row; None = each site's default
     moves: dict[int, str] | None = None   # Amendment A: {chapter: ISO time} — that chapter alone, moved on the calendar
+    # WIREFLOW job 5: ["11:fa", …] — leave these chapter × site pairs out, so one chapter a site
+    # refuses (e.g. its title is too long there) doesn't hold up the whole run. Unknown pairs are ignored.
+    skip: list[str] | None = Field(default=None, max_length=2000)
 
 
 def _already_there(conn, canonical: str, platforms: list[str]) -> dict[tuple[int, str], str]:
@@ -2290,6 +2293,16 @@ async def drip_schedule(story_name: str, req: DripRequest):
         if not need:
             raise HTTPException(status_code=400,
                                 detail="Every chapter is already on those sites or scheduled")
+        chapters = list(need)
+    for pair in req.skip or []:
+        ch_s, _, platform = str(pair).partition(":")
+        if ch_s.isascii() and ch_s.isdigit() and len(ch_s) < 6 and int(ch_s) in need and platform in need[int(ch_s)]:
+            need[int(ch_s)].remove(platform)
+            skipped.append({"chapter": int(ch_s), "platform": platform, "reason": "left out"})
+    if req.skip:
+        need = {ch: ps for ch, ps in need.items() if ps}
+        if not need:
+            raise HTTPException(status_code=400, detail="Every chapter was left out")
         chapters = list(need)
 
     # Validate EVERY chapter × platform before enqueuing anything.

@@ -106,3 +106,19 @@ def test_a_newer_release_shows_in_the_bell(local, monkeypatch):
     assert not [i for i in local.get("/api/notifications").json()["items"] if i["kind"] == "update"]
     updater._remember("99.0.0", False)                       # up to date → nothing to say
     assert updater.LATEST == {}
+
+
+def test_a_synced_edit_is_not_announced_as_a_release(local):
+    """A canonical-record sync logs action "update"; the bell used to read that as a new
+    PawPoller release and toast "Updated <piece> — open the bell or Settings → About to update"."""
+    from database import posting_queries
+    conn = get_connection()
+    try:
+        posting_queries.log_posting_action(conn, "fa", "Some_Art", 0, action="update", status="success",
+                                           content_type="artwork")
+        conn.commit()
+    finally:
+        conn.close()
+    items = local.get("/api/notifications").json()["items"]
+    assert not [i for i in items if i["kind"] == "update"]
+    assert [i for i in items if i["kind"] == "edit"]

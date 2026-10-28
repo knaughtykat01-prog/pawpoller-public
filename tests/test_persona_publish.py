@@ -157,6 +157,17 @@ class TestScheduleRoutesCheckNow:
         assert r.status_code == 400, r.text
         assert "Inkwolf has no account on ws" in r.json()["detail"]
 
+    def test_artwork_schedule_without_a_persona_queues(self, client, conn, monkeypatch):
+        """The persona branch's own `get_connection` import made the name local to the whole
+        function, so a schedule with no persona crashed (UnboundLocalError, 500) since 4.2.0."""
+        from routes import artwork_api
+        conn.close()
+        monkeypatch.setattr(artwork_api.artwork_reader, "load_artwork", lambda name: {})
+        monkeypatch.setattr(artwork_api, "_store_comments", lambda *a, **k: None)
+        r = client.post("/api/artwork/schedule", json={
+            "artwork_name": "Sample_Piece", "platform": "ws", "scheduled_at": "2099-01-01T00:00:00+00:00"})
+        assert r.status_code == 200, r.text
+
 
 class TestFrontendWiring:
     """Source-order checks, as tests/test_publish_confirm.py does for 4.1.0."""

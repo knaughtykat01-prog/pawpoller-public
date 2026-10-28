@@ -234,7 +234,10 @@ window.Masterpieces = {
         const renders = {};
         const stale = () => { plan = null; $('#bp-queue').disabled = true; $('#bp-queue').textContent = 'Queue'; $('#bp-plan').innerHTML = ''; };
         // Any setting change invalidates the preview — except a version tick, which re-plans.
-        const settingChanged = (e) => { if (!(e.target && e.target.classList && e.target.classList.contains('bp-ver'))) stale(); };
+        // The plan re-draws itself after a change (WIREFLOW job 3: Queue sat locked until a Preview nobody was told about).
+        let autoT = null;
+        const replan = () => { stale(); clearTimeout(autoT); autoT = setTimeout(() => { try { preview(); } catch (e) { /* still opening: the first plan runs below */ } }, 400); };
+        const settingChanged = (e) => { if (!(e.target && e.target.classList && e.target.classList.contains('bp-ver'))) replan(); };
         ov.querySelector('.wn-scroll').addEventListener('change', settingChanged);
         ov.querySelector('.wn-scroll').addEventListener('input', settingChanged);
         $('#bp-announce').addEventListener('change', (e) => {
@@ -250,7 +253,7 @@ window.Masterpieces = {
                 host, platforms: all, selectClass: 'bp-acct', storageKey: 'pp_batch_persona',
                 slot: c => ov.querySelector(`.bp-acct-slot[data-platform="${c}"]`),
                 row: c => ov.querySelector(`.bp-row[data-platform="${c}"]`),
-                onChange: stale,
+                onChange: replan,
             });
         }
 
@@ -307,6 +310,7 @@ window.Masterpieces = {
         };
 
         const preview = async () => {
+            if (!ov.querySelector('.bp-check:checked')) { stale(); return; }   // nothing to plan; keep any note showing
             msg('Checking every piece…');
             const sc = ov.querySelector('.wn-scroll'), top = sc.scrollTop;
             try { paint(await API.batchPlan(body())); msg(''); sc.scrollTop = top; }
@@ -344,6 +348,21 @@ window.Masterpieces = {
                 msg('Could not queue: ' + (err.message || err), true);
             }
         });
+        // First plan on open. Default sites none of these pieces can go to (already there, or the
+        // site won't take them) are unticked and named, rather than left to plan "Nothing to queue".
+        clearTimeout(autoT);                      // the persona picker's own change is covered by this plan
+        await preview();
+        if (plan) {
+            const used = new Set(plan.pieces.flatMap(x => x.posts.map(s => s.platform)));
+            const idle = [...ov.querySelectorAll('.bp-check:checked')]
+                .filter(c => !used.has(c.value) && !this._BATCH_ANNOUNCERS.includes(c.value));
+            if (idle.length) {
+                idle.forEach(c => { c.checked = false; });
+                const left = ov.querySelectorAll('.bp-check:checked').length;
+                if (left) await preview(); else stale();
+                msg(`Unticked ${idle.map(c => this._plat(c.value).label).join(', ')}: ${names.length === 1 ? 'this piece is' : 'these pieces are'} already there, or it won't take them.${left ? '' : ' Tick where they should go.'}`);
+            }
+        }
     },
 
     /* ── Duplicate finder / merge (2.144.0) ─────────────────────

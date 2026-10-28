@@ -2207,6 +2207,8 @@ const Components = {
         if (prev) prev.remove();
         anchor.insertAdjacentHTML('afterend', this.publishResults(results, opts));
         if (window.Comments && anchor.parentElement) Comments.wireRetry(anchor.parentElement);
+        // The toast says "see below": bring the failure on screen (WIREFLOW job 9 found it off-screen).
+        if (fails && anchor.nextElementSibling) anchor.nextElementSibling.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         return fails;
     },
 

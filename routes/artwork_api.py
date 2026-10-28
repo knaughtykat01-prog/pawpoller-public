@@ -762,7 +762,6 @@ async def schedule_artwork(body: dict):
         # Persona-first schedules are checked NOW, not when the queue fires:
         # a refusal at 3am with nobody watching is a silent non-post.
         from database import personas as personas_db
-        from database.db import get_connection
         conn = get_connection()
         try:
             err = personas_db.persona_account_error(conn, platform, account_id, persona_id)

@@ -185,7 +185,8 @@ def test_the_telegram_buttons_answer_only_the_owners_chat(setup):
     stranger = {"id": "1", "data": data, "from": {"id": 999}, "message": {"chat": {"id": 999}}}
     assert run(golive.handle_callback("123:abc", "4242", stranger)) is True
     assert runs()[0]["state"] == "waiting" and setup["sent"] == []
-    forged = {"id": "2", "data": data[:-2] + "00", "from": {"id": 4242}, "message": {"chat": {"id": 4242}}}
+    wrong = "11" if data.endswith("00") else "00"     # a random nonce ends in "00" about 1 run in 256
+    forged = {"id": "2", "data": data[:-2] + wrong, "from": {"id": 4242}, "message": {"chat": {"id": 4242}}}
     run(golive.handle_callback("123:abc", "4242", forged))
     assert runs()[0]["state"] == "waiting"                        # a wrong nonce decides nothing
     owner = {"id": "3", "data": data, "from": {"id": 4242}, "message": {"chat": {"id": 4242}}}
