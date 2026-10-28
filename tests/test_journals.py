@@ -161,7 +161,7 @@ def test_deviantart_gets_html_maturity_and_its_own_link(sites):
 
 def test_story_ratings_never_fall_to_general():
     assert journals._rating({"rating": "explicit"}) == "adult"
-    assert journals._rating({"rating": "teen"}) == "general"
+    assert journals._rating({"rating": "teen"}) == "mature"          # as stories (posting/platforms/base.py)
     assert journals._rating({"rating": "weird"}) == "adult"
 
 

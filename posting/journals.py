@@ -170,7 +170,7 @@ async def _da(account_id):
     return await p._ensure_client()          # (client, access_token)
 
 
-_RATING_WORDS = {"explicit": "adult", "nsfw": "adult", "questionable": "mature", "teen": "general"}
+_RATING_WORDS = {"explicit": "adult", "nsfw": "adult", "questionable": "mature", "teen": "mature"}
 
 
 def _rating(post: dict) -> str:

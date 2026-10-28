@@ -143,9 +143,8 @@ def fit_report(tags: list[str], platform: str, *,
 
 def preview(tags: list[str], platform: str) -> dict:
     """What this platform gets, and what it loses. Feeds the UI."""
-    kept = fit(tags, platform)
-    kept_set = {t.lower() for t in kept}
-    dropped = [t for t in (tags or []) if t.lower() not in kept_set]
+    kept, report = fit_report(tags, platform)
+    dropped = [d["tag"] for d in report]   # every tag left out, repeats too, so sent + dropped = total
     return {
         "platform": platform,
         "limit": describe(platform),

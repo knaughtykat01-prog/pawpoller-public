@@ -21,6 +21,20 @@ def _bytes(rel):
         return f.read()
 
 
+def _bash():
+    """A bash that actually runs. On Windows the first `bash` on PATH can be WSL's launcher
+    with no Linux installed behind it (TESTENVBASH), so fall back to Git for Windows' bash."""
+    git = shutil.which("git")
+    cands = [shutil.which("bash")] + ([os.path.join(os.path.dirname(os.path.dirname(git)), "bin", "bash.exe")] if git else [])
+    for b in filter(None, cands):
+        try:
+            if os.path.isfile(b) and subprocess.run([b, "-c", "true"], capture_output=True, timeout=30).returncode == 0:
+                return b
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return None
+
+
 def test_update_sh_exists_with_bash_shebang():
     assert _read("update.sh").startswith("#!/usr/bin/env bash")
 
@@ -38,7 +52,7 @@ def test_shipped_shell_and_units_are_lf():
 
 
 def test_update_sh_syntax_ok():
-    bash = shutil.which("bash")
+    bash = _bash()
     if not bash:
         pytest.skip("no bash here (bare Windows) — CI on Linux still checks it")
     for rel in ["update.sh", "server-update/install.sh"]:
@@ -77,13 +91,14 @@ def test_update_sh_backs_up_checks_and_rolls_back():
     """4.43.2: update.sh backs up the database, checks the new commit started, checks the
     database and the startup log, and rolls back with --to. Run for real against fake
     docker/curl in a throwaway repo pair (tests/update_sh_harness.sh)."""
-    bash = shutil.which("bash")
+    bash = _bash()
     if not bash or not shutil.which("git"):
         pytest.skip("needs bash + git")
     harness = os.path.join(ROOT, "tests", "update_sh_harness.sh")
     assert os.path.isfile(harness), "tests/update_sh_harness.sh is missing (make_public must ship it)"
     r = subprocess.run([bash, harness,
-                        os.path.join(ROOT, "update.sh")], capture_output=True, text=True, timeout=300)
+                        os.path.join(ROOT, "update.sh")], capture_output=True, text=True,
+                       timeout=900)   # ~20 s a section under Git for Windows (slow process start), 16 sections
     out = r.stdout + r.stderr
     parts = {p.split("\n", 1)[0].strip(): p for p in out.split("=== ")[1:]}
 

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import config
 from posting.story_reader import get_archive_path
@@ -54,7 +54,7 @@ class CreateStoryRequest(BaseModel):
     chapters: int = 1    # Initial chapter count
     rating: str = "explicit"  # general, mature, explicit
     genre: str = ""      # Optional genre template preset
-    file_content: str = ""   # Optional uploaded file content
+    file_content: str = Field("", max_length=20_000_000)   # Optional uploaded file content (capped: parsed in memory)
     file_format: str = ""    # File extension: md, txt, html, bbcode, rtf
 
 
@@ -63,20 +63,10 @@ class CreateStoryRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _convert_html_to_md(html: str) -> str:
-    """Basic HTML to Markdown: strip tags, preserve structure."""
-    text = re.sub(r'<br\s*/?\s*>', '\n', html)
-    text = re.sub(r'<p[^>]*>', '\n\n', text)
-    text = re.sub(r'</p>', '', text)
-    text = re.sub(r'<h([1-6])[^>]*>(.*?)</h\1>', lambda m: '#' * int(m.group(1)) + ' ' + m.group(2), text)
-    text = re.sub(r'<strong>(.*?)</strong>', r'**\1**', text)
-    text = re.sub(r'<b>(.*?)</b>', r'**\1**', text)
-    text = re.sub(r'<em>(.*?)</em>', r'*\1*', text)
-    text = re.sub(r'<i>(.*?)</i>', r'*\1*', text)
-    text = re.sub(r'<hr\s*/?\s*>', '\n---\n', text)
-    text = re.sub(r'<[^>]+>', '', text)
-    from html import unescape
-    text = unescape(text)
-    return text.strip()
+    """HTML to Markdown via the one-pass parser PostyBirb imports use (HTMLIMPORT: the old regexes
+    lost `<em class=…>` italics and were quadratic on unclosed tags). Uncapped: the owner's own file."""
+    from pb_import import _markdown
+    return _markdown(html, limit=None)
 
 
 def _convert_bbcode_to_md(bbcode: str) -> str:
@@ -92,12 +82,74 @@ def _convert_bbcode_to_md(bbcode: str) -> str:
     return text.strip()
 
 
+_RTF_TOKEN = re.compile(r"\\([a-z]{1,32})(-?\d{1,10})? ?|\\'([0-9a-fA-F]{2})|\\(.)|([{}])|([^\\{}\r\n]+)|[\r\n]+", re.S)
+# Groups whose text is never story text: font/colour/style tables, document info, pictures.
+_RTF_SKIP = {"fonttbl", "colortbl", "stylesheet", "info", "pict", "object", "header", "footer",
+             "headerl", "headerr", "footerl", "footerr", "listtable", "listoverridetable", "rsidtbl",
+             "generator", "xmlnstbl", "themedata", "colorschememapping", "latentstyles", "datastore"}
+
+
 def _strip_rtf(rtf: str) -> str:
-    """Strip RTF control codes to extract plain text."""
-    text = re.sub(r'\{\\[^}]+\}', '', rtf)
-    text = re.sub(r'\\[a-z]+\d*\s?', '', text)
-    text = re.sub(r'[{}]', '', text)
-    return text.strip()
+    """RTF to Markdown text (italics kept): one pass, groups kept (RTFIMPORT: the old regex deleted every
+    `{\\…}` group, which in a Word file is all the text), `\\'xx` and `\\uN` accents decoded."""
+    out: list[str] = []
+    stack: list[tuple[bool, int, bool]] = []
+    skip, uc, pending, ital = False, 1, 0, False   # pending: fallback chars to drop after a \\uN
+
+    def italic(on: bool):
+        nonlocal ital
+        if on != ital and not skip:
+            out.append("\x02" if on else "\x03")   # italics open / close, become * below
+        ital = on
+
+    for word, num, hexb, sym, brace, text in _RTF_TOKEN.findall(rtf):
+        if brace == "{":
+            stack.append((skip, uc, ital))
+        elif brace == "}":
+            was_skip = skip
+            skip, uc, prev = stack.pop() if stack else (False, 1, False)
+            if was_skip:
+                ital = prev
+            else:
+                italic(prev)
+        elif word:
+            if word in _RTF_SKIP:
+                skip = True
+            elif word == "uc" and num:
+                uc = int(num)
+            elif skip:
+                pass
+            elif word == "i":
+                italic(num != "0")
+            elif word == "plain":
+                italic(False)
+            elif word in ("par", "line", "sect", "page"):
+                brk = "\n\n" if word in ("par", "sect", "page") else "\n"
+                out.append(f"\x03{brk}\x02" if ital else brk)   # Markdown italics end at a line break
+            elif word == "tab":
+                out.append("\t")
+            elif word == "u" and num:
+                out.append(chr(int(num) % 65536))
+                pending = uc
+        elif sym == "*":
+            skip = True                        # {\\*\\dest …}: an ignorable destination
+        elif skip:
+            pass
+        elif hexb:
+            if pending:
+                pending -= 1
+            else:
+                out.append(bytes([int(hexb, 16)]).decode("cp1252", "replace"))
+        elif sym:
+            out.append({"~": "\u00a0", "-": "", "_": "-", "\n": "\n\n", "\r": "\n\n"}.get(sym, sym if sym in "\\{}" else ""))
+        elif text:
+            if pending:
+                text, pending = text[pending:], max(0, pending - len(text))
+            out.append(text)
+    text = re.sub("\x02([ \t\n]*)\x03", r"\1", "".join(out))   # italics around nothing
+    text = text.replace("\x02", "*").replace("\x03", "*")
+    text = text.encode("utf-16", "surrogatepass").decode("utf-16", "replace")   # \\uN pairs (emoji) → one character
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -1406,7 +1458,6 @@ async def publish_check(story_name: str):
     WORK_ORIENTED = {"ao3", "sqw", "sf"}
 
     # Required credentials per platform. Value is one of:
-    #   ()              — no credentials needed (e.g. public-API IK)
     #   ("a", "b")      — all keys must be non-empty (AND)
     #   (("a","b"), ("c",))  — any group's keys all non-empty (OR-of-ANDs),
     #                   used by AO3 which accepts either username+password
@@ -1425,7 +1476,9 @@ async def publish_check(story_name: str):
                  ("sqw_username", "sqw_password")),
         "ao3":  (("ao3_username", "ao3_password"), ("ao3_session_cookie",)),
         "da":   ("da_cookie",),
-        "ik":   (),
+        # ITAKUACTIVE: was () ("no credentials needed"), so Itaku showed as ready for everyone.
+        # Posting needs the token (posting/platforms/itaku.py).
+        "ik":   ("ik_auth_token",),
         "bsky": ("bsky_identifier", "bsky_app_password"),
     }
     settings = config.get_settings()

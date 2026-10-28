@@ -1151,6 +1151,10 @@ class AO3Client:
         errors = (re.findall(r'<li>([^<]*)</li>', box) if box else []) or _error_texts(body)
         err_text = "; ".join(unescape(re.sub(r'<[^>]+>', '', e)).strip()[:200] for e in errors[:5])
         if box and err_text:
+            if _TRANSIENT_AO3.search(err_text):
+                # Not the "didn't save the work" wording: that marks the failure permanent (no retry,
+                # posting/manager.py), and a busy or down AO3 is worth a retry (SECLOW4781 (3)).
+                raise RuntimeError(f"AO3 couldn't save the work just now: {err_text}")
             raise RuntimeError(f"AO3 didn't save the work: {err_text}")
         raise RuntimeError(
             f"AO3: Could not extract work ID from {final_url} "
@@ -2273,6 +2277,10 @@ class AO3Client:
 
         logger.info("AO3: Updated Work Skin %s", skin_id)
         return {"skin_id": skin_id, "url": f"{_BASE}/skins/{skin_id}"}
+
+
+# AO3 words for "busy / down, try later": a retry can fix those (SECLOW4781 (3)).
+_TRANSIENT_AO3 = re.compile(r"try again later|temporar|busy|unavailable|timed? ?out|too many requests|maintenance", re.I)
 
 
 def _error_texts(page: str, limit: int = 5) -> list[str]:

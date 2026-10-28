@@ -13,7 +13,7 @@ Supports:
   - Text messages: `**SENDER: msg**` → bold header
   - POV markers: `**⟨ Name ⟩**` → bold
   - Chapter headings: `# Chapter N: Title`
-  - Section breaks: `---`
+  - Section breaks: `---`, `***` or `* * *` on a line of their own
   - End marker: `*End of ...*` → `~ End ~`
 """
 from __future__ import annotations
@@ -34,6 +34,11 @@ def _default_author() -> str:
         return config.get_settings().get("default_author", "")
     except Exception:
         return ""
+
+
+def _is_break(stripped: str) -> bool:
+    """A scene break: `---`, `***` or `* * *` alone on a line (SCENEBREAKS: only `---` used to count)."""
+    return stripped in ("---", "***", "* * *")
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +286,7 @@ def parse_front_matter(text: str) -> FrontMatter | None:
             continue
 
         # Accumulate non-blank, non-separator lines into the current section
-        if current_section and stripped and stripped != "---":
+        if current_section and stripped and not _is_break(stripped):
             section_lines[current_section].append(stripped)
 
     # Extract structured fields from raw section lines
@@ -458,7 +463,7 @@ def _convert_body_clean_html(lines: list[str], start: int = 0) -> tuple[list[str
             i += 1
             continue
 
-        if stripped == "---":
+        if _is_break(stripped):
             flush()
             pending_semantic = None
             j = i + 1
@@ -635,7 +640,7 @@ def convert_to_clean_html(markdown_text: str) -> ConversionResult:
     while i < len(lines):
         stripped = lines[i].strip()
 
-        if stripped == "---":
+        if _is_break(stripped):
             flush()
             in_warning_block = False
             j = i + 1
@@ -768,7 +773,7 @@ def _convert_body_sofurry(lines: list[str], start: int = 0) -> tuple[list[str], 
                 pending_semantic = sem
             i += 1
             continue
-        if stripped == "---":
+        if _is_break(stripped):
             flush()
             pending_semantic = None
             j = i + 1
@@ -874,7 +879,7 @@ def _convert_body_bbcode(lines: list[str], start: int = 0) -> tuple[list[str], d
                 pending_semantic = sem
             i += 1
             continue
-        if stripped == "---":
+        if _is_break(stripped):
             pending_semantic = None
             j = i + 1
             while j < len(lines) and lines[j].strip() == "":
@@ -998,7 +1003,7 @@ def convert_to_sofurry_html(markdown_text: str) -> ConversionResult:
 
     while i < len(lines):
         stripped = lines[i].strip()
-        if stripped == "---":
+        if _is_break(stripped):
             flush(); in_warning_block = False
             j = i + 1
             while j < len(lines) and lines[j].strip() == "": j += 1
@@ -1069,7 +1074,7 @@ def convert_to_bbcode(markdown_text: str) -> ConversionResult:
 
     while i < len(lines):
         stripped = lines[i].strip()
-        if stripped == "---":
+        if _is_break(stripped):
             in_warning_block = False
             j = i + 1
             while j < len(lines) and lines[j].strip() == "": j += 1
@@ -1620,7 +1625,7 @@ def _convert_body_styled_html(lines: list[str], start: int,
             continue
 
         # Section break or chapter divider
-        if stripped == "---":
+        if _is_break(stripped):
             flush()
             pending_semantic = None
             j = i + 1

@@ -2,6 +2,18 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.88.2] - 2026-10-28 - Story imports keep your writing
+
+> - Creating a story from a Word .rtf file now brings in the whole text, italics and accents included (it used to come in empty).
+> - Creating a story from an .html file keeps italics and bold, and a messy file no longer stalls.
+> - Scene breaks written *** or * * * now show as scene breaks on every site, not only ---.
+> - Itaku no longer shows as ready to post on the story page when you haven't connected Itaku.
+> - Signing in to Itaku from the desktop app now opens Itaku's sign-in page, not a "Page not found".
+> - The Accounts page's Itaku link goes to Itaku's sign-in page too.
+> - A journal rated Teen now posts as Mature, not General, the same as stories.
+> - The tag preview's "sent" and "left out" now add up when a tag is listed twice.
+> - When AO3 is busy and asks you to try later, PawPoller now retries the post instead of giving up.
+
 ## [4.88.1] - 2026-10-27 - Sites in A–Z order
 
 > - Every list of sites is now in A–Z order, so you can find yours at a glance: setup, Accounts, posting, pickers and Settings.
@@ -200,10 +212,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Changing or removing your DeviantArt cookie now takes effect straight away, without a restart.
 > - A small security tidy-up to how AO3 error messages are read.
 > - Hosted seats: FurAffinity polling can go through the Cloudflare relay (the FA relay switch in Settings), for when FA's bot check blocks the home connection.
-
-## [4.79.0] - 2026-10-16 - Replies from X
-
-> - Replies to your X posts now arrive in the Inbox, and you can answer them from there.
-> - Fixed the Inbox site filter: after you filter to one site and answer everything there, the other sites stay in the list.
-> - The DeviantArt Test no longer says your cookie has expired when DeviantArt simply didn't answer.
-> - Small security tidy-ups to AO3 and SquidgeWorld page reading, moving to a hosted seat, and artwork syncing.

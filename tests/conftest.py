@@ -37,6 +37,20 @@ config.SETTINGS_PATH.write_text("{}", encoding="utf-8")
 os.environ.setdefault("PAWPOLLER_TECH_CENTRE_URL", "")
 os.environ.setdefault("PAWPOLLER_TECH_CENTRE_THREAD", "0")
 
+# Property tests (tests/test_properties_*.py, PROPTESTS): the same generated cases every run,
+# so a failure reproduces and CI never flakes; no example database written into the repo.
+# Hypothesis is a dev-only dependency: without it those files skip. Its cache folder (it keeps one
+# even with database=None) goes in the suite's temp folder: in the repo it held absolute paths that
+# the public copy's leak scan rightly refused.
+os.environ.setdefault("HYPOTHESIS_STORAGE_DIRECTORY", str(Path(_tmpdir) / "hypothesis"))
+try:
+    from hypothesis import HealthCheck, settings as _hyp_settings
+    _hyp_settings.register_profile("pawpoller", derandomize=True, database=None, deadline=None,
+                                   max_examples=150, suppress_health_check=[HealthCheck.too_slow])
+    _hyp_settings.load_profile("pawpoller")
+except ImportError:
+    pass
+
 
 @pytest.fixture(scope="session")
 def _db_template(tmp_path_factory):

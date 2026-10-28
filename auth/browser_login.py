@@ -223,7 +223,7 @@ PLATFORM_LOGIN: dict[str, dict] = {
     # value is never logged.
     "ik": {
         "name": "Itaku",
-        "url": "https://itaku.ee/login",
+        "url": "https://itaku.ee/auth/login",   # /login is Itaku's "Page not found" (4.88.2)
         "domain": "itaku.ee",
         "success_check": lambda cookies, url: (
             _host_is(url, "itaku.ee") and "/login" not in (url or "") and "/sign-up" not in (url or "")

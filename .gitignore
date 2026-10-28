@@ -59,3 +59,7 @@ htmlcov/
 
 # The GCP VM runs the Instagram relay only (spec 048); update.sh refuses there
 .relay-only
+
+# Hypothesis cache (property tests); the suite keeps it in its temp folder
+.hypothesis/
+deploy/mutation/result_*.json

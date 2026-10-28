@@ -394,7 +394,14 @@ def test_l1_host_checks_parse_the_host():
     assert not bl.PLATFORM_LOGIN["sqw"]["success_check"]({}, "https://squidgeworld.org.evil.example/")
     assert not bl.PLATFORM_LOGIN["ik"]["success_check"]({}, "https://evil.example/itaku.ee")
     assert not bl.PLATFORM_LOGIN["ik"]["success_check"]({}, "https://itaku.ee/login")
+    assert not bl.PLATFORM_LOGIN["ik"]["success_check"]({}, "https://itaku.ee/auth/login")
     assert bl.PLATFORM_LOGIN["ik"]["success_check"]({}, "https://itaku.ee/home")
+
+
+def test_itaku_window_opens_the_real_sign_in_page():
+    # itaku.ee/login is the site's "Page not found"; the form is at /auth/login (measured 27 Oct).
+    assert bl.PLATFORM_LOGIN["ik"]["url"] == "https://itaku.ee/auth/login"
+    assert not bl.PLATFORM_LOGIN["ik"]["success_check"]({}, bl.PLATFORM_LOGIN["ik"]["url"])
 
 
 def test_l1_itaku_token_is_checked_and_unquoted():
@@ -695,3 +702,115 @@ def test_queued_handover_expiry_is_capped(q):
     items = q.pending()
     assert len(items) == 2
     assert all(i["payload"]["expires_at"] <= 1000.0 + da.HELPER_TTL for i in items)
+
+
+# ── MUTGAPS (27 Oct mutation run): guards every other test here stands in for ──
+
+def test_never_post_reads_the_real_list(monkeypatch):
+    """The env fixture replaces _never_post; this is the real one, the friend's-account guard."""
+    from database import accounts as adb
+    monkeypatch.setattr(adb, "never_post_ids", lambda: {10})
+    assert sh._never_post(10) is True and sh._never_post("10") is True
+    assert sh._never_post(3) is False
+
+
+@pytest.mark.parametrize("platform,module,cls,out", [
+    ("fa", "clients.fa.client", "FAClient", {"logged_in": False, "username": "Inkwolf"}),
+    ("ik", "clients.ik.client", "IKClient", {"status": "error", "username": "Inkwolf"}),
+    ("ng", "clients.ng.client", "NgClient", {"username": ""}),
+])
+def test_m4_a_site_that_says_signed_out_is_not_ok(monkeypatch, platform, module, cls, out):
+    import importlib
+    monkeypatch.setattr(importlib.import_module(module), cls, _Stub(out=out))
+    ok, _, why = asyncio.run(sh._who(platform, {}, "Inkwolf"))
+    assert ok is False and "didn't accept" in why
+
+
+def test_m4_a_site_with_no_check_is_never_ok():
+    assert asyncio.run(sh._who("zz", {}, "Inkwolf"))[0] is False
+
+
+def test_m4_a_site_that_doesnt_answer_saves_nothing(env, monkeypatch):
+    async def down(platform, creds, stored):
+        raise httpx.ConnectError("down")
+    monkeypatch.setattr(sh, "_who", down)
+    api = env["api"]
+    c = _code(api)
+    r = api.post("/api/signin-helper/result", json={"code": c["code"], "cookies": FA})
+    assert r.status_code >= 400 and "didn't answer" in r.json()["detail"]
+    assert env["saved"] == []
+    assert api.get(f"/api/settings/signin-codes/{c['id']}").json()["state"] == "failed"
+
+
+def test_a_code_for_another_sites_account_is_refused(env):
+    r = env["api"].post("/api/settings/signin-codes", json={"platform": "fa", "account_id": 4})   # 4 is X
+    assert r.status_code == 403
+
+
+def test_unknown_and_not_yet_sites_get_their_own_reason(env):
+    api = env["api"]
+    assert "browser" in api.post("/api/settings/signin-codes", json={"platform": "nope"}).json()["detail"]
+    assert "desktop app yet" in api.post("/api/settings/signin-codes", json={"platform": "da"}).json()["detail"]
+
+
+def test_m_r3_2_switching_plain_http_off_turns_it_off(env):
+    env["store"]["signin_helper_allow_http"] = True
+    r = env["api"].put("/api/settings/signin-helper-http", json={"allow": False})
+    assert r.status_code == 200 and r.json() == {"allow_http": False}
+    assert env["store"]["signin_helper_allow_http"] is False
+
+# ── MUTGAPS2: the exact edges of expiry and the wrong-code / per-address limits ──
+
+def _waiting(expires=100.0):
+    sh._codes["c1"] = {"hash": sh._hash("ABCD-1234"), "state": "waiting", "expires": expires,
+                       "platform": "fa", "account_id": 3, "message": ""}
+    return sh._codes["c1"]
+
+
+def test_a_code_works_until_the_second_it_expires():
+    sh._reset_state()
+    _waiting(100.0)
+    assert sh._find("abcd 1234", 99.999) is not None          # typed loosely still matches
+    assert sh._find("ABCD-1234", 100.0) is None
+    sh._sweep(99.999)
+    assert sh._codes["c1"]["state"] == "waiting"
+    sh._sweep(100.0)
+    assert sh._codes["c1"]["state"] == "expired"
+    sh._sweep(100.0 + sh.CODE_TTL - 0.001)
+    assert "c1" in sh._codes                                   # still answers "expired" for a while
+    sh._sweep(100.0 + sh.CODE_TTL)
+    assert "c1" not in sh._codes
+    sh._reset_state()
+
+
+def test_wrong_codes_void_everything_at_exactly_the_budget():
+    sh._reset_state()
+    c = _waiting(10_000.0)
+    n, window = sh.FAIL_BUDGET
+    for i in range(n - 1):
+        sh._fail(1000.0 + i)
+    assert c["state"] == "waiting" and sh._blocked_until == 0.0
+    sh._fail(1000.0 + n)
+    assert c["state"] == "voided" and sh._blocked_until == 1000.0 + n + sh.BLOCK_SECS
+    sh._reset_state()
+
+
+def test_old_wrong_codes_fall_out_of_the_window():
+    sh._reset_state()
+    c = _waiting(10_000.0)
+    n, window = sh.FAIL_BUDGET
+    for _ in range(n - 1):
+        sh._fail(1000.0)
+    sh._fail(1000.0 + window)                                  # the earlier ones are exactly a window old
+    assert c["state"] == "waiting"
+    sh._reset_state()
+
+
+def test_per_address_limit_edges():
+    sh._reset_state()
+    limit, window = sh.PER_ADDR
+    assert all(sh._addr_ok("203.0.113.5", 50.0) for _ in range(limit))
+    assert not sh._addr_ok("203.0.113.5", 50.0)
+    assert sh._addr_ok("203.0.113.6", 50.0)                    # another address has its own count
+    assert sh._addr_ok("203.0.113.5", 50.0 + window)           # a window later: counting starts again
+    sh._reset_state()

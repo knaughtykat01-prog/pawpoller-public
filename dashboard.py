@@ -177,12 +177,25 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
+def _bad_input(exc: BaseException | None) -> bool:
+    """A number past 64 bits reaching SQLite (APIBIGINT) or a NUL byte reaching a file path
+    (APINULBYTE): the request was wrong, not the server. One check here, not one per route."""
+    return isinstance(exc, OverflowError) or (isinstance(exc, ValueError) and "null" in str(exc).lower())
+
+
+def _bad_input_response(request: Request, exc: BaseException | None) -> JSONResponse:
+    logger.warning("Bad input on %s %s: %r", request.method, request.url.path, exc)
+    return JSONResponse(status_code=400, content={"detail": "That value isn't one PawPoller can use."})
+
+
 # Global exception handler — catches any unhandled exception that escapes a route
 # handler and returns a clean JSON 500 instead of letting uvicorn emit a bare
 # traceback or HTML error page. Also logs the full stack trace (exc_info=True) so
 # errors are visible in the console/log without exposing internals to the client.
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    if _bad_input(exc):
+        return _bad_input_response(request, exc)
     logger.error("Unhandled error on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
     return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
@@ -195,6 +208,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 # 5.0 V16.5.1 without touching ~200 individual raise sites.
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code >= 500 and _bad_input(exc.__context__):
+        return _bad_input_response(request, exc.__context__)   # a route wrapped it: `except Exception as e: raise HTTPException(500, …)`
     if exc.status_code >= 500:
         logger.error("Server error on %s %s: %s", request.method, request.url.path, exc.detail)
         return JSONResponse(status_code=exc.status_code,

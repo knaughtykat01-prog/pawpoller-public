@@ -3957,7 +3957,7 @@ const App = {
             { key: 'ao3', name: 'AO3', emoji: '&#128214;', color: 'var(--platform-ao3)', url: 'https://archiveofourown.org/users/login' },
             { key: 'da', name: 'DeviantArt', emoji: '&#127912;', color: 'var(--platform-da)', url: 'https://www.deviantart.com/users/login' },
             { key: 'wp', name: 'Wattpad', emoji: '&#128211;', color: 'var(--platform-wp)', url: 'https://www.wattpad.com/login' },
-            { key: 'ik', name: 'Itaku', emoji: '&#128444;', color: 'var(--platform-ik)', url: 'https://itaku.ee/login' },
+            { key: 'ik', name: 'Itaku', emoji: '&#128444;', color: 'var(--platform-ik)', url: 'https://itaku.ee/auth/login' },
             { key: 'bsky', name: 'Bluesky', emoji: '&#129419;', color: 'var(--platform-bsky)', url: 'https://bsky.app/' },
             { key: 'tw', name: 'X / Twitter', emoji: '&#128038;', color: 'var(--platform-tw)', url: 'https://twitter.com/login' },
             { key: 'mast', name: 'Mastodon', emoji: '&#128024;', color: 'var(--platform-mast)', url: 'https://joinmastodon.org/servers' },

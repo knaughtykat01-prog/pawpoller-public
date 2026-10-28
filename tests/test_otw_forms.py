@@ -8,6 +8,7 @@ import asyncio
 from urllib.parse import parse_qs
 
 import httpx
+import pytest
 
 from clients.ao3.client import AO3Client
 from clients.otw_forms import otw_form
@@ -85,6 +86,25 @@ def test_ao3_validation_errors_are_named_and_not_retried(monkeypatch, tmp_path):
     assert msg == "AO3 didn't save the work: Title can't be blank; Content must be at least 10 characters long."
     from posting.manager import _PERMANENT_ERROR_MARKERS
     assert any(m in msg.lower() for m in _PERMANENT_ERROR_MARKERS)
+
+
+def test_an_ao3_busy_message_is_retried(monkeypatch, tmp_path):
+    """SECLOW4781 (3): only a real validation error is permanent."""
+    page = ('<div id="error" class="error"><h4>Sorry!</h4><ul>'
+            "<li>We are experiencing heavy load, please try again later.</li></ul></div>")
+    cli = AO3Client("", "", "SecondFur", session_cookie="s")
+    cli._http._transport = httpx.MockTransport(
+        lambda req: httpx.Response(200, text=NEW_WORK if req.method == "GET" else page))
+
+    async def _no_delay():
+        return None
+    cli._polite_delay = _no_delay
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+    with pytest.raises(RuntimeError) as e:
+        asyncio.run(cli.create_work(title="t", content="c" * 20))
+    from posting.manager import _PERMANENT_ERROR_MARKERS
+    assert "try again later" in str(e.value)
+    assert not any(m in str(e.value).lower() for m in _PERMANENT_ERROR_MARKERS)
 
 
 def test_a_hostile_page_stays_fast():
