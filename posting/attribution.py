@@ -34,8 +34,9 @@ _NO_URL_PLATFORMS = {"da"}
 # submissions as a Code of Conduct 3.3 warning (2026-10-18), calling
 # pawpoller.com a link to software made with AI; a repeat stacks into a
 # suspension for every account the uploader owns, so FA gets no line at all,
-# with or without the URL.
-_SKIP_PLATFORMS = {"bsky", "fa"}
+# with or without the URL. th: Toyhouse bans AI content (site rule 4.8), and the
+# line would read as "made with AI" there for the same reason (spec 062).
+_SKIP_PLATFORMS = {"bsky", "fa", "th"}
 
 # Idempotency marker — never double-append (edit/update re-builds, or a user
 # who typed their own credit line).

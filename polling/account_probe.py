@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 _LABELS = {
     "ao3": "AO3", "sqw": "SquidgeWorld", "sf": "SoFurry", "e621": "e621", "fbr": "Furbooru", "r34": "Rule34.xxx",
     "mast": "Mastodon", "tum": "Tumblr", "bsky": "Bluesky", "pix": "Pixiv", "yt": "YouTube", "pic": "Picarto", "ttv": "Twitch",
-    "ig": "Instagram", "thr": "Threads", "ng": "Newgrounds", "sc": "SoundCloud", "fn": "FurryNetwork",
+    "ig": "Instagram", "thr": "Threads", "ng": "Newgrounds", "th": "Toyhouse", "sc": "SoundCloud", "fn": "FurryNetwork",
     "ik": "Itaku", "wp": "Wattpad", "ws": "Weasyl", "ib": "Inkbunny", "fb": "Facebook",
 }
 
@@ -169,6 +169,11 @@ def _b_ng(c, pk):
     return NgClient(username=c.get("ng_username", ""), cookie=c.get("ng_cookie", ""))
 
 
+def _b_th(c, pk):
+    from clients.th.client import THClient
+    return THClient(username=c.get("th_username", ""), cookie=c.get("th_cookie", ""))
+
+
 def _b_sc(c, pk):
     from clients.sc.client import ScClient
     try:
@@ -235,6 +240,7 @@ PROBES = {
     "thr":  (lambda c: bool(c.get("thr_access_token")), _b_thr, "session_str", False),
     "fb":   (lambda c: bool(c.get("fb_page_token") and c.get("fb_page_id")), _b_fb, "session_str", False),
     "ng":   (lambda c: bool(c.get("ng_cookie")), _b_ng, "session_dict", False),
+    "th":   (lambda c: bool(c.get("th_cookie")), _b_th, "session_dict", False),
     "sc":   (lambda c: bool(c.get("sc_client_id") and c.get("sc_client_secret") and c.get("sc_refresh_token")), _b_sc, "session_str", True),
     "fn":   (lambda c: bool(c.get("fn_username") and (c.get("fn_password") or c.get("fn_refresh_token"))), _b_fn, "session_str", True),
     "ik":   (lambda c: bool(c.get("ik_target_user") or c.get("ik_auth_token")), _b_ik, "ik", False),

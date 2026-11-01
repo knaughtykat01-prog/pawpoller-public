@@ -814,6 +814,10 @@ window.Masterpieces = {
         // per-platform tag map so an override doesn't clobber the others).
         this._detail = m;
         const v = this._detailView(name, m);
+        // Spec 063: the version Post and Schedule start from ('' the original, null a folder
+        // picture that isn't a version). A chip click updates it.
+        const startChip = v.chips[v.selIdx];
+        this._viewKey = startChip ? startChip.key : '';
 
         root.innerHTML = `
             <div class="board-wrap">
@@ -867,13 +871,16 @@ window.Masterpieces = {
         // variants fall back to the 2.152 unlabeled gallery of folder images.
         const chips = variants.length
             ? variants.map(v => ({
+                // Spec 063: which version this chip IS ('' = the original), so Post and
+                // Schedule can send it. Folder pictures (below) are not versions: null.
+                key: v.key || '',
                 u: kind !== 'image' ? posterUrl : this._canonUrl(name, v.image),
                 media: mediaOf(v.image),
                 label: v.label || v.key || 'Primary',
                 st: `👁 ${this._fmt((v.totals || {}).views)} · ❤ ${this._fmt((v.totals || {}).favorites)}`
                     + ` · 💬 ${this._fmt((v.totals || {}).comments)} · ${v.member_count || 0} site${(v.member_count || 0) === 1 ? '' : 's'}`,
             }))
-            : imgs.map((f, i) => ({ u: kind !== 'image' ? posterUrl : this._canonUrl(name, f), media: mediaOf(f), label: i === 0 ? 'Primary' : `Alt ${i}`, st: '' }));
+            : imgs.map((f, i) => ({ key: i === 0 ? '' : null, u: kind !== 'image' ? posterUrl : this._canonUrl(name, f), media: mediaOf(f), label: i === 0 ? 'Primary' : `Alt ${i}`, st: '' }));
         // Which chip opens selected (2.193.0). A '?v=<key>' from a Library variant
         // tile preselects that render; otherwise the hero (index 0) as before.
         const wantKey = this._variantFromHash();
@@ -986,7 +993,7 @@ window.Masterpieces = {
             ? ` <span class="mp-media-badge" title="${v.kind} piece">${this.esc(MediaKinds.badge(m.media, v.kind))} ${v.kind}</span>` : '';
         const gallery = v.chips.length > 1
             ? `<div class="mp-alts" data-rating="${v.rating}">${v.chips.map((c, i) => `
-                <div class="mp-altwrap${i === v.selIdx ? ' is-active' : ''}" data-mp-img="${this.esc(c.u)}" data-mp-media="${this.esc(c.media || '')}"
+                <div class="mp-altwrap${i === v.selIdx ? ' is-active' : ''}" data-mp-img="${this.esc(c.u)}" data-mp-media="${this.esc(c.media || '')}"${typeof c.key === 'string' ? ` data-mp-vkey="${this.esc(c.key)}"` : ''}
                      data-vstats="${this.esc(c.st)}" role="button" tabindex="0" title="${this.esc(c.label)}">
                     <img class="mp-alt" src="${this.esc(c.u)}" alt="" loading="lazy">
                     <div class="mp-alt-label">${this.esc(c.label)}</div>
@@ -1114,6 +1121,23 @@ window.Masterpieces = {
     },
 
     /* ── Column 2 — where it goes (§5.4) ────────────────────────────────── */
+    /* Spec 063: one version per scheduled post (ponytail: two versions = schedule twice). Only for
+     * a piece that declares versions; the value goes to the queue row as-is: "" Automatic,
+     * "__primary__" the original (NOT "": on a row "" means Automatic), else the version's key. */
+    _scheduleVersionHtml(m) {
+        const vs = ((m && m.variants) || []).filter(v => v && v.key && v.image);
+        // The note is there either way: a folder picture is selectable on a piece with no versions.
+        const note = '<p class="muted schedule-version-note" id="mp-schedule-version-note" hidden></p>';
+        if (!vs.length) return note;
+        return `<label class="schedule-label" for="mp-schedule-version">Version to post</label>
+                        <select class="schedule-version" id="mp-schedule-version">
+                            <option value="">Automatic — the fullest version each site allows</option>
+                            <option value="__primary__">The original</option>
+                            ${vs.map(v => `<option value="${this.esc(v.key)}">${this.esc(v.label || v.key)}</option>`).join('')}
+                        </select>
+                        ${note}`;
+    },
+
     _publishHtml(m) {
         if (m.status === 'junk') {
             // Read-only for a junked piece (§11): every other card stays.
@@ -1138,6 +1162,7 @@ window.Masterpieces = {
                     <div class="schedule-form-inner">
                         <label class="schedule-label" for="mp-schedule-datetime">Publish the ticked platforms at:</label>
                         <input type="datetime-local" class="schedule-datetime" id="mp-schedule-datetime">
+                        ${this._scheduleVersionHtml(m)}
                         <div class="schedule-form-actions">
                             <button class="btn btn-sm btn-primary" data-mp-schedule-confirm type="button">Confirm schedule</button>
                             <button class="btn btn-sm btn-outline" data-mp-schedule-cancel type="button">Cancel</button>
@@ -1585,6 +1610,7 @@ window.Masterpieces = {
                 desc: hasDescs ? (m.descriptions[code] || '') : undefined,
                 live: _live.filter(c => c !== code) };
         });
+        extraByCode.th = { character_ids: (cats.th || {}).character_ids || [] };   // spec 062: the Toyhouse picker
         window.Artwork._renderPlatformRows(host, optsByCode, extraByCode);
         if (window.Artwork._applyMediaGating) window.Artwork._applyMediaGating('#mp-detail-platforms', (this._detail || {}).image || '', (this._detail || {}).rating || '', ((this._detail || {}).media || {}).bytes || 0);   // 4.18.0 kind, 4.21.0 rating
 
@@ -1697,6 +1723,12 @@ window.Masterpieces = {
             categories = categories || { ...oldCats };
             categories.tum = { ...(categories.tum || {}), tum_label_categories: tumLabels };
         }
+        // Toyhouse characters (spec 062): only once the picker has loaded, so an unopened one keeps what's saved.
+        const thChars = A && A._collectThChars ? A._collectThChars() : null;
+        if (thChars && JSON.stringify((oldCats.th || {}).character_ids || []) !== JSON.stringify(thChars)) {
+            categories = categories || { ...oldCats };
+            categories.th = { ...(categories.th || {}), character_ids: thChars };
+        }
         // Stored per-announcer text (4.3.0) \u2014 merged into descriptions, never
         // replacing the map, and only when the record exposed it (else no box).
         let descriptions = null;
@@ -1725,6 +1757,29 @@ window.Masterpieces = {
         if (Object.keys(payload).length) await API.updateArtwork(name, payload);
     },
 
+    /* Spec 063: the version choice for Post, from the version being viewed (this._viewKey).
+     * `renders` is the confirm dialog's picker (empty when the piece declares no versions),
+     * `renderThumbs` the picture for each choice, `thumb` the one pre-ticked, and `warning` the
+     * plain line for a folder picture that isn't a version (it can't be posted as one). */
+    _versionChoice(name) {
+        const m = this._detail || {};
+        const view = this._viewKey;
+        const renders = window.Artwork ? window.Artwork._pubRenders(m, view) : [];
+        // A video / audio piece shows its poster, never the media file, as a picture.
+        const pic = f => ((m.media_kind || 'image') !== 'image'
+            ? (m.thumbnail ? this._canonUrl(name, m.thumbnail) : '') : this._canonUrl(name, f));
+        const original = m.image ? pic(m.image) : '';
+        const renderThumbs = { __auto__: original, __primary__: original };
+        (m.variants || []).forEach(v => { if (v && v.key && v.image) renderThumbs[v.key] = pic(v.image); });
+        const first = (renders.find(r => r.checked) || {}).key;
+        return {
+            renders, renderThumbs,
+            thumb: (first && renderThumbs[first]) || original,
+            warning: view === null
+                ? "This picture isn't a version of the piece yet. Name it as a version to post it." : '',
+        };
+    },
+
     async _publishNow(name) {
         const msg = document.getElementById('mp-pub-msg');
         const { platforms, accountIds, overrides } = this._publishSelection();
@@ -1732,10 +1787,17 @@ window.Masterpieces = {
         // Before _applyOverrides: that WRITES tag overrides into the record,
         // and a cancel after it would have silently changed the piece.
         const title = ((this._detail || {}).title) || name.replace(/_/g, ' ');
-        const thumb = (document.getElementById('mp-hero-img') || {}).src || '';
+        // Spec 063: ask which version, with the one being viewed ticked, and show what will
+        // actually post. The thumbnail used to be the hero's src, so it showed an alternate
+        // while the original went out.
+        const choice = this._versionChoice(name);
         const personaId = window.Artwork ? window.Artwork._personaId('#mp-detail-platforms') : null;
         const conf = await Components.confirmPublish({
-            title, thumb, subtitle: 'Masterpiece',
+            title, thumb: choice.thumb, subtitle: 'Masterpiece',
+            renders: choice.renders,
+            renderThumbs: choice.renderThumbs,
+            renderWait: window.Artwork ? window.Artwork._pubRenderWait(platforms) : 0,
+            warning: choice.warning,
             persona: window.Artwork ? window.Artwork._personaLabel('#mp-detail-platforms') : '',
             // 055: what each site would refuse or leave out, before the live post.
             targets: await Components.withPublishCheck(window.Artwork
@@ -1757,6 +1819,7 @@ window.Masterpieces = {
                 description_overrides: window.Artwork ? window.Artwork._pubDescOverrides(conf) : undefined,
                 comments: conf.comments,          // spec 021: absent = each site's default
                 journal: conf.journal,            // spec 027: absent = no journal
+                renders: conf.renders,            // spec 063: the ticked versions; absent = no versions declared
                 discord: window.Artwork ? window.Artwork._discordChoice() : undefined,   // spec 008
                 confirm_live: true,
                 ...extra,
@@ -1771,6 +1834,20 @@ window.Masterpieces = {
             else if (msg) msg.textContent = 'Some sites failed:';
         } catch (err) {
             if (msg) msg.textContent = 'Publish failed: ' + err.message;
+        }
+    },
+
+    /* Spec 063: the schedule form starts on the version being viewed; the original and a folder
+     * picture that isn't a version start on Automatic, the latter with the plain line why. */
+    _presetScheduleVersion() {
+        const sel = document.getElementById('mp-schedule-version');
+        const note = document.getElementById('mp-schedule-version-note');
+        const view = this._viewKey;
+        if (sel) sel.value = view && [...sel.options].some(o => o.value === view) ? view : '';
+        if (note) {
+            note.hidden = view !== null;
+            note.textContent = view === null
+                ? "This picture isn't a version of the piece yet. Name it as a version to post it." : '';
         }
     },
 
@@ -1789,12 +1866,18 @@ window.Masterpieces = {
         const isoStr = when.toISOString();
         if (msg) msg.textContent = 'Scheduling…';
         await this._applyOverrides(name, overrides);
+        // Spec 063: the version chosen in the form ("" Automatic). No select = the piece declares
+        // no versions, and the field is left out. ponytail: one version per scheduling action, and
+        // no rating pre-check here: a site that refuses the version says so when the post fires.
+        const versionSel = document.getElementById('mp-schedule-version');
+        const version = versionSel ? { variant_key: versionSel.value } : {};
         let ok = 0, fail = 0;
         for (const platform of platforms) {
             try {
                 await API.scheduleArtwork({
                     artwork_name: name, platform, scheduled_at: isoStr,
                     account_id: accountIds[platform],
+                    ...version,
                 });
                 ok++;
             } catch (err) { fail++; console.warn('Schedule failed for', platform, err); }
@@ -1836,9 +1919,14 @@ window.Masterpieces = {
             // Stored 'YYYY-MM-DD HH:MM:SS' is UTC; make it a real instant, then localise.
             const when = Utils.time.fmt.dateTime(it.scheduled_at);
             const plat = (window.PLATFORMS || []).find(p => p.code === it.platform);
+            // Spec 063: say which version goes out, unless it's Automatic.
+            const vk = it.variant_key || '';
+            const vdef = vk && ((this._detail || {}).variants || []).find(v => v && v.key === vk);
+            const vname = vk === '__primary__' ? 'the original' : vk ? ((vdef && vdef.label) || vk) : '';
             html += '<div class="schedule-pending-item">'
                 + '<span class="schedule-pending-icon">&#128340;</span> '
-                + this.esc(plat ? plat.name : it.platform) + ' &mdash; ' + this.esc(when)
+                + this.esc(plat ? plat.label : it.platform) + (vname ? ' &mdash; ' + this.esc(vname) : '')
+                + ' &mdash; ' + this.esc(when)
                 + ' <button class="btn btn-xs btn-outline" data-mp-sched-cancel="' + it.queue_id + '">Cancel</button>'
                 + '</div>';
         }
@@ -1945,6 +2033,7 @@ window.Masterpieces = {
                     if (!showing && input && !input.value && window.Artwork) {
                         input.value = window.Artwork._defaultScheduleLocal();
                     }
+                    if (!showing) this._presetScheduleVersion();
                 }
                 return;
             }
@@ -2012,6 +2101,10 @@ window.Masterpieces = {
                 if (bg) bg.src = alt.dataset.mpImg;
                 const vs = document.getElementById('mp-vstats');
                 if (vs) vs.textContent = alt.dataset.vstats || '';
+                // Spec 063: this is now the version Post and Schedule start from.
+                this._viewKey = alt.dataset.mpVkey !== undefined ? alt.dataset.mpVkey : null;
+                const schedForm = document.getElementById('mp-schedule-form');
+                if (schedForm && schedForm.style.display !== 'none') this._presetScheduleVersion();
                 document.querySelectorAll('.mp-altwrap, .mp-alt').forEach(x =>
                     x.classList.toggle('is-active', x === alt));
                 return;
@@ -2293,7 +2386,7 @@ window.Masterpieces = {
 
     _PLATFORM_LABELS: {
         fa: 'FurAffinity', ib: 'Inkbunny', e621: 'e621', sf: 'SoFurry',
-        ws: 'Weasyl', da: 'DeviantArt', fn: 'FurryNetwork', ik: 'Itaku', fbr: 'Furbooru', sc: 'SoundCloud', ng: 'Newgrounds', yt: 'YouTube',
+        ws: 'Weasyl', da: 'DeviantArt', fn: 'FurryNetwork', ik: 'Itaku', fbr: 'Furbooru', sc: 'SoundCloud', ng: 'Newgrounds', th: 'Toyhouse', yt: 'YouTube',
     },
 
     async _loadTagBudget() {

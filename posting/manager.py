@@ -251,6 +251,7 @@ _POSTER_CLASSES = {
     "pod": ("posting.platforms.podcast", "PodcastPoster"),
     "sc": ("posting.platforms.soundcloud", "SoundCloudPoster"),
     "ng": ("posting.platforms.newgrounds", "NewgroundsPoster"),
+    "th": ("posting.platforms.toyhouse", "ToyhousePoster"),
     "yt": ("posting.platforms.youtube", "YouTubePoster"),
     "tw": ("posting.platforms.twitter", "TwitterPoster"),
     "ik": ("posting.platforms.itaku", "ItakuPoster"),

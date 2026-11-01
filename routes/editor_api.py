@@ -12,6 +12,7 @@ import os
 import re
 import time
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -2197,7 +2198,8 @@ class DripRequest(BaseModel):
     moves: dict[int, str] | None = None   # Amendment A: {chapter: ISO time} — that chapter alone, moved on the calendar
     # WIREFLOW job 5: ["11:fa", …] — leave these chapter × site pairs out, so one chapter a site
     # refuses (e.g. its title is too long there) doesn't hold up the whole run. Unknown pairs are ignored.
-    skip: list[str] | None = Field(default=None, max_length=2000)
+    # Each entry capped at 32 chars (SEC061): a real pair is at most 5 digits + ":" + a site id.
+    skip: list[Annotated[str, Field(max_length=32)]] | None = Field(default=None, max_length=2000)
 
 
 def _already_there(conn, canonical: str, platforms: list[str]) -> dict[tuple[int, str], str]:

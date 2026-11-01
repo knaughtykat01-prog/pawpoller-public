@@ -14,7 +14,7 @@
 window.Artwork = {
 
     /* Image-capable platforms the hub posts to (v1), shown A–Z by name (SETUPALPHA). */
-    _PLATFORMS: window.sortByPlatformName(['ib', 'fa', 'sf', 'bsky', 'tw', 'ik', 'ws', 'da', 'e621', 'fbr', 'ig', 'fn', 'tg', 'pod', 'sc', 'ng', 'yt', 'fb', 'tum', 'thr']),
+    _PLATFORMS: window.sortByPlatformName(['ib', 'fa', 'sf', 'bsky', 'tw', 'ik', 'ws', 'da', 'e621', 'fbr', 'ig', 'fn', 'tg', 'pod', 'sc', 'ng', 'yt', 'fb', 'th', 'tum', 'thr']),
     /* The announcing platforms — a caption, links to where the piece already
      * lives, hashtags — and therefore the ones whose row carries the per-piece
      * options panel (Telegram since 4.0.10; X and Bluesky since 4.3.7). Mirrors
@@ -198,10 +198,12 @@ window.Artwork = {
                     </label>
                     ${ann ? this._tgOptRows(o, { ...(extras[code] || {}), code }) : ''}
                     ${code === 'tum' ? this._tumLabelRows(((extraByCode || {}).tum || {}).tum_label_categories) : ''}
+                    ${code === 'th' ? this._thCharRows(((extraByCode || {}).th || {}).character_ids) : ''}
                 </details>
             </div>`;
         }).join('') + '<div data-discord-slot></div>';
         this._fillDiscordRow(el, opts.discord || {}, extras.discord || {});
+        this._wireThChars(el);
     },
 
     /* The Discord row (4.41.0, spec 008). Not a platform: a tick for "announce this
@@ -247,6 +249,8 @@ window.Artwork = {
         });
         const tl = this._collectTumLabels();          // Tumblr's Mature label ticks (spec 024)
         if (tl) out.tum = { ...(out.tum || {}), tum_label_categories: tl };
+        const tc = this._collectThChars();            // Toyhouse characters (spec 062)
+        if (tc) out.th = { ...(out.th || {}), character_ids: tc };
         return out;
     },
 
@@ -311,15 +315,21 @@ window.Artwork = {
        default — because the picker is sent for every piece that has a render, and a
        default of "Original" would silently switch 4.33.0's rating routing off for
        exactly the pieces it exists to serve. Ticking a version adds a submission; it
-       never takes the automatic one away. */
-    _pubRenders(meta) {
+       never takes the automatic one away.
+
+       `viewKey` (spec 063): the version the piece page is showing. A declared version's key
+       ticks that version INSTEAD of Automatic, so Post sends what the person was looking at;
+       the original ('') or an undeclared folder picture (null) keeps Automatic. */
+    _pubRenders(meta, viewKey) {
         const vs = (meta && meta.variants || []).filter(v => v && v.key && v.image);
         if (!vs.length) return [];
-        return [{ key: '__auto__', checked: true,
+        const viewed = viewKey && vs.some(v => v.key === viewKey) ? viewKey : '';
+        return [{ key: '__auto__', checked: !viewed,
                   label: 'Automatic — the fullest version each site allows' },
                 { key: '__primary__', label: 'The original',
                   rating: (meta && meta.rating) || '' }]
-            .concat(vs.map(v => ({ key: v.key, label: v.label || v.key, rating: v.rating || '' })));
+            .concat(vs.map(v => ({ key: v.key, label: v.label || v.key, rating: v.rating || '',
+                                   ...(v.key === viewed ? { checked: true } : {}) })));
     },
 
     /* The longest enforced gap between posts among the chosen sites, in seconds —
@@ -905,6 +915,43 @@ window.Artwork = {
         return `<div class="field"><span>Tumblr's Mature label (only for Mature pieces)</span>
             <div>${box('sexual_themes', 'Sexual themes')}${box('violence', 'Violence')}${box('drug_use', 'Drug and alcohol use')}</div>
             <small style="color:var(--text-muted)">A Mature piece goes up as a draft with this label and is published once Tumblr shows the label on it.</small></div>`;
+    },
+    /* Toyhouse's character picker (spec 062). The list is read from Toyhouse only when the row's
+     * Override is opened, so opening the post form never touches the site. */
+    _thCharRows(saved) {
+        const ids = Array.isArray(saved) ? saved.map(String) : [];
+        return `<div class="field art-th-chars" data-saved="${this.esc(JSON.stringify(ids))}">
+            <span>Toyhouse characters (pick at least one; the image is added to each one's gallery)</span>
+            <div class="art-th-list" style="color:var(--text-muted);font-size:13px">${ids.length ? ids.length + ' picked. ' : ''}Loading when opened…</div></div>`;
+    },
+    _wireThChars(el) {
+        const box = el && el.querySelector('.art-th-chars');
+        const det = box && box.closest('details');
+        if (!det) return;
+        det.addEventListener('toggle', async () => {
+            if (!det.open || box.dataset.loaded) return;
+            box.dataset.loaded = '1';
+            const list = box.querySelector('.art-th-list');
+            let saved = [];
+            try { saved = JSON.parse(box.dataset.saved || '[]'); } catch (e) { saved = []; }
+            const sel = document.querySelector('.art-acct-select[data-platform="th"]');
+            try {
+                const r = await API.getTHCharacters(sel && sel.value ? { account_id: sel.value } : undefined);
+                const chars = r.characters || [];
+                list.innerHTML = chars.length ? chars.map(c => `<label style="display:inline-flex;gap:6px;align-items:center;margin-right:14px">
+                    <input type="checkbox" class="art-th-char" value="${this.esc(String(c.id))}"${saved.includes(String(c.id)) ? ' checked' : ''}> ${this.esc(c.name)}</label>`).join('')
+                    : 'No characters on this Toyhouse account yet. Make one on Toyhouse first.';
+                box.dataset.ready = '1';
+            } catch (e) {
+                delete box.dataset.loaded;
+                list.textContent = 'Could not load your Toyhouse characters. Close and open this again to retry.';
+            }
+        });
+    },
+    _collectThChars() {
+        const box = document.querySelector('.art-th-chars');
+        if (!box || !box.dataset.ready) return null;
+        return Array.from(box.querySelectorAll('.art-th-char')).filter(b => b.checked).map(b => b.value);
     },
     _collectTumLabels() {
         const boxes = document.querySelectorAll('.art-tum-label');

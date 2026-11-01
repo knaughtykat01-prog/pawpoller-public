@@ -822,6 +822,8 @@ def build_artwork_package(
                # line (Telegram's sendAudio). The credit TEXT still comes from artist_credit.
                **({"artist_name": artwork.artist["name"]}
                   if isinstance(artwork.artist, dict) and artwork.artist.get("name") else {}),
+               # spec 062: Toyhouse credits the artist in its own credit field, not the caption.
+               **({"artist": artist, "artist_is_self": self_row is not None} if platform == "th" else {}),
                # Where this piece is already live, for the announcement to link
                # to (4.3.0). Only the announcing platform pays the query.
                **(_artwork_links(artwork.name, exclude=platform) if platform in _ANNOUNCERS else {})},

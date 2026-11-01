@@ -184,9 +184,11 @@ class TwitterPoster(PlatformPoster):
             await client.close()
 
         if r and r.get("id"):
+            logger.info("TW: posted %s", r["id"])    # every other poster logs its success; X was silent
             return PostResult(success=True, external_id=str(r["id"]),
                               external_url=r.get("url", ""), duration_seconds=self._elapsed(_t))
         # What X actually said (4.3.4/4.3.5), never a guess.
+        logger.warning("TW: the post was refused: %s", client.last_error or "no reason given")
         return PostResult(success=False, duration_seconds=self._elapsed(_t),
                           error=client.last_error or "X rejected the post and gave no reason (check logs)")
 

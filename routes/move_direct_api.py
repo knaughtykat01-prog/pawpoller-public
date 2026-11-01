@@ -37,6 +37,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette.requests import ClientDisconnect
 
 import config
 from routes import move_api
@@ -351,10 +352,16 @@ def _checked(request: Request, body: bytes) -> dict:
 
 async def _body(request: Request, cap: int) -> bytes:
     buf = bytearray()
-    async for chunk in request.stream():                # never buffer more than a piece
-        buf += chunk
-        if len(buf) > cap:
-            raise HTTPException(413, detail="That's too big.")
+    try:
+        async for chunk in request.stream():            # never buffer more than a piece
+            buf += chunk
+            if len(buf) > cap:
+                raise HTTPException(413, detail="That's too big.")
+    except ClientDisconnect:
+        # A line that drops mid-piece is routine (the sender waits it out and resends the piece), so it
+        # gets one log line, not an unhandled-exception traceback.
+        logger.info("Direct move: the sender hung up part-way through a request (%d bytes in).", len(buf))
+        raise HTTPException(408, detail="The request was cut short.") from None   # 408: the sender retries it
     return bytes(buf)
 
 

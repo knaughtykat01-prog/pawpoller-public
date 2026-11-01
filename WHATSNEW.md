@@ -2,6 +2,19 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.88.4] - 2026-11-01 - Toyhouse, and Inkbunny posts first time
+
+> - New: Toyhouse. Post pictures to your characters, and see each character's favourites, comments and image count.
+> - Add Toyhouse from the Accounts page; it isn't offered in the setup steps yet. Toyhouse literature isn't supported yet.
+> - Posting a piece now asks which version to post, with the one you're looking at already ticked.
+> - Scheduling a piece posts the version you chose, and the scheduled list says which one.
+> - A piece's scheduled list names the site each post goes to (it showed only the time).
+> - Posting to Inkbunny no longer fails once with a "session" error before going through on the retry.
+> - Posting to X now says in the log whether it worked.
+> - Scheduling a story's chapters turns away a malformed request straight away.
+> - Sending your PawPoller straight to a hosted seat no longer fills the seat's log with an error when the line drops for a moment.
+> - Newgrounds milestone alerts now count your Newgrounds work, and Newgrounds activity alerts follow the Newgrounds switch, not the SoFurry one.
+
 ## [4.88.3] - 2026-10-29 - Smoother posting flows
 
 > - Scheduling a piece of art for later works again (it stopped with a server error).
@@ -210,10 +223,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Digests leave out empty lines, and a new account's first digest no longer counts its whole history as one week's growth.
 > - Polls on big galleries finish their milestone check faster.
 > - Also includes the 4.79.2 fixes below: the What's-new popup, account names in the log, and Telegram failures now logged.
-
-## [4.79.2] - 2026-10-17 - Small fixes
-
-> - The "What's new" popup works again on hosted seats and downloaded installs.
-> - The server log now names the account on every line a poll writes, so you can tell whose poll did what.
-> - Clearer wording for the Cloudflare relay switches in Settings.
-> - Telegram notifications that Telegram turns away are now noted in the log instead of vanishing. Over-long digests are trimmed to fit, and alerts with odd characters in a title arrive as plain text.

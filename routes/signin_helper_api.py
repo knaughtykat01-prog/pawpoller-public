@@ -60,7 +60,7 @@ FAIL_BUDGET = (20, 600)        # wrong tries from anyone in the window → every
 BLOCK_SECS = 900               # …and no new code for this long
 PER_ADDR = (10, 600)           # helper requests per address (IPv6 /64) per window
 BODY_CAP = 16 * 1024
-CODE_PLATFORMS = ("fa", "tw", "ng", "ik")   # see the module docstring for DA and the check-only sites
+CODE_PLATFORMS = ("fa", "tw", "ng", "ik", "th")   # see the module docstring for DA and the check-only sites
 
 NOT_VALID = "That code isn't valid or has run out."
 NEEDS_TLS = "Your server needs https or Tailscale for this."
@@ -255,6 +255,17 @@ async def _who(platform: str, creds: dict, stored: str) -> tuple[bool, str, str]
         if not who:
             return False, "", "Newgrounds didn't accept that sign-in."
         return same_ng_user(who, stored), who, ""
+    if platform == "th":
+        from clients.th.client import THClient, same_th_user
+        client = THClient(username=stored, cookie=creds.get("th_cookie", ""))
+        try:
+            out = await client.validate_session()
+        finally:
+            await client.close()
+        who = out.get("username") or ""
+        if not who:
+            return False, "", "Toyhouse didn't accept that sign-in."
+        return same_th_user(who, stored), who, ""
     if platform == "ik":
         from clients.ik.client import IKClient
         client = IKClient(target_user=stored)

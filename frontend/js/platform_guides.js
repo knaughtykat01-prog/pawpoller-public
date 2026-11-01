@@ -558,6 +558,30 @@
       ],
     },
 
+    // ── Toyhouse (spec 062) ──────────────────────────────────
+    th: {
+      kind: 'Analytics + posting', difficulty: 'Easy',
+      summary: 'Post artwork to your Toyhouse characters, and track each image\'s and character\'s favourites and comments.',
+      need: ['A Toyhouse account with at least one character'],
+      steps: [
+        APP_FIRST('Toyhouse'),
+        { t: 'Add Toyhouse', b: 'On the <b>Accounts</b> page, add a Toyhouse account and type your Toyhouse username.' },
+        { t: 'Sign in', b: 'Press <b>Sign in</b>. Toyhouse\'s own sign-in page opens. Sign in there and the window closes by itself.' },
+        { t: 'No Sign in button? Sign in on the website', b: 'Sign in at toyhou.se in your own browser.',
+          link: { label: 'toyhou.se', url: 'https://toyhou.se/~account/login' } },
+        ...cookieSteps('Toyhouse', 'the cookie named <code>laravel_session</code>', {}),
+        { t: 'Paste it in PawPoller', b: 'On the <b>Accounts</b> page, press <b>🔑 Sign in</b> on the Toyhouse account and paste the <code>laravel_session</code> value into the <code>th_cookie</code> box, then save.' },
+        { t: 'Pick characters when you post', b: 'When you post a piece, tick Toyhouse, open its <b>Override</b>, and tick the characters the image belongs to.' },
+      ],
+      paste: 'Accounts → Toyhouse → Sign in (or the laravel_session cookie)',
+      renew: { when: 'When Toyhouse signs you out', how: 'Press Sign in on the Accounts page again, or paste a fresh laravel_session cookie.' },
+      notes: [
+        'Toyhouse shows no view counts, so PawPoller tracks favourites and comments.',
+        'Content flags are filled in from the piece\'s rating and tags: Adult is marked Explicit, Mature is marked Mild. Mature or Adult work tagged as showing someone underage is refused, as Toyhouse\'s rules require.',
+        'No "Posted via PawPoller" line is added on Toyhouse.',
+      ],
+    },
+
     // ── Newgrounds (4.28.1) ──────────────────────────────────
     ng: {
       kind: 'Analytics + posting', difficulty: 'Medium',

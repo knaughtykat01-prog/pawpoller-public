@@ -37,7 +37,7 @@ _lock = threading.Lock()
 
 # Platforms with a real validate_session() network check. Order = check order.
 CHECKABLE: tuple[str, ...] = ("ao3", "sf", "sqw", "bsky", "mast", "tum", "pix",
-                              "thr", "ig", "e621", "fn", "fbr", "r34", "tg", "sc", "ng", "yt",
+                              "thr", "ig", "e621", "fn", "fbr", "r34", "tg", "sc", "ng", "th", "yt",
                               "pic", "ttv", "tw", "fb")
 
 # Human labels for log/UI fallback (the frontend has its own map too).
@@ -45,7 +45,7 @@ LABELS = {
     "ao3": "AO3", "sf": "SoFurry", "sqw": "SquidgeWorld", "bsky": "Bluesky",
     "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads",
     "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "r34": "Rule34.xxx", "sc": "SoundCloud",
-    "ng": "Newgrounds", "yt": "YouTube", "pic": "Picarto", "ttv": "Twitch",
+    "ng": "Newgrounds", "th": "Toyhouse", "yt": "YouTube", "pic": "Picarto", "ttv": "Twitch",
     "tg": "Telegram", "tw": "X/Twitter", "fb": "Facebook",
 }
 
@@ -96,6 +96,8 @@ def _configured(code: str, s: dict) -> bool:
         return bool(s.get("sc_client_id") and s.get("sc_client_secret") and s.get("sc_refresh_token"))
     if code == "ng":
         return bool(s.get("ng_cookie"))
+    if code == "th":
+        return bool(s.get("th_cookie"))
     if code == "yt":
         return bool(s.get("yt_client_id") and s.get("yt_client_secret") and s.get("yt_refresh_token"))
     if code == "tw":
@@ -286,6 +288,15 @@ async def _validate(code: str, s: dict):
         # right account) counts as valid here.
         from polling.ng_poller import _get_or_create_client
         c = _get_or_create_client({"ng_username": s.get("ng_username", ""), "ng_cookie": s.get("ng_cookie", "")})
+        return bool((await c.validate_session()).get("ok"))
+    elif code == "th":
+        # A bot check raises (THChallenged) and lands as "error" (amber), never as "expired" (FR-SEC-008).
+        from clients.th.client import THChallenged
+        from polling import fa_standdown
+        if fa_standdown.remaining("th") > 0:      # don't knock while Toyhouse is turning us away
+            raise THChallenged(f"Toyhouse's bot check is on; next try around {fa_standdown.next_try_text('th')}")
+        from polling.th_poller import _get_or_create_client as _th_client
+        c = _th_client({"th_username": s.get("th_username", ""), "th_cookie": s.get("th_cookie", "")})
         return bool((await c.validate_session()).get("ok"))
     else:
         raise ValueError(f"unknown platform {code}")

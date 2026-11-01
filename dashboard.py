@@ -43,6 +43,7 @@ from routes.e621_api import e621_router
 from routes.fn_api import fn_router
 from routes.sc_api import sc_router
 from routes.ng_api import ng_router
+from routes.th_api import th_router
 from routes.yt_api import yt_router
 from routes.pic_api import pic_router
 from routes.ttv_api import ttv_router, ttv_hooks_router
@@ -774,6 +775,7 @@ app.include_router(e621_router)  # e621 routes (/api/e621/*)
 app.include_router(fn_router)    # FurryNetwork routes (/api/fn/*)
 app.include_router(sc_router)    # SoundCloud routes (/api/sc/*), MEDIAPLATS (4.22.0)
 app.include_router(ng_router)    # Newgrounds routes (/api/ng/*), MEDIAPLATS (4.23.0)
+app.include_router(th_router)    # Toyhouse routes (/api/th/*), spec 062
 app.include_router(yt_router)    # YouTube routes (/api/yt/*), MEDIAPLATS (4.24.0)
 app.include_router(pic_router)   # Picarto routes (/api/pic/*), spec 013 (4.46.0)
 app.include_router(ttv_router)   # Twitch routes (/api/ttv/*), spec 045

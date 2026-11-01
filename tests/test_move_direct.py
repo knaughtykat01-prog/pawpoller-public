@@ -411,3 +411,20 @@ def test_a_second_piece_while_one_is_in_flight_waits(pair, monkeypatch):
     p = pair
     p["use"](p["new"])
     assert p["c"].put(f"/api/move/direct/{'a' * 32}?offset=0", content=b"x").status_code == 425
+
+
+def test_a_sender_that_hangs_up_mid_piece_is_a_quiet_408(caplog):
+    """A dropped line mid-piece was an unhandled ClientDisconnect, logged as a 500 traceback."""
+    import asyncio
+    from fastapi import HTTPException
+    from starlette.requests import ClientDisconnect
+
+    class _Gone:
+        async def stream(self):
+            yield b"x" * 10
+            raise ClientDisconnect()
+
+    with caplog.at_level("INFO", logger="routes.move_direct_api"), pytest.raises(HTTPException) as e:
+        asyncio.run(md._body(_Gone(), 1024))
+    assert e.value.status_code == 408
+    assert "hung up part-way" in caplog.text and "10 bytes in" in caplog.text

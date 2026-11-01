@@ -49,6 +49,7 @@ _E621_SCHEMA_PATH = config.resource_path("database/e621_schema.sql")  # e621 tab
 _FN_SCHEMA_PATH = config.resource_path("database/fn_schema.sql")      # FurryNetwork tables
 _SC_SCHEMA_PATH = config.resource_path("database/sc_schema.sql")      # SoundCloud tables (4.22.0)
 _NG_SCHEMA_PATH = config.resource_path("database/ng_schema.sql")      # Newgrounds tables (4.23.0)
+_TH_SCHEMA_PATH = config.resource_path("database/th_schema.sql")      # Toyhouse tables (spec 062)
 _YT_SCHEMA_PATH = config.resource_path("database/yt_schema.sql")      # YouTube tables (4.24.0)
 _PIC_SCHEMA_PATH = config.resource_path("database/pic_schema.sql")    # Picarto tables (4.46.0, spec 013)
 _TTV_SCHEMA_PATH = config.resource_path("database/ttv_schema.sql")    # Twitch tables (spec 045)
@@ -171,6 +172,9 @@ def init_db() -> None:
         conn.executescript(sc_schema_sql)
         ng_schema_sql = _NG_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(ng_schema_sql)
+        conn.executescript(_TH_SCHEMA_PATH.read_text(encoding="utf-8"))
+        from database import th_queries
+        th_queries.ensure_th_columns(conn)
         yt_schema_sql = _YT_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(yt_schema_sql)
         conn.executescript(_PIC_SCHEMA_PATH.read_text(encoding="utf-8"))

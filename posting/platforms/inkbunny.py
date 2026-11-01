@@ -24,6 +24,7 @@ import logging
 
 import config
 from clients.ib.client import InkbunnyClient
+from database import queries
 from database.db import get_connection
 from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
 
@@ -67,15 +68,23 @@ class InkbunnyPoster(PlatformPoster):
             password = creds.get("password", "")
             if not username or not password:
                 raise RuntimeError("Inkbunny credentials not configured")
-            # Reuse this account's cached SID (no longer the singleton id=1).
-            row = conn.execute(
-                "SELECT sid FROM session_cache WHERE account_id = ?", (acct_id,)).fetchone()
-            cached_sid = row["sid"] if row else None
+            # Reuse this account's cached session, user_id included: without it ensure_session
+            # logs in again even when the SID is still good, and a just-made SID was once refused
+            # by the upload a second later ("Invalid Session ID"; fine a minute on).
+            cached = queries.get_cached_session(conn, acct_id)
         finally:
             conn.close()
 
         self._client = InkbunnyClient(username=username, password=password)
-        await self._client.ensure_session(cached_sid)
+        if cached and cached.get("user_id"):
+            self._client.user_id = cached["user_id"]
+        sid = await self._client.ensure_session(cached["sid"] if cached else None)
+        if not cached or sid != cached["sid"] or not cached.get("user_id"):
+            conn = get_connection()          # a fresh login: keep it, as the poller does
+            try:
+                queries.save_session(conn, acct_id, sid, username, self._client.user_id)
+            finally:
+                conn.close()
         return self._client
 
     async def post(self, package: StoryUploadPackage) -> PostResult:

@@ -1418,6 +1418,12 @@ const App = {
             this.renderNGDetail(parts[2]);
         } else if (parts[0] === 'ng' && parts[1] === 'compare') {
             this.renderNGCompare();
+        } else if (parts[0] === 'th' && (!parts[1] || parts[1] === '')) {
+            this.renderTHDashboard();
+        } else if (parts[0] === 'th' && parts[1] === 'submissions' && !parts[2]) {
+            this.renderTHSubmissions();
+        } else if (parts[0] === 'th' && parts[1] === 'submission' && parts[2]) {
+            this.renderTHDetail(parts[2]);
         } else if (parts[0] === 'yt' && (!parts[1] || parts[1] === '')) {
             this.renderYTDashboard();
         } else if (parts[0] === 'yt' && parts[1] === 'submissions' && !parts[2]) {
@@ -1973,6 +1979,7 @@ const App = {
                 { key: 'fn', auth: auth.fnAuth?.has_credentials, name: 'FurryNetwork', statusFn: 'getFNStatus', logFn: 'getFNPollLog', tableFn: 'fnPollLogTable' },
                 { key: 'sc', auth: auth.scAuth?.has_credentials, name: 'SoundCloud', statusFn: 'getSCStatus', logFn: 'getSCPollLog', tableFn: 'scPollLogTable' },
                 { key: 'ng', auth: auth.ngAuth?.has_credentials, name: 'Newgrounds', statusFn: 'getNGStatus', logFn: 'getNGPollLog', tableFn: 'ngPollLogTable' },
+                { key: 'th', auth: !!(window.PlatformHealth && (window.PlatformHealth.get('th') || {}).configured), name: 'Toyhouse', statusFn: 'getTHStatus', logFn: 'getTHPollLog', tableFn: 'ngPollLogTable' },
                 { key: 'yt', auth: auth.ytAuth?.has_credentials, name: 'YouTube', statusFn: 'getYTStatus', logFn: 'getYTPollLog', tableFn: 'ytPollLogTable' },
                 { key: 'pic', auth: auth.picAuth?.has_credentials, name: 'Picarto', statusFn: 'getPICStatus', logFn: 'getPICPollLog', tableFn: 'picPollLogTable' },
                 { key: 'ttv', auth: auth.ttvAuth?.has_credentials, name: 'Twitch', statusFn: 'getTTVStatus', logFn: 'getTTVPollLog', tableFn: 'ttvPollLogTable' },
@@ -2153,7 +2160,7 @@ const App = {
     _platformLabels: {
         ib: 'Inkbunny', fa: 'FurAffinity', ws: 'Weasyl', sf: 'SoFurry',
         sqw: 'SquidgeWorld', ao3: 'AO3', da: 'DeviantArt', wp: 'Wattpad',
-        ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon', tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram', e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru', r34: 'Rule34.xxx', sc: 'SoundCloud', ng: 'Newgrounds', yt: 'YouTube', pic: 'Picarto', ttv: 'Twitch',
+        ik: 'Itaku', bsky: 'Bluesky', tw: 'X/Twitter', mast: 'Mastodon', tum: 'Tumblr', pix: 'Pixiv', thr: 'Threads', ig: 'Instagram', e621: 'e621', fn: 'FurryNetwork', fbr: 'Furbooru', r34: 'Rule34.xxx', sc: 'SoundCloud', ng: 'Newgrounds', th: 'Toyhouse', yt: 'YouTube', pic: 'Picarto', ttv: 'Twitch',
         tg: 'Telegram',
     },
 
@@ -2165,7 +2172,7 @@ const App = {
         // Mirrors polling/session_check.py::CHECKABLE. Telegram's bot token
         // does not expire, but the bot can be removed from the channel — the
         // check catches that, which is otherwise invisible until a post fails.
-        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'r34', 'tg', 'sc', 'ng', 'yt', 'pic', 'ttv', 'fb'];
+        const CHECKABLE = ['ao3', 'sf', 'sqw', 'bsky', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'r34', 'tg', 'sc', 'ng', 'th', 'yt', 'pic', 'ttv', 'fb'];
         const LABELS = (window.PlatformHealth && window.PlatformHealth.LABELS) || {};
         const DOT = { valid: 'connected', expired: 'disconnected', error: 'warn', unconfigured: 'muted' };
         const WORD = { valid: 'Valid', expired: 'Expired', error: 'Unverified', unconfigured: 'Not configured' };
@@ -2265,7 +2272,7 @@ const App = {
      * Falls back to the cached snapshot only if the health fetch fails/empty. */
     async _configuredPollCodes() {
         const ALL = ['ib', 'fa', 'ws', 'sf', 'sqw', 'ao3', 'da', 'wp', 'ik',
-            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'r34', 'tg', 'sc', 'ng', 'yt', 'pic', 'ttv', 'fb'];
+            'bsky', 'tw', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'fn', 'fbr', 'r34', 'tg', 'sc', 'ng', 'th', 'yt', 'pic', 'ttv', 'fb'];
         try {
             const health = await API.getPlatformsHealth();
             if (health && typeof health === 'object') {
@@ -2378,7 +2385,7 @@ const App = {
         if (!confirm(`Full resync re-fetches every ${label} submission from scratch. This can take several minutes and will hit ${label}'s rate limits hard. Continue?`)) return;
         btn.disabled = true;
         btn.textContent = 'Syncing...';
-        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', r34: 'fullR34Resync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync', ttv: 'fullTTVResync', fb: 'fullFBResync' };
+        const fns = { ib: 'fullResync', fa: 'fullFAResync', ws: 'fullWSResync', sf: 'fullSFResync', sqw: 'fullSQWResync', ao3: 'fullAO3Resync', da: 'fullDAResync', wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync', mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync', thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync', fn: 'fullFNResync', fbr: 'fullFBRResync', r34: 'fullR34Resync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', th: 'fullTHResync', yt: 'fullYTResync', pic: 'fullPICResync', ttv: 'fullTTVResync', fb: 'fullFBResync' };
         try {
             await API[fns[platform]]();
             btn.textContent = 'Done!';
@@ -12234,6 +12241,158 @@ const App = {
         }
     },
 
+    // ── Toyhouse Dashboard / Images / Detail (spec 062): Newgrounds' pages without views or Compare.
+    //    Characters first (Amendment B, FR-009c): Toyhouse is a character site, and its favourites and
+    //    comments live on characters. Image numbers only where Toyhouse shows them. No view counts. ──
+
+    async renderTHDashboard() {
+        const token = this._routeToken();
+        this._loading();
+        try {
+            const [summary, agg, chars] = await Promise.all([
+                API.getTHSummary({ account_id: this._acctId('th') }),
+                API.getTHCharacterAggregate({ ...Utils.getDateRange(this._dateRange), account_id: this._acctId('th') }),
+                API.getTHSavedCharacters({ account_id: this._acctId('th') }).catch(() => ({ characters: [] })),
+            ]);
+            const thHealth = window.PlatformHealth && window.PlatformHealth.get('th');
+            const isUnconfigured = thHealth && thHealth.configured === false;
+            if (isUnconfigured || ((summary.total_submissions || 0) === 0 && !(chars.characters || []).length)) {
+                if (this._stale(token)) return;
+                this._setContent(`
+                    ${this._refreshIndicatorHtml()}
+                    <div class="page-header"><h1>Toyhouse Dashboard</h1></div>
+                    ${Components.platformEmptyState('th', isUnconfigured ? {} : { reason: 'Toyhouse is connected but nothing has been polled yet. The first poll may still be running.' })}
+                `);
+                return;
+            }
+            // Most favourited first. ponytail: one fixed order, not a clickable sort.
+            const byFaves = [...(chars.characters || [])].sort((a, b) =>
+                (b.favorites_count || 0) - (a.favorites_count || 0) || String(a.name).localeCompare(String(b.name)));
+            // A character whose page hasn't been read yet (it waits its turn, FR-009b) shows a dash, not a 0.
+            const num = (c, k) => (c.read_at || c[k]) ? Utils.formatNumber(c[k] || 0) : '—';
+            const charRows = byFaves.map(c => `<tr><td>${Utils.escapeHtml(c.name)}</td>
+                <td>${num(c, 'favorites_count')}</td><td>${num(c, 'comments_count')}</td>
+                <td>${num(c, 'images_count')}</td></tr>`).join('');
+            const imageNote = summary.image_counts_known ? '' : `<p class="muted">Toyhouse doesn't show favourites
+                or comment counts for your images, only for your characters.</p>`;
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h1>Toyhouse Dashboard</h1>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary" data-poll="th">Poll Now</button>
+                        <button class="btn btn-secondary" data-export="th">Export CSV</button>
+                    </div>
+                </div>
+                <div class="stats-grid">
+                    ${Components.statCard('Character Favourites', summary.character_favorites || 0)}
+                    ${Components.statCard('Character Comments', summary.character_comments || 0)}
+                    ${Components.statCard('Characters', summary.characters || (chars.characters || []).length)}
+                    ${Components.statCard('Images', summary.total_submissions, null, '#/th/submissions')}
+                </div>
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-container">
+                    <h3>Character Favourites Over Time</h3>
+                    <div class="chart-wrap"><canvas id="chart-agg-faves"></canvas></div>
+                </div>
+                ${charRows ? `<div class="chart-container"><h3>Characters</h3><table class="data-table">
+                    <thead><tr><th>Character</th><th>Favourites</th><th>Comments</th><th>Images</th></tr></thead>
+                    <tbody>${charRows}</tbody></table></div>` : ''}
+                ${summary.image_counts_known ? `<div class="chart-row">
+                    <div class="chart-container"><h3>Most Favourited Images</h3>${Components.ngTopList(summary.top_faved, 'favorites_count', 'title', 'submission_id', 'th')}</div>
+                    <div class="chart-container"><h3>Fastest Growing Images (24h)</h3>${Components.ngTopList(summary.fastest_growing, 'favorites_gained', 'title', 'submission_id', 'th')}</div>
+                </div>` : imageNote}
+            `;
+            if (this._stale(token)) return;
+            this._setContent(html);
+            if (agg.snapshots && agg.snapshots.length > 0) {
+                // The character totals, under the chart's own metric names so its labels and colours apply.
+                Charts.aggregateLine('chart-agg-faves', agg.snapshots.map(t => ({ polled_at: t.polled_at,
+                    favorites_count: t.character_favorites, comments_count: t.character_comments })),
+                ['favorites_count', 'comments_count']);
+            }
+            this._bindDateRange(() => this.renderTHDashboard());
+            this._startAutoRefresh(() => this.renderTHDashboard());
+        } catch (err) {
+            if (this._stale(token)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading the Toyhouse dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderTHSubmissions() {
+        const _rt = this._routeToken();
+        this._loading();
+        try {
+            const data = await API.getTHSubmissions({ sort_by: 'favorites_count', order: 'desc', account_id: this._acctId('th') });
+            const grid = (subs) => Components.submissionCardGrid(subs, {
+                idKey: 'submission_id', titleKey: 'title', thumbKey: 'thumbnail_url', proxyThumb: false,
+                detailRoute: '/th/submission', dateKey: 'posted_at',
+                stats: [
+                    { key: 'favorites_count', deltaKey: 'favorites_delta', label: 'favourites' },
+                    { key: 'comments_count', deltaKey: 'comments_delta', label: 'comments' },
+                ],
+            });
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header"><h1>Toyhouse Images</h1></div>
+                <div class="toolbar"><input type="text" class="search-input" id="search-input" placeholder="Search by character..."></div>
+                <div id="grid-container">${grid(data.submissions)}</div>
+            `;
+            if (this._stale(_rt)) return;
+            this._setContent(html);
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) searchInput.addEventListener('input', () => {
+                const q = searchInput.value.toLowerCase();
+                document.getElementById('grid-container').innerHTML =
+                    grid(data.submissions.filter(s => (s.title || '').toLowerCase().includes(q)));
+            });
+            this._startAutoRefresh(() => this.renderTHSubmissions());
+        } catch (err) {
+            if (this._stale(_rt)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading Toyhouse images</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    async renderTHDetail(postId) {
+        const _rt = this._routeToken();
+        this._loading();
+        try {
+            const data = await API.getTHSubmission(postId);
+            const sub = data.submission;
+            const html = `
+                ${this._refreshIndicatorHtml()}
+                <a href="#/th/submissions" class="back-link">&larr; Back to Toyhouse Images</a>
+                <div class="detail-header">
+                    ${sub.thumbnail_url ? `<img class="detail-thumb" src="${Utils.escapeHtml(Utils.safeUrl(sub.thumbnail_url) || '')}" alt="" style="max-width:160px;border-radius:8px;margin-right:16px">` : ''}
+                    <div class="detail-info">
+                        <h2>${Utils.escapeHtml(sub.title)}</h2>
+                        <div class="detail-meta">${Utils.escapeHtml(sub.posted_at || '')}</div>
+                        <div class="detail-meta"><a href="${Utils.escapeHtml(Utils.safeUrl(sub.link) || '#')}" target="_blank" rel="noopener">View on Toyhouse</a></div>
+                        <div class="detail-stats">
+                            <div class="detail-stat">${Utils.formatNumber(sub.favorites_count || 0)} <span class="lbl">favourites</span></div>
+                            <div class="detail-stat">${Utils.formatNumber(sub.comments_count || 0)} <span class="lbl">comments</span></div>
+                        </div>
+                    </div>
+                </div>
+                ${Components.dateRangeBar(this._dateRange)}
+                <div class="chart-container"><h3>Over Time</h3><div class="chart-wrap"><canvas id="chart-detail"></canvas></div></div>
+            `;
+            if (this._stale(_rt)) return;
+            this._setContent(html);
+            if (data.snapshots && data.snapshots.length > 0) {
+                Charts.submissionLine('chart-detail', data.snapshots, ['favorites_count', 'comments_count']);
+            }
+            this._bindDateRange(async () => {
+                const snaps = await API.getTHSnapshots(postId, Utils.getDateRange(this._dateRange));
+                Charts.submissionLine('chart-detail', snaps.snapshots, ['favorites_count', 'comments_count']);
+            });
+            this._startAutoRefresh(() => this.renderTHDetail(postId));
+        } catch (err) {
+            if (this._stale(_rt)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading the Toyhouse image</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
     // ── Newgrounds Dashboard / Submissions / Detail / Compare (4.23.0, cloned from SoundCloud's) ──
 
     async renderNGDashboard() {
@@ -19474,7 +19633,7 @@ const App = {
                         wp: 'triggerWPPoll', ik: 'triggerIKPoll', bsky: 'triggerBSKYPoll', tw: 'triggerTWPoll',
                         mast: 'triggerMASTPoll', tum: 'triggerTUMPoll', pix: 'triggerPIXPoll',
                         thr: 'triggerTHRPoll', ig: 'triggerIGPoll', e621: 'triggerE621Poll',
-                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', r34: 'triggerR34Poll', tg: 'triggerTGPoll', sc: 'triggerSCPoll', ng: 'triggerNGPoll', yt: 'triggerYTPoll', pic: 'triggerPICPoll', ttv: 'triggerTTVPoll', fb: 'triggerFBPoll' };
+                        fn: 'triggerFNPoll', fbr: 'triggerFBRPoll', r34: 'triggerR34Poll', tg: 'triggerTGPoll', sc: 'triggerSCPoll', ng: 'triggerNGPoll', th: 'triggerTHPoll', yt: 'triggerYTPoll', pic: 'triggerPICPoll', ttv: 'triggerTTVPoll', fb: 'triggerFBPoll' };
                     const codes = await this._configuredPollCodes();
                     const triggers = codes.map(c => API[TRIGGERS[c]]());
                     const results = await Promise.allSettled(triggers);
@@ -19511,7 +19670,7 @@ const App = {
                         wp: 'fullWPResync', ik: 'fullIKResync', bsky: 'fullBSKYResync', tw: 'fullTWResync',
                         mast: 'fullMASTResync', tum: 'fullTUMResync', pix: 'fullPIXResync',
                         thr: 'fullTHRResync', ig: 'fullIGResync', e621: 'fullE621Resync',
-                        fn: 'fullFNResync', fbr: 'fullFBRResync', r34: 'fullR34Resync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', yt: 'fullYTResync', pic: 'fullPICResync', ttv: 'fullTTVResync', fb: 'fullFBResync' };
+                        fn: 'fullFNResync', fbr: 'fullFBRResync', r34: 'fullR34Resync', tg: 'fullTGResync', sc: 'fullSCResync', ng: 'fullNGResync', th: 'fullTHResync', yt: 'fullYTResync', pic: 'fullPICResync', ttv: 'fullTTVResync', fb: 'fullFBResync' };
                     const codes = await this._configuredPollCodes();
                     const resyncs = codes.map(c => API[RESYNCS[c]]());
                     const results = await Promise.allSettled(resyncs);

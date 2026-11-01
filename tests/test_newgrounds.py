@@ -396,3 +396,39 @@ def test_newgrounds_is_registered_everywhere():
     assert "ngPollLogTable(polls)" in comp and "ngTopList(" in comp
     api_js = (root / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
     assert "ngConnect(data)" in api_js and "getNGAuthStatus" in api_js
+
+
+def test_a_later_poll_checks_milestones_on_newgrounds_own_tables(env, monkeypatch):
+    """NGSCTABLES: copied from the SoFurry poller, the milestone check read sc_* and alerts obeyed SoFurry's switch."""
+    from polling import ng_poller, notifications, telegram
+    from database import accounts as adb
+    monkeypatch.setattr(ng_poller, "_get_or_create_client", lambda creds: FakeNgClient())
+    monkeypatch.setattr(ng_poller, "ITEM_PAUSE_S", 0)
+
+    async def no_followers(client, account_id, conn):
+        return True
+    monkeypatch.setattr(ng_poller, "capture_followers", no_followers)
+    seen = {}
+
+    async def milestones(platform, snaps, subs, account_id):
+        seen["tables"] = (snaps, subs)
+
+    async def alert(platform, details, settings_key):
+        seen["key"] = settings_key
+
+    async def quiet(*a, **k):
+        return None
+    monkeypatch.setattr(telegram, "check_milestones_batch", milestones)
+    monkeypatch.setattr(telegram, "send_poll_summary", quiet)
+    monkeypatch.setattr(telegram, "check_goals", quiet)
+    monkeypatch.setattr(notifications, "send_activity_alert", alert)
+    conn = get_connection()
+    try:
+        adb.ensure_accounts_table(conn)
+        acct = adb.get_default_account_id(conn, "ng", create=True)
+    finally:
+        conn.close()
+    monkeypatch.setattr(ng_poller, "_ng_first_poll_done", {acct})
+    asyncio.run(ng_poller.run_ng_poll_cycle(acct))
+    assert seen["tables"] == ("ng_snapshots", "ng_submissions")
+    assert seen.get("key", "ng_notifications_enabled") == "ng_notifications_enabled"

@@ -241,6 +241,12 @@ _REGISTRY: tuple[PlatformMetrics, ...] = (
         family="views", views="views", faves="favorites_count", comments="comments_count",
         extra=("score", "votes", "downloads_count"), labels={"faves": "Faves"},
     ),
+    # Toyhouse (spec 062): no views; favourites and comments from the owner's art list.
+    PlatformMetrics(
+        code="th", label="Toyhouse", table="th_submissions", snapshots="th_snapshots",
+        family="views", views="views", faves="favorites_count", comments="comments_count",
+        labels={"faves": "Favourites"},
+    ),
     # YouTube (4.24.0): views / likes / comments from videos.list statistics.
     PlatformMetrics(
         code="yt", label="YouTube", table="yt_submissions", snapshots="yt_snapshots",

@@ -40,6 +40,7 @@ SITE_AGES: dict[str, dict] = {
     "ng":   {"min": 13, "adult_only": False, "checked": False,
              "note": "13–17 with a parent's permission; Adult work 18+"},
     "sc":   {"min": 13, "adult_only": False, "checked": True, "note": "13+; 16 in the EU and the UK"},
+    "th":   {"min": 13, "adult_only": False, "checked": False, "note": "13+; mature content 18+ (spec 062)"},
     "tg":   {"min": 16, "adult_only": False, "checked": True,
              "note": "18+ in the EU, the UK and Australia; 16 elsewhere"},
     "mast": {"min": 16, "adult_only": False, "checked": True,

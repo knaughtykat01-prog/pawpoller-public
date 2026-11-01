@@ -1002,6 +1002,20 @@ const API = {
     triggerNGPoll() { return this.post('/api/ng/poll/trigger'); },
     fullNGResync() { return this.post('/api/ng/poll/full-resync'); },
     getNGPollProgress() { return this.get('/api/ng/poll/progress'); },
+    // Toyhouse (spec 062): the Newgrounds set, plus the character list for the post form's picker.
+    getTHStatus() { return this.get('/api/th/status'); },
+    getTHSummary(params) { return this.get('/api/th/summary', params); },
+    getTHSubmissions(params) { return this.get('/api/th/submissions', params); },
+    getTHSubmission(id) { return this.get(`/api/th/submissions/${encodeURIComponent(id)}`); },
+    getTHSnapshots(id, params) { return this.get(`/api/th/submissions/${encodeURIComponent(id)}/snapshots`, params); },
+    getTHAggregate(params) { return this.get('/api/th/aggregate', params); },
+    getTHCharacterAggregate(params) { return this.get('/api/th/aggregate/characters', params); },   // spec 062 FR-009c
+    getTHPollLog(limit) { return this.get('/api/th/poll_log', { limit }); },
+    triggerTHPoll() { return this.post('/api/th/poll/trigger'); },
+    fullTHResync() { return this.post('/api/th/poll/full-resync'); },
+    getTHPollProgress() { return this.get('/api/th/poll/progress'); },
+    getTHCharacters(params) { return this.get('/api/th/characters', params); },
+    getTHSavedCharacters(params) { return this.get('/api/th/characters', { ...(params || {}), saved: 1 }); },
 
     /* ── SoundCloud (MEDIAPLATS §3, 4.22.0) ───────────────────────── */
     getSCAuthStatus(accountId) { return this.get('/api/sc/auth/status', accountId ? { account_id: accountId } : undefined); },

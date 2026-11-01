@@ -903,6 +903,8 @@ PLATFORM_CREDENTIAL_FIELDS = {
            "sc_token_expires_at", "sc_username"],
     # Newgrounds (4.23.0, MEDIAPLATS §5). No API: the browser session's cookie string + the username.
     "ng": ["ng_username", "ng_cookie"],
+    # Toyhouse (spec 062). No API: the browser sign-in's cookie string + the username.
+    "th": ["th_username", "th_cookie"],
     # YouTube (4.24.0, MEDIAPLATS §6). The operator's Google project + the OAuth pair; the channel handle
     # and its long-uploads status are identity, not secrets.
     "yt": ["yt_client_id", "yt_client_secret", "yt_access_token", "yt_refresh_token",
@@ -1379,7 +1381,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.88.3"
+APP_VERSION = "4.88.4"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).

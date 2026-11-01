@@ -41,6 +41,7 @@
         { code: 'sc',   label: 'SoundCloud',   emoji: '\u{1F3B5}', color: '#ff5500' },
         // 4.23.0 (MEDIAPLATS): Newgrounds — audio + movie portals, cookie session; Listens / Faves / score.
         { code: 'ng',   label: 'Newgrounds',   emoji: '\u{1F3AC}', color: '#f5a623' },
+        { code: 'th',   label: 'Toyhouse',     emoji: '\u{1F3E0}', color: '#5ca9cf' },
         // 4.24.0 (MEDIAPLATS): YouTube — video, Google OAuth; views / likes / comments (private until audited).
         { code: 'yt',   label: 'YouTube',      emoji: '\u{1F4FA}', color: '#ff0000' },
         // 4.46.0 (spec 013): Picarto — art livestreams; channel name only, no login. Lifetime channel
@@ -102,6 +103,7 @@
         fn:   V(),
         sc:   V(),
         ng:   V({ faves: 'Faves' }),
+        th:   V({ faves: 'Favourites' }),
         yt:   V({ faves: 'Likes' }),
         // Picarto: views = lifetime CHANNEL views (aggregate rows carry `views`); no faves/comments.
         pic:  M('views', 'total_views', null, null, 'views', 'views'),
@@ -174,7 +176,7 @@
     const _svgLogos = ['ik', 'ws', 'mast', 'tum', 'pix', 'thr', 'ig', 'e621', 'tg', 'fb'];
     // Platforms with no bundled logo asset fall back to their emoji (the tile
     // renderer treats a null logo that way). Keeps a broken <img> off the hub.
-    const _noLogo = ['fn', 'fbr', 'r34', 'pod', 'sc', 'ng', 'yt', 'pic', 'ttv'];
+    const _noLogo = ['fn', 'fbr', 'r34', 'pod', 'sc', 'ng', 'yt', 'pic', 'ttv', 'th'];
     PLATFORMS.forEach(p => {
         p.logo = _noLogo.includes(p.code)
             ? null

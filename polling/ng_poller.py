@@ -34,9 +34,6 @@ _ng_poll_lock = threading.Lock()
 _ng_first_poll_done: set[int] = set()
 _ng_client: NgClient | None = None
 
-TOKEN_FIELDS = ("sc_access_token", "sc_refresh_token", "sc_token_expires_at")
-
-
 def _cleanup_ng_client():
     if _ng_client is not None:
         import asyncio
@@ -56,7 +53,7 @@ def _update_ng_progress(phase: str, current: int = 0, total: int = 0, message: s
 
 async def _send_ng_telegram(new_details: list[dict]) -> None:
     """Toast + Telegram for posts that gained activity: the shared layout (spec 044)."""
-    await notifications.send_activity_alert("ng", new_details, settings_key="sc_notifications_enabled")
+    await notifications.send_activity_alert("ng", new_details, settings_key="ng_notifications_enabled")
 
 
 def client_from_creds(creds: dict) -> NgClient:
@@ -175,7 +172,7 @@ async def run_ng_poll_cycle(account_id: int | None = None, force_full: bool = Fa
         if not is_first:
             from polling.telegram import send_poll_summary, check_milestones_batch, check_goals
             for coro, label in ((send_poll_summary("ng", stats, duration), "summary"),
-                                (check_milestones_batch("ng", "sc_snapshots", "sc_submissions", account_id), "milestones"),
+                                (check_milestones_batch("ng", "ng_snapshots", "ng_submissions", account_id), "milestones"),
                                 (check_goals(), "goals")):
                 try:
                     await coro

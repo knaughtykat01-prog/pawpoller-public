@@ -217,6 +217,22 @@ PLATFORM_LOGIN: dict[str, dict] = {
             {"id": "ng_username", "label": "Newgrounds username", "placeholder": "Your Newgrounds username", "required": True},
         ],
     },
+    # Toyhouse (spec 062): the same cookie-string pattern as Newgrounds, toyhou.se cookies only. Whose
+    # session it is gets checked by the client (the header's Profile link) before it's saved and before a post.
+    "th": {
+        "name": "Toyhouse",
+        "url": "https://toyhou.se/~account/login",
+        "domain": "toyhou.se",
+        "success_check": lambda cookies, url: (
+            bool(cookies) and _host_is(url, "toyhou.se") and "/~account/login" not in (url or "")
+        ),
+        "extract": lambda cookies, url: {
+            "th_cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
+        },
+        "fields": [
+            {"id": "th_username", "label": "Toyhouse username", "placeholder": "Your Toyhouse username", "required": True},
+        ],
+    },
     # Itaku (spec 059): the API token sits in the page's Local Storage under ``token`` (the
     # Itaku guide's screenshot), not in a cookie, so ``extract_js`` reads it once the page has
     # left the sign-in screen. Anything that isn't a plain token string is refused, and the

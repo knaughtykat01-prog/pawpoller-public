@@ -39,7 +39,7 @@ from database.db import get_connection, init_db
 from database import (
     queries, fa_queries, ws_queries, sf_queries, sqw_queries, ao3_queries,
     da_queries, wp_queries, ik_queries, bsky_queries, tw_queries, mast_queries, tum_queries, pix_queries, thr_queries, ig_queries,
-    e621_queries, fn_queries, fbr_queries, r34_queries, tg_queries, sc_queries, ng_queries, yt_queries, pic_queries, ttv_queries, fb_queries,
+    e621_queries, fn_queries, fbr_queries, r34_queries, tg_queries, sc_queries, ng_queries, yt_queries, pic_queries, ttv_queries, fb_queries, th_queries,
     group_queries, analytics_queries, platform_metrics,
     accounts as accounts_db,
 )
@@ -129,7 +129,7 @@ def health_ready():
 # /api/health/details (4.73.0, spec 038): the per-site results of the last check, for the box
 # agent (seats) and the Tech Centre (the VM). Codes in poll-log order; Inkbunny's table has no prefix.
 DETAILS_SITES = ("ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky", "tw", "mast", "tum", "pix",
-                 "thr", "ig", "e621", "fn", "fbr", "r34", "tg", "sc", "ng", "yt", "pic", "ttv", "fb")
+                 "thr", "ig", "e621", "fn", "fbr", "r34", "tg", "sc", "ng", "th", "yt", "pic", "ttv", "fb")
 _DETAILS_RESULT = {"success": "ok", "error": "failed", "running": "running"}
 
 
@@ -500,6 +500,7 @@ _PLATFORM_HEALTH_CONFIG = [
     ("tg",  tg_queries,  "get_tg_last_poll",  "tg_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["tg"]),
     ("sc",  sc_queries,  "get_sc_last_poll",  "sc_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["sc"]),
     ("ng",  ng_queries,  "get_ng_last_poll",  "ng_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["ng"]),
+    ("th",  th_queries,  "get_th_last_poll",  "th_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["th"]),
     ("yt",  yt_queries,  "get_yt_last_poll",  "yt_poll_interval_minutes",  accounts_db.DEFAULT_CRED_CHECKS["yt"]),
     ("pic", pic_queries, "get_pic_last_poll", "pic_poll_interval_minutes", accounts_db.DEFAULT_CRED_CHECKS["pic"]),
     ("ttv", ttv_queries, "get_ttv_last_poll", "ttv_poll_interval_minutes", accounts_db.DEFAULT_CRED_CHECKS["ttv"]),

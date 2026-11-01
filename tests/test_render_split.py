@@ -210,11 +210,14 @@ class TestAutomaticStaysTheDefault:
 
     def test_the_dialog_ticks_automatic_not_the_original(self):
         src = open("frontend/js/artwork.js", encoding="utf-8").read()
-        block = src[src.index("_pubRenders(meta) {"):][:800]
-        assert "'__auto__', checked: true" in block
+        # Spec 063: a viewed declared version takes the tick instead (test_post_chosen_version.py runs
+        # the helper in node); with nothing viewed, Automatic is still the default.
+        block = src[src.index("_pubRenders(meta, viewKey) {"):][:1200]
+        assert "'__auto__', checked: !viewed" in block
         i_auto, i_prim = block.index("__auto__"), block.index("__primary__")
         assert i_auto < i_prim, "automatic is the first and default choice"
-        assert "checked: true" not in block[i_prim:], "the original must NOT be pre-ticked"
+        prim_entry = block[i_prim:block.index("}", i_prim)]
+        assert "checked" not in prim_entry, "the original must NOT be pre-ticked"
 
     def test_a_render_chosen_twice_posts_once(self):
         """Auto can resolve to a render the user also ticked by name."""

@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from database.db import get_connection
 from database import posting_queries
@@ -145,13 +146,48 @@ def test_a_refused_chapter_left_off_one_site_lets_the_rest_go(story, monkeypatch
 
 
 def test_skip_ignores_pairs_it_does_not_know(story):
-    r = _drip(skip=["9:ib", "1:zz", "x:ib", "", "1", "²:ib", "9" * 5000 + ":ib"], dry_run=True)
+    r = _drip(skip=["9:ib", "1:zz", "x:ib", "", "1", "²:ib", "9" * 26 + ":ib"], dry_run=True)
     assert r["rows"] == 4
+    assert not [s for s in r["skipped"] if s["reason"] == "left out"]
+
+
+def test_a_skip_entry_longer_than_any_real_pair_is_refused(story):
+    # SEC061: each entry is capped, not just the list
+    with pytest.raises(ValidationError):
+        _drip(skip=["9" * 5000 + ":ib"], dry_run=True)
 
 
 def test_leaving_every_chapter_out_is_a_plain_refusal(story):
-    with pytest.raises(HTTPException):
+    with pytest.raises(HTTPException) as e:
         _drip(skip=["1:ib", "2:ib", "3:ib", "4:ib"], dry_run=True)
+    assert e.value.status_code == 400 and e.value.detail == "Every chapter was left out"
+
+
+def test_leaving_out_another_chapter_still_refuses_the_refused_one(story, monkeypatch):
+    """Spec 061 FR-SEC-001: leaving one pair out never switches the checks off for the rest."""
+    _refuse_chapter(monkeypatch, 2)
+    with pytest.raises(HTTPException) as e:
+        _drip(skip=["3:ib"])
+    assert e.value.detail.startswith("Drip aborted") and "ib ch2" in e.value.detail
+    assert _rows() == []
+    r = _drip(skip=["3:ib"], dry_run=True)
+    assert [p["chapter"] for p in r["problems"]] == [2]
+
+
+def test_a_left_out_chapter_still_goes_to_the_other_sites(story):
+    """Spec 061: a pair is chapter AND site — chapter 2 left off ib still goes to sf."""
+    _drip(platforms=["ib", "sf"], skip=["2:ib"])
+    got = {(x["chapter_index"], x["platform"]) for x in _rows()}
+    assert (2, "sf") in got and (2, "ib") not in got
+    assert {(c, p) for c in (1, 3, 4) for p in ("ib", "sf")} <= got
+
+
+def test_schedule_sheet_escapes_skip_values():
+    """Spec 061 FR-SEC-003: server text the sheet shows (a site's error, site codes) is escaped."""
+    js =(Path(__file__).resolve().parent.parent / "frontend" / "js" / "schedule_sheet.js").read_text(encoding="utf-8")
+    for needle in ('data-ss-skip="${esc(', "esc(`Ch ${p.chapter}: ${p.message}`)",
+                   "esc(plat(p.platform).label)", "esc(plat(s.platform).label)"):
+        assert needle in js, needle
 
 
 def test_a_moved_chapter_keeps_its_own_time_and_the_rest_keep_theirs(story):

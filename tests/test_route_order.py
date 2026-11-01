@@ -47,6 +47,7 @@ SNAPSHOT_PATHS = {
     "tg": "/api/tg/submissions/1/snapshots",
     "sc": "/api/sc/submissions/1/snapshots",
     "ng": "/api/ng/submissions/1/snapshots",
+    "th": "/api/th/submissions/1/snapshots",
     "yt": "/api/yt/submissions/1/snapshots",
     "pic": "/api/pic/submissions/1/snapshots",
     "ttv": "/api/ttv/submissions/1/snapshots",

@@ -149,14 +149,14 @@ class InkbunnyClient:
             if "error_code" not in data:
                 # Session is still alive -- adopt it and skip login.
                 self.sid = cached_sid
-                if not self.user_id:
-                    # user_id wasn't restored from cache (old DB schema).
-                    # Do a fresh login to populate it; web scraping needs it.
-                    logger.info("Cached session valid but user_id unknown, re-authenticating")
-                else:
+                if self.user_id:
                     logger.info("Reusing cached session %s...", cached_sid[:8])
                     return cached_sid
-            logger.info("Cached session expired, re-authenticating")
+                # user_id wasn't restored from cache (old DB schema, or a caller that
+                # didn't pass it). Do a fresh login to populate it; web scraping needs it.
+                logger.info("Cached session valid but user_id unknown, re-authenticating")
+            else:
+                logger.info("Cached session expired, re-authenticating")
         # No cached SID, or it was expired -- perform a fresh login.
         result = await self.login()
         return result.sid

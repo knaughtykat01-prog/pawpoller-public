@@ -729,6 +729,23 @@ def _to_utc_sql(scheduled_at: str) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _scheduled_version(artwork, raw) -> str:
+    """The version a scheduled post will carry (spec 063): ``""`` Automatic, ``"__primary__"``
+    the original, or a key declared on the piece. Checked now, not when the post fires hours
+    later with nobody watching. Only matched against the piece's own list, never used as a
+    path (its file is resolved, anchored, by ``variant_image_path`` at posting time)."""
+    if raw is None or raw == "":
+        return ""
+    if not isinstance(raw, str) or len(raw) > 32:          # no declared key is longer (4.33.0 rule)
+        raise HTTPException(400, detail="That isn't a version name.")
+    if raw == "__primary__":
+        return raw
+    if any(isinstance(v, dict) and v.get("key") and v.get("key") == raw
+           for v in (getattr(artwork, "variants", None) or [])):
+        return raw
+    raise HTTPException(400, detail=f"This piece has no version called '{raw}'.")
+
+
 @artwork_router.post("/schedule")
 async def schedule_artwork(body: dict):
     """Schedule an artwork to publish to one platform at a future time.
@@ -737,7 +754,11 @@ async def schedule_artwork(body: dict):
         "artwork_name": "Autumn_Study",
         "platform": "ib",
         "scheduled_at": "2026-07-25T20:00:00.000Z",   // ISO 8601
-        "account_id": 5                                // optional
+        "account_id": 5,                               // optional
+        "variant_key": "clean"                         // optional (spec 063): which version.
+                                                       //   absent / "" = Automatic (the rating's pick),
+                                                       //   "__primary__" = the original, else a key
+                                                       //   declared on the piece
     }
 
     One row per platform, so "post Friday 8pm to these five sites" is five
@@ -772,9 +793,10 @@ async def schedule_artwork(body: dict):
 
     # Artwork must exist (load_artwork raises if it doesn't).
     try:
-        artwork_reader.load_artwork(name)
+        artwork = artwork_reader.load_artwork(name)
     except Exception as e:
         raise HTTPException(404, detail=f"Artwork not found: {e}")
+    variant_key = _scheduled_version(artwork, body.get("variant_key"))
 
     scheduled_str = _to_utc_sql(scheduled_at)
     _store_comments(name, [platform], body)
@@ -789,6 +811,7 @@ async def schedule_artwork(body: dict):
             description_override=description_override,
             requires=get_platform_requires(platform),
             persona_id=persona_id,
+            variant_key=variant_key,
         )
     finally:
         conn.close()

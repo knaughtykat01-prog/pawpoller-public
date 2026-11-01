@@ -395,7 +395,7 @@ window.Accounts = {
            needed it; that is a mistake a real user made, not a hypothetical. */
         // Named "Sign in" (SIGNINVISIBLE, 4.88.1): as "Credentials" nobody found the sign-in
         // buttons inside it. On the four code sites it is the primary button on the card.
-        const creds = `<button class="btn btn-sm${['fa', 'tw', 'ng', 'ik'].includes(a.platform) ? ' btn-primary' : ''}"
+        const creds = `<button class="btn btn-sm${['fa', 'tw', 'ng', 'ik', 'th'].includes(a.platform) ? ' btn-primary' : ''}"
                        data-creds="${a.account_id}" data-platform="${a.platform}"
                        title="Sign in to THIS account, or paste renewed cookies or tokens">🔑 Sign in</button>`;
         const test = `<button class="btn btn-sm" data-test-login="${a.account_id}" data-platform="${a.platform}"
@@ -476,7 +476,7 @@ window.Accounts = {
         const bl = this._browserLogin || {};
         const canBrowser = !!bl.available && (bl.platforms || []).some(p => (p.code || p) === platform);
         // Spec 059: a server or seat signs in through the desktop app with a one-time code.
-        const canCode = !bl.available && ['fa', 'tw', 'ng', 'ik'].includes(platform);
+        const canCode = !bl.available && ['fa', 'tw', 'ng', 'ik', 'th'].includes(platform);
         const otherWays = canBrowser || canCode;
         const panel = document.createElement('div');
         panel.className = 'acct-cred-editor acct-form';

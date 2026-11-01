@@ -1642,13 +1642,13 @@ const Components = {
     },
 
     /* Newgrounds (4.23.0): the same list, routed to /ng/submission/. */
-    ngTopList(items, valueKey, labelKey = 'title', idKey = 'submission_id') {
+    ngTopList(items, valueKey, labelKey = 'title', idKey = 'submission_id', code = 'ng') {   // Toyhouse reuses it (spec 062)
         if (!items || items.length === 0) {
             return '<p style="color:var(--text-muted);font-size:13px">No data yet</p>';
         }
         const lis = items.map(item => `
             <li>
-                <span class="top-title" data-nav="/ng/submission/${encodeURIComponent(item[idKey])}">${Utils.escapeHtml(Utils.truncate(item[labelKey], 30))}</span>
+                <span class="top-title" data-nav="/${code}/submission/${encodeURIComponent(item[idKey])}">${Utils.escapeHtml(Utils.truncate(item[labelKey], 30))}</span>
                 <span class="top-value">${Utils.formatCompact(item[valueKey])}</span>
             </li>
         `).join('');
@@ -1968,6 +1968,8 @@ const Components = {
      *                              its OWN submission. `''` is the piece's own image.
      * @param {number} [o.renderWait] Seconds between posts on the slowest chosen site,
      *                              used to warn that several renders take a while.
+     * @param {Object} [o.renderThumbs] { renderKey: imageUrl } (spec 063) — the thumbnail
+     *                              follows the first ticked render. Absent = it stays put.
      * @param {Object} [o.tgDesc]    The pre-4.3.7 form of the above: a Telegram box
      *                               alone (4.3.0). Still honoured; its value also
      *                               comes back as `tgDescription`.
@@ -2098,6 +2100,20 @@ const Components = {
             ov.querySelectorAll('[data-pub-render]').forEach(
                 el => el.addEventListener('change', refreshWait));
             refreshWait();
+
+            // Spec 063: the thumbnail shows what will post: the first ticked version's picture
+            // (Automatic and the original show the original). Set as a property, never markup.
+            const thumbEl = ov.querySelector('.pub-confirm-thumb');
+            if (thumbEl && o.renderThumbs) {
+                const refreshThumb = () => {
+                    // Nothing ticked sends no versions, which posts Automatic: show that.
+                    const first = ov.querySelector('[data-pub-render]:checked');
+                    const url = o.renderThumbs[first ? first.dataset.pubRender : '__auto__'];
+                    if (url) thumbEl.src = url;
+                };
+                ov.querySelectorAll('[data-pub-render]').forEach(
+                    el => el.addEventListener('change', refreshThumb));
+            }
             ov.querySelector('[data-pub-ok]').addEventListener('click', () => {
                 const descriptions = {};
                 ov.querySelectorAll('[data-pub-desc]').forEach(el => {
