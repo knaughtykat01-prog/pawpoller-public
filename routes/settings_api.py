@@ -422,6 +422,9 @@ async def browser_login_result(req: BrowserLoginResult):
         creds.update({k: v for k, v in req.extra_fields.items() if isinstance(v, str)})
     if not creds:
         raise HTTPException(status_code=400, detail="no credentials in the result")
+    why = await _bl.whose_session_problem(platform, creds)
+    if why:
+        raise HTTPException(status_code=400, detail=why)
     try:
         written = _bl._save_browser_creds(platform, creds, req.account_id)
     except (ValueError, LookupError) as e:

@@ -48,6 +48,7 @@ from database.db import get_connection
 from database import posting_queries
 from posting import story_reader
 from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
+from clients.otw_forms import to_otw_rating
 from clients.ao3.client import AO3Client
 
 logger = logging.getLogger(__name__)
@@ -130,14 +131,14 @@ class AO3Poster(PlatformPoster):
 
     @staticmethod
     def _rating_to_ao3(rating: str) -> str:
-        r = (rating or "").lower()
-        if r in ("adult", "explicit", "nsfw"):
-            return "Explicit"
-        if r in ("mature", "questionable"):
-            return "Mature"
-        if r == "teen":
-            return "Teen And Up Audiences"
-        return "General Audiences"
+        # AO3RATING: the archive's own five words map exactly; unknown words are Explicit, never General.
+        return to_otw_rating(rating)
+
+    @staticmethod
+    async def _resume_edit(client, work_id: str, rating: str, skin_id: str) -> str:
+        """Raise a resumed work's rating (never lower it) and attach its skin; the rating actually sent."""
+        out = await client.edit_work(work_id, rating=rating, raise_only=True, work_skin_id=skin_id or None)
+        return (out.get("rating_sent") if isinstance(out, dict) else None) or rating
 
     @staticmethod
     def _trim_freeform_tags(
@@ -628,20 +629,10 @@ class AO3Poster(PlatformPoster):
                 # AO3 but isn't applied to the work itself. Push edit_work
                 # to attach it now. Idempotent: re-submitting the same
                 # skin_id is a no-op on AO3's side.
-                if skin_id:
-                    try:
-                        await client.edit_work(work_id, work_skin_id=skin_id)
-                        logger.info(
-                            "AO3: Attached Work Skin %s to resumed work %s",
-                            skin_id, work_id,
-                        )
-                    except Exception as skin_attach_err:
-                        logger.warning(
-                            "AO3: Could not attach Work Skin %s to work %s on "
-                            "resume: %s (continuing — skin can be attached "
-                            "manually via Update)",
-                            skin_id, work_id, skin_attach_err,
-                        )
+                # AO3RATING (R22): the resumed work may already be live at a lower rating, so the
+                # rating is raised here too, skin or not. Any failure stops the post: carrying on would
+                # add chapters to a work rated lower than the story.
+                rating = await self._resume_edit(client, work_id, rating, skin_id)
                 try:
                     ao3_chapters = await client.get_chapter_ids(work_id)
                     already_created_chapter_indices = {
@@ -783,6 +774,7 @@ class AO3Poster(PlatformPoster):
 
             return PostResult(
                 success=True,
+                extra={"rating_sent": rating},
                 external_id=work_id,
                 external_url=url,
                 duration_seconds=self._elapsed(_t),
@@ -851,7 +843,7 @@ class AO3Poster(PlatformPoster):
             characters_str = ", ".join(story.characters)
             relationships_str = ", ".join(story.relationships)
 
-            await client.edit_work(
+            _ew = await client.edit_work(
                 external_id,
                 title=package.title or story.name.replace("_", " "),
                 summary=(story.description or package.description or "")[:1250],
@@ -863,7 +855,9 @@ class AO3Poster(PlatformPoster):
                 fandom=fandom,
                 rating=rating,
                 work_skin_id=skin_id if skin_id else None,
+                raise_only=True,
             )
+            rating = (_ew.get("rating_sent") if isinstance(_ew, dict) else None) or rating
             logger.info("AO3: Updated work %s metadata", external_id)
 
             # Metadata-only mode: skip chapter BODY uploads, but still push
@@ -914,6 +908,7 @@ class AO3Poster(PlatformPoster):
                 )
                 return PostResult(
                     success=True,
+                    extra={"rating_sent": rating},
                     external_id=external_id,
                     external_url=f"https://archiveofourown.org/works/{external_id}",
                     duration_seconds=self._elapsed(_t),
@@ -1001,6 +996,7 @@ class AO3Poster(PlatformPoster):
 
             return PostResult(
                 success=True,
+                extra={"rating_sent": rating},
                 external_id=external_id,
                 external_url=f"https://archiveofourown.org/works/{external_id}",
                 duration_seconds=self._elapsed(_t),

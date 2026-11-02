@@ -94,7 +94,10 @@ async def th_connect(body: dict):
     username = str(body.get("username", "") or "").strip()
     cookie = str(body.get("cookie", "") or "").strip()
     account_id = body.get("account_id")
-    aid, is_default = _account(int(account_id) if account_id else None)
+    try:
+        aid, is_default = _account(int(account_id) if account_id else None)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "account_id must be a number")
     _check_postable(aid)
     if not cookie:
         raise HTTPException(400, "Paste the Toyhouse cookie string (or use Login via Browser)")
@@ -105,7 +108,7 @@ async def th_connect(body: dict):
     except THChallenged as e:
         raise HTTPException(503, str(e))
     except Exception as e:
-        raise HTTPException(502, f"Could not reach Toyhouse: {e}")
+        raise HTTPException(502, f"Could not reach Toyhouse ({type(e).__name__})")
     finally:
         await client.close()
     if not session.get("logged_in"):

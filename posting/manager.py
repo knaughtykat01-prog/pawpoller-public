@@ -68,6 +68,12 @@ def _gave_up(story_name: str, ch_idx: int, platform: str, action: str, error: st
     return f"gave up after {n + 1} tries — {error or 'unknown error'}"
 
 
+def _rating_used(package, result) -> str:
+    """The rating to record: the word the site was actually sent when the poster says (AO3 and SquidgeWorld
+    raise but never lower a live work's rating, AO3RATING), otherwise the package's."""
+    return (getattr(result, "extra", None) or {}).get("rating_sent") or package.rating
+
+
 def _confirmed(result: PostResult, poster: PlatformPoster) -> PostResult:
     """A success counts only with a post number or a link (055, FR-002 / SC-004), on every site.
 
@@ -762,7 +768,7 @@ async def post_story(
                     title_used=package.title,
                     description_used=package.description[:500],
                     tags_used=package.tags,
-                    rating_used=package.rating,
+                    rating_used=_rating_used(package, result),
                     format_file=package.file_path or "",
                     file_hash=current_hash,
                     word_count=package.word_count,
@@ -1223,7 +1229,7 @@ async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
                     title_used=package.title,
                     description_used=package.description[:500],
                     tags_used=package.tags,
-                    rating_used=package.rating,
+                    rating_used=_rating_used(package, result),
                     format_file=package.file_path or "",
                     file_hash=current_hash,
                     word_count=0,
@@ -1493,7 +1499,7 @@ async def update_story(
                     title_used=package.title,
                     description_used=package.description[:500],
                     tags_used=package.tags,
-                    rating_used=package.rating,
+                    rating_used=_rating_used(package, result),
                     format_file=package.file_path or "",
                     file_hash=current_hash,
                     word_count=package.word_count,
@@ -1508,7 +1514,7 @@ async def update_story(
                     title_used=package.title,
                     description_used=package.description[:500],
                     tags_used=package.tags,
-                    rating_used=package.rating,
+                    rating_used=_rating_used(package, result),
                     format_file=package.file_path or "",
                     file_hash=current_hash,
                     word_count=package.word_count,
@@ -1720,7 +1726,7 @@ async def update_artwork(
                 title_used=package.title,
                 description_used=package.description[:500],
                 tags_used=package.tags,
-                rating_used=package.rating,
+                rating_used=_rating_used(package, result),
                 status=("draft" if getattr(result, "needs_attention", "") else "posted") if result.success else "failed",
             )
             posting_queries.log_posting_action(

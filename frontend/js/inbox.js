@@ -124,7 +124,7 @@ window.Inbox = {
                 <div style="margin:6px 0 8px;white-space:pre-wrap;font-size:14px">${this.esc(this._text(i))}</div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
                     ${i.can_reply ? `<button class="btn btn-sm btn-primary" data-inbox-reply>Reply</button>` : ''}
-                    ${i.permalink ? `<a class="btn btn-sm btn-outline" href="${this.esc(i.permalink)}" target="_blank" rel="noopener">Open ↗${i.can_reply ? '' : ' (reply on-site)'}</a>` : ''}
+                    ${i.permalink ? `<a class="btn btn-sm btn-outline" href="${this.esc(Utils.safeUrl(i.permalink))}" target="_blank" rel="noopener">Open ↗${i.can_reply ? '' : ' (reply on-site)'}</a>` : ''}
                     ${i.auto_handled ? `<span class="muted" style="font-size:12px">Older than a year, so handled automatically</span>` : `
                     <button class="btn btn-sm ${i.handled ? 'btn-outline' : ''}" data-inbox-handled="${i.handled ? '0' : '1'}">
                         ${i.handled ? '↩ Unhandle' : '✓ Handled'}</button>`}

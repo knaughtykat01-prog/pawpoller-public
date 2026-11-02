@@ -40,6 +40,7 @@ import re
 import config
 from posting import story_reader
 from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
+from clients.otw_forms import to_otw_rating
 from clients.sqw.client import SquidgeWorldClient
 
 logger = logging.getLogger(__name__)
@@ -101,14 +102,8 @@ class SquidgeWorldPoster(PlatformPoster):
 
     @staticmethod
     def _rating_to_sqw(rating: str) -> str:
-        r = (rating or "").lower()
-        if r in ("adult", "explicit", "nsfw"):
-            return "Explicit"
-        if r in ("mature", "questionable"):
-            return "Mature"
-        if r == "teen":
-            return "Teen And Up Audiences"
-        return "General Audiences"
+        # AO3RATING: the archive's own five words map exactly; unknown words are Explicit, never General.
+        return to_otw_rating(rating)
 
     @staticmethod
     def _trim_freeform_tags(
@@ -413,6 +408,7 @@ class SquidgeWorldPoster(PlatformPoster):
 
             return PostResult(
                 success=True,
+                extra={"rating_sent": rating},
                 external_id=work_id,
                 external_url=create_result.get("url", f"https://squidgeworld.org/works/{work_id}"),
                 duration_seconds=self._elapsed(_t),
@@ -471,8 +467,8 @@ class SquidgeWorldPoster(PlatformPoster):
             )
             additional_tags = ", ".join(freeform_tags)
 
-            # 4. Edit work metadata
-            await client.edit_work(
+            # 4. Edit work metadata (AO3RATING: the rating only ever goes up)
+            _ew = await client.edit_work(
                 external_id,
                 title=package.title or story.name.replace("_", " "),
                 summary=(story.description or package.description or "")[:1250],
@@ -485,7 +481,9 @@ class SquidgeWorldPoster(PlatformPoster):
                 relationship=relationships_str,
                 work_skin_id=skin_id or None,
                 save_as_draft=save_as_draft,  # preserve the current state
+                raise_only=True,
             )
+            rating = (_ew.get("rating_sent") if isinstance(_ew, dict) else None) or rating
             logger.info(
                 "SqW: Edited work %s metadata (save_as_draft=%s)",
                 external_id, save_as_draft,
@@ -535,6 +533,7 @@ class SquidgeWorldPoster(PlatformPoster):
                 )
                 return PostResult(
                     success=True,
+                    extra={"rating_sent": rating},
                     external_id=external_id,
                     external_url=f"https://squidgeworld.org/works/{external_id}",
                     duration_seconds=self._elapsed(_t),
@@ -573,6 +572,7 @@ class SquidgeWorldPoster(PlatformPoster):
 
             return PostResult(
                 success=True,
+                extra={"rating_sent": rating},
                 external_id=external_id,
                 external_url=f"https://squidgeworld.org/works/{external_id}",
                 duration_seconds=self._elapsed(_t),

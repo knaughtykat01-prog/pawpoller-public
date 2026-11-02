@@ -728,3 +728,21 @@ def test_th_character_totals_route(monkeypatch):
     out = th_api.get_th_character_aggregate(None, None, None)
     assert out["snapshots"] == [{"polled_at": "2031-01-06 09:00:00", "characters": 1,
                                  "character_favorites": 9, "character_comments": 2}]
+
+
+def test_connect_with_a_non_numeric_account_is_a_400_not_a_500():
+    """SEC4884 Low 1."""
+    import asyncio
+    from fastapi import HTTPException
+    from routes import th_api
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(th_api.th_connect({"username": "Inkwolf", "cookie": "a=b", "account_id": "abc"}))
+    assert e.value.status_code == 400
+
+
+def test_logs_and_links_carry_no_session_or_script():
+    """SEC4884 Lows 2 and 4: no part of an Inkbunny SID in the log; Inbox links go through safeUrl."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    assert "sid[:8]" not in (root / "clients/ib/client.py").read_text(encoding="utf-8")
+    assert "Utils.safeUrl(i.permalink)" in (root / "frontend/js/inbox.js").read_text(encoding="utf-8")

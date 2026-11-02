@@ -328,10 +328,16 @@ async def _process_queue_item_core(item: dict) -> None:
             retry_queued = bool(results[0].get("retry_queued")) if results else False
             queued_for_desktop = bool(results[0].get("queued_desktop")) if results else False
             handed_off = retry_queued or queued_for_desktop
+            # UNCONFRETRY: "unconfirmed" means the site may have the work already. Posting it
+            # again risks a duplicate, so the row is never set back to pending.
+            unconfirmed = bool(results[0].get("unconfirmed")) if results else False
 
             if handed_off:
                 new_status = "failed"
                 _adopt_handoff(item)
+            elif unconfirmed:
+                new_status = "failed"
+                error = f"unconfirmed: {error}"
             else:
                 new_status = "pending" if item["attempts"] < item["max_attempts"] else "failed"
 

@@ -433,3 +433,23 @@ def test_bridge_shim_and_wizard_wiring():
     main_py = (repo / "main.py").read_text(encoding="utf-8")
     assert "def run_connected(" in main_py and "def run_standalone(" in main_py
     assert "init_db()" not in main_py.split("def run_connected(")[1].split("def run_standalone(")[0]
+
+
+def test_a_toyhouse_browser_login_for_someone_else_is_not_saved(api, monkeypatch):
+    """SEC062 (3): a connected desktop's Toyhouse cookie is saved only when it is the typed username's session."""
+    from auth import browser_login as bl
+    from routes import signin_helper_api
+    saved = []
+    monkeypatch.setattr(bl, "_save_browser_creds", lambda p, c, a: saved.append(c) or {k: True for k in c})
+
+    async def other(platform, creds, stored):
+        return False, "SecondHandle", ""
+    monkeypatch.setattr(signin_helper_api, "_who", other)
+    body = {"platform": "th", "cookies": {"laravel_session": "x"}, "extra_fields": {"th_username": "Inkwolf"}}
+    r = api.post("/api/settings/browser-login/result", json=body)
+    assert r.status_code == 400 and "SecondHandle" in r.text and not saved
+
+    async def same(platform, creds, stored):
+        return True, stored, ""
+    monkeypatch.setattr(signin_helper_api, "_who", same)
+    assert api.post("/api/settings/browser-login/result", json=body).status_code == 200 and saved

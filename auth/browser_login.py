@@ -20,6 +20,7 @@ Threading constraints:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import queue
 import re
@@ -325,6 +326,17 @@ def check_creds(platform: str, creds: dict) -> None:
 # Core browser login function
 # ---------------------------------------------------------------------------
 
+async def whose_session_problem(platform: str, creds: dict) -> str:
+    """Why these captured credentials must not be saved, or "" (SEC062 (3)). Toyhouse only: the
+    session must be the typed username's own. The code sign-in checks this itself (`_who`)."""
+    if platform != "th":
+        return ""
+    from routes.signin_helper_api import _who
+    stored = creds.get("th_username", "")
+    ok, who, why = await _who(platform, creds, stored)
+    return "" if ok else (why or f"That browser is signed in to Toyhouse as {who}, not {stored}.")
+
+
 def _save_browser_creds(platform: str, creds: dict, account_id: int | None) -> dict:
     """Write the captured credentials under the RIGHT account's keys (4.6.3).
 
@@ -487,6 +499,10 @@ def login_via_browser(
 
     # Save to settings.json — under the chosen account's keys (4.6.3).
     if creds and save:
+        why = asyncio.run(whose_session_problem(platform, creds))   # an executor thread, no loop running
+        if why:
+            logger.warning("Browser login for %s not saved: %s", platform, why)
+            return None
         written = _save_browser_creds(platform, creds, account_id)
         logger.info("Saved browser login credentials for %s (account %s): %s",
                     platform, account_id if account_id is not None else "default", list(written.keys()))

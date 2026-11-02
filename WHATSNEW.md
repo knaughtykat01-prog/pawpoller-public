@@ -2,6 +2,18 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.88.5] - 2026-11-02 - SquidgeWorld outages, AO3 ratings, and small safety fixes
+
+> - When SquidgeWorld is down, PawPoller now says the site isn't responding instead of asking you to check your password.
+> - A SquidgeWorld sign-in with the wrong password no longer shows as signed in.
+> - The same for AO3: while AO3 is down, PawPoller says it isn't responding instead of asking you to check your password.
+> - Links in the Inbox can no longer run code when clicked.
+> - Signing in to Toyhouse through the browser only saves the sign-in if it belongs to the username you typed.
+> - Inkbunny no longer writes any part of your sign-in session to the log.
+> - AO3 and SquidgeWorld now post stories at the right rating: Teen and Not Rated stories no longer go up as General.
+> - Updating a story on AO3 or SquidgeWorld never lowers the rating of the live work.
+> - A post that went up without the site sending back a link is no longer retried, so it can't be posted twice.
+
 ## [4.88.4] - 2026-11-01 - Toyhouse, and Inkbunny posts first time
 
 > - New: Toyhouse. Post pictures to your characters, and see each character's favourites, comments and image count.
@@ -211,15 +223,3 @@ Generated from the release notes: each version's plain-language summary.
 
 > - This is the release that brings you the 4.80.0 alert changes below.
 > - Fixed a check that stopped the 4.80.0 downloads from being built.
-
-## [4.80.0] - 2026-10-17 - Tidy alerts
-
-> - Every alert opens with the site's name and the account, in the same order, with each name shown once.
-> - "1 Deviation Updated" is gone: alerts now say what changed, like "+2 faves, +1 comment".
-> - Alerts use the title from your Library, not a folder name or a line the site made up from your description.
-> - One publish to several sites sends one message listing every site, with links.
-> - Poll failure alerts say which account failed.
-> - No two sites share an icon any more.
-> - Digests leave out empty lines, and a new account's first digest no longer counts its whole history as one week's growth.
-> - Polls on big galleries finish their milestone check faster.
-> - Also includes the 4.79.2 fixes below: the What's-new popup, account names in the log, and Telegram failures now logged.

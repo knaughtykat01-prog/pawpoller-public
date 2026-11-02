@@ -468,7 +468,7 @@ def run_connected(server_url: str, api_key: str):
     threading.Thread(target=_tray_icon.run, kwargs={"setup": lambda icon: None}, daemon=True).start()
 
     reachable = agent.server_reachable()
-    kwargs = dict(width=1200, height=800, min_size=(800, 500), js_api=desktop_agent.AgentApi(agent))
+    kwargs: dict = dict(width=1200, height=800, min_size=(800, 500), js_api=desktop_agent.AgentApi(agent))
     if reachable:
         _window = webview.create_window("PawPoller", url=server_url, **kwargs)
     else:

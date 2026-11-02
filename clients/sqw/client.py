@@ -22,7 +22,7 @@ from html import unescape
 import httpx
 
 import config
-from clients.otw_forms import otw_form
+from clients.otw_forms import otw_form, raise_only_rating
 
 
 def _extract_work_form_fields(html: str) -> tuple[str, list[tuple[str, str]]]:
@@ -123,6 +123,7 @@ def _extract_work_form_fields(html: str) -> tuple[str, list[tuple[str, str]]]:
 logger = logging.getLogger(__name__)
 
 _BASE = "https://squidgeworld.org"
+_DOWN = "SquidgeWorld isn't responding right now; your login wasn't checked. Try again in a few minutes."
 
 
 def _collapse_html_whitespace(html: str) -> str:
@@ -317,8 +318,10 @@ class SquidgeWorldClient:
         # Step 1: Get login page (may trigger Anubis challenge)
         html = await self._get_page(f"{_BASE}/users/login")
         if not html:
+            # The site didn't answer (502, Anubis refused, network). Raise, not False:
+            # False reads as a wrong password and the session check would show "expired".
             logger.error("SqW: Failed to fetch login page")
-            return False
+            raise RuntimeError(_DOWN)
 
         # Extract authenticity_token from the login form
         token_match = re.search(
@@ -358,7 +361,10 @@ class SquidgeWorldClient:
             )
         except httpx.HTTPError as e:
             logger.error("SqW: Login POST failed: %s", e)
-            return False
+            raise RuntimeError(_DOWN) from e
+        if resp.status_code >= 500:
+            logger.error("SqW: Login POST got HTTP %d", resp.status_code)
+            raise RuntimeError(_DOWN)
 
         # Step 3: Verify login — check for greeting or logged-in indicators
         page = resp.text
@@ -400,7 +406,8 @@ class SquidgeWorldClient:
             return True
 
         # Check if we landed on the dashboard (successful login redirects)
-        if resp.url and "/users/" in str(resp.url):
+        # A failed login re-renders /users/login, so the URL must name an account, not just contain /users/.
+        if resp.url and _extract_account_name_from_url(str(resp.url)):
             self._logged_in = True
             if "@" in self.username:
                 new_name = _extract_account_name_from_url(str(resp.url))
@@ -1289,6 +1296,7 @@ class SquidgeWorldClient:
         rating: str | None = None,
         work_skin_id: str | None = None,
         save_as_draft: bool = True,
+        raise_only: bool = False,
     ) -> dict:
         """Edit metadata on an existing SquidgeWorld work.
 
@@ -1329,6 +1337,10 @@ class SquidgeWorldClient:
         form_html = form_resp.text
 
         token, current_fields = _extract_work_form_fields(form_html)
+        # AO3RATING: on an update the rating only ever goes up. The live value comes from the form;
+        # unreadable stops here (RatingUnreadable) rather than guessing.
+        if raise_only and rating is not None:
+            rating = raise_only_rating(current_fields, rating, "SquidgeWorld")
 
         # Apply overrides
         # For array fields (warnings, categories) we replace the whole set.
@@ -1450,7 +1462,7 @@ class SquidgeWorldClient:
 
         url = f"{_BASE}/works/{work_id}"
         logger.info("SqW: Edited work %s", work_id)
-        return {"work_id": work_id, "url": url}
+        return {"work_id": work_id, "url": url, "rating_sent": rating}
 
     async def edit_chapter(
         self,

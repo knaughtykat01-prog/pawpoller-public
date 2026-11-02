@@ -30,11 +30,13 @@ except ImportError:  # pragma: no cover - a build without it falls back (FR-003)
     AsyncCurlTransport = None
 
 import config
-from clients.otw_forms import otw_form
+from clients.otw_forms import otw_form, raise_only_rating
 
 logger = logging.getLogger(__name__)
 
 _BASE = "https://archiveofourown.org"
+# AO3DOWN: an outage or maintenance page is AO3-side, never "check your password".
+_DOWN = "AO3 isn't responding right now; your login wasn't checked. Try again later."
 
 
 # Module-level backoff cache (2.22.6).
@@ -533,6 +535,8 @@ class AO3Client:
             if not self.blocked_reason and last_status in (429, 525):
                 # 4.74.0 (spec 039): a refusal must say so, or rate watch can't tell it from a bad password.
                 self.blocked_reason = f"AO3 refused the sign-in (HTTP {last_status}) — AO3-side, not your credentials."
+            elif not self.blocked_reason and (last_status == 0 or last_status >= 500):
+                self.blocked_reason = _DOWN          # no answer, or a 5xx: AO3 is down
             if rate_limited:
                 logger.error("AO3: Login blocked by rate limiter (HTTP 429 'Retry later')")
             else:
@@ -551,6 +555,7 @@ class AO3Client:
             )
         if not token_match:
             logger.error("AO3: Could not find authenticity_token on login page")
+            self.blocked_reason = _DOWN              # a maintenance page has no login form
             return False
 
         token = token_match.group(1)
@@ -575,6 +580,11 @@ class AO3Client:
             )
         except httpx.HTTPError as e:
             logger.error("AO3: Login POST failed: %s", e)
+            self.blocked_reason = _DOWN
+            return False
+        if resp.status_code >= 500:
+            logger.error("AO3: Login POST got HTTP %d", resp.status_code)
+            self.blocked_reason = _DOWN
             return False
 
         page = resp.text
@@ -610,7 +620,7 @@ class AO3Client:
             logger.info("AO3: Successfully logged in as %s", self.username)
             return True
 
-        if resp.url and "/users/" in str(resp.url):
+        if resp.url and _extract_account_name_from_url(str(resp.url)):   # not a re-rendered /users/login
             self._logged_in = True
             if "@" in self.username:
                 new_name = _extract_account_name_from_url(str(resp.url))
@@ -1178,6 +1188,7 @@ class AO3Client:
         rating: str | None = None,
         work_skin_id: str | None = None,
         save_as_draft: bool = True,
+        raise_only: bool = False,
     ) -> dict:
         """Edit metadata on an existing AO3 work.
 
@@ -1217,6 +1228,10 @@ class AO3Client:
             )
 
         token, current_fields = _extract_work_form_fields(form_html)
+        # AO3RATING: on an update the rating only ever goes up. The live value comes from the form;
+        # unreadable stops here (RatingUnreadable) rather than guessing.
+        if raise_only and rating is not None:
+            rating = raise_only_rating(current_fields, rating, "AO3")
 
         new_fields: list[tuple[str, str]] = []
         warnings_handled = False
@@ -1374,7 +1389,7 @@ class AO3Client:
                 logger.info("AO3 edit_work(%s) flash.%s: %s", work_id, cls, msg)
 
         logger.info("AO3: Edited work %s", work_id)
-        return {"work_id": work_id, "url": f"{_BASE}/works/{work_id}"}
+        return {"work_id": work_id, "url": f"{_BASE}/works/{work_id}", "rating_sent": rating}
 
     async def edit_chapter(
         self,

@@ -54,3 +54,47 @@ def otw_form(page: str, action: str) -> str:
         i = end
     out.append(page[i:])
     return "".join(out)
+
+
+# ── Ratings (AO3RATING) ────────────────────────────────────────────────────
+# The archive's own five rating words, ranked by how much they warn. Not Rated sits between Mature and
+# Explicit: it promises nothing, so a rated work must never drop to it, and only Explicit is above it.
+OTW_RATING_RANK = {
+    "General Audiences": 0.0,
+    "Teen And Up Audiences": 1.0,
+    "Mature": 2.0,
+    "Not Rated": 2.5,
+    "Explicit": 3.0,
+}
+
+
+class RatingUnreadable(RuntimeError):
+    """The work's live rating couldn't be read from its edit form, so an update can't know what to keep."""
+
+
+def raise_only_rating(current_fields: list[tuple[str, str]], wanted: str, site: str) -> str:
+    """The rating to send on an update: whichever is higher, the work's live rating or ``wanted``.
+
+    A later chapter must never lower a live work's rating (R21). The live value is read from the edit form
+    (``work[rating_string]``); missing, empty or not one of the five words stops the update — it never guesses.
+    """
+    live = next((v for n, v in current_fields if n == "work[rating_string]"), None)
+    if not live or live.strip() not in OTW_RATING_RANK:
+        raise RatingUnreadable(f"Couldn't read this work's rating on {site} — check it on the site")
+    live = live.strip()
+    if wanted not in OTW_RATING_RANK:
+        return live
+    return wanted if OTW_RATING_RANK[wanted] > OTW_RATING_RANK[live] else live
+
+
+def to_otw_rating(rating: str | None) -> str:
+    """A story's rating word as one of the archive's five. Their own words (and ``teen``) map exactly;
+    anything else goes through ``effective_rating``, so an unknown word is Explicit, never General."""
+    from posting.platforms.base import effective_rating
+    r = (rating or "").strip().lower()
+    for word in OTW_RATING_RANK:
+        if r == word.lower():
+            return word
+    if r == "teen":
+        return "Teen And Up Audiences"
+    return {"general": "General Audiences", "mature": "Mature"}.get(effective_rating(r), "Explicit")

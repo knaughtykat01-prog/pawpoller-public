@@ -34,6 +34,22 @@ class PostResult:
     extra: dict = field(default_factory=dict)
 
 
+# STORYRATING / AO3RATING (spec 066 R19): every rating word a story can carry, in three levels. Not Rated and
+# anything unknown count as adult: a post may be rated too high, never too low.
+_GENERAL_WORDS = frozenset({"general", "general audiences", "g", "safe", "sfw", "clean"})
+_MATURE_WORDS = frozenset({"teen", "teen and up audiences", "t", "mature", "m", "questionable", "q"})
+
+
+def effective_rating(word: str | None) -> str:
+    """``general`` / ``mature`` / ``adult`` for any rating word. Unknown, empty and Not Rated → ``adult``."""
+    w = (word or "").strip().lower()
+    if w in _GENERAL_WORDS:
+        return "general"
+    if w in _MATURE_WORDS:
+        return "mature"
+    return "adult"
+
+
 @dataclass
 class StoryUploadPackage:
     """Everything needed to post one chapter/story to one platform."""

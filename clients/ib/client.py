@@ -124,7 +124,7 @@ class InkbunnyClient:
                                rating_data.get("error_code"), rating_data.get("error_message", ""))
         except Exception:
             logger.warning("Rating unlock response was not JSON — adult content may be missing")
-        logger.info("Logged in as %s (sid=%s...)", self.username, self.sid[:8])
+        logger.info("Logged in as %s", self.username)
         return result
 
     async def ensure_session(self, cached_sid: str | None = None) -> str:
@@ -150,7 +150,7 @@ class InkbunnyClient:
                 # Session is still alive -- adopt it and skip login.
                 self.sid = cached_sid
                 if self.user_id:
-                    logger.info("Reusing cached session %s...", cached_sid[:8])
+                    logger.info("Reusing the cached session")
                     return cached_sid
                 # user_id wasn't restored from cache (old DB schema, or a caller that
                 # didn't pass it). Do a fresh login to populate it; web scraping needs it.
