@@ -285,7 +285,7 @@ class Agent:
             if r.status_code == 200:
                 self.last_contact = time.time()
                 return True, ""
-            return False, f"HTTP {r.status_code}: {r.text[:120]}"
+            return False, f"HTTP {r.status_code}: {r.text[:400]}"
         except Exception as e:
             return False, type(e).__name__
         finally:
@@ -385,6 +385,14 @@ class Agent:
         ok, err = self.send_cookies(payload)
         if ok:
             return {"ok": True, "message": "Connected — saved on your server."}
+        if permanent_failure(err):
+            # SEC4885 (2): a refusal (e.g. the wrong account) is final — say why, don't queue it as "unreachable".
+            body = err.split(": ", 1)[1] if ": " in err else ""
+            try:
+                reason = str(json.loads(body).get("detail") or "")
+            except (ValueError, AttributeError):
+                reason = ""
+            return {"ok": False, "message": reason or "Your server refused this sign-in, so it wasn't saved."}
         self.queue.add("cookies", payload, dedup_key=f"cookies:{platform}:{account_id}")
         self._wake.set()
         return {"ok": True, "queued": True,

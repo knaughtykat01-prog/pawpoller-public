@@ -937,10 +937,38 @@ window.Artwork = {
             const sel = document.querySelector('.art-acct-select[data-platform="th"]');
             try {
                 const r = await API.getTHCharacters(sel && sel.value ? { account_id: sel.value } : undefined);
-                const chars = r.characters || [];
-                list.innerHTML = chars.length ? chars.map(c => `<label style="display:inline-flex;gap:6px;align-items:center;margin-right:14px">
-                    <input type="checkbox" class="art-th-char" value="${this.esc(String(c.id))}"${saved.includes(String(c.id)) ? ' checked' : ''}> ${this.esc(c.name)}</label>`).join('')
-                    : 'No characters on this Toyhouse account yet. Make one on Toyhouse first.';
+                // Picked ones first; a search box + scrolling list, since an account can hold hundreds.
+                const chars = (r.characters || []).slice().sort((a, b) =>
+                    (saved.includes(String(b.id)) ? 1 : 0) - (saved.includes(String(a.id)) ? 1 : 0));
+                if (!chars.length) {
+                    list.textContent = 'No characters on this Toyhouse account yet. Make one on Toyhouse first.';
+                } else {
+                    list.style.color = '';
+                    list.innerHTML = `<input type="text" class="art-th-search" placeholder="Search ${chars.length} characters…" aria-label="Search Toyhouse characters" style="width:100%;margin-bottom:6px">
+                        <div class="art-th-count" style="color:var(--text-muted);margin-bottom:4px"></div>
+                        <div class="art-th-scroll" style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:4px 8px">
+                        ${chars.map(c => `<label style="display:flex;gap:8px;align-items:center;padding:5px 0;text-align:left">
+                            <input type="checkbox" class="art-th-char" style="flex:none;width:auto;margin:0" value="${this.esc(String(c.id))}"${saved.includes(String(c.id)) ? ' checked' : ''}>
+                            <span style="flex:1;min-width:0;overflow-wrap:anywhere">${this.esc(c.name)}</span></label>`).join('')}
+                        <div class="art-th-none" hidden style="color:var(--text-muted);padding:5px 0">No character matches.</div></div>`;
+                    const count = list.querySelector('.art-th-count');
+                    const recount = () => {
+                        const n = list.querySelectorAll('.art-th-char:checked').length;
+                        count.textContent = n ? `${n} picked` : 'None picked yet';
+                    };
+                    recount();
+                    list.addEventListener('change', recount);
+                    list.querySelector('.art-th-search').addEventListener('input', (ev) => {
+                        const q = ev.target.value.trim().toLowerCase();
+                        let shown = 0;
+                        list.querySelectorAll('.art-th-scroll label').forEach(l => {
+                            const hit = !q || l.textContent.toLowerCase().includes(q);
+                            l.style.display = hit ? 'flex' : 'none';
+                            if (hit) shown++;
+                        });
+                        list.querySelector('.art-th-none').hidden = shown > 0;
+                    });
+                }
                 box.dataset.ready = '1';
             } catch (e) {
                 delete box.dataset.loaded;

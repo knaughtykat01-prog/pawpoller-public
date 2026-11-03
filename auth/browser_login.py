@@ -326,14 +326,28 @@ def check_creds(platform: str, creds: dict) -> None:
 # Core browser login function
 # ---------------------------------------------------------------------------
 
-async def whose_session_problem(platform: str, creds: dict) -> str:
+async def whose_session_problem(platform: str, creds: dict, account_id: int | None = None) -> str:
     """Why these captured credentials must not be saved, or "" (SEC062 (3)). Toyhouse only: the
-    session must be the typed username's own. The code sign-in checks this itself (`_who`)."""
+    session must belong to the account's SAVED username when it has one (SEC4885 (1): comparing with
+    the typed name let a sign-in quietly switch an account to another user), else the typed one.
+    The code sign-in checks this itself (`_who`)."""
     if platform != "th":
         return ""
-    from routes.signin_helper_api import _who
-    stored = creds.get("th_username", "")
-    ok, who, why = await _who(platform, creds, stored)
+    from routes import signin_helper_api as sh
+    stored = ""
+    try:
+        aid = account_id if account_id is not None else sh._default_account_id(platform)
+        acct = sh._account(aid) if aid is not None else None
+        if acct and acct.get("platform") == platform:
+            stored = sh._stored_name(acct)
+    except Exception as e:  # noqa: BLE001 — no saved name to compare with; the typed one stands
+        logger.info("Toyhouse owner check: no saved name (%s)", type(e).__name__)
+    stored = stored or creds.get("th_username", "")
+    try:
+        ok, who, why = await sh._who(platform, creds, stored)
+    except Exception as e:  # noqa: BLE001 — THChallenged/THUnavailable/network: refuse with a reason, not a 500
+        logger.warning("Toyhouse owner check failed: %s", type(e).__name__)
+        return "Toyhouse didn't answer the account check. Try again in a minute."
     return "" if ok else (why or f"That browser is signed in to Toyhouse as {who}, not {stored}.")
 
 
@@ -499,10 +513,10 @@ def login_via_browser(
 
     # Save to settings.json — under the chosen account's keys (4.6.3).
     if creds and save:
-        why = asyncio.run(whose_session_problem(platform, creds))   # an executor thread, no loop running
+        why = asyncio.run(whose_session_problem(platform, creds, account_id))   # an executor thread, no loop running
         if why:
             logger.warning("Browser login for %s not saved: %s", platform, why)
-            return None
+            raise ValueError(why)   # SEC4885 (3): the route shows the reason, not "Sign-in cancelled"
         written = _save_browser_creds(platform, creds, account_id)
         logger.info("Saved browser login credentials for %s (account %s): %s",
                     platform, account_id if account_id is not None else "default", list(written.keys()))

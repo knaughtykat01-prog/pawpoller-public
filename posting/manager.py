@@ -43,6 +43,7 @@ _PERMANENT_ERROR_MARKERS = (
     "cloudflare bot check",              # FA mitigation (4.77.6, spec 040): FA asks tools to stop, and a submit
                                          # can land before the check answers its redirect, so a retry double-posts
     "didn't save the work",              # AO3 validation (4.78.1): the same form fails the same way
+    "couldn't read this work's rating",  # AO3/SqW RatingUnreadable (SEC4885 (4)): the same form reads the same way
 )
 
 

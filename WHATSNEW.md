@@ -2,6 +2,14 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.88.6] - 2026-11-03 - Toyhouse character picker, and small safety fixes
+
+> - The Toyhouse character list in the post form now has a search box and scrolls, with your picked characters on top.
+> - Signing in to Toyhouse through the browser can no longer switch an existing account to a different Toyhouse user.
+> - If a Toyhouse sign-in is refused, PawPoller now says why instead of "Sign-in cancelled" or a generic error.
+> - A sign-in your server refuses is no longer reported as "server unreachable" and retried.
+> - An AO3 or SquidgeWorld update that can't read the work's rating is no longer retried over and over.
+
 ## [4.88.5] - 2026-11-02 - SquidgeWorld outages, AO3 ratings, and small safety fixes
 
 > - When SquidgeWorld is down, PawPoller now says the site isn't responding instead of asking you to check your password.
@@ -218,8 +226,3 @@ Generated from the release notes: each version's plain-language summary.
 > - A dropped stream that restarts within the cool-down counts as the same stream, so nothing posts twice.
 > - When the stream ends, PawPoller can change the Discord, Mastodon and Telegram posts to your "it's over" words.
 > - Go-live posts are new and still being tested on real streams.
-
-## [4.80.1] - 2026-10-18 - Tidy alerts
-
-> - This is the release that brings you the 4.80.0 alert changes below.
-> - Fixed a check that stopped the 4.80.0 downloads from being built.

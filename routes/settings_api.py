@@ -422,7 +422,7 @@ async def browser_login_result(req: BrowserLoginResult):
         creds.update({k: v for k, v in req.extra_fields.items() if isinstance(v, str)})
     if not creds:
         raise HTTPException(status_code=400, detail="no credentials in the result")
-    why = await _bl.whose_session_problem(platform, creds)
+    why = await _bl.whose_session_problem(platform, creds, req.account_id)
     if why:
         raise HTTPException(status_code=400, detail=why)
     try:
