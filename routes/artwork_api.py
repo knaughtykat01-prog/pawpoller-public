@@ -626,6 +626,7 @@ async def publish_artwork(body: dict):
             load_artwork(artwork_name)
         except FileNotFoundError as e:
             raise HTTPException(404, detail=str(e))
+        activity.check_twin("publish", artwork_name.replace("_", " "), platforms, {"artwork": artwork_name})
         pending = manager.write_pending(artwork_name, platforms, account_ids)
         jid = activity.launch("publish", artwork_name.replace("_", " "), platforms,
                               lambda: _run(platforms, pending), ref={"artwork": artwork_name},
@@ -803,6 +804,11 @@ async def schedule_artwork(body: dict):
 
     conn = get_connection()
     try:
+        if not body.get("again"):   # SCHEDTWICE (4.88.8): ask before queuing it twice
+            when = posting_queries.pending_post_at(conn, "artwork", name, 0, platform, account_id, variant_key)
+            if when is not None:
+                raise HTTPException(409, detail={"already_scheduled": [{"platform": platform,
+                                                                        "scheduled_at": when}]})
         queue_id = posting_queries.add_to_queue(
             conn, name, 0, platform, action="post",
             account_id=account_id,

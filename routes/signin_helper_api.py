@@ -191,12 +191,12 @@ def _account(account_id: int) -> dict | None:
         conn.close()
 
 
-def _default_account_id(platform: str) -> int | None:
+def _default_account_id(platform: str, create: bool = True) -> int | None:
     from database.db import get_connection
     from database import accounts as adb
     conn = get_connection()
     try:
-        return adb.get_default_account_id(conn, platform, create=True, settings=config.get_settings())
+        return adb.get_default_account_id(conn, platform, create=create, settings=config.get_settings())
     finally:
         conn.close()
 

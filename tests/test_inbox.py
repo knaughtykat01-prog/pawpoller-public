@@ -183,6 +183,25 @@ def test_comments_older_than_a_year_are_handled_automatically():
     assert _client().get("/api/inbox").json()["unhandled_count"] == 2
 
 
+def test_toyhouse_comments_follow_the_one_year_rule():
+    """THINBOX: Toyhouse's dates were stored as the page's text, which the rule couldn't read, so every
+    comment ever came in as to-answer. New rows are ISO; rows stored before 4.88.8 read too."""
+    from datetime import datetime, timedelta
+    from clients.th.client import th_time_iso
+    def th_text(days):
+        return (datetime.now() - timedelta(days=days)).strftime("%d %b %Y, %I:%M:%S %p").lower()
+    conn = get_connection()
+    try:
+        for cid, when in (("th-old-new", th_time_iso(th_text(730))), ("th-week", th_time_iso(th_text(7))),
+                          ("th-old-stored", th_text(730)), ("th-week-stored", th_text(7))):
+            inbox_queries.upsert_platform_comment(conn, "th", cid, "t1", author="fan", body="b", commented_at=when)
+        items = {i["comment_id"]: i for i in inbox_queries.get_inbox(conn)}
+    finally:
+        conn.close()
+    assert items["th-old-new"]["auto_handled"] and items["th-old-stored"]["auto_handled"]
+    assert not items["th-week"]["handled"] and not items["th-week-stored"]["handled"]
+
+
 def test_the_filter_lists_every_site_not_just_the_filtered_one():
     """INBOXFILTER: filtering to Bluesky and handling it left no way back to DeviantArt."""
     conn = get_connection()

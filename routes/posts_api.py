@@ -894,6 +894,12 @@ async def schedule_post(post_id: int, payload: dict):
     queue_ids = []
     conn = get_connection()
     try:
+        if not payload.get("again"):   # SCHEDTWICE (4.88.8): ask before queuing any of it twice
+            twins = [{"platform": p, "scheduled_at": w} for p in platforms
+                     if (w := posting_queries.pending_post_at(conn, "post", str(post_id), 0, p,
+                                                              account_ids.get(p))) is not None]
+            if twins:
+                raise HTTPException(409, detail={"already_scheduled": twins})
         for platform in platforms:
             qid = posting_queries.add_to_queue(
                 conn, str(post_id), 0, platform, action="post",

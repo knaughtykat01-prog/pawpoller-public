@@ -34,7 +34,13 @@ _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")   # every source stores ISO dates (IB "Y
 
 def _older_than_cutoff(commented_at, cutoff: str) -> bool:
     """True if the comment's date is before *cutoff* (YYYY-MM-DD). An unreadable date never is."""
-    m = _DAY.match(str(commented_at or ""))
+    s = str(commented_at or "")
+    m = _DAY.match(s)
+    if not m and s:
+        # THINBOX (4.88.8): Toyhouse rows stored before 4.88.8 hold the page's own text
+        # ("29 Sep 2024, 4:17:07 pm"); read them too, so they're handled with no migration.
+        from clients.th.client import th_time_iso
+        m = _DAY.match(th_time_iso(s) or "")
     return bool(m) and m.group(0) < cutoff
 
 

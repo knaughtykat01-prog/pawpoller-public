@@ -330,25 +330,34 @@ async def whose_session_problem(platform: str, creds: dict, account_id: int | No
     """Why these captured credentials must not be saved, or "" (SEC062 (3)). Toyhouse only: the
     session must belong to the account's SAVED username when it has one (SEC4885 (1): comparing with
     the typed name let a sign-in quietly switch an account to another user), else the typed one.
-    The code sign-in checks this itself (`_who`)."""
+    The code sign-in checks this itself (`_who`).
+
+    SEC4886: a passing check also puts the saved name back into *creds*, so a different TYPED
+    `th_username` is never what gets written; and finding the default account never creates one
+    (a refused sign-in left an empty, enabled Toyhouse account behind)."""
     if platform != "th":
         return ""
     from routes import signin_helper_api as sh
     stored = ""
     try:
-        aid = account_id if account_id is not None else sh._default_account_id(platform)
+        aid = account_id if account_id is not None else sh._default_account_id(platform, create=False)
         acct = sh._account(aid) if aid is not None else None
         if acct and acct.get("platform") == platform:
             stored = sh._stored_name(acct)
     except Exception as e:  # noqa: BLE001 — no saved name to compare with; the typed one stands
         logger.info("Toyhouse owner check: no saved name (%s)", type(e).__name__)
+    saved = stored
     stored = stored or creds.get("th_username", "")
     try:
         ok, who, why = await sh._who(platform, creds, stored)
     except Exception as e:  # noqa: BLE001 — THChallenged/THUnavailable/network: refuse with a reason, not a 500
         logger.warning("Toyhouse owner check failed: %s", type(e).__name__)
         return "Toyhouse didn't answer the account check. Try again in a minute."
-    return "" if ok else (why or f"That browser is signed in to Toyhouse as {who}, not {stored}.")
+    if not ok:
+        return why or f"That browser is signed in to Toyhouse as {who}, not {stored}."
+    if saved and "th_username" in creds:
+        creds["th_username"] = saved     # the name just checked, never a different typed one
+    return ""
 
 
 def _save_browser_creds(platform: str, creds: dict, account_id: int | None) -> dict:

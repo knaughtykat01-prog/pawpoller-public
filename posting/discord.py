@@ -119,7 +119,15 @@ def preview_bytes(src: str | Path | None) -> tuple[bytes, str] | None:
         # Only a real image may go as-is: a video piece's file is not a preview (its
         # poster is — the caller passes that), and Discord would show a blank card.
         if ext in _ann.IMAGE_TYPES and p.stat().st_size <= _ORIGINAL_MAX:
-            return p.read_bytes(), ext
+            data = p.read_bytes()
+            # Spec 071 (FR-SEC-007): the stored file can carry GPS and an author's name. Send it only
+            # cleaned; one that can't be cleaned goes as a text card, never as the original.
+            from posting import metadata_strip
+            if metadata_strip.is_enabled():
+                data = metadata_strip.clean_bytes(data)
+                if data is None:
+                    return None
+            return data, ext
     except OSError:
         pass
     return None

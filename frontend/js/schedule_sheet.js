@@ -331,12 +331,14 @@
                     } else {
                         const a = accts();
                         for (const code of st.picked) {
-                            await API.post(`/api/editor/stories/${enc(name)}/schedule`, {
-                                platform: code, chapter: one != null ? one : 0, action: 'post',
-                                scheduled_at: startDate().toISOString(), draft: draftFor(code),
-                                account_id: a[code] || null, persona_id: personaId(),
-                            });
-                            n++;
+                            try {
+                                await API.scheduleStory(name, {
+                                    platform: code, chapter: one != null ? one : 0, action: 'post',
+                                    scheduled_at: startDate().toISOString(), draft: draftFor(code),
+                                    account_id: a[code] || null, persona_id: personaId(),
+                                });
+                                n++;
+                            } catch (e) { if (!e.cancelled) throw e; }   // SCHEDTWICE: "no" skips that site
                         }
                     }
                     close();

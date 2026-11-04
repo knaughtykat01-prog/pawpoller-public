@@ -41,10 +41,25 @@ def _line(key: str, label: str, now: float) -> dict:
             "pct": None, "url": "", "error": "", "at": now}
 
 
+class AlreadyRunning(Exception):
+    """The same thing is already being sent to one of these sites (DOUBLEPOST, 4.88.8)."""
+
+
+ALREADY_RUNNING = "This is already being posted. It's in the progress list."
+
+
+def _twin(kind: str, title: str, ref: dict, keys) -> bool:
+    """A running job of the same kind, title and ref sharing a site. Caller holds _lock."""
+    return any(j["state"] == "running" and j["kind"] == kind and j["title"] == title and j["ref"] == ref
+               and j["lines"].keys() & keys for j in _jobs.values())
+
+
 def start(kind: str, title: str, lines, *, ref: dict | None = None,
-          retry: Callable[[str], Awaitable] | None = None) -> str:
+          retry: Callable[[str], Awaitable] | None = None, refuse_twin: bool = False) -> str:
     """A new running job. `lines` = keys, or (key, label) pairs. `ref` = where the job's thing
-    lives (e.g. {"route": "#/story/X"}); `retry(key)` re-runs one line (Retry in the tray)."""
+    lives (e.g. {"route": "#/story/X"}); `retry(key)` re-runs one line (Retry in the tray).
+    `refuse_twin`: raise AlreadyRunning when a running job of the same kind, title and ref
+    shares a site, checked under the same lock as the insert (a second tab or a second click)."""
     now = time.time()
     jid = uuid.uuid4().hex[:12]
     pairs = [(x, x) if isinstance(x, str) else (str(x[0]), str(x[1])) for x in lines]
@@ -52,6 +67,8 @@ def start(kind: str, title: str, lines, *, ref: dict | None = None,
            "started": now, "finished": None, "cancel": False,
            "lines": {k: _line(k, lab, now) for k, lab in pairs}}
     with _lock:
+        if refuse_twin and _twin(kind, title, job["ref"], job["lines"].keys()):
+            raise AlreadyRunning()
         _jobs[jid] = job
         if retry:
             _retry[jid] = retry
@@ -208,11 +225,29 @@ def run_in_job(job_id: str, coro_fn: Callable[[], Awaitable[Any]]) -> asyncio.Ta
     return task
 
 
+def check_twin(kind: str, title: str, lines, ref: dict | None = None) -> None:
+    """launch()'s 409, early: for a route that writes rows before launching (artwork's pending
+    log rows). ponytail: two requests in the same instant can both pass this; launch() still
+    refuses the second, leaving its pending rows for the restart sweep (mark_restart_leftovers)."""
+    keys = {x if isinstance(x, str) else str(x[0]) for x in lines}
+    with _lock:
+        twin = _twin(kind, title, dict(ref or {}), keys)
+    if twin:
+        from fastapi import HTTPException
+        raise HTTPException(409, detail=ALREADY_RUNNING)
+
+
 def launch(kind: str, title: str, lines, coro_fn: Callable[[], Awaitable[Any]], *,
            ref: dict | None = None, retry: Callable[[str], Awaitable] | None = None) -> str:
     """start() + run_in_job(): a publish route's `background: true` path. Returns the job id
-    at once; the work carries on after the HTTP reply (the pill and tray follow it)."""
-    jid = start(kind, title, lines, ref=ref, retry=retry)
+    at once; the work carries on after the HTTP reply (the pill and tray follow it).
+    A twin already running (same kind, title, ref and a shared site) is refused with 409, so
+    a second tab or a second Post can't send a live copy twice (DOUBLEPOST, 4.88.8)."""
+    try:
+        jid = start(kind, title, lines, ref=ref, retry=retry, refuse_twin=True)
+    except AlreadyRunning:
+        from fastapi import HTTPException
+        raise HTTPException(409, detail=ALREADY_RUNNING) from None
     run_in_job(jid, coro_fn)
     return jid
 

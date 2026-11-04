@@ -594,15 +594,15 @@ const App = {
            In safe mode the first click on a still-blurred tile reveals just that
            one (and swallows the click so the card/link doesn't navigate); the
            next click on the now-revealed tile falls through to normal navigation.
-           The selector mirrors safe_mode.css's blur set; `.mp-alts img` matches
-           the alt thumbnails whose rating lives on the .mp-alts wrapper. Peeks
+           The selector mirrors safe_mode.css's blur set; `img.mp-alt` matches
+           the version thumbnails, each with its own rating (4.88.8). Peeks
            reset naturally on SPA navigation (the grid re-renders). */
         const _sfwPeekSel = [
             '.book-cover:not([data-rating="general"])',
             '.artwork-card-cover:not([data-rating="general"])',
             '.mp-cover:not([data-rating="general"])',
             '.coll-cover:not([data-rating="general"])',
-            '.mp-alts:not([data-rating="general"]) img',
+            'img.mp-alt:not([data-rating="general"])',
             'img.artwork-detail-img:not([data-rating="general"])',
             'img.mp-hero-img:not([data-rating="general"])',
             'img.post-card-img:not([data-rating="general"])',
@@ -17329,6 +17329,13 @@ const App = {
                         </label>
                         <p style="font-size:12px;color:var(--text-muted);margin:2px 0 0">Adds a small credit line to story and artwork descriptions when you publish. It's how other creators discover PawPoller. (Never added to short microblog posts.)</p>
                     </div>
+                    <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:12px">
+                        <label class="settings-toggle-row">
+                            <span>📍 Remove location and camera details from pictures before posting</span>
+                            <input type="checkbox" id="posting-strip-metadata-toggle" ${postingSettings.posting_strip_metadata !== false ? 'checked' : ''}>
+                        </label>
+                        <p style="font-size:12px;color:var(--text-muted);margin:2px 0 0">Takes out hidden details like where a photo was taken, the phone or camera, and the name your art app saved. The picture itself isn't changed, and your stored files are never touched.</p>
+                    </div>
                     <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:14px;border-top:1px solid var(--card-border-inner);padding-top:12px">
                         <label class="settings-toggle-row">
                             <span>🖊️ Watermark artwork on export</span>
@@ -22724,6 +22731,19 @@ const App = {
                 }
             });
 
+            // Spec 071: saves itself, like the credit line (no plea — it's the artist's privacy call).
+            const _stripToggle = document.getElementById('posting-strip-metadata-toggle');
+            _stripToggle?.addEventListener('change', async () => {
+                const on = !!_stripToggle.checked;
+                try {
+                    await API.savePostingSettings({ posting_strip_metadata: on });
+                    window.toast?.success(on ? 'Pictures will go out without their hidden details'
+                                             : 'Pictures will go out with their hidden details');
+                } catch (e) {
+                    _stripToggle.checked = !on;
+                    window.toast?.error('Could not save that setting');
+                }
+            });
             const _attribToggle = document.getElementById('posting-attribution-toggle');
             _attribToggle?.addEventListener('change', async () => {
                 if (_attribToggle.checked) {

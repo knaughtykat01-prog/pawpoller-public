@@ -680,7 +680,7 @@ def _health_snapshot(settings: dict | None = None) -> dict:
 
 _TREND_DAYS = 30
 _SERIES_TTL_S = 600
-# ponytail: one in-process cache of each platform's 30-day series, 10 minutes. The series
+# shortcut: one in-process cache of each platform's 30-day series, 10 minutes. The series
 # only moves when a poll lands (every few hours), and building it scans the snapshot table;
 # move it to a per-poll write if snapshot tables ever get big enough for the first load to drag.
 _series_cache: dict[str, tuple[float, list, float | None]] = {}

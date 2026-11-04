@@ -34,6 +34,7 @@ import asyncio
 import logging
 import os
 import re
+from datetime import datetime
 from html import unescape
 from urllib.parse import urljoin, urlsplit
 
@@ -219,6 +220,16 @@ def parse_character_stats(html: str) -> dict | None:
     return out
 
 
+def th_time_iso(text) -> str | None:
+    """Toyhouse's date tooltip ("29 Sep 2026, 4:17:07 pm") as "YYYY-MM-DD HH:MM:SS", the form every other site
+    stores; None if it doesn't read. THINBOX (4.88.8): stored raw, the Inbox's one-year rule couldn't read it, so
+    every Toyhouse comment ever came in as to-answer. Day precision is all that rule needs, so the zone is moot."""
+    try:
+        return datetime.strptime(str(text or "").strip(), "%d %b %Y, %I:%M:%S %p").strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
 def parse_comments(html: str) -> list[dict]:
     """Every comment on a comments page (replies included), in the shape inbox_capture wants. The body is
     plain text and the permalink is built from the id (FR-SEC-004)."""
@@ -233,7 +244,7 @@ def parse_comments(html: str) -> list[dict]:
             "comment_id": cid,
             "author": author.group(1) if author else "",
             "body": plain_text(body.group(1)) if body else "",
-            "commented_at": when.group(1) if when else None,
+            "commented_at": th_time_iso(when.group(1)) if when else None,
             "permalink": f"{BASE}/~comments/{cid}",
         })
     return out

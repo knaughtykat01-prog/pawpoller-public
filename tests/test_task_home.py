@@ -231,9 +231,10 @@ def test_old_callers_get_the_old_drip(story):
 
 def test_single_schedule_stores_draft_only_when_given(story):
     from routes import editor_api
-    for draft in (True, None):
+    for draft in (True, None):      # the second is the same chapter again: SCHEDTWICE asks, `again` says yes
         asyncio.run(editor_api.schedule_publish("Sample_Story", editor_api.ScheduleRequest(
-            platform="ib", chapter=2, scheduled_at="2031-01-06T09:00:00+00:00", draft=draft)))
+            platform="ib", chapter=2, scheduled_at="2031-01-06T09:00:00+00:00", draft=draft,
+            again=draft is None)))
     assert [r["draft"] for r in _rows()] == [1, None]
 
 

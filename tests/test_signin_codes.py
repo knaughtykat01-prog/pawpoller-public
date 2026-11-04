@@ -306,7 +306,8 @@ def test_m3_the_code_is_never_in_a_path_and_only_two_paths_are_exempt(env):
 def test_m1_no_desktop_http_route_anywhere():
     import dashboard
     assert not any(getattr(r, "path", "").startswith("/api/helper") for r in dashboard.app.routes)
-    assert not hasattr(da.AgentApi, "helper_signin")
+    assert not hasattr(da, "AgentApi")                       # 072: replaced by Connection + window.expose
+    assert not hasattr(da.Connection, "helper_signin")
 
 
 def test_l9_a_big_body_is_refused(env):

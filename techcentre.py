@@ -235,7 +235,7 @@ def _other_people() -> tuple[frozenset, tuple]:
 
 
 def _scrub_people(text: str) -> str:
-    # ponytail: exact-token match, so a username that is an ordinary word ("error") masks that
+    # shortcut: exact-token match, so a username that is an ordinary word ("error") masks that
     # word in the report too. Over-masking is the safe direction; a stop-list if reports suffer.
     words, phrases = _other_people()
     for p in phrases:

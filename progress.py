@@ -457,7 +457,7 @@ def windows(conn: sqlite3.Connection, key: tuple, ages=None) -> dict:
 
 def _per_follower(conn, key: tuple, main: dict) -> float | None:
     """The piece's score at the shown age per follower of the accounts it is on.
-    # ponytail: today's follower count, not the count on the post date; accounts keep only
+    # shortcut: today's follower count, not the count on the post date; accounts keep only
     # the latest figure. Use a follower series if one is ever stored."""
     accts = {a for a in uploads(conn, key).get(key, {}).values() if a is not None}
     if not accts:

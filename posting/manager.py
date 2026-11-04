@@ -7,6 +7,7 @@ platform posters (which handle the actual HTTP uploads).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone, timedelta
@@ -205,6 +206,22 @@ _poster_gen: dict[tuple[str, int | None], int] = {}   # config.credentials_gener
 # ── Activity reporting (4.51.0, spec 017) ─────────────────────────────────────
 # Every call below is a no-op unless the caller bound an activity job (posting/activity.py),
 # so a plain API publish, the CLI and the tests behave exactly as before.
+# Spec 071: the bell line's words when a picture went out with its hidden details still in it. A scheduled run
+# binds a job (scheduler.py), so this is how a run nobody watched still tells the artist (FR-SEC-003).
+KEPT_STEP = "Sent, but its hidden details couldn't be removed"
+
+
+def _kept_result(package) -> dict[str, Any]:
+    """The result-dict keys for a picture that couldn't be cleaned (spec 071), else nothing."""
+    note = (getattr(package, "extra", None) or {}).get("metadata_note")
+    return {"metadata_kept": True, "metadata_note": note} if note else {}
+
+
+def _join_note(*parts) -> str | None:
+    text = " ".join(str(p) for p in parts if p)
+    return text or None
+
+
 def _act_settle(platform: str, results: list[dict[str, Any]]) -> None:
     """Close `platform`'s activity line from its result rows."""
     rows = [r for r in results if r.get("platform") == platform]
@@ -226,7 +243,8 @@ def _act_settle(platform: str, results: list[dict[str, Any]]) -> None:
         activity.line_done(platform, True, step="Skipped")
     else:
         activity.line_done(platform, True, url=url,
-                           step="Queued for desktop" if any(r.get("queued_desktop") for r in rows) else None)
+                           step="Queued for desktop" if any(r.get("queued_desktop") for r in rows)
+                           else KEPT_STEP if any(r.get("metadata_kept") for r in rows) else None)
 
 
 def _act_settle_all(results: list[dict[str, Any]]) -> None:
@@ -638,6 +656,26 @@ async def post_story(
     description_overrides: dict[str, str] | None = None,
     announce_discord: bool | None = None,
 ) -> list[dict[str, Any]]:
+    """`_post_story` inside one CleanRun (spec 071): the cover / chapter picture / promo card goes
+    out cleaned, and every copy is removed however the run ends."""
+    from posting import metadata_strip
+    with metadata_strip.CleanRun() as run:
+        return await _post_story(story_name, platforms, chapters, extras, account_ids, persona_id,
+                                 description_overrides, announce_discord, run=run)
+
+
+async def _post_story(
+    story_name: str,
+    platforms: list[str],
+    chapters: list[int] | None = None,
+    extras: dict[str, Any] | None = None,
+    account_ids: dict[str, int] | None = None,
+    persona_id: int | None = None,
+    description_overrides: dict[str, str] | None = None,
+    announce_discord: bool | None = None,
+    *,
+    run=None,
+) -> list[dict[str, Any]]:
     """Post a story to multiple platforms.
 
     Args:
@@ -698,6 +736,11 @@ async def post_story(
                 package.extra.update(extras)
             if platform in _ANNOUNCES_LAST:
                 package.extra["run_links"] = _run_links(results, ch_idx)
+            # Spec 071: after extras (the artwork path's order), before validation so the size
+            # check sees the picture that goes out. The story text itself is not a picture.
+            if run is not None:
+                await asyncio.to_thread(run.clean_package, package)   # off the event loop (impl review Low)
+            _kept = _kept_result(package)
 
             # Validate
             refusal = poster.refusal(package) if hasattr(poster, "refusal") else None   # media kind, then rating (4.21.0)
@@ -721,9 +764,10 @@ async def post_story(
             activity.step(platform, "Uploading", _ch_label(ch_idx, chapter_list))
             result = _confirmed(await poster.post(package), poster)
 
-            # Compute file hash for change detection
+            # Compute file hash for change detection (the library file, never a temp copy; 071)
             from posting.sync import hash_file
-            current_hash = hash_file(package.file_path) if package.file_path else ""
+            _lib_file = package.extra.get("library_path") or package.file_path
+            current_hash = hash_file(_lib_file) if _lib_file else ""
 
             # If the post failed, try to auto-recover:
             # 1. Desktop-requiring platforms → queue for desktop
@@ -770,12 +814,14 @@ async def post_story(
                     description_used=package.description[:500],
                     tags_used=package.tags,
                     rating_used=_rating_used(package, result),
-                    format_file=package.file_path or "",
+                    format_file=_lib_file or "",
                     file_hash=current_hash,
                     word_count=package.word_count,
                     status="posted" if result.success else "failed",
                 )
                 _status, _msg = _final_status(result, queued_for_desktop, gave_up)
+                if _kept and (result.success or result.unconfirmed):
+                    _msg = _join_note(_msg, _kept["metadata_note"])     # the log row outlives the screen (071)
                 posting_queries.log_posting_action(
                     conn, platform, story_name, ch_idx,
                     action="post",
@@ -804,6 +850,9 @@ async def post_story(
                 "unconfirmed": result.unconfirmed,
                 "tags_left_out": _tags_left_out(package, result, platform),
                 "duration": result.duration_seconds,
+                # Spec 071: the picture went out with its hidden details still in it.
+                **({"note": _kept["metadata_note"], **_kept}
+                   if _kept and (result.success or result.unconfirmed) else {}),
             })
 
             # Rate limit between chapters on the same platform
@@ -926,12 +975,12 @@ def _site_renders(artwork, platform: str, poster, variant_overrides, renders,
 
 def _prepare_render(artwork, platform: str, poster, variant, *, multi: bool, account_id,
                     description_overrides, extras, results: list[dict[str, Any]],
-                    wm_temps: list[str] | None):
-    """``(package, errors)`` for one render on one site: build, extras, watermark, then the
-    poster's own ``refusal()`` / ``validate()``. ``(None, [])`` when the render's file is gone
+                    run=None):
+    """``(package, errors)`` for one render on one site: build, extras, clean, watermark, then
+    the poster's own ``refusal()`` / ``validate()``. ``(None, [])`` when the render's file is gone
     (refused into *results*). The publish and the pre-check (055) both run this, so a check
-    can't pass what the post refuses. *wm_temps* None skips the watermark (the check writes
-    no temp files; the stamp barely moves the size check)."""
+    can't pass what the post refuses. *run* (a ``metadata_strip.CleanRun``) None skips cleaning
+    and the watermark: the check writes no temp files, and cleaning only shrinks the file."""
     from posting import artwork_reader
     try:
         package = artwork_reader.build_artwork_package(
@@ -958,17 +1007,18 @@ def _prepare_render(artwork, platform: str, poster, variant, *, multi: bool, acc
     if platform in _ANNOUNCES_LAST:
         package.extra["run_links"] = _run_links(results)
 
-    # Watermark (gap-wave-5 §1): swap in a stamped temp copy before
-    # validation (so the size check sees the real bytes) and post that.
-    # No-op / never raises when disabled or on any PIL error. Temps are
-    # collected and deleted after the whole loop (a retry within an
-    # iteration re-posts the same package, so they must outlive it).
-    if wm_temps is not None:
+    # Hidden details out (spec 071), then the watermark (gap-wave-5 §1) on the cleaned copy:
+    # both swap in temp copies before validation, so the size check sees the bytes that go out.
+    # Neither raises. The run owns every temp and removes them when the whole publish ends
+    # (a retry within an iteration re-posts the same package, so they must outlive it).
+    if run is not None:
+        # shortcut: sync, on the event loop (as the watermark already was); to_thread if a big render stalls a seat.
+        run.clean_package(package)
         from posting import watermark
         _wm_path, _wm_tmp = watermark.apply(package.file_path)
         if _wm_tmp:
             package.file_path = _wm_path
-            wm_temps.append(_wm_tmp)
+            run.add_temp(_wm_tmp)
 
     refusal = poster.refusal(package) if hasattr(poster, "refusal") else None   # media kind, then rating (4.21.0)
     return package, ([refusal] if refusal else poster.validate(package))
@@ -982,14 +1032,26 @@ def publish_check(artwork_name: str, platforms: list[str], *, account_ids: dict 
     The same steps ``post_artwork`` runs before sending (account, render pick, package build,
     ``refusal()``, ``validate()``) with nothing sent, no log row and no watermark temp file.
     Returns ``{problems: {site: [sentence]}, left_out: {site: [{tag, rule}]},
-    tag_counts: {site: n}}``; a site with nothing to say is absent. Raises FileNotFoundError
-    for an unknown piece."""
-    from posting import artwork_reader, e621_tags
+    tag_counts: {site: n}, kept_details: {site: sentence}}``; a site with nothing to say is absent.
+    ``kept_details`` (spec 071) warns that a picture would go out with its hidden details still in
+    it; read-only, no files written, each picture read once however many sites. Raises
+    FileNotFoundError for an unknown piece."""
+    from posting import artwork_reader, e621_tags, metadata_strip
     artwork = artwork_reader.load_artwork(artwork_name)
     account_ids = account_ids or {}
     problems: dict[str, list[str]] = {}
     left_out: dict[str, list[dict]] = {}
     counts: dict[str, int] = {}
+    kept: dict[str, str] = {}
+    _notes: dict[str, str | None] = {}
+    _strip_on = metadata_strip.is_enabled()
+
+    def _note_for(path):
+        if not path or not _strip_on:
+            return None
+        if path not in _notes:
+            _notes[path] = metadata_strip.precheck_note(path, {})
+        return _notes[path]
     for platform in dict.fromkeys(platforms or []):
         said: list[str] = []
         lost: list[dict] = []
@@ -1009,10 +1071,14 @@ def publish_check(artwork_name: str, platforms: list[str], *, account_ids: dict 
         for variant in chosen:
             package, errors = _prepare_render(
                 artwork, platform, poster, variant, multi=len(chosen) > 1, account_id=account_id,
-                description_overrides=None, extras=None, results=refused, wm_temps=None)
+                description_overrides=None, extras=None, results=refused, run=None)
             if package is None:
                 continue
             said += errors
+            for _p in (package.file_path, package.thumbnail_path):
+                _n = _note_for(_p)
+                if _n and _n not in kept.get(platform, ""):
+                    kept[platform] = _join_note(kept.get(platform), _n) or ""
             lost += _tags_left_out(package, PostResult(success=False), platform)
             if platform == "e621":
                 sent, e6_lost = e621_tags.prepare(package.tags)
@@ -1026,7 +1092,7 @@ def publish_check(artwork_name: str, platforms: list[str], *, account_ids: dict 
             problems[platform] = list(dict.fromkeys(said))
         if lost:
             left_out[platform] = list({(d["tag"], d["rule"]): d for d in lost}.values())
-    return {"problems": problems, "left_out": left_out, "tag_counts": counts}
+    return {"problems": problems, "left_out": left_out, "tag_counts": counts, "kept_details": kept}
 
 
 async def post_artwork(
@@ -1087,12 +1153,16 @@ async def post_artwork(
     if pending is None:
         pending = write_pending(artwork_name, platforms, account_ids)
     results: list[dict[str, Any]] = []
+    from posting import metadata_strip
     try:
-        return await _post_artwork(artwork, artwork_name, platforms, results, pending,
-                                   extras=extras, account_ids=account_ids, persona_id=persona_id,
-                                   description_overrides=description_overrides,
-                                   variant_overrides=variant_overrides, renders=renders,
-                                   announce_discord=announce_discord)
+        # Spec 071: one CleanRun for the whole publish (every site, every in-run retry); its
+        # cleaned copies and the watermark temps go on every way out, a raise or a cancel included.
+        with metadata_strip.CleanRun() as run:
+            return await _post_artwork(artwork, artwork_name, platforms, results, pending,
+                                       extras=extras, account_ids=account_ids, persona_id=persona_id,
+                                       description_overrides=description_overrides,
+                                       variant_overrides=variant_overrides, renders=renders,
+                                       announce_discord=announce_discord, run=run)
     finally:
         _close_pending(pending, results)
 
@@ -1100,8 +1170,7 @@ async def post_artwork(
 async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
                         results: list[dict[str, Any]], pending: dict[str, int], *,
                         extras, account_ids, persona_id, description_overrides,
-                        variant_overrides, renders, announce_discord) -> list[dict[str, Any]]:
-    _wm_temps: list[str] = []   # watermark temp files, cleaned after the loop
+                        variant_overrides, renders, announce_discord, run=None) -> list[dict[str, Any]]:
     _act_prev = None
     for platform in _announcers_last(platforms):
         if _act_prev:
@@ -1145,7 +1214,7 @@ async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
             package, errors = _prepare_render(
                 artwork, platform, poster, _variant, multi=_multi, account_id=account_id,
                 description_overrides=description_overrides, extras=extras, results=results,
-                wm_temps=_wm_temps)
+                run=run)
             if package is None:
                 continue          # the render's file vanished; already reported
             if errors:
@@ -1169,9 +1238,12 @@ async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
                           ((_variant or {}).get("label") or (_variant or {}).get("key") or "") if _multi else None)
             result = _confirmed(await poster.post(package), poster)
 
-            # Compute file hash for change detection (the image itself)
+            # Compute file hash for change detection (the image itself). The LIBRARY file, never the
+            # cleaned / watermarked temp copy that went out (spec 071 FR-SEC-008).
             from posting.sync import hash_file
-            current_hash = hash_file(package.file_path) if package.file_path else ""
+            _lib_file = package.extra.get("library_path") or package.file_path
+            current_hash = hash_file(_lib_file) if _lib_file else ""
+            _kept = _kept_result(package)
 
             # Auto-recover failures, mirroring post_story:
             #   1. Desktop-requiring platforms (FA/DA) → queue for desktop
@@ -1231,13 +1303,15 @@ async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
                     description_used=package.description[:500],
                     tags_used=package.tags,
                     rating_used=_rating_used(package, result),
-                    format_file=package.file_path or "",
+                    format_file=_lib_file or "",
                     file_hash=current_hash,
                     word_count=0,
                     status=("draft" if getattr(result, "needs_attention", "") else "posted") if result.success else "failed",
                 )
                 # needs_attention (4.60.0): on the site, but the owner must finish it (the bell lists it)
                 _status, _msg = _final_status(result, queued_for_desktop, gave_up)
+                if _kept and (result.success or result.unconfirmed):
+                    _msg = _join_note(_msg, _kept["metadata_note"])     # the log row outlives the screen (071)
                 _log_final(conn, pending, platform, artwork_name, _status,
                            account_id=account_id,
                            pub_id=pub_id,
@@ -1285,6 +1359,9 @@ async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
                 "duration": result.duration_seconds,
                 # Which render went to this site — "" for the primary (4.33.0).
                 "variant": (_variant or {}).get("label") or (_variant or {}).get("key") or "",
+                # Spec 071: the picture went out with its hidden details still in it.
+                **({"note": _kept["metadata_note"], **_kept}
+                   if _kept and (result.success or result.unconfirmed) else {}),
             })
 
     if _act_prev:
@@ -1292,12 +1369,7 @@ async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
 
     await _comment_pass("artwork", artwork_name, results)
 
-    # Clean up watermark temp files (gap-wave-5 §1) now every post + retry is done.
-    for _t in _wm_temps:
-        try:
-            os.remove(_t)
-        except OSError:
-            pass
+    # (The cleaned copies and watermark temps go when post_artwork's CleanRun closes.)
 
     # Discord announce (gap G4; picture + options 4.41.0, spec 008) — once per publish
     # if any platform succeeded. Best-effort; announce_publish self-gates and never raises.
@@ -1360,6 +1432,21 @@ async def update_story(
     chapters: list[int] | None = None,
     extras: dict[str, Any] | None = None,
     account_filter: int | None = None,
+) -> list[dict[str, Any]]:
+    """`_update_story` inside one CleanRun (spec 071)."""
+    from posting import metadata_strip
+    with metadata_strip.CleanRun() as run:
+        return await _update_story(story_name, platforms, chapters, extras, account_filter, run=run)
+
+
+async def _update_story(
+    story_name: str,
+    platforms: list[str] | None = None,
+    chapters: list[int] | None = None,
+    extras: dict[str, Any] | None = None,
+    account_filter: int | None = None,
+    *,
+    run=None,
 ) -> list[dict[str, Any]]:
     """Push updates to already-posted submissions.
 
@@ -1429,6 +1516,11 @@ async def update_story(
         package = story_reader.build_package(story, ch_idx, plat)
         if extras:
             package.extra.update(extras)
+        # Spec 071: cleaned whatever skip_content_refresh says: a metadata-only edit can still send the cover
+        # (Weasyl's reupload_cover; impl review High). The "kept" note is only claimed when the content is re-sent.
+        if run is not None:
+            await asyncio.to_thread(run.clean_package, package)       # off the event loop (impl review Low)
+        _kept = {} if package.extra.get("skip_content_refresh") else _kept_result(package)
 
         if not poster.supports_edit:
             logger.warning(
@@ -1447,7 +1539,8 @@ async def update_story(
         result = await poster.edit(ext_id, package)
 
         from posting.sync import hash_file
-        current_hash = hash_file(package.file_path) if package.file_path else ""
+        _lib_file = package.extra.get("library_path") or package.file_path   # never a temp copy (071)
+        current_hash = hash_file(_lib_file) if _lib_file else ""
 
         # Was the submission deleted on the platform side? Mark the
         # publication so the matrix prompts a re-post rather than
@@ -1501,7 +1594,7 @@ async def update_story(
                     description_used=package.description[:500],
                     tags_used=package.tags,
                     rating_used=_rating_used(package, result),
-                    format_file=package.file_path or "",
+                    format_file=_lib_file or "",
                     file_hash=current_hash,
                     word_count=package.word_count,
                     status="deleted",
@@ -1516,7 +1609,7 @@ async def update_story(
                     description_used=package.description[:500],
                     tags_used=package.tags,
                     rating_used=_rating_used(package, result),
-                    format_file=package.file_path or "",
+                    format_file=_lib_file or "",
                     file_hash=current_hash,
                     word_count=package.word_count,
                     status="posted",
@@ -1535,7 +1628,8 @@ async def update_story(
                 pub_id=pub["pub_id"],
                 external_id=result.external_id or ext_id,
                 external_url=result.external_url,
-                error_message=getattr(result, "needs_attention", "") or result.error,
+                error_message=_join_note(getattr(result, "needs_attention", "") or result.error,
+                                         _kept.get("metadata_note") if result.success else None),
                 duration_seconds=result.duration_seconds,
             )
         finally:
@@ -1553,6 +1647,8 @@ async def update_story(
             "external_url": result.external_url or pub["external_url"],
             "error": result.error,
             "duration": result.duration_seconds,
+            # Spec 071: the picture went out with its hidden details still in it.
+            **({"note": _kept["metadata_note"], **_kept} if _kept and result.success else {}),
         })
 
         await poster._rate_limit()
@@ -1566,6 +1662,21 @@ async def update_artwork(
     platforms: list[str] | None = None,
     account_filter: int | None = None,
     extras: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """`_update_artwork` inside one CleanRun (spec 071): a re-uploaded picture goes out cleaned,
+    and its copy is removed however the run ends."""
+    from posting import metadata_strip
+    with metadata_strip.CleanRun() as run:
+        return await _update_artwork(artwork_name, platforms, account_filter, extras, run=run)
+
+
+async def _update_artwork(
+    artwork_name: str,
+    platforms: list[str] | None = None,
+    account_filter: int | None = None,
+    extras: dict[str, Any] | None = None,
+    *,
+    run=None,
 ) -> list[dict[str, Any]]:
     """Push a Masterpiece's canonical metadata to its editable members ("Sync all",
     spec §6.2). The artwork parallel of ``update_story``, but driven off the
@@ -1680,6 +1791,12 @@ async def update_artwork(
         package.extra["skip_content_refresh"] = True   # metadata sync only — never re-upload the image
         if extras:
             package.extra.update(extras)
+        # Spec 071: cleaned whatever skip_content_refresh says: a metadata-only sync can still send a cover
+        # (Weasyl re-uploads an audio/video piece's poster; impl review High). The "kept" note is only claimed when
+        # the picture itself goes again (an extras override).
+        if run is not None:
+            await asyncio.to_thread(run.clean_package, package)       # off the event loop (impl review Low)
+        _kept = {} if package.extra.get("skip_content_refresh") else _kept_result(package)
 
         refusal = poster.refusal(package) if hasattr(poster, "refusal") else None
         if refusal:
@@ -1740,7 +1857,8 @@ async def update_artwork(
                 pub_id=pub_id,
                 external_id=result.external_id or ext_id,
                 external_url=result.external_url,
-                error_message=getattr(result, "needs_attention", "") or result.error,
+                error_message=_join_note(getattr(result, "needs_attention", "") or result.error,
+                                         _kept.get("metadata_note") if result.success else None),
                 duration_seconds=result.duration_seconds,
             )
         finally:
@@ -1753,10 +1871,12 @@ async def update_artwork(
             "external_url": result.external_url or "",
             # A successful edit may carry a soft note (e.g. Weasyl: file content
             # can't be replaced via API) — surface it without failing the sync.
-            "note": result.error if result.success else None,
+            # Spec 071 adds the picture's own (its hidden details couldn't be removed).
+            "note": _join_note(result.error, _kept.get("metadata_note")) if result.success else None,
             "attention": getattr(result, "needs_attention", "") or "",
             "error": None if result.success else result.error,
             "duration": result.duration_seconds,
+            **(_kept if result.success else {}),
         })
 
         await poster._rate_limit()

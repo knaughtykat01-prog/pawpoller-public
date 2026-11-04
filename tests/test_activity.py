@@ -209,3 +209,26 @@ def test_retry_reruns_one_line_in_the_same_job():
     jid = asyncio.run(main())
     j = _job(jid)
     assert calls == ["ib"] and j["state"] == "done" and j["lines"][1]["url"] == "again"
+
+
+def test_a_second_identical_publish_is_refused_while_the_first_runs():
+    """DOUBLEPOST (4.88.8): a second tab or a second Post can't send the same thing twice at once."""
+    from fastapi import HTTPException
+
+    async def work():
+        pass
+    ref = {"story": "Sample_Story"}
+    jid = activity.start("publish", "Sample Story — ch 3", ["fa", "ib"], ref=ref, refuse_twin=True)
+    with pytest.raises(HTTPException) as e:
+        activity.launch("publish", "Sample Story — ch 3", ["ib", "ws"], work, ref=ref)   # shares ib
+    assert e.value.status_code == 409 and "already being posted" in e.value.detail
+    with pytest.raises(HTTPException):
+        activity.check_twin("publish", "Sample Story — ch 3", ["fa"], ref)
+    # Not twins: another site, another chapter, another kind, another story.
+    activity.check_twin("publish", "Sample Story — ch 3", ["ws"], ref)
+    activity.check_twin("publish", "Sample Story — ch 4", ["fa"], ref)
+    activity.check_twin("update", "Sample Story — ch 3", ["fa"], ref)
+    activity.check_twin("publish", "Sample Story — ch 3", ["fa"], {"story": "Other"})
+    assert len(activity.snapshot()) == 1                       # the refused launch made no job
+    activity.finish(jid)                                       # once it's done, posting again is allowed
+    activity.check_twin("publish", "Sample Story — ch 3", ["fa", "ib"], ref)

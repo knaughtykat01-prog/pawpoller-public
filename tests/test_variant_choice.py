@@ -110,7 +110,7 @@ class TestWhichRenderWentOutIsRecorded:
         assert 'variant_key=(_variant or {}).get("key") or ""' in src
 
     def test_the_edit_reads_it_back_before_re_deriving(self):
-        src = inspect.getsource(manager.update_artwork)
+        src = inspect.getsource(manager._update_artwork)   # body behind the 071 CleanRun wrapper
         assert 'm.get("variant_key")' in src
         assert src.index('_recorded = ') < src.index("artwork_reader.variant_for_rating(")
 
@@ -166,7 +166,7 @@ def test_an_edit_refuses_when_the_recorded_render_is_gone():
     (skip_content_refresh), so pushing the primary's rating over a submission holding a
     different render decouples the rating from the image — the first BLOCK's shape,
     reached from the edit side."""
-    src = inspect.getsource(manager.update_artwork)
+    src = inspect.getsource(manager._update_artwork)   # body behind the 071 CleanRun wrapper
     block = src[src.index("_recorded = "):src.index("else:", src.index("_recorded = "))]
     assert "no longer declares" in block
     assert "continue" in block

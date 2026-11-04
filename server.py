@@ -730,6 +730,12 @@ def main():
     # Posts cut off by the last shutdown show as "not sent" in the bell (055).
     from posting.manager import mark_restart_leftovers
     mark_restart_leftovers()
+    # Cleaned picture copies a crash left behind (spec 071); never stops start-up.
+    try:
+        from posting import metadata_strip
+        metadata_strip.sweep_stale()
+    except Exception:  # noqa: BLE001
+        pass
 
     # Step 2: Seed credentials from environment variables
     _seed_settings_from_env()

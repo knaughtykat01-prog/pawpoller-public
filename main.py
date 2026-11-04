@@ -75,6 +75,28 @@ config.refresh_log_secrets()   # seed the secret list; config pushes on every sa
 
 logger = logging.getLogger("main")
 
+_LINK_SCHEMES = ("http", "https", "mailto")
+
+
+def _guard_external_links() -> None:
+    """SEC072 (4): pywebview hands a page's new-window links to webbrowser.open, which on Windows is
+    os.startfile with no scheme check (file:, search-ms:, any protocol handler). Only web and mail
+    links reach the system; open_new / open_new_tab go through open, so they're covered too."""
+    import urllib.parse
+    import webbrowser
+    if getattr(webbrowser.open, "_pp_guarded", False):
+        return
+    real = webbrowser.open
+
+    def guarded(url, *a, **k):
+        if urllib.parse.urlsplit(str(url)).scheme.lower() not in _LINK_SCHEMES:
+            logger.warning("Blocked a link that isn't a web or mail address")
+            return False
+        return real(url, *a, **k)
+
+    guarded._pp_guarded = True
+    webbrowser.open = guarded
+
 
 # ── 6-Hourly Telegram Digest ─────────────────────────────────
 # Sends a cross-platform stats digest every 6 hours via Telegram.
@@ -193,6 +215,9 @@ def _start_server():
 
 _tray_icon = None   # pystray.Icon instance, set in main()
 _window = None      # pywebview window instance, set in main()
+_tray_always = False   # 072: connected mode keeps its tray icon (Change server… lives there)
+_conn = None           # 072: desktop_agent.Connection in connected mode
+_form_window = None    # 072: the Change server window, at most one
 
 
 def _webview_start_kwargs():
@@ -242,7 +267,7 @@ def _show_window(icon=None, item=None):
     global _window
     if _window is not None:
         _window.show()           # Make the hidden pywebview window visible again
-    if _tray_icon is not None:
+    if _tray_icon is not None and not _tray_always:
         _tray_icon.visible = False  # Hide the tray icon until next minimize
 
 
@@ -256,6 +281,47 @@ def _open_signin_helper(icon=None, item=None):
             logger.debug("could not open the sign-in helper: %s", e)
 
 
+def _open_change_server(icon=None, item=None):
+    """Tray → "Change server…" (spec 072). A local window of its own: never scripts the main
+    window, whose page belongs to the server (FR-SEC-002)."""
+    _open_change_server_window()
+
+
+def _open_change_server_window():
+    global _form_window
+    conn = _conn
+    if conn is None:
+        return
+    import webview
+    with conn._form_lock:
+        if _form_window is not None:
+            try:
+                _form_window.show()
+                return
+            except Exception:
+                _form_window = None
+        w = webview.create_window("Change server — PawPoller", html=conn.form_html(),
+                                  width=560, height=680, min_size=(420, 480))
+        w.expose(*conn.form_functions())     # no js_api: exact names only (072 R1)
+
+        def _closed():
+            global _form_window
+            if _form_window is w:               # a late event from an older form leaves a newer one be
+                _form_window = None
+                conn.form_closed()
+        w.events.closed += _closed
+        _form_window = w
+
+
+def _close_change_server_window():
+    w = _form_window
+    if w is not None:
+        try:
+            w.destroy()
+        except Exception as e:
+            logger.debug("closing the Change server window: %s", type(e).__name__)
+
+
 def _quit_app(icon=None, item=None):
     """Full exit -- destroy window and stop tray icon.
 
@@ -264,6 +330,7 @@ def _quit_app(icon=None, item=None):
     """
     global _tray_icon, _window
     logger.info("Quit requested from tray — shutting down.")
+    _close_change_server_window()
     if _tray_icon is not None:
         _tray_icon.stop()
         _tray_icon = None
@@ -271,7 +338,7 @@ def _quit_app(icon=None, item=None):
         _window.destroy()  # Unblocks webview.start() in main()
 
 
-def _create_tray_icon(helper: bool = False):
+def _create_tray_icon(helper: bool = False, connected: bool = False):
     """Create the pystray system tray icon (not yet started).
 
     The icon is created here but NOT run -- main() starts it in a separate
@@ -285,6 +352,7 @@ def _create_tray_icon(helper: bool = False):
         MenuItem("Show", _show_window, default=True),  # default=True: double-click action
         # 059: the standalone desktop only (a connected window shows the server's page, no helper).
         *([MenuItem("Sign in for a server…", _open_signin_helper)] if helper else []),
+        *([MenuItem("Change server…", _open_change_server)] if connected else []),  # 072
         MenuItem("Quit", _quit_app),
     )
     icon = pystray.Icon("PawPoller", image, "PawPoller", menu)
@@ -442,6 +510,11 @@ def main():
         url, key = connect_target(sys.argv[1:], settings)
         if url and key:
             return run_connected(url, key)
+        if url and settings.get("posting_server_api_key"):
+            # 072 (FR-SEC-006): an address override the saved key doesn't belong to. Nothing is sent;
+            # the window offers Change server… instead.
+            logger.warning("connected mode: the address given isn't the saved one, so its key isn't sent")
+            return run_connected(url, "")
         logger.warning("connected mode without a server URL/key — falling back to standalone")
     return run_standalone()
 
@@ -453,32 +526,64 @@ def run_connected(server_url: str, api_key: str):
     watcher: everything lives on the server. This process keeps only the update gate
     (already run), the tray, the agent's write-behind queue, and the pywebview window.
     """
-    global _tray_icon, _window
+    global _tray_icon, _window, _conn, _tray_always
     import webview
     webview.settings["ALLOW_DOWNLOADS"] = True   # 4.71.0: moving files and backups save to Downloads
+    _guard_external_links()
     import desktop_agent
 
     # A desktop that just migrated from paired mode still has the old copy on disk (4.14.0).
     desktop_agent.retire_local_database(config.DATA_DIR)
-    agent = desktop_agent.Agent(server_url, api_key)
-    agent.start()
-    logger.info("Connected mode: window onto %s (agent queue: %d pending)", server_url, agent.queue.pending_count())
+    settings = config.get_settings()
+    queue = desktop_agent.Queue()
+    agent = desktop_agent.Agent(server_url, api_key, queue=queue) if api_key else None
 
-    _tray_icon = _create_tray_icon()
-    threading.Thread(target=_tray_icon.run, kwargs={"setup": lambda icon: None}, daemon=True).start()
+    def _load_url(u):
+        if _window is not None:
+            _window.load_url(u)
 
-    reachable = agent.server_reachable()
-    kwargs: dict = dict(width=1200, height=800, min_size=(800, 500), js_api=desktop_agent.AgentApi(agent))
-    if reachable:
+    def _load_html(h):
+        if _window is not None:
+            _window.load_html(h)
+
+    def _wait_loaded():
+        if _window is not None:
+            _window.events.loaded.wait(3)
+
+    # 072: the saved address, not an override, is what the form names as "now".
+    current = server_url if api_key else (settings.get("posting_server_url") or "")
+    _conn = desktop_agent.Connection(
+        agent, queue=queue, current_url=current, saved_key=settings.get("posting_server_api_key") or "",
+        load_url=_load_url, load_html=_load_html, wait_loaded=_wait_loaded,
+        open_form=_open_change_server_window, close_form=_close_change_server_window)
+    if agent is not None:
+        agent.start()
+        logger.info("Connected mode: window onto the server (agent queue: %d pending)", queue.pending_count())
+    else:
+        logger.info("Connected mode: no key for this address, so nothing is sent until Change server…")
+
+    _tray_always = True
+    _tray_icon = _create_tray_icon(connected=True)
+    threading.Thread(target=_tray_icon.run, daemon=True).start()   # default setup: visible
+
+    # 072 R1: no js_api. pywebview resolves any dotted attribute path a page sends on a js_api
+    # object, so a server page could walk from it to the key; exposed names are looked up exactly.
+    kwargs: dict = dict(width=1200, height=800, min_size=(800, 500))
+    if agent is None:
+        _window = webview.create_window("PawPoller", html=_conn.unbound_html(), **kwargs)
+    elif agent.server_reachable():
         _window = webview.create_window("PawPoller", url=server_url, **kwargs)
     else:
-        _window = webview.create_window("PawPoller", html=desktop_agent.offline_page(server_url, agent), **kwargs)
-        agent.when_reachable(lambda: _window.load_url(server_url))
+        _window = webview.create_window("PawPoller", html=_conn.offline_html(), **kwargs)
+        agent.when_reachable(lambda: _conn.reach_callback(agent))
+    _window.expose(*_conn.main_functions())
     _window.events.closing += _on_closing
+    _window.events.closed += _close_change_server_window
     webview.start(**_webview_start_kwargs())
     if _tray_icon is not None:
         _tray_icon.stop()
-    agent.stop()
+    if _conn.agent is not None:
+        _conn.agent.stop()
     logger.info("Window closed — shutting down (connected).")
 
 
@@ -497,6 +602,12 @@ def run_standalone():
     # Posts cut off by the last shutdown show as "not sent" in the bell (055).
     from posting.manager import mark_restart_leftovers
     mark_restart_leftovers()
+    # Cleaned picture copies a crash left behind (spec 071); never stops start-up.
+    try:
+        from posting import metadata_strip
+        metadata_strip.sweep_stale()
+    except Exception:  # noqa: BLE001
+        pass
 
     # --- Step 1b: Sync settings from server (cloud mode) ---
     _sync_settings_on_startup()
@@ -646,6 +757,7 @@ def run_standalone():
     # feel of a native desktop app while the UI is actually a web app.
     import webview
     webview.settings["ALLOW_DOWNLOADS"] = True   # 4.71.0: moving files and backups save to Downloads
+    _guard_external_links()
 
     class _DesktopApi:
         """JS bridge exposed to the dashboard as window.pywebview.api.*.

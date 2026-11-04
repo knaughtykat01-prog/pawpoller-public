@@ -462,7 +462,7 @@ def _markdown(s: str, limit: int | None = 200_000) -> str:
     p = _ToMarkdown()
     # A "<" that never closes is text, not a tag: Python 3.10's parser rescans an unclosed tag
     # slowly enough to stall the server on a crafted file.
-    p.feed(re.sub(r"<(?![^<>]{0,2000}>)", "&lt;", s[:limit]))   # ponytail: descriptions past 200k chars are cut
+    p.feed(re.sub(r"<(?![^<>]{0,2000}>)", "&lt;", s[:limit]))   # shortcut: descriptions past 200k chars are cut
     p.close()
     return re.sub(r"\n{3,}", "\n\n", "".join(p.out)).strip()
 
@@ -672,7 +672,7 @@ def apply_submissions(ids: list[str], base: Path | None = None, progress=None) -
             if info["clash"]:
                 notes.append("more than one account on " + ", ".join(info["clash"]) + ": that site's own text left out")
             if extra:
-                # ponytail: extra files are reported, not attached; add them as renders when asked for
+                # shortcut: extra files are reported, not attached; add them as renders when asked for
                 notes.append(f"{extra} extra file{'s' if extra != 1 else ''} left out")
             results.append({**row, "status": "added", "piece": name, "note": "; ".join(notes)})
     except Locked:

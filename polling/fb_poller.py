@@ -32,7 +32,7 @@ fb_poll_progress = {"active": False, "phase": "idle", "current": 0, "total": 0, 
 
 _fb_poll_lock = threading.Lock()
 
-# ponytail: a normal poll reads the newest 200 posts; Full resync reads them all (and only a pass that
+# shortcut: a normal poll reads the newest 200 posts; Full resync reads them all (and only a pass that
 # reached the end flags vanished posts deleted). Raise if Pages with > 200 live-moving posts appear.
 _QUICK_PAGES = 4
 

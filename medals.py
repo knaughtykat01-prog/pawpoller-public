@@ -312,7 +312,7 @@ def _insert(conn, new: set, now: str) -> int:
     conn.executemany(
         "INSERT OR IGNORE INTO earned_medals (medal_id, subject, earned_at, dated_exactly, source, announced_at)"
         " VALUES (?, ?, ?, ?, ?, ?)",
-        # ponytail: catch-up rows are all dated "before" today; dating single-series medals from
+        # shortcut: catch-up rows are all dated "before" today; dating single-series medals from
         # their first snapshot crossing (research R3) can come later as a one-off pass.
         [(mid, subj, now, 0 if catchup else 1, "catchup" if catchup else "live", now if catchup else None)
          for mid, subj in sorted(new)])

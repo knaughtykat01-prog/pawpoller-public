@@ -176,3 +176,21 @@ class TestBuildPackage:
 
         assert pkg.chapter_index == 0
         assert pkg.word_count == 100  # Total words
+
+
+def test_chapter_1_never_resolves_to_chapter_10s_file(tmp_path):
+    """CHFALLBACK: `Chapter_10_…` sorts before `Chapter_1_…`; neither the stem nor the index
+    match may run on into another digit."""
+    from types import SimpleNamespace
+    from posting.story_reader import _resolve_format_file
+    d = tmp_path / "Chapters" / "BBCode"
+    d.mkdir(parents=True)
+    for name in ("Chapter_10_Later.txt", "Chapter_1_First.txt", "Chapter_2_Second.txt"):
+        (d / name).write_text("x", encoding="utf-8")
+    chapters = [SimpleNamespace(filename="") for _ in range(10)]
+    story = SimpleNamespace(name="Sample Story", path=tmp_path, chapters=chapters)
+
+    assert _resolve_format_file(story, 1, "ib")[0].endswith("Chapter_1_First.txt")      # index fallback
+    assert _resolve_format_file(story, 10, "ib")[0].endswith("Chapter_10_Later.txt")
+    chapters[0].filename = "Chapter_1"                                                    # bare stem
+    assert _resolve_format_file(story, 1, "ib")[0].endswith("Chapter_1_First.txt")

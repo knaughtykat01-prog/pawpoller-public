@@ -247,3 +247,22 @@ def test_check_writes_no_account_row():
         assert conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == before
     finally:
         conn.close()
+
+
+@pytest.mark.asyncio
+async def test_toyhouse_underage_refusal_holds_on_the_scheduled_path(monkeypatch):
+    """SEC062 (4): post_artwork (what the scheduler runs) refuses Toyhouse's rule 2.2 before any upload."""
+    from posting.platforms import toyhouse as thp
+    name = artwork_reader.create_artwork(
+        title="Sample Story", image_filename="pic.png", image_bytes=b"\x89PNG fake",
+        rating="adult", tags={"default": ["cub", "solo", "anthro", "male", "fur"]})
+    poster = thp.ToyhousePoster()
+    sent = []
+
+    async def no_upload(package):
+        sent.append(package)
+        return PostResult(**OK)
+    monkeypatch.setattr(poster, "post", no_upload)
+    monkeypatch.setattr(manager, "_get_poster", lambda p, account_id=None: poster)
+    res = await manager.post_artwork(name, ["th"])
+    assert sent == [] and res[0]["success"] is False and "underage" in res[0]["error"]

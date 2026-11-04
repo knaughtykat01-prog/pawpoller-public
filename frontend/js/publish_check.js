@@ -1292,6 +1292,11 @@ window.PublishCheck = (function () {
                         html += '<div class="publish-action-meta">' +
                             r.duration.toFixed(1) + 's</div>';
                     }
+                    // A soft note on a success, e.g. spec 071: the cover went out with its hidden
+                    // details still in it. It used to be dropped here.
+                    if (r.note) {
+                        html += '<div class="publish-action-meta">⚠ ' + _escape(r.note) + '</div>';
+                    }
                 } else {
                     if (r.queued_desktop) {
                         html += '<div>Queued for desktop (server unable to post). ' +
@@ -1807,37 +1812,26 @@ window.PublishCheck = (function () {
         }
 
         try {
-            const resp = await fetch(
-                '/api/editor/stories/' + encodeURIComponent(storyName) + '/schedule',
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        platform: platId,
-                        chapter: chIdx,
-                        action: action,
-                        scheduled_at: isoStr,
-                        draft: draft,
-                        comment: (function () {   // spec 021: '' = none; null = the site's default
-                            const c = document.getElementById('publish-comment');
-                            return c ? c.value.trim() : null;
-                        })(),
-                        // The same "Post as" / persona choice Publish sends (4.43.1).
-                        account_id: (function () {
-                            const s = document.querySelector('.publish-account-select');
-                            return s && s.value ? parseInt(s.value, 10) : null;
-                        })(),
-                        persona_id: (function () {
-                            const h = document.getElementById('publish-persona-row');
-                            return h && h.dataset.personaId ? parseInt(h.dataset.personaId, 10) : null;
-                        })(),
-                    }),
-                }
-            );
-            const data = await resp.json();
-            if (!resp.ok) {
-                throw new Error(data.detail || 'HTTP ' + resp.status);
-            }
+            const data = await API.scheduleStory(storyName, {
+                platform: platId,
+                chapter: chIdx,
+                action: action,
+                scheduled_at: isoStr,
+                draft: draft,
+                comment: (function () {   // spec 021: '' = none; null = the site's default
+                    const c = document.getElementById('publish-comment');
+                    return c ? c.value.trim() : null;
+                })(),
+                // The same "Post as" / persona choice Publish sends (4.43.1).
+                account_id: (function () {
+                    const s = document.querySelector('.publish-account-select');
+                    return s && s.value ? parseInt(s.value, 10) : null;
+                })(),
+                persona_id: (function () {
+                    const h = document.getElementById('publish-persona-row');
+                    return h && h.dataset.personaId ? parseInt(h.dataset.personaId, 10) : null;
+                })(),
+            });
             if (resultBox) {
                 const when = Utils.time.parse(data.scheduled_at);
                 resultBox.innerHTML =
@@ -1863,6 +1857,10 @@ window.PublishCheck = (function () {
             }
             _logAction('schedule', platName, chTitle || 'Full story', { ok: true });
         } catch (e) {
+            if (e && e.cancelled) {   // SCHEDTWICE: they chose not to schedule it twice
+                if (resultBox) resultBox.innerHTML = '<div class="publish-action-loading">' + _escape(e.message) + '</div>';
+                return;
+            }
             if (resultBox) {
                 resultBox.innerHTML =
                     '<div class="publish-action-error">Schedule failed: ' +

@@ -1785,7 +1785,9 @@ window.Posts = {
                         .map(r => `${this._label(r.platform)}: ${r.error}`).join(' · ');
                     msg.textContent = errs;
                 } else {
-                    msg.textContent = '';
+                    // Spec 071: a picture went out with its hidden details still in it — say so, plainly.
+                    const kept = (res.results || []).find(r => r.success && r.metadata_kept);
+                    msg.textContent = kept ? '⚠ ' + String(kept.metadata_note || '') : '';
                 }
             }
             // Reset the composer, keep the site switches.

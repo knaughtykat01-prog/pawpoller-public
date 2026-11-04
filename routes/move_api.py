@@ -54,7 +54,10 @@ PIECE_BYTES = 32 * 1024 * 1024          # each upload request stays far below Cl
 MIN_PHRASE = 12
 STALE_SECONDS = 24 * 3600
 ARRIVED_KEEP = 7 * 24 * 3600            # 4.75.0 (spec 036): a move that was SENT here waits a week for its owner
-_SCRYPT = {"n": 2 ** 15, "r": 8, "p": 1}   # ~32 MB and ~0.1 s per guess
+_SCRYPT = {"n": 2 ** 17, "r": 8, "p": 1}   # v2 (4.88.8, MOVELOWS 3): ~128 MB and ~0.4 s per guess
+# Each seal version and the exact cost it was made with. An allow-list, so a file still can't choose its own
+# cost (and make us burn memory); v1 files from before 4.88.8 keep opening.
+_SCRYPT_BY_V = {1: {"n": 2 ** 15, "r": 8, "p": 1}, 2: _SCRYPT}
 _ID_RE = re.compile(r"[0-9a-f]{32}")
 
 # Media folders under DATA_DIR that travel as they are. Artwork and stories are read from wherever
@@ -95,7 +98,7 @@ def seal(creds: dict, phrase: str) -> dict:
     from cryptography.fernet import Fernet
     salt = secrets.token_bytes(16)
     token = Fernet(_kdf(phrase, salt, **_SCRYPT)).encrypt(json.dumps(creds).encode("utf-8"))
-    return {"v": 1, "kdf": "scrypt", **_SCRYPT, "salt": base64.b64encode(salt).decode(), "token": token.decode()}
+    return {"v": 2, "kdf": "scrypt", **_SCRYPT, "salt": base64.b64encode(salt).decode(), "token": token.decode()}
 
 
 class WrongPhrase(Exception):
@@ -105,10 +108,12 @@ class WrongPhrase(Exception):
 def open_sealed(blob: dict, phrase: str) -> dict:
     from cryptography.fernet import Fernet, InvalidToken
     try:
-        if blob.get("v") != 1 or blob.get("kdf") != "scrypt":
+        v = blob.get("v")
+        want = _SCRYPT_BY_V.get(v) if blob.get("kdf") == "scrypt" and isinstance(v, int) else None
+        if want is None:
             raise WrongPhrase()
         n, r, p = int(blob["n"]), int(blob["r"]), int(blob["p"])
-        if (n, r, p) != (_SCRYPT["n"], _SCRYPT["r"], _SCRYPT["p"]):   # a file can't make us burn memory
+        if (n, r, p) != (want["n"], want["r"], want["p"]):   # a file can't make us burn memory
             raise WrongPhrase()
         key = _kdf(phrase, base64.b64decode(blob["salt"]), n, r, p)
         return json.loads(Fernet(key).decrypt(blob["token"].encode()))
@@ -376,6 +381,13 @@ def upload_open(body: dict):
         logger.warning("Move: refused an upload of %d bytes with %d free.", size, free)
         raise HTTPException(507, detail=f"There isn't room for this. It needs about "
                                         f"{_room_needed(size) / 1e9:.1f} GB free, and this has {free / 1e9:.1f} GB.")
+    cap_gb = os.environ.get("PAWPOLLER_SEAT_DISK_CAP_GB", "").strip()   # MOVELOWS (4): seats share one disk
+    if cap_gb:
+        used = sum(p.stat().st_size for p in _data_dir().rglob("*") if p.is_file())
+        if used + _room_needed(size) > float(cap_gb) * 1e9:
+            logger.warning("Move: refused an upload of %d bytes: %d used of a %s GB seat cap.", size, used, cap_gb)
+            raise HTTPException(507, detail=f"This seat has {cap_gb} GB of room. Bringing this in needs about "
+                                            f"{_room_needed(size) / 1e9:.1f} GB, and {used / 1e9:.1f} GB is already used.")
     uid = secrets.token_hex(16)
     d = _in_dir() / uid
     d.mkdir(parents=True)
@@ -672,12 +684,32 @@ def apply_move(z: zipfile.ZipFile, manifest: dict, creds: dict, work: Path) -> s
     try:
         config.replace_settings(final)
     except Exception:
+        # MOVELOWS 2 (4.88.8): put back all three. The vault is written before settings.json, so restoring
+        # the database alone could leave the sign-in store and the settings out of step.
         _sqlite_copy(safety / "pawpoller.db", Path(config.DB_PATH))
-        raise MoveFailed("The settings couldn't be saved, so the library was put back as it was.") from None
+        for p in (Path(config.SETTINGS_PATH), Path(config.VAULT_PATH)):
+            kept = safety / p.name
+            if kept.is_file():
+                shutil.copy2(kept, p)
+            elif p.is_file():
+                p.unlink()                  # written by the failed save; there was none before the move
+        raise MoveFailed("The settings couldn't be saved, so the library and settings were put back as they "
+                         "were.") from None
     _settle_queue()
 
     # 4. Media: added, never deleted. A different file already at a moved file's name is kept aside.
     roots = {name: _dir_for(name) for name in _DIRS}
+    try:
+        _copy_media(z, roots, safety)
+    except (OSError, zipfile.BadZipFile) as e:
+        # MOVELOWS 2 (4.88.8): say what stopped and that trying again is safe (a file already here is skipped).
+        raise MoveFailed(f"The library and settings are in, but copying the {getattr(e, 'folder', 'media')} "
+                         f"files stopped ({getattr(e, 'strerror', None) or type(e).__name__}). Bring the same "
+                         f"moving file in again to finish: files already here are skipped. ({safety.name})") from None
+    return safety.name
+
+
+def _copy_media(z: zipfile.ZipFile, roots: dict, safety: Path) -> None:
     for info in z.infolist():
         parts = info.filename.split("/")
         if info.is_dir() or len(parts) < 3 or parts[0] != "data" or parts[1] not in roots:
@@ -687,16 +719,19 @@ def apply_move(z: zipfile.ZipFile, manifest: dict, creds: dict, work: Path) -> s
         target = (root / rel).resolve()
         if root not in target.parents:
             continue   # _member_ok already refused these; belt and braces
-        if target.is_file():
-            if target.stat().st_size == info.file_size and _crc(target) == info.CRC:
-                continue                                  # the same file: nothing to do
-            keep = safety / "media" / parts[1] / rel
-            keep.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(target), str(keep))
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with z.open(info) as src, open(target, "wb") as dst:
-            shutil.copyfileobj(src, dst, 1024 * 1024)
-    return safety.name
+        try:
+            if target.is_file():
+                if target.stat().st_size == info.file_size and _crc(target) == info.CRC:
+                    continue                              # the same file: nothing to do
+                keep = safety / "media" / parts[1] / rel
+                keep.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(target), str(keep))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with z.open(info) as src, open(target, "wb") as dst:
+                shutil.copyfileobj(src, dst, 1024 * 1024)
+        except (OSError, zipfile.BadZipFile) as e:
+            e.folder = parts[1]  # pyright: ignore[reportAttributeAccessIssue]  (named in apply_move's message)
+            raise
 
 
 def _settle_queue() -> None:

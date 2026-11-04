@@ -2,6 +2,28 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.88.8] - 2026-11-04 - Safer versions, the right chapter, small safety fixes
+
+> - In safe mode, an adult version of a piece now stays blurred, in the version strip and after you switch to it.
+> - A cleaner version of a picture no longer goes out with the adult picture's thumbnail.
+> - Posting chapter 1 of a long story no longer picks up chapter 10's file.
+> - Toyhouse sign-ins keep the account's own name, and a refused sign-in no longer leaves an empty account behind.
+> - The Inbox no longer fills with every Toyhouse comment ever: ones over a year old count as handled, as on other sites.
+> - Moving to another PawPoller: if saving stops part-way, everything is put back; if copying pictures stops, it says why and how to finish.
+> - Moving files made from now on are much harder to unlock without the phrase. Older moving files still open.
+> - On a hosted seat, a move bigger than the seat's 20 GB is refused before it starts uploading.
+> - Pressing Post again (or in a second tab) while the same thing is still posting no longer sends it twice.
+> - Scheduling something that's already scheduled for that site now asks before scheduling it a second time.
+> - Pictures now go out without their hidden details, like where a photo was taken, the phone or camera, and your art app's name.
+> - Your stored pictures are never changed: PawPoller sends a cleaned copy. Turn it off in Settings → Posting.
+> - If a picture's details can't be removed, the result, the bell and the posting log say so, and the check before posting warns you first.
+> - The desktop app can now move to a different server: choose Change server… in its tray menu or on its "can't reach your server" page.
+> - It checks the new address and key before saving anything, and shows which server you're moving to; if something's wrong, nothing changes.
+> - Fixed a gap that let pages on your server read the desktop app's own key for it.
+> - Links a page opens in a new window now only go to your web browser or email app, never to other programs.
+> - Saving Settings → Publishing no longer disconnects a paired desktop.
+> - A paired desktop's Never post list and server connection now stay on that device instead of syncing across.
+
 ## [4.88.7] - 2026-11-04 - Toyhouse finds all your characters
 
 > - The Toyhouse character list now shows every character, not just the first 18.
@@ -216,9 +238,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Bluesky video posts are now found and import as the video.
 > - GIFs play on a loop in the Library, the way you posted them.
 > - A video you imported earlier as a still picture can now bring in its video: open it and press "Bring in the video". The picture stays as its cover.
-
-## [4.81.1] - 2026-10-19 - Fresh copy
-
-> - After an update, PawPoller now replaces the old copy saved on your phone or computer by itself, so you don't get stuck on an old version.
-> - If the app can't reach the server even though the server is fine, it clears its saved copy and reloads once.
-> - "Server unreachable" messages now offer "Refresh PawPoller on this device". It keeps you signed in.

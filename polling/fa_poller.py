@@ -283,7 +283,7 @@ async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = Fa
     global _fa_skip_recorded_until
     # FARELAY (4.79.1): with the FA relay switch on, polls go through the Cloudflare relay. The stand-down was earned
     # on the home address, so it doesn't hold a relayed poll back.
-    # ponytail: a relay that is challenged too retries once a cycle; give it its own stand-down if that persists.
+    # shortcut: a relay that is challenged too retries once a cycle; give it its own stand-down if that persists.
     from polling.cf_proxy import proxy_kwargs, proxy_kwargs_fallback
     settings = config.get_settings()
     _relay = proxy_kwargs(settings, "fa") or proxy_kwargs_fallback(settings, "fa")

@@ -759,6 +759,23 @@ Something else is using PawPoller's connection number. Usually it's the desktop 
 on the same computer. Quit the desktop app, or see
 [Using the desktop app as well](#extra-you-already-use-the-desktop-app).
 
+**The desktop app can't reach your server, or says the address "isn't a PawPoller any more".**
+If your PawPoller has moved (to a hosted seat, or a new address at home), point the desktop app at
+its new address.
+
+1. On your server, open **Settings → Security → API Keys** and make a new key. Copy it.
+2. In the desktop app, click **Change server…**. It's on the "can't reach" page, and in the
+   PawPoller icon's menu in the clock corner of the taskbar. A small window opens.
+3. Type your server's new address (it starts with `https://`) and click **Check**.
+   **You'll see:** "Move this app from … to …?" with both addresses spelled out.
+4. Make sure the second address is really your server, then click **Yes, that's my server**.
+5. Paste the key from step 1 and click **Connect**.
+   **You'll see:** "Connected", and the app opens your server.
+6. If your old server still runs, remove this computer's old key there (**Settings → Security →
+   API Keys**).
+
+If anything is wrong (a typo, the wrong key), the window says what, and nothing changes.
+
 **A site stopped updating.**
 Go to **Settings → Platforms** and look for a red or amber dot. The usual cause is an expired
 login: sites that use browser cookies (FurAffinity, X, DeviantArt) need them re-pasting every few

@@ -64,7 +64,12 @@ def apply(src_path: str, settings: dict | None = None) -> tuple[str, str | None]
     try:
         from PIL import Image, ImageDraw
 
-        base = Image.open(src_path).convert("RGBA")
+        with Image.open(src_path) as _src:
+            # The colour profile, read before convert(): the composited images below are new and
+            # carry none, so both saves used to drop it and wide-gamut art shifted colour (spec 071 R1).
+            icc = _src.info.get("icc_profile")
+            base = _src.convert("RGBA")
+        keep = {"icc_profile": icc} if icc else {}
         w, h = base.size
         # Scale the stamp to the image (~3.5% of the short edge, min 14px).
         font_px = max(14, int(min(w, h) * 0.035))
@@ -101,14 +106,15 @@ def apply(src_path: str, settings: dict | None = None) -> tuple[str, str | None]
         if ext == ".png":
             fd, tmp = tempfile.mkstemp(suffix=".png", prefix="wm_")
             os.close(fd)
-            composited.save(tmp, "PNG")
+            composited.save(tmp, "PNG", **keep)
         else:
             fd, tmp = tempfile.mkstemp(suffix=".jpg", prefix="wm_")
             os.close(fd)
             bg = Image.new("RGB", composited.size, (255, 255, 255))
             bg.paste(composited, mask=composited.split()[-1])
-            bg.save(tmp, "JPEG", quality=92)
+            bg.save(tmp, "JPEG", quality=92, **keep)
         return tmp, tmp
     except Exception as e:  # noqa: BLE001 — never block a post on a watermark error
-        logger.warning("Watermark skipped (%s): %s", src_path, e)
+        # The bare name only: after spec 071 the path is a temp copy holding the OS user name.
+        logger.warning("Watermark skipped (%s): %s", os.path.basename(str(src_path)), type(e).__name__)
         return src_path, None

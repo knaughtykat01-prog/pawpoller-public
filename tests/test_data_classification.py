@@ -148,7 +148,7 @@ def _code_setting_keys() -> dict:
 
 
 def test_every_setting_the_code_reads_is_classified():
-    # ponytail: a literal-key scan. A key built at run time from a shape datamap doesn't know
+    # shortcut: a literal-key scan. A key built at run time from a shape datamap doesn't know
     # (not <P>_… or acct_<id>_…) slips past it; the instance check (Settings → Privacy,
     # `python -m datamap check`) lists it on any real install that holds one.
     found = _code_setting_keys()

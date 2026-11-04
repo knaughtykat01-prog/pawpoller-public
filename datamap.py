@@ -431,6 +431,7 @@ _SETTINGS = (
         "artwork_watermark_position", "artwork_watermark_text", "artwork_ws_subtype",
         "posting_default_platforms", "posting_default_rating", "posting_enabled", "posting_fa_category",
         "posting_fa_gender", "posting_fa_species", "posting_fa_theme", "posting_story_archive_path",
+        "posting_strip_metadata",                                             # spec 071: remove picture details
         "telegram_digest", "telegram_digest_interval_hours", "telegram_enabled", "telegram_error_alerts",
         "telegram_milestones", "telegram_poll_summaries", "telegram_weekly_digest",
         "tg_channel_digest_enabled", "tg_document", "tg_no_tags", "tg_protect", "tg_silent",

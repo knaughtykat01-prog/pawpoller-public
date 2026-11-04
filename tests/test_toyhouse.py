@@ -114,7 +114,13 @@ def test_th_comment_parse_plain_text_and_built_link():
     assert c["comment_id"] == "77" and c["author"] == "ThirdFur"
     assert "<" not in c["body"] and "hi there" in c["body"] and "line two" in c["body"]
     assert c["permalink"] == "https://toyhou.se/~comments/77"
-    assert c["commented_at"] == "29 Sep 2026, 4:17:07 pm"
+    assert c["commented_at"] == "2026-09-29 16:17:07"          # THINBOX: stored the way every site is
+
+
+def test_th_time_iso_reads_the_tooltip_and_refuses_anything_else():
+    assert thc.th_time_iso("29 Sep 2026, 4:17:07 pm") == "2026-09-29 16:17:07"
+    assert thc.th_time_iso(" 1 Jan 2024, 12:00:00 AM ") == "2024-01-01 00:00:00"
+    assert thc.th_time_iso("yesterday") is None and thc.th_time_iso("") is None and thc.th_time_iso(None) is None
 
 
 def test_th_whoami_ignores_link_outside_navbar():

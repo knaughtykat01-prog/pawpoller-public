@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 fb_router = APIRouter(prefix="/api/fb")
 
 _PICK_TTL = 600
-_picks: dict[str, tuple[float, list[dict]]] = {}     # ponytail: in-process; a restart just means "find your Pages again"
+_picks: dict[str, tuple[float, list[dict]]] = {}     # shortcut: in-process; a restart just means "find your Pages again"
 
 
 def _account(account_id) -> tuple[int | None, bool]:

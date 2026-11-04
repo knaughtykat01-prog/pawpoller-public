@@ -1509,7 +1509,7 @@ const API = {
     publishCheck(data) { return this.post('/api/artwork/publish/check', data); },
     /* Schedule an artwork to publish later. One call per platform.
        data = { artwork_name, platform, scheduled_at, account_id? }. */
-    scheduleArtwork(data) { return this.post('/api/artwork/schedule', data); },
+    scheduleArtwork(data) { return this._schedule('/api/artwork/schedule', data); },
     batchPlan(body) { return this.post('/api/artwork/batch/plan', body, { quiet: [400] }); },   // the dialog shows why          // 4.43.0 spec 010 (no side effects)
     getArtworkScheduled(name) { return this.get('/api/artwork/scheduled', { name }); },
     cancelArtworkScheduled(name, queueId) {
@@ -1550,7 +1550,31 @@ const API = {
     },
     publishPost(id, body) { return this.post(`/api/posts/${id}/publish`, body); },
     /* Schedule a post for later. body = { platforms, account_ids?, scheduled_at }. */
-    schedulePost(id, body) { return this.post(`/api/posts/${id}/schedule`, body); },
+    schedulePost(id, body) { return this._schedule(`/api/posts/${id}/schedule`, body); },
+    scheduleStory(name, body) { return this._schedule(`/api/editor/stories/${encodeURIComponent(name)}/schedule`, body); },
+    /* SCHEDTWICE (4.88.8): a schedule route answers 409 {already_scheduled: [{platform, scheduled_at}]}
+     * when the same thing is already waiting for that site. Ask; yes sends it again with `again`,
+     * no throws an Error with `.cancelled` (callers count that as skipped, not failed). */
+    async _schedule(path, body) {
+        try {
+            return await this.post(path, body, { quiet: [409] });
+        } catch (e) {
+            const m = /^API (\d+): ([\s\S]*)$/.exec((e && e.message) || '');
+            let d = null;
+            try { d = m && m[1] === '409' && JSON.parse(m[2]).detail; } catch (_) { d = null; }
+            const twins = d && d.already_scheduled;
+            if (!Array.isArray(twins)) throw m ? new Error(_cleanErr(m[2])) : e;   // the detail, not "API 400: {…}"
+            const lines = twins.map(t => {
+                const p = window.platformByCode ? window.platformByCode(t.platform) : null;
+                const when = t.scheduled_at ? Utils.time.fmt.dateTime(Utils.time.parse(t.scheduled_at)) : 'as soon as possible';
+                return `${(p && p.name) || t.platform}: ${when}`;
+            });
+            if (!window.confirm('This is already scheduled:\n' + lines.join('\n') + '\n\nSchedule it again anyway?')) {
+                throw Object.assign(new Error('Not scheduled: it was already waiting.'), { cancelled: true });
+            }
+            return this.post(path, { ...body, again: true });
+        }
+    },
     deletePost(id) {
         return fetch(`/api/posts/${id}`, { method: 'DELETE' })
             .then(r => { if (!r.ok) throw new Error(`Delete failed: ${r.status}`); return r.json(); });

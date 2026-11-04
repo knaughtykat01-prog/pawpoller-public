@@ -48,7 +48,9 @@ def test_decide_mode_and_target():
     assert da.decide_mode(["--connect", "http://127.0.0.1:8499"], {}) == "connected"
     assert da.decide_mode([], {"setup_mode": "standalone"}) == "standalone"
     assert da.connect_target([], saved) == ("https://box.ts.net", "pp_k")
-    assert da.connect_target(["--connect", "http://127.0.0.1:8499/"], saved) == ("http://127.0.0.1:8499", "pp_k")
+    # 072 FR-SEC-006: an override that isn't the saved address gets no key; the same address does.
+    assert da.connect_target(["--connect", "http://127.0.0.1:8499/"], saved) == ("http://127.0.0.1:8499", "")
+    assert da.connect_target(["--connect", "https://box.ts.net"], saved) == ("https://box.ts.net", "pp_k")
     assert da.connect_target(["--connect"], saved) == ("https://box.ts.net", "pp_k")
 
 
@@ -199,10 +201,10 @@ def test_agent_api_picker_returns_the_server_path(tmp_path):
     f.write_bytes(b"jpg")
     http = FakeHttp(up=True)
     ag = _agent(tmp_path, http)
-    api = da.AgentApi(ag, picker=lambda: [str(f)])
+    api = da.Connection(ag, queue=ag.queue, current_url=ag.server_url, picker=lambda: [str(f)])
     got = api.open_image_dialog()
     assert got == [f"/srv/inbox/{hashlib.sha256(b'jpg').hexdigest()[:16]}_art.jpg"]
-    assert da.AgentApi(ag, picker=lambda: []).open_image_dialog() == []
+    assert da.Connection(ag, queue=ag.queue, current_url=ag.server_url, picker=lambda: []).open_image_dialog() == []
     st = api.agent_status()
     assert st["server_url"] == "https://box.example" and st["pending"] == 0
     assert api.agent_login("fa", {}, "")["ok"] is False                 # no login_fn result → cancelled

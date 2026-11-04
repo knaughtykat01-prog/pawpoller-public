@@ -11,7 +11,7 @@
 
    RATING SOURCE: content surfaces carry `data-rating="<general|mature|adult>"`
    on their cover element (bookshelf `.book-cover`, artwork `.artwork-card-cover`
-   + `.artwork-detail-img`, masterpieces `.mp-cover` + `.mp-hero-img` + `.mp-alts`).
+   + `.artwork-detail-img`, masterpieces `.mp-cover` + `.mp-hero-img` + `.mp-alt`).
    We blur with `:not([data-rating="general"])`, which ALSO matches elements
    that carry no `data-rating` at all — so anything unrated, or a surface we
    don't tag (Collections bundle many pieces and have no single rating), is
@@ -29,7 +29,7 @@ html[data-sfw="1"] .book-cover:not([data-rating="general"]),
 html[data-sfw="1"] .artwork-card-cover:not([data-rating="general"]),
 html[data-sfw="1"] .mp-cover:not([data-rating="general"]),
 html[data-sfw="1"] .coll-cover:not([data-rating="general"]),
-html[data-sfw="1"] .mp-alts:not([data-rating="general"]) img,
+html[data-sfw="1"] img.mp-alt:not([data-rating="general"]),
 html[data-sfw="1"] .artwork-detail-alts:not([data-rating="general"]) img,
 html[data-sfw="1"] img.artwork-detail-img:not([data-rating="general"]),
 html[data-sfw="1"] img.mp-hero-img:not([data-rating="general"]),

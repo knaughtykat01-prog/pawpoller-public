@@ -20,9 +20,11 @@ docs/specs/server_truth_sync.md.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import os
+import secrets
 import threading
 import time
 import uuid
@@ -53,13 +55,19 @@ def decide_mode(argv: list[str], settings: dict) -> str:
 
 
 def connect_target(argv: list[str], settings: dict) -> tuple[str, str]:
-    """(server_url, api_key) for connected mode; ``--connect URL`` overrides the saved URL."""
-    url = settings.get("posting_server_url") or ""
+    """(server_url, api_key) for connected mode; ``--connect URL`` overrides the saved URL.
+
+    072 (FR-SEC-006): the saved key was checked against the saved address and goes nowhere else,
+    so an override that names a different address comes back with no key.
+    """
+    saved = (settings.get("posting_server_url") or "").rstrip("/")
+    url = saved
     if "--connect" in argv:
         i = argv.index("--connect")
         if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
-            url = argv[i + 1]
-    return (url or "").rstrip("/"), settings.get("posting_server_api_key") or ""
+            url = argv[i + 1].rstrip("/")
+    key = settings.get("posting_server_api_key") or ""
+    return url, (key if url == saved else "")
 
 
 # ── migration: a paired desktop's old database ───────────────────────────────
@@ -87,6 +95,11 @@ def retire_local_database(data_dir: Path, now=None) -> list[str]:
 # ── the queue ────────────────────────────────────────────────────────────────
 
 SECRET_KINDS = ("cookies", "helper")
+
+
+def server_tag(server: str) -> str:
+    """Which server a queued item is for, without writing the address into the file (059 rule)."""
+    return hashlib.sha256(str(server).rstrip("/").encode()).hexdigest()[:16]
 
 
 def _vault_cipher():
@@ -149,13 +162,15 @@ class Queue:
         except Exception as e:
             logger.debug("agent queue save failed: %s", e)
 
-    def add(self, kind: str, payload: dict, dedup_key: str | None = None) -> str:
+    def add(self, kind: str, payload: dict, dedup_key: str | None = None, server: str | None = None) -> str:
         with self._lock:
             if dedup_key:
                 self._items = [i for i in self._items if i.get("dedup_key") != dedup_key]
             stored = self._seal(payload) if kind in SECRET_KINDS else payload
             item = {"id": uuid.uuid4().hex[:12], "kind": kind, "payload": stored, "dedup_key": dedup_key,
                     "created": time.time(), "attempts": 0, "next_at": 0.0, "last_error": ""}
+            if server:
+                item["server"] = server_tag(server)
             self._items.append(item)
             if len(self._items) > MAX_QUEUE:
                 self._items = self._items[-MAX_QUEUE:]
@@ -175,16 +190,43 @@ class Queue:
         with self._lock:
             return [self._open(i) for i in self._items if float(i.get("next_at") or 0) <= now]
 
-    def remove(self, item_id: str) -> None:
+    @staticmethod
+    def _yours(item: dict, server: str | None) -> bool:
+        """072: an agent only settles items still meant for its own server (a re-tagged one moved on)."""
+        return server is None or item.get("server") in (None, server_tag(server))
+
+    def remove(self, item_id: str, server: str | None = None) -> None:
         with self._lock:
-            self._items = [i for i in self._items if i["id"] != item_id]
+            self._items = [i for i in self._items if not (i["id"] == item_id and self._yours(i, server))]
             self._save()
 
-    def failed(self, item_id: str, error: str, now: float | None = None) -> None:
+    def retag(self, ids, server: str) -> None:
+        """072: the person chose to send these to their new server; they start over there."""
+        ids, tag = set(ids), server_tag(server)
+        with self._lock:
+            for i in self._items:
+                if i["id"] in ids:
+                    i.update(server=tag, attempts=0, next_at=0.0, last_error="")
+            self._save()
+
+    def drop(self, ids) -> None:
+        ids = set(ids)
+        with self._lock:
+            self._items = [i for i in self._items if i["id"] not in ids]
+            self._save()
+
+    def keep_only(self, server: str) -> None:
+        """072: after a change, anything not meant for the new server was never shown to the person."""
+        tag = server_tag(server)
+        with self._lock:
+            self._items = [i for i in self._items if i.get("server") == tag]
+            self._save()
+
+    def failed(self, item_id: str, error: str, now: float | None = None, server: str | None = None) -> None:
         now = time.time() if now is None else now
         with self._lock:
             for i in self._items:
-                if i["id"] == item_id:
+                if i["id"] == item_id and self._yours(i, server):
                     i["attempts"] = int(i.get("attempts") or 0) + 1
                     step = BACKOFF_STEPS[min(i["attempts"] - 1, len(BACKOFF_STEPS) - 1)]
                     i["next_at"] = now + step
@@ -319,26 +361,28 @@ class Agent:
 
     def drain(self, max_items: int = 10, now: float | None = None) -> int:
         sent = 0
-        for item in self.queue.due(now)[:max_items]:
+        for item in [i for i in self.queue.due(now) if Queue._yours(i, self.server_url)][:max_items]:
+            if self._stop.is_set():
+                break                           # 072: a change of server stops this pass between items
             if item["kind"] == "cookies":
                 ok, err = self.send_cookies(item["payload"])
             elif item["kind"] == "upload":
                 ok, err, _ = self.send_upload(item["payload"])
             else:
                 ok, err = False, f"unknown kind {item['kind']}"
-                self.queue.remove(item["id"])
+                self.queue.remove(item["id"], server=self.server_url)
                 continue
             if ok:
-                self.queue.remove(item["id"])
+                self.queue.remove(item["id"], server=self.server_url)
                 sent += 1
             elif permanent_failure(err):
                 # The server understood and refused (bad account, oversize, malformed): retrying
                 # can never succeed, so the item is dropped rather than kept for ever.
                 logger.warning("Agent: dropping %s item after a permanent refusal: %s", item["kind"], err)
-                self.queue.remove(item["id"])
+                self.queue.remove(item["id"], server=self.server_url)
                 self.last_error = err
             else:
-                self.queue.failed(item["id"], err, now)
+                self.queue.failed(item["id"], err, now, server=self.server_url)
                 self.last_error = err
                 break                           # the server is away (or the key is wrong); try later
         return sent
@@ -368,6 +412,8 @@ class Agent:
     # -- the two desktop-only jobs -------------------------------------------
     def login(self, platform: str, extra_fields: dict | None = None, account_id: int | None = None) -> dict:
         """Run the local browser-login popup, then hand the cookies to the server."""
+        if self._stop.is_set():
+            return {"ok": False, "message": MSG_CS_SWITCHED}
         fn = self._login_fn
         if fn is None:
             from auth.browser_login import login_via_browser
@@ -382,6 +428,8 @@ class Agent:
             return {"ok": False, "message": "Login cancelled."}
         payload = {"platform": platform, "cookies": dict(creds), "account_id": account_id,
                    "extra_fields": dict(extra_fields or {})}
+        if self._stop.is_set():                 # 072: the server changed while the popup was open
+            return {"ok": False, "message": MSG_CS_SWITCHED}
         ok, err = self.send_cookies(payload)
         if ok:
             return {"ok": True, "message": "Connected — saved on your server."}
@@ -393,7 +441,9 @@ class Agent:
             except (ValueError, AttributeError):
                 reason = ""
             return {"ok": False, "message": reason or "Your server refused this sign-in, so it wasn't saved."}
-        self.queue.add("cookies", payload, dedup_key=f"cookies:{platform}:{account_id}")
+        if self._stop.is_set():
+            return {"ok": False, "message": MSG_CS_SWITCHED}
+        self.queue.add("cookies", payload, dedup_key=f"cookies:{platform}:{account_id}", server=self.server_url)
         self._wake.set()
         return {"ok": True, "queued": True,
                 "message": "Logged in. Your server is unreachable right now; the login will be sent when it is back."}
@@ -401,6 +451,8 @@ class Agent:
     def upload(self, path: str, kind: str = "inbox") -> dict:
         """Upload a local file now; if the server is away, queue it and say so."""
         p = Path(path)
+        if self._stop.is_set():
+            return {"ok": False, "message": MSG_CS_SWITCHED}
         if not p.is_file():
             return {"ok": False, "message": "File not found."}
         sha = sha256_of(p)
@@ -408,7 +460,9 @@ class Agent:
         ok, err, server_path = self.send_upload(payload)
         if ok:
             return {"ok": True, "path": server_path, "sha256": sha}
-        self.queue.add("upload", payload, dedup_key=f"upload:{sha}")
+        if self._stop.is_set():
+            return {"ok": False, "message": MSG_CS_SWITCHED}
+        self.queue.add("upload", payload, dedup_key=f"upload:{sha}", server=self.server_url)
         self._wake.set()
         return {"ok": False, "queued": True, "sha256": sha,
                 "message": "Your server is unreachable; the file will be uploaded when it is back."}
@@ -684,18 +738,262 @@ class HelperSender:
         self._stop.set()
 
 
-# ── pywebview bridge ─────────────────────────────────────────────────────────
+# ── Change server (spec 072) ─────────────────────────────────────────────────
+# A connected desktop is pointed at a different PawPoller from a small local window: the
+# address is checked without the key (a real PawPoller, not a relay), the person confirms the
+# host, then the key is checked, and only then are both saved (one vault write) and a fresh
+# Agent takes over. Every message the form shows is one of these; nothing a server sends is
+# shown except its version, cleaned.
 
-class AgentApi:
-    """Exposed to the server-served page as ``window.pywebview.api`` (4.13.0).
+MSG_CS_EMPTY_ADDRESS = "Type your PawPoller's address."
+MSG_CS_EMPTY_KEY = "Paste the API key you made on that server."
+MSG_CS_BAD_ADDRESS = "That doesn't look like a web address. It should start with https:// and have no spaces."
+MSG_CS_USERINFO = "Leave out any name or password before an @ in the address."
+MSG_CS_UNSAFE = ("Use an https:// address. Plain http:// only works for this computer or over Tailscale, "
+                 "because the key would be sent unprotected.")
+MSG_CS_BAD_KEY = ("That doesn't look like a PawPoller API key. Copy it again from the server, with nothing "
+                  "before or after it.")
+MSG_CS_UNREACHABLE = "Couldn't reach that address. Check it's typed right and that the server is on."
+MSG_CS_TIMEOUT = "That address didn't answer in time. Check the server is on, then try again."
+MSG_CS_CERT = "That address's security certificate didn't check out, so nothing was sent. Check the address."
+MSG_CS_TAILSCALE = " If it's a Tailscale address, check Tailscale is connected on this computer."
+MSG_CS_RELAY = "That address only runs the Instagram relay, not PawPoller. Use your PawPoller's own address."
+MSG_CS_NOT_PAWPOLLER = "Something answered at that address, but it isn't a PawPoller."
+MSG_CS_KEY_REFUSED = ("That server didn't accept the key. Make a new one on that server under "
+                      "Settings → Security → API Keys and paste it here.")
+MSG_CS_TOO_MANY = "That server has had too many tries. Wait a minute, then try again."
+MSG_CS_KEY_ODD = "That server didn't answer the key check the way a PawPoller does. Try again in a minute."
+MSG_CS_SAME_KEY_NEW_HOST = ("That's the key for your current server. Make a new key on the new server "
+                            "and paste that one.")
+MSG_CS_NOT_CHECKED = "Check the address first."
+MSG_CS_BUSY = "Still checking. Wait for it to finish."
+MSG_CS_STALE = "This window is out of date. Close it and choose Change server… again."
+MSG_CS_OPEN_INSTANCE = ("That server has no password, so the key may not have been checked, and anyone who can "
+                        "reach it can use it. Set a password on it under Settings → Security.")
+MSG_CS_SWITCHED = "This app has just moved to a different server. Try that again."
+MSG_CS_FAILED = "Something went wrong, and nothing was changed. Try again."
+MSG_CS_SAVE_FAILED = "Couldn't save the new server on this computer, so nothing was changed."
+MSG_CS_DONE = "Connected. PawPoller is opening your new server."
+MSG_CS_REVOKE = ("If your old server still runs, remove this computer's old key there, under "
+                 "Settings → Security → API Keys.")
 
-    Keeps the desktop build's ``open_image_dialog`` name so the Artwork hub's picker works as
-    it always did — except that the path it returns now lives on the server.
+CS_BODY_CAP = 64 * 1024
+CS_DEADLINE = 10.0
+
+
+def clean_origin(address) -> tuple[str | None, str | None]:
+    """(origin, None) or (None, message). One punycode origin, from the same encoder httpx connects
+    with, is what the form shows, checks, saves and loads (072 R5: Python's idna codec differs)."""
+    import unicodedata
+    a = (address if isinstance(address, str) else "").strip()
+    if not a:
+        return None, MSG_CS_EMPTY_ADDRESS
+    if any(ch.isspace() or ch == "\\" or unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp") for ch in a):
+        return None, MSG_CS_BAD_ADDRESS
+    low = a.lower()
+    if not low.startswith(("http://", "https://")):
+        return None, MSG_CS_BAD_ADDRESS
+    authority = a.split("//", 1)[1].split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    if "@" in authority:
+        return None, MSG_CS_USERINFO
+    try:
+        import httpx
+        u = httpx.URL(a)
+        host = u.raw_host.decode("ascii").lower()
+        port = u.port
+        scheme = u.scheme
+    except Exception:
+        return None, MSG_CS_BAD_ADDRESS
+    if not host or scheme not in ("http", "https") or u.userinfo or (port is not None and not 0 < port < 65536):
+        return None, MSG_CS_BAD_ADDRESS
+    if ":" in host:
+        host = f"[{host}]"
+    origin = f"{scheme}://{host}" + (f":{port}" if port else "")
+    ok, _why = config.is_trusted_transport(origin)
+    if not ok:
+        return None, MSG_CS_UNSAFE
+    return origin, None
+
+
+def valid_key(key) -> bool:
+    return isinstance(key, str) and 8 <= len(key) <= 256 and all("\x21" <= ch <= "\x7e" for ch in key)
+
+
+def _tailscale(origin: str) -> bool:
+    return config.is_trusted_transport(origin)[1] in ("tailscale name", "tailscale address")
+
+
+def _bounded_get(client, url: str, headers: dict | None = None) -> tuple[int, bytes | None, str | None]:
+    """(status, body, None) or (status, None, message). No redirects (the client), no compressed
+    replies, at most CS_BODY_CAP bytes, within CS_DEADLINE overall: httpx's read timeout restarts
+    on every chunk, so a server sending a byte at a time would otherwise hold the form."""
+    import ssl
+    import httpx
+    end = time.monotonic() + CS_DEADLINE
+    h = {"Accept-Encoding": "identity", **(headers or {})}
+    try:
+        with client.stream("GET", url, headers=h, timeout=CS_DEADLINE) as r:
+            if (r.headers.get("content-encoding") or "identity").strip().lower() != "identity":
+                return r.status_code, None, MSG_CS_NOT_PAWPOLLER
+            buf = bytearray()
+            for chunk in r.iter_bytes():           # compressed replies were refused above
+                buf += chunk
+                if len(buf) > CS_BODY_CAP:
+                    return r.status_code, None, MSG_CS_NOT_PAWPOLLER
+                if time.monotonic() > end:
+                    return r.status_code, None, MSG_CS_TIMEOUT
+            return r.status_code, bytes(buf), None
+    except httpx.TimeoutException:
+        return 0, None, MSG_CS_TIMEOUT
+    except Exception as e:
+        cause = e.__cause__ or e.__context__
+        if isinstance(cause, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in repr(e):
+            return 0, None, MSG_CS_CERT
+        return 0, None, MSG_CS_UNREACHABLE
+
+
+def probe_server(origin: str) -> dict:
+    """The keyless step: is *origin* a PawPoller (not a relay), and does it have a password?"""
+    with helper_client() as c:
+        status, body, err = _bounded_get(c, f"{origin}/api/health")
+        if err:
+            hint = MSG_CS_TAILSCALE if err in (MSG_CS_UNREACHABLE, MSG_CS_TIMEOUT) and _tailscale(origin) else ""
+            return {"ok": False, "message": err + hint}
+        try:
+            j = json.loads(body or b"") if status == 200 else None
+        except ValueError:
+            j = None
+        if not isinstance(j, dict):
+            return {"ok": False, "message": MSG_CS_NOT_PAWPOLLER}
+        if j.get("mode") == "relay":
+            return {"ok": False, "message": MSG_CS_RELAY}
+        if j.get("status") != "ok" or not isinstance(j.get("version"), str):
+            return {"ok": False, "message": MSG_CS_NOT_PAWPOLLER}
+        open_instance = False
+        st2, body2, err2 = _bounded_get(c, f"{origin}/api/auth/dashboard-status")
+        if not err2 and st2 == 200:
+            try:
+                open_instance = (json.loads(body2 or b"") or {}).get("auth_required") is False
+            except (ValueError, AttributeError):
+                open_instance = False
+        return {"ok": True, "version": clean_label(j["version"], 20), "open_instance": open_instance}
+
+
+def check_key(origin: str, key: str) -> tuple[bool, str]:
+    """The one request that carries the key, after the person confirmed the host."""
+    with helper_client() as c:
+        status, _body, err = _bounded_get(c, f"{origin}/api/settings/sync/status",
+                                          headers={"Authorization": f"Bearer {key}"})
+        if err:
+            return False, err
+        if status == 200:
+            return True, ""
+        if status in (401, 403):
+            return False, MSG_CS_KEY_REFUSED
+        if status == 429:
+            return False, MSG_CS_TOO_MANY
+        return False, MSG_CS_KEY_ODD
+
+
+def _host_label(url: str) -> str:
+    origin, _ = clean_origin(url or "")
+    if origin:
+        return origin.split("//", 1)[1]
+    return clean_label(ascii_host(url or ""), 80)
+
+
+def _js_str(value: str) -> str:
+    """A JS string literal that is safe inside an inline <script>."""
+    return json.dumps(str(value)).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
+
+class Connection:
+    """Connected mode's window state (072). Its bound methods are exposed to pages by exact name
+    with ``window.expose``. No window gets a ``js_api`` object: pywebview resolves any dotted
+    attribute path a page sends on one (``util.js_bridge_call``), private names included, so a
+    server page could walk from it to the key. Exact-name lookup has nothing to walk.
+
+    The two local pages (offline, Change server) carry a fresh nonce; their functions do nothing
+    without it, so a page the window was navigated to (a dropped link) can't use them.
     """
 
-    def __init__(self, agent: Agent, picker=None):
-        self._agent = agent
+    def __init__(self, agent: "Agent | None", *, queue: "Queue", current_url: str, saved_key: str = "",
+                 load_url=None, load_html=None, open_form=None, close_form=None, picker=None,
+                 save=None, make_agent=None, wait_loaded=None):
+        self.agent = agent
+        self.queue = queue
+        self.current_url = (current_url or "").rstrip("/")
+        self._saved_key = saved_key or (agent.api_key if agent else "")
+        self._load_url, self._load_html = load_url, load_html
+        self._open_form, self._close_form = open_form, close_form
+        self._wait_loaded = wait_loaded         # bounded: the window finished loading the last page
         self._picker = picker
+        self._save = save or config.save_settings
+        self._make_agent = make_agent or (lambda origin, key, q: Agent(origin, key, queue=q))
+        self.offline_nonce = ""
+        self.form_nonce = ""
+        self._checked_origin = ""
+        self._checked_ids: list[str] = []
+        self._checked_open = False
+        self._cancel = False
+        self._busy = threading.Lock()
+        self._nav_lock = threading.RLock()
+        self._form_lock = threading.Lock()
+        self._commit_lock = threading.Lock()
+
+    # -- what pages may call -------------------------------------------------
+    def main_functions(self) -> tuple:
+        return (self.open_image_dialog, self.agent_login, self.agent_status, self.fa_journal,
+                self.open_change_server)
+
+    def form_functions(self) -> tuple:
+        return (self.cs_check, self.cs_connect, self.cs_cancel)
+
+    @staticmethod
+    def _nonce_ok(given, current: str) -> bool:
+        return bool(current) and isinstance(given, str) and given.isascii() and hmac.compare_digest(given, current)
+
+    @staticmethod
+    def _call(fn, *args) -> None:
+        """A window callable; the window may already be gone."""
+        if fn is None:
+            return
+        try:
+            fn(*args)
+        except Exception as e:
+            logger.debug("window call failed: %s", type(e).__name__)
+
+    # -- the main window's pages ---------------------------------------------
+    def offline_html(self) -> str:
+        with self._nav_lock:
+            self.offline_nonce = secrets.token_urlsafe(24)
+            return offline_page(self.current_url, self.agent, self.offline_nonce)
+
+    def unbound_html(self) -> str:
+        with self._nav_lock:
+            self.offline_nonce = secrets.token_urlsafe(24)
+            return unbound_page(self.offline_nonce)
+
+    def show_server(self) -> None:
+        with self._nav_lock:
+            self.offline_nonce = ""
+            self._call(self._load_url, self.current_url)
+
+    def reach_callback(self, agent: "Agent") -> None:
+        """The old address answering late must not pull the window back after a change (FR-SEC-008)."""
+        with self._nav_lock:
+            if agent is self.agent:
+                self.show_server()
+
+    # -- main window functions (a server page can call these) ----------------
+    def open_change_server(self, nonce=None):
+        try:
+            if not self._nonce_ok(nonce, self.offline_nonce):
+                return False
+            self._call(self._open_form)
+            return True
+        except Exception:
+            return False
 
     def _pick(self) -> list[str]:
         if self._picker is not None:
@@ -711,10 +1009,13 @@ class AgentApi:
 
     def open_image_dialog(self):
         try:
+            agent = self.agent
+            if agent is None:
+                return []
             paths = self._pick()
             if not paths:
                 return []
-            res = self._agent.upload(paths[0], "inbox")
+            res = agent.upload(paths[0], "inbox")
             if res.get("ok"):
                 return [res["path"]]
             logger.warning("Upload via agent failed: %s", res.get("message"))
@@ -725,21 +1026,31 @@ class AgentApi:
 
     def agent_login(self, platform, extra_fields=None, account_id=None):
         try:
-            return self._agent.login(str(platform), dict(extra_fields or {}),
-                                     int(account_id) if account_id not in (None, "") else None)
+            agent = self.agent
+            if agent is None:
+                return {"ok": False, "message": MSG_CS_SWITCHED}
+            return agent.login(str(platform), dict(extra_fields or {}),
+                               int(account_id) if account_id not in (None, "") else None)
         except Exception as e:
             return {"ok": False, "message": str(e)}
 
     def agent_status(self):
-        return self._agent.status()
+        try:
+            agent = self.agent
+            if agent is None:
+                return {"server_url": "", "pending": self.queue.pending_count(), "last_contact": 0,
+                        "last_error": "not connected", "version": config.APP_VERSION}
+            return agent.status()
+        except Exception:
+            return {}
 
     def fa_journal(self, post_id, title, message, rating):
         """Spec 027: FA's journal page, filled in, in a desktop window (the person does the CAPTCHA)."""
         from auth.fa_journal_window import open_fa_journal
-        agent = self._agent
+        agent = self.agent
 
         def _posted(jid, url):
-            if not post_id:
+            if not post_id or agent is None:
                 return
             c = agent._client()
             try:
@@ -754,27 +1065,258 @@ class AgentApi:
         except Exception as e:
             return {"ok": False, "message": str(e)}
 
+    # -- the Change server form ----------------------------------------------
+    def form_html(self) -> str:
+        """A fresh form: new nonce, nothing checked, no leftover cancel."""
+        with self._commit_lock:
+            self.form_nonce = secrets.token_urlsafe(24)
+            self._checked_origin, self._checked_ids, self._checked_open = "", [], False
+            self._cancel = False
+            return change_server_page(self.form_nonce, _host_label(self.current_url))
 
-def offline_page(server_url: str, agent: Agent | None = None) -> str:
+    def form_closed(self) -> None:
+        with self._commit_lock:                 # never mid-save: the switch reads what was checked
+            self.form_nonce = ""
+            self._checked_origin, self._checked_ids = "", []
+
+    def _waiting(self) -> tuple[list[str], dict]:
+        from database.accounts import PLATFORM_NAMES
+        ids, signins, uploads = [], [], 0
+        for item in self.queue.pending():
+            ids.append(item["id"])
+            if item.get("kind") == "cookies":
+                p = item.get("payload") or {}
+                acc = p.get("account_id")
+                signins.append({"site": PLATFORM_NAMES.get(str(p.get("platform") or ""), "a site"),
+                                "account": f"account {int(acc)}" if isinstance(acc, int) else "main account"})
+            elif item.get("kind") == "upload":
+                uploads += 1
+        return ids, {"signins": signins, "uploads": uploads}
+
+    def cs_check(self, nonce=None, address=None):
+        if not self._nonce_ok(nonce, self.form_nonce):
+            return {"ok": False, "message": MSG_CS_STALE}
+        if not self._busy.acquire(blocking=False):
+            return {"ok": False, "message": MSG_CS_BUSY}
+        try:
+            self._checked_origin, self._checked_ids, self._checked_open = "", [], False
+            origin, msg = clean_origin(address)
+            if msg or not origin:
+                return {"ok": False, "message": msg or MSG_CS_FAILED}
+            res = probe_server(origin)
+            if not res.get("ok"):
+                return {"ok": False, "message": res.get("message") or MSG_CS_FAILED}
+            ids, waiting = self._waiting()
+            self._checked_origin, self._checked_ids, self._checked_open = origin, ids, bool(res["open_instance"])
+            v = res["version"]
+            note = "" if v == config.APP_VERSION else (
+                f"That server runs PawPoller {v} and this app is {config.APP_VERSION}. That's fine; if "
+                f"something looks odd later, update the older one.")
+            return {"ok": True, "from_host": _host_label(self.current_url), "to_host": _host_label(origin),
+                    "version_note": note, "open_instance": self._checked_open, "waiting": waiting}
+        except Exception as e:
+            logger.warning("Change server check failed: %s", type(e).__name__)
+            return {"ok": False, "message": MSG_CS_FAILED}
+        finally:
+            self._busy.release()
+
+    def cs_connect(self, nonce=None, key=None, send_waiting=True):
+        if not self._nonce_ok(nonce, self.form_nonce):
+            return {"ok": False, "message": MSG_CS_STALE}
+        if not self._busy.acquire(blocking=False):
+            return {"ok": False, "message": MSG_CS_BUSY}
+        try:
+            origin = self._checked_origin
+            if not origin:
+                return {"ok": False, "message": MSG_CS_NOT_CHECKED}
+            key = key.strip() if isinstance(key, str) else ""
+            if not key:
+                return {"ok": False, "message": MSG_CS_EMPTY_KEY}
+            if not valid_key(key):
+                return {"ok": False, "message": MSG_CS_BAD_KEY}
+            if (self._saved_key and hmac.compare_digest(key.encode(), self._saved_key.encode())
+                    and _host_label(origin) != _host_label(self.current_url)):
+                return {"ok": False, "message": MSG_CS_SAME_KEY_NEW_HOST}
+            ok, msg = check_key(origin, key)
+            if not ok:
+                return {"ok": False, "message": msg}
+            with self._commit_lock:
+                if self._cancel or origin != self._checked_origin:
+                    return {"ok": False, "message": MSG_CS_STALE}
+                ids = list(self._checked_ids)
+                try:
+                    # One call: both live in the vault, written with one os.replace (072 R3). Sync off,
+                    # or the save would schedule a push of this desktop's settings to the new server.
+                    self._save({"posting_server_url": origin, "posting_server_api_key": key,
+                                "auto_sync_enabled": False})
+                except Exception as e:
+                    logger.error("Change server: saving failed: %s", type(e).__name__)
+                    return {"ok": False, "message": MSG_CS_SAVE_FAILED}
+                self._switch(origin, key, bool(send_waiting), ids)
+            logger.info("Change server: this desktop now opens a different server")
+            return {"ok": True, "message": MSG_CS_DONE, "revoke_hint": MSG_CS_REVOKE,
+                    "open_instance": self._checked_open}
+        except Exception as e:
+            logger.warning("Change server connect failed: %s", type(e).__name__)
+            return {"ok": False, "message": MSG_CS_FAILED}
+        finally:
+            self._busy.release()
+
+    def _switch(self, origin: str, key: str, send: bool, ids: list[str]) -> None:
+        old = self.agent
+        if old is not None:
+            old.stop()                          # drain stops between items; a stopped agent doesn't queue
+        if send:
+            self.queue.retag(ids, origin)
+        else:
+            self.queue.drop(ids)
+        self.queue.keep_only(origin)            # anything queued after the check was never shown
+        new = self._make_agent(origin, key, self.queue)
+        new.start()
+        with self._nav_lock:
+            # The old server's page stays live until the switching page has loaded: until then its
+            # calls reach no agent at all, never the new one (implement review Low).
+            self.agent = None
+            self.offline_nonce = ""
+            self._call(self._load_html, switching_page())
+            self._call(self._wait_loaded)
+            self.agent = new
+            self.current_url = origin
+            self._saved_key = key
+            self._checked_origin, self._checked_ids = "", []
+            self._call(self._load_url, origin)
+
+    def cs_cancel(self, nonce=None):
+        if not self._nonce_ok(nonce, self.form_nonce):
+            return {"ok": False, "message": MSG_CS_STALE}
+        try:
+            with self._commit_lock:
+                self._cancel = True
+            self._call(self._close_form)
+            return True
+        except Exception:
+            return False
+
+
+# ── the local pages ──────────────────────────────────────────────────────────
+
+_LOCAL_CSP = ("default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; "
+              "base-uri 'none'; form-action 'none'")
+_LOCAL_CSS = """body{font:15px/1.5 system-ui,sans-serif;background:#0f1216;color:#e6e9ee;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+.card{max-width:480px;padding:28px 32px;border:1px solid #262c35;border-radius:12px;background:#171b21}h1{font-size:20px;margin:0 0 8px}
+p{color:#a3acba;margin:8px 0}code,b.host{color:#6cb2ff;font-weight:600}
+button{font:inherit;padding:8px 16px;border-radius:8px;border:1px solid #6cb2ff;background:#6cb2ff;color:#0f1216;cursor:pointer;margin:8px 8px 0 0}
+button.quiet{background:transparent;color:#e6e9ee;border-color:#3a4350}button:disabled{opacity:.5;cursor:default}
+button:focus-visible,input:focus-visible{outline:2px solid #ffd166;outline-offset:2px}
+label{display:block;margin:14px 0 4px;color:#e6e9ee}input[type=text],input[type=password]{width:100%;box-sizing:border-box;font:inherit;padding:8px 10px;border-radius:8px;border:1px solid #3a4350;background:#0f1216;color:#e6e9ee}
+.msg{color:#ffb4a8;min-height:1.5em}.ok{color:#9be3a8}ul{margin:6px 0;padding-left:20px;color:#a3acba}"""
+_NO_DROP = ("document.addEventListener('dragover',function(e){e.preventDefault();});"
+            "document.addEventListener('drop',function(e){e.preventDefault();});")
+
+
+def _local_page(body: str, script: str = "") -> str:
+    return (f'<!doctype html><html><head><meta charset="utf-8">'
+            f'<meta http-equiv="Content-Security-Policy" content="{_LOCAL_CSP}"><title>PawPoller</title>'
+            f'<style>{_LOCAL_CSS}</style></head><body><div class="card">{body}</div>'
+            f'<script>{_NO_DROP}{script}</script></body></html>')
+
+
+def _change_button(nonce: str) -> tuple[str, str]:
+    if not nonce:
+        return "", ""
+    return ('<button id="cs" type="button">Change server…</button>',
+            f"var N={_js_str(nonce)};document.getElementById('cs').addEventListener('click',function(){{"
+            "if(window.pywebview&&pywebview.api&&pywebview.api.open_change_server){pywebview.api.open_change_server(N);}"
+            "});")
+
+
+def offline_page(server_url: str, agent: Agent | None = None, nonce: str = "") -> str:
     """What the window shows while the server cannot be reached; it swaps to the server itself."""
     import html
     pending = agent.queue.pending_count() if agent else 0
     if agent and agent.last_error == "relay":
         head = "This address isn't a PawPoller any more"
         body = ("<p><code>{0}</code> only runs the Instagram relay now, so there is nothing here to open.</p>"
-                "<p>If your PawPoller moved (to a hosted seat, say), this app needs connecting to its new "
-                "address. The app can't do that by itself yet: ask in the PawPoller Discord and we'll walk "
-                "you through it.</p>").format(html.escape(server_url))
+                "<p>If your PawPoller moved (to a hosted seat, say), choose <b>Change server…</b> and give "
+                "this app its new address and an API key made there.</p>").format(html.escape(server_url))
     else:
         head = "Your server isn't reachable yet"
         body = ("<p>PawPoller is trying to open <code>{0}</code> and will switch over the moment it answers.</p>"
-                "<p>If it's a machine at home, check it's on and that Tailscale is connected on both ends.</p>"
+                "<p>If it's a machine at home, check it's on and that Tailscale is connected on both ends. "
+                "If your PawPoller has moved, choose <b>Change server…</b>.</p>"
                 ).format(html.escape(server_url))
-    return f"""<!doctype html><html><head><meta charset="utf-8"><title>PawPoller</title>
-<style>body{{font:15px/1.5 system-ui,sans-serif;background:#0f1216;color:#e6e9ee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
-.card{{max-width:480px;padding:28px 32px;border:1px solid #262c35;border-radius:12px;background:#171b21}}h1{{font-size:20px;margin:0 0 8px}}
-p{{color:#8b95a5;margin:8px 0}}code{{color:#6cb2ff}}</style></head><body><div class="card">
-<h1>{head}</h1>
-{body}
-<p>{pending} item{'s' if pending != 1 else ''} waiting to be sent.</p>
-</div></body></html>"""
+    button, script = _change_button(nonce)
+    return _local_page(f"<h1>{head}</h1>{body}"
+                       f"<p>{pending} item{'s' if pending != 1 else ''} waiting to be sent.</p>{button}", script)
+
+
+def unbound_page(nonce: str) -> str:
+    """Connected mode with no key that belongs to the address (072 FR-SEC-006): nothing is sent."""
+    button, script = _change_button(nonce)
+    return _local_page("<h1>Connect this app to your server</h1>"
+                       "<p>This app was started with a server address it has no key for, so it hasn't "
+                       "contacted it.</p><p>Choose <b>Change server…</b> and give it your PawPoller's "
+                       f"address and an API key made there.</p>{button}", script)
+
+
+def switching_page() -> str:
+    return _local_page("<h1>Switching server…</h1><p>Opening your new server.</p>")
+
+
+def change_server_page(nonce: str, current_host: str) -> str:
+    """The Change server form: its own local window, its own functions, nothing loaded from outside."""
+    body = """<h1>Change server</h1>
+<p>Now: <b class="host" id="from"></b></p>
+<label for="addr">Your PawPoller's address</label>
+<input type="text" id="addr" autocomplete="off" spellcheck="false" placeholder="https://">
+<button id="check" type="button">Check</button><button id="cancel" class="quiet" type="button">Cancel</button>
+<p class="msg" id="msg1" role="alert"></p>
+<div id="step2" hidden>
+<p>Move this app from <b class="host" id="from2"></b> to <b class="host" id="to"></b>?</p>
+<p>The key below must have been made on <b class="host" id="to2"></b>. Sign-ins you make in this app will go there.</p>
+<p id="note"></p>
+<div id="wait" hidden><p>Waiting to be sent:</p><ul id="waitlist"></ul>
+<label><input type="radio" name="w" id="send" checked> Send them to the new server</label>
+<label><input type="radio" name="w" id="discard"> Throw them away</label></div>
+<button id="yes" type="button">Yes, that's my server</button>
+<label for="key">API key made on that server</label>
+<input type="password" id="key" autocomplete="off" disabled>
+<p>Make one on your server under Settings → Security → API Keys.</p>
+<button id="connect" type="button" disabled>Connect</button>
+<p class="msg" id="msg2" role="alert"></p>
+</div>
+<div id="done" hidden><p class="ok" id="okmsg"></p><p id="open"></p><p id="revoke"></p>
+<button id="close" type="button">Close</button></div>"""
+    script = (f"var N={_js_str(nonce)},CUR={_js_str(current_host)};" + r"""
+function $(i){return document.getElementById(i);}
+function api(){return (window.pywebview&&pywebview.api)||{};}
+$('from').textContent=CUR;
+function reset(){$('step2').hidden=true;$('key').disabled=true;$('connect').disabled=true;$('key').value='';$('msg2').textContent='';}
+$('addr').addEventListener('input',reset);
+$('check').addEventListener('click',function(){
+ reset();$('msg1').textContent='';$('check').disabled=true;
+ Promise.resolve(api().cs_check&&api().cs_check(N,$('addr').value)).then(function(r){
+  r=r||{};if(!r.ok){$('msg1').textContent=r.message||'';return;}
+  $('from2').textContent=r.from_host;$('to').textContent=r.to_host;$('to2').textContent=r.to_host;
+  $('note').textContent=r.version_note||'';
+  var w=r.waiting||{},ul=$('waitlist');ul.textContent='';
+  (w.signins||[]).forEach(function(s){var li=document.createElement('li');li.textContent='Sign-in: '+s.site+', '+s.account;ul.appendChild(li);});
+  if(w.uploads){var li=document.createElement('li');li.textContent=w.uploads+' picture'+(w.uploads==1?'':'s')+' to upload';ul.appendChild(li);}
+  $('wait').hidden=!ul.childNodes.length;$('step2').hidden=false;$('yes').disabled=false;$('yes').focus();
+ }).finally(function(){$('check').disabled=false;});
+});
+$('yes').addEventListener('click',function(){$('key').disabled=false;$('connect').disabled=false;$('yes').disabled=true;$('key').focus();});
+$('connect').addEventListener('click',function(){
+ var k=$('key').value;$('key').value='';$('msg2').textContent='';$('connect').disabled=true;
+ Promise.resolve(api().cs_connect&&api().cs_connect(N,k,$('send').checked)).then(function(r){
+  r=r||{};if(!r.ok){$('msg2').textContent=r.message||'';$('connect').disabled=false;return;}
+  $('step2').hidden=true;$('done').hidden=false;$('okmsg').textContent=r.message||'';
+  $('open').textContent=r.open_instance?""" + _js_str(MSG_CS_OPEN_INSTANCE) + r""":'';
+  $('revoke').textContent=r.revoke_hint||'';$('close').focus();
+ });
+ k='';
+});
+function bye(){if(api().cs_cancel){api().cs_cancel(N);}}
+$('cancel').addEventListener('click',bye);$('close').addEventListener('click',bye);
+""")
+    return _local_page(body, script)

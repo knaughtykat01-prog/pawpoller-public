@@ -1996,6 +1996,9 @@ const Components = {
                 if (p && p.length) t.problem = p.join(' ');
                 const lo = (r.left_out || {})[t.code];
                 if (lo && lo.length) t.leftOut = lo;
+                // Spec 071: this site's picture would go out with its hidden details still in it.
+                const kd = (r.kept_details || {})[t.code];
+                if (kd) t.keptDetails = kd;
             }
         } catch (e) { /* the post itself still refuses with the same sentence */ }
         return targets;
@@ -2018,6 +2021,7 @@ const Components = {
                 ${(t.leftOut || []).length ? `<span class="pub-confirm-leftout muted">${t.leftOut.length} tag${
                     t.leftOut.length === 1 ? '' : 's'} left out: ${t.leftOut.slice(0, 5).map(d =>
                     `${esc(d.tag)} (${esc(d.rule)})`).join(', ')}${t.leftOut.length > 5 ? `, +${t.leftOut.length - 5} more` : ''}</span>` : ''}
+                ${t.keptDetails ? `<span class="pub-confirm-leftout muted">⚠ ${esc(t.keptDetails)}</span>` : ''}
             </li>`).join('');
         return new Promise(resolve => {
             const ov = document.createElement('div');
@@ -2177,7 +2181,14 @@ const Components = {
             // 4.60.0 (spec 024): on the site but waiting for the owner (Tumblr kept a Mature post as a draft).
             // A soft `note` on a success (sync: DA's description needs the cookie, Weasyl can't swap
             // the file) was sent but never shown, so a half-done sync read as fully done (4.77.2).
-            const attention = ok && (r.attention || r.note) ? String(r.attention || r.note) : '';
+            // Spec 071: the picture went out with its hidden details still in it. Shown on its own line,
+            // beside attention (a Tumblr draft's attention used to win and drop it), and on an unconfirmed
+            // row too: the upload may exist, GPS and all.
+            const keptNote = r.metadata_kept ? String(r.metadata_note || r.note || '') : '';
+            const soft = String(r.note || '').replace(keptNote, '').trim();
+            const attention = ok && (r.attention || soft) ? String(r.attention || soft) : '';
+            const kept = keptNote && (ok || r.unconfirmed)
+                ? `<span class="pub-result-kept">⚠ ${esc(keptNote)}</span>` : '';
             const url = Utils.safeUrl(r.external_url || r.url || '');   // http(s) only (SECLOW4622)
             const what = attention
                 ? esc(attention) + (url ? ` <a href="${esc(url)}" target="_blank" rel="noopener">Open it ↗</a>` : '')
@@ -2201,10 +2212,10 @@ const Components = {
                 ? `<span class="pub-result-leftout">${lo.length} tag${lo.length === 1 ? '' : 's'} left out: ${
                     lo.slice(0, 5).map(t => `${esc(t.tag)} (${esc(t.rule)})`).join(', ')}${
                     lo.length > 5 ? `, +${lo.length - 5} more` : ''}</span>` : '';
-            return `<li class="pub-result ${attention || unsure ? 'is-warn' : ok ? 'is-ok' : skipped ? 'is-skip' : 'is-fail'}">
-                <span class="pub-result-mark">${attention ? '!' : unsure ? '?' : ok ? '✓' : skipped ? '–' : '✗'}</span>
+            return `<li class="pub-result ${attention || unsure || kept ? 'is-warn' : ok ? 'is-ok' : skipped ? 'is-skip' : 'is-fail'}">
+                <span class="pub-result-mark">${attention || kept ? '!' : unsure ? '?' : ok ? '✓' : skipped ? '–' : '✗'}</span>
                 <span class="pub-result-plat">${esc(p.emoji || '')} ${esc(r.label || p.label)}</span>
-                <span class="pub-result-what">${what}${variant}${leftOut}${comment}</span>
+                <span class="pub-result-what">${what}${variant}${leftOut}${kept}${comment}</span>
             </li>`;
         }).join('');
         return `<ul class="pub-results">${rows}</ul>`;

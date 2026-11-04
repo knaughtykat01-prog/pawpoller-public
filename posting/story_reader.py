@@ -894,13 +894,17 @@ def _resolve_format_file(
             # over the per-chapter dir, returning the whole story for a
             # chapter request. Pre-2.18.19 this is exactly what made
             # publishing chapter 1 to FA upload the full-story PDF.
+            # CHFALLBACK (4.88.8): neither match may run on into more digits. As a bare substring,
+            # `Chapter_1` matched `Chapter_10_…`, which sorts first, so chapter 1 posted chapter 10's file.
             if ch_filename:
+                stem_re = re.compile(re.escape(ch_filename) + r"(?!\d)")
                 for f in sorted(search_dir.iterdir()):
-                    if f.is_file() and ch_filename in f.stem:
+                    if f.is_file() and stem_re.search(f.stem):
                         return str(f), file_type
             # Try matching by chapter index
+            index_re = re.compile(rf"Chapter_{chapter_index}(?!\d)")
             for f in sorted(search_dir.iterdir()):
-                if f.is_file() and f"Chapter_{chapter_index}" in f.name:
+                if f.is_file() and index_re.search(f.name):
                     return str(f), file_type
         else:
             # Full-story file — skip per-chapter subdirs (Chapters/...)

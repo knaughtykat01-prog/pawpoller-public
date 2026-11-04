@@ -184,7 +184,7 @@ class TestSeveralSubmissionsOnOneSite:
     def test_the_edit_path_walks_members_not_platforms(self):
         """`update_artwork` loops the member rows, so several uploads on one site are
         edited individually — each with the render IT holds."""
-        src = inspect.getsource(manager.update_artwork)
+        src = inspect.getsource(manager._update_artwork)   # body behind the 071 CleanRun wrapper
         assert "for m in members:" in src
         assert 'm.get("variant_key")' in src
 

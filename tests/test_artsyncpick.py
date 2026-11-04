@@ -34,7 +34,8 @@ def test_the_page_sends_only_the_rows_site():
 def test_a_successful_syncs_note_is_shown():
     # 4.77.2: a half-done sync (DA description without the cookie) read as fully done.
     src = open("frontend/js/components.js", encoding="utf-8").read()
-    assert "r.attention || r.note" in src
+    # Spec 071: the soft note is r.note minus the "details kept" note, which gets its own line.
+    assert "const soft = String(r.note" in src and "r.attention || soft" in src
 
 
 def test_platforms_must_be_a_list(monkeypatch):

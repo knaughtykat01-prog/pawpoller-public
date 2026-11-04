@@ -93,8 +93,9 @@ def test_both_edit_paths_use_the_guard():
     the artwork path cannot silently lose it again."""
     import inspect
 
-    story_src = inspect.getsource(manager.update_story)
-    artwork_src = inspect.getsource(manager.update_artwork)
+    # The bodies live in _update_story / _update_artwork since spec 071 (thin CleanRun wrappers).
+    story_src = inspect.getsource(manager._update_story)
+    artwork_src = inspect.getsource(manager._update_artwork)
     assert "_queue_edit_for_desktop" in story_src
     assert "_queue_edit_for_desktop" in artwork_src
 
@@ -104,7 +105,7 @@ def test_the_guard_runs_before_the_edit_is_attempted():
     `poster.edit` would be the old behaviour with extra steps."""
     import inspect
 
-    for fn in (manager.update_story, manager.update_artwork):
+    for fn in (manager._update_story, manager._update_artwork):     # bodies since spec 071
         src = inspect.getsource(fn)
         guard = src.index("_queue_edit_for_desktop")
         attempt = src.index("await poster.edit(")

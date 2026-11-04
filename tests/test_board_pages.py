@@ -78,13 +78,21 @@ class TestSfwContract:
     def test_the_hero_keeps_its_id_class_and_rating(self):
         assert 'class="mp-hero-img" id="mp-hero-img" data-rating="${v.rating}"' in JS
 
-    def test_the_variant_strip_keeps_its_class_and_rating(self):
-        assert '<div class="mp-alts" data-rating="${v.rating}">' in JS
+    def test_each_version_tile_carries_its_own_rating(self):
+        """SEC070 item 6 (4.88.8): the piece's rating on the strip let an adult version's tile show."""
+        assert '<img class="mp-alt" data-rating="${c.r}"' in JS
+        assert "r: this.esc((v.rating || m.rating || '').toLowerCase())" in JS
+
+    def test_a_version_switch_relabels_the_hero(self):
+        block = _fn("_showVersion")
+        assert block.index("dataset.rating") < block.index(".src = url")
+        assert "classList.remove('sfw-revealed')" in block
+        assert "heroImg.src =" not in JS.replace(block, "")      # every switch goes through it
 
     def test_the_selectors_are_unchanged_in_both_places(self):
         for src, where in ((APP, "app.js"), (SFW, "safe_mode.css")):
             assert 'img.mp-hero-img:not([data-rating="general"])' in src, where
-            assert '.mp-alts:not([data-rating="general"]) img' in src, where
+            assert 'img.mp-alt:not([data-rating="general"])' in src, where
 
     def test_the_lightbox_is_blurred_too(self):
         """A full-size adult render opened in SFW mode must not leak."""

@@ -1608,7 +1608,7 @@ window.Artwork = {
                             scheduled_at: scheduledIso, account_id: accountIds[code],
                             persona_id: this._qpPersonaId(opt) });
                         ok++;
-                    } catch (e) { fail++; }
+                    } catch (e) { if (!e.cancelled) fail++; }   // SCHEDTWICE: "no" skips the site
                 }
                 this._toast(fail ? 'error' : 'success',
                     `Scheduled ${ok} site${ok === 1 ? '' : 's'}` + (fail ? `, ${fail} failed` : ''));

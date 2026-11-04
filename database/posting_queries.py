@@ -413,6 +413,24 @@ def add_to_queue(
     return cursor.lastrowid
 
 
+def pending_post_at(conn: sqlite3.Connection, content_type: str, name: str, chapter_index: int,
+                    platform: str, account_id: int | None = None, variant_key: str = "") -> str | None:
+    """When the same thing is already waiting to post to this site as this account: its
+    ``scheduled_at`` ('' = as soon as possible), else None. SCHEDTWICE (4.88.8): a schedule
+    route asks before queuing it twice. None account = the platform default, as add_to_queue."""
+    if account_id is None:
+        from database import accounts as _accts
+        account_id = _accts.get_default_account_id(conn, platform)
+    row = conn.execute(
+        """SELECT scheduled_at FROM posting_queue
+        WHERE status = 'pending' AND action = 'post' AND content_type = ? AND story_name = ?
+          AND chapter_index = ? AND platform = ? AND account_id IS ? AND COALESCE(variant_key, '') = ?
+        ORDER BY scheduled_at LIMIT 1""",
+        (content_type, name, chapter_index, platform, account_id, variant_key or ""),
+    ).fetchone()
+    return None if row is None else (row[0] or "")
+
+
 def get_pending_queue(
     conn: sqlite3.Connection,
     limit: int = 20,
@@ -538,6 +556,8 @@ def update_queue_status(
     the moment the in-flight post errors out, and the next scheduler
     tick picks the row back up. The guard makes cancel actually stick.
     """
+    from posting.metadata_strip import redact_temp_paths   # SEC071
+    error = redact_temp_paths(error)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     if status == "processing":
         conn.execute(
@@ -750,6 +770,8 @@ def log_posting_action(
     duration_seconds: float | None = None,
 ) -> int:
     """Append an entry to the posting log. Returns log_id."""
+    from posting.metadata_strip import redact_temp_paths   # a cleaned copy's path names the OS user (SEC071)
+    error_message = redact_temp_paths(error_message)
     cursor = conn.execute(
         """INSERT INTO posting_log
             (pub_id, queue_id, platform, story_name, chapter_index, account_id, content_type,

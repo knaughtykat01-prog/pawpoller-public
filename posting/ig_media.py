@@ -77,7 +77,8 @@ def _stash(img) -> str:
         scale = _MAX_EDGE / float(max(w, h))
         img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))))
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=88)
+    # comment=b"": Pillow re-writes the source's JPEG comment otherwise; this file is served publicly (spec 071).
+    img.save(buf, format="JPEG", quality=88, comment=b"")
     token = uuid.uuid4().hex
     (_dir() / f"{token}.jpg").write_bytes(buf.getvalue())
     return token

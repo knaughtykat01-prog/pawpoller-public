@@ -267,7 +267,7 @@ async def ig_relay(request: Request):
     if not data.startswith(_IMAGE_MAGIC):
         raise HTTPException(400, "Not an image (PNG, JPEG, WebP or GIF)")
     async with _RELAY_LOCK:
-        # ponytail: one lock serialises relay stashes; fine at tens a minute, per-upload reservations if it gets busy
+        # shortcut: one lock serialises relay stashes; fine at tens a minute, per-upload reservations if it gets busy
         if _relay_busy(ig_media):
             raise HTTPException(503, busy)
         try:

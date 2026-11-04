@@ -3,6 +3,7 @@
 Two "installs" live in one test: each is a data folder with its own database, settings, vault key
 and media folders. `use()` points config at one of them, the way the app would see it.
 """
+import base64
 import io
 import json
 import sqlite3
@@ -521,3 +522,76 @@ def test_a_cancelled_upload_is_404_not_500(tmp_path):
     with pytest.raises(HTTPException) as e:
         move_api._status(tmp_path / "gone")
     assert e.value.status_code == 404
+
+
+# ── MOVELOWS (4.88.8): seal v2, full rollback, plain media failure, seat cap ─
+
+def test_seal_v2_opens_and_v1_files_still_open():
+    v2 = move_api.seal({"k": "v"}, PHRASE)
+    assert v2["v"] == 2 and v2["n"] == 2 ** 17
+    assert move_api.open_sealed(v2, PHRASE) == {"k": "v"}
+    # A moving file made before 4.88.8 (v1, n=2**15) still opens.
+    from cryptography.fernet import Fernet
+    salt = b"s" * 16
+    old = {"v": 1, "kdf": "scrypt", "n": 2 ** 15, "r": 8, "p": 1, "salt": base64.b64encode(salt).decode(),
+           "token": Fernet(move_api._kdf(PHRASE, salt, 2 ** 15, 8, 1)).encrypt(b'{"k": "old"}').decode()}
+    assert move_api.open_sealed(old, PHRASE) == {"k": "old"}
+    # Each version takes only its own cost: no mixing, no unknown versions.
+    for bad in ({**old, "n": 2 ** 17}, {**v2, "n": 2 ** 15}, {**v2, "v": 3}, {**v2, "kdf": "pbkdf2"}):
+        with pytest.raises(move_api.WrongPhrase):
+            move_api.open_sealed(bad, PHRASE)
+
+
+def _dump(inst):
+    db = sqlite3.connect(inst.data / "pawpoller.db")
+    try:
+        return list(db.iterdump())
+    finally:
+        db.close()
+
+
+def test_settings_failing_puts_settings_and_vault_back_too(two, tmp_path, monkeypatch):
+    old, new, use, c = two
+    data = _make(old, use, tmp_path).read_bytes()
+    use(new)
+    lib = _dump(new)
+    keep = {p: p.read_bytes() if p.is_file() else None for p in (Path(config.SETTINGS_PATH), Path(config.VAULT_PATH))}
+
+    def half_written(_full):            # the vault goes first, then settings.json fails
+        Path(config.VAULT_PATH).write_bytes(b"half-written vault")
+        Path(config.SETTINGS_PATH).write_bytes(b"half-written settings")
+        raise OSError("disk went away")
+    monkeypatch.setattr(config, "replace_settings", half_written)
+    r = _bring_in(c, data)[1]
+    assert r.status_code == 500 and "put back" in r.json()["error"]
+    for p, b in keep.items():
+        assert (p.read_bytes() if p.is_file() else None) == b, p.name
+    assert _dump(new) == lib                                    # the seat's own library, not the moved one
+
+
+def test_a_media_failure_says_what_and_trying_again_finishes(two, tmp_path, monkeypatch):
+    old, new, use, c = two
+    data = _make(old, use, tmp_path).read_bytes()
+    use(new)
+    real = move_api.shutil.copyfileobj
+
+    def full_disk(src, dst, *a):
+        if str(getattr(dst, "name", "")).endswith("img.png"):
+            raise OSError(28, "No space left on device")
+        return real(src, dst, *a)
+    monkeypatch.setattr(move_api.shutil, "copyfileobj", full_disk)
+    uid, r = _bring_in(c, data)
+    err = r.json()["error"]
+    assert r.status_code == 500 and "artwork" in err and "No space left" in err and "again" in err
+    monkeypatch.setattr(move_api.shutil, "copyfileobj", real)
+    assert _apply(c, uid).status_code == 200                    # the upload is kept: apply again
+    assert (new.data / "artwork" / "Piece" / "img.png").read_bytes() == b"PNG-old"
+
+
+def test_a_seat_cap_refuses_what_would_not_fit(two, monkeypatch):
+    _old, new, use, c = two
+    use(new)
+    monkeypatch.setenv("PAWPOLLER_SEAT_DISK_CAP_GB", "1")
+    r = c.post("/api/move/uploads", json={"name": "a.zip", "size": 10 ** 9})
+    assert r.status_code == 507 and "1 GB" in r.json()["detail"]
+    assert c.post("/api/move/uploads", json={"name": "a.zip", "size": 1000}).status_code == 200

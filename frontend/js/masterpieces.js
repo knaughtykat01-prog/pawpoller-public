@@ -805,8 +805,7 @@ window.Masterpieces = {
      * and data-* names that _init()'s delegate and the four post-paint fills
      * depend on are unchanged — the markup around them moved, the names did
      * not (spec §2, §4). The SFW blur keys on `img.mp-hero-img[data-rating]`
-     * and `.mp-alts[data-rating]` (app.js / safe_mode.css); _heroHtml emits
-     * both byte-for-byte. */
+     * and, per version, `img.mp-alt[data-rating]` (app.js / safe_mode.css; 4.88.8). */
     _paintDetail(name, m) {
         const root = document.getElementById('mp-detail');
         if (!root) return;
@@ -831,12 +830,7 @@ window.Masterpieces = {
 
         // Open on the selected render (2.193.0) — patched after innerHTML because
         // the chip list, and therefore the selection, is computed after `hero`.
-        if (v.mainUrl && v.mainUrl !== v.heroUrl) {
-            const heroImg = document.getElementById('mp-hero-img');
-            const bg = document.getElementById('mp-stage-bg');
-            if (heroImg) heroImg.src = v.mainUrl;
-            if (bg) bg.src = v.mainUrl;
-        }
+        if (v.mainUrl && v.mainUrl !== v.heroUrl) this._showVersion(v.mainUrl, v.chips[v.selIdx].r);
 
         // The post-paint fills, as before: the shared platform rows, the
         // same-image suggestions, the per-site tag budget (which also styles
@@ -851,6 +845,20 @@ window.Masterpieces = {
         if (window.Progress) Progress.fill(root);                    // the piece's Laurels (spec 052)
         if (window.BoardPolish) BoardPolish.collapse(root, 'mp');   // folded cards remembered (C2 phase 3)
         this._foldTarget = null;      // reset the "fold into" choice per detail open
+    },
+
+    /* SEC070 item 6 (4.88.8): switching version re-labels the hero with THAT version's rating before the
+     * new picture loads. Setting .src alone kept the piece's rating, so an adult version of a general piece
+     * showed unblurred in safe mode and past the under-18 lock. A peek at one version isn't kept for the next. */
+    _showVersion(url, rating) {
+        const heroImg = document.getElementById('mp-hero-img');
+        if (heroImg) {
+            heroImg.dataset.rating = rating || '';
+            heroImg.classList.remove('sfw-revealed');
+            heroImg.src = url;
+        }
+        const bg = document.getElementById('mp-stage-bg');
+        if (bg) bg.src = url;
     },
 
     /* The values several renderers share: which render is selected, its URL,
@@ -877,10 +885,13 @@ window.Masterpieces = {
                 u: kind !== 'image' ? posterUrl : this._canonUrl(name, v.image),
                 media: mediaOf(v.image),
                 label: v.label || v.key || 'Primary',
+                // SEC070 item 6 (4.88.8): the version's OWN rating drives its blur, else the piece's (the
+                // fallback artwork_reader.variant_for_rating uses). Neither set → '' → blurred.
+                r: this.esc((v.rating || m.rating || '').toLowerCase()),
                 st: `👁 ${this._fmt((v.totals || {}).views)} · ❤ ${this._fmt((v.totals || {}).favorites)}`
                     + ` · 💬 ${this._fmt((v.totals || {}).comments)} · ${v.member_count || 0} site${(v.member_count || 0) === 1 ? '' : 's'}`,
             }))
-            : imgs.map((f, i) => ({ key: i === 0 ? '' : null, u: kind !== 'image' ? posterUrl : this._canonUrl(name, f), media: mediaOf(f), label: i === 0 ? 'Primary' : `Alt ${i}`, st: '' }));
+            : imgs.map((f, i) => ({ key: i === 0 ? '' : null, u: kind !== 'image' ? posterUrl : this._canonUrl(name, f), media: mediaOf(f), label: i === 0 ? 'Primary' : `Alt ${i}`, r: rating, st: '' }));
         // Which chip opens selected (2.193.0). A '?v=<key>' from a Library variant
         // tile preselects that render; otherwise the hero (index 0) as before.
         const wantKey = this._variantFromHash();
@@ -992,10 +1003,10 @@ window.Masterpieces = {
         const mediaBadge = (v.kind !== 'image' && window.MediaKinds)
             ? ` <span class="mp-media-badge" title="${v.kind} piece">${this.esc(MediaKinds.badge(m.media, v.kind))} ${v.kind}</span>` : '';
         const gallery = v.chips.length > 1
-            ? `<div class="mp-alts" data-rating="${v.rating}">${v.chips.map((c, i) => `
+            ? `<div class="mp-alts">${v.chips.map((c, i) => `
                 <div class="mp-altwrap${i === v.selIdx ? ' is-active' : ''}" data-mp-img="${this.esc(c.u)}" data-mp-media="${this.esc(c.media || '')}"${typeof c.key === 'string' ? ` data-mp-vkey="${this.esc(c.key)}"` : ''}
                      data-vstats="${this.esc(c.st)}" role="button" tabindex="0" title="${this.esc(c.label)}">
-                    <img class="mp-alt" src="${this.esc(c.u)}" alt="" loading="lazy">
+                    <img class="mp-alt" data-rating="${c.r}" src="${this.esc(c.u)}" alt="" loading="lazy">
                     <div class="mp-alt-label">${this.esc(c.label)}</div>
                 </div>`).join('')}</div>`
             : '';
@@ -1880,7 +1891,10 @@ window.Masterpieces = {
                     ...version,
                 });
                 ok++;
-            } catch (err) { fail++; console.warn('Schedule failed for', platform, err); }
+            } catch (err) {
+                if (err.cancelled) continue;            // SCHEDTWICE: "no" skips the site
+                fail++; console.warn('Schedule failed for', platform, err);
+            }
         }
         this._toast(fail ? 'error' : 'success',
             `Scheduled ${ok} site${ok === 1 ? '' : 's'} for ${Utils.time.fmt.dateTime(when)}`
@@ -2091,14 +2105,11 @@ window.Masterpieces = {
             const alt = e.target.closest('[data-mp-img]');
             if (alt) {
                 e.preventDefault();
-                const heroImg = document.getElementById('mp-hero-img');
-                if (heroImg) heroImg.src = alt.dataset.mpImg;
+                // The hero and the giant ambient backdrop (2.158.0) follow the focused variant, with its rating.
+                this._showVersion(alt.dataset.mpImg, alt.querySelector('img.mp-alt')?.dataset.rating);
                 // 4.18.0: a video / audio piece switches the player to the chosen render.
                 const player = document.getElementById('mp-hero-video') || document.getElementById('mp-hero-audio');
                 if (player && alt.dataset.mpMedia) { player.src = alt.dataset.mpMedia; player.load(); }
-                // The giant ambient backdrop follows the focused variant (2.158.0).
-                const bg = document.getElementById('mp-stage-bg');
-                if (bg) bg.src = alt.dataset.mpImg;
                 const vs = document.getElementById('mp-vstats');
                 if (vs) vs.textContent = alt.dataset.vstats || '';
                 // Spec 063: this is now the version Post and Schedule start from.

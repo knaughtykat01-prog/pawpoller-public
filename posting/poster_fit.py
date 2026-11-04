@@ -54,7 +54,8 @@ def fit_poster(source: str, *, size: tuple[int, int], fmt: str = "JPEG",
             q = quality
             while True:
                 if fmt.upper() == "JPEG":
-                    im.save(out, format="JPEG", quality=q, optimize=True)
+                    # comment=b"": Pillow re-writes the source's JPEG comment otherwise (spec 071).
+                    im.save(out, format="JPEG", quality=q, optimize=True, comment=b"")
                 else:
                     im.save(out, format="PNG", optimize=True)
                 if not max_bytes or os.path.getsize(out) <= max_bytes or q <= 40 or fmt.upper() != "JPEG":

@@ -259,7 +259,7 @@ class TestTheEditPathKeepsBothRows:
         """
         import inspect
         from posting import manager
-        src = inspect.getsource(manager.update_artwork)
+        src = inspect.getsource(manager._update_artwork)  # body behind the 071 CleanRun wrapper
         i = src.index("upsert_publication(")
         assert "variant_key=" in src[i:i + 1200], \
             "update_artwork's publication write must name the render it edited"

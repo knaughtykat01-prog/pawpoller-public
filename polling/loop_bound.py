@@ -43,7 +43,7 @@ def pin(client):
     Only reached after :func:`reusable` said yes or the client was just built,
     so it never re-homes a client that holds another loop's connections.
     """
-    # ponytail: the client this replaces is dropped unclosed (it belongs to
+    # shortcut: the client this replaces is dropped unclosed (it belongs to
     # another loop, so it can't be closed from here); GC reclaims its sockets.
     # Per-loop caches if manual actions ever get frequent enough to churn.
     client._home_loop = _running_loop()

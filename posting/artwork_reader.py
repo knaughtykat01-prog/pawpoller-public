@@ -793,6 +793,13 @@ def build_artwork_package(
     # site's duration / size cap without decoding anything.
     media_kind = (media_kinds.kind_of(image_path) or "image") if image_path else ""
     media_block = (variant.get("media") if variant and isinstance(variant.get("media"), dict) else None) or artwork.media or {}
+    # THUMBRATING (4.88.8): the piece's thumbnail is made from the PRIMARY, so it is only as safe as the
+    # primary's rating. A lower-rated render (a variant, or an override) goes without one rather than carry
+    # the adult picture's thumbnail onto a site that shows thumbnails. A site that needs one then refuses.
+    from posting.platforms.base import rating_rank
+    primary_rating = artwork.rating or settings.get("artwork_default_rating",
+                                                    settings.get("posting_default_rating", "adult"))
+    thumbnail = artwork.thumbnail_path if rating_rank(primary_rating) <= rating_rank(rating) else None
 
     return StoryUploadPackage(
         story_name=artwork.name,
@@ -806,7 +813,7 @@ def build_artwork_package(
         file_path=image_path,
         file_type=file_type,
         word_count=0,
-        thumbnail_path=artwork.thumbnail_path,
+        thumbnail_path=thumbnail,
         media_kind=media_kind,
         duration_s=media_block.get("duration_s"),
         width=int(media_block.get("width") or 0),

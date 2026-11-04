@@ -69,7 +69,7 @@ class TestDemotingAVariantDoesNotLieAboutItsPosts:
     def test_the_edit_path_refuses_a_render_the_piece_no_longer_declares(self):
         """Which is what makes leaving the key safe rather than merely honest."""
         from posting import manager
-        src = inspect.getsource(manager.update_artwork)
+        src = inspect.getsource(manager._update_artwork)  # body behind the 071 CleanRun wrapper
         assert "no longer declares" in src
 
 

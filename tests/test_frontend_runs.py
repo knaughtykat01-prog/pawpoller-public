@@ -216,6 +216,13 @@ def app_url(_offline):
     config.save_settings({"setup_complete": True, "age_band": "adult", "setup_mode": "server", "levels_enabled": True, "tours_seen": tours,
                           "display_timezone": "Australia/Sydney", **_DUMMY_LOGINS, **_SIGNED_UP})
     config.invalidate_auth_required_cache()
+    # The pollers' progress dicts are module globals: a poll an earlier test left mid-run kept `active` set,
+    # so the progress bar drew over the page (it covered the phone bar, 4.88.8). Every page starts idle.
+    from polling.multi_account import get_poll_progress
+    for prog in get_poll_progress().values():
+        for key in ("active", "running"):
+            if key in prog:
+                prog[key] = False
     conn = get_connection()
     try:
         _seed(conn)
@@ -370,6 +377,39 @@ def test_the_safe_mode_pill_and_its_shortcut(browser, app_url):
         tab.close()
 
 
+_GIF = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+
+
+def test_a_versions_own_rating_drives_its_blur(browser, app_url):
+    """SEC070 item 6 (4.88.8): in safe mode an adult version's tile is blurred before any click (an unrated
+    one too), and switching the hero to it re-labels the hero, so an adult version of a general piece
+    never shows. Runs the real CSS and the real switch."""
+    tab = _Watched(browser, app_url, {"width": 1400, "height": 900})
+    page = tab.page
+    try:
+        page.evaluate("""g => {
+            document.documentElement.dataset.sfw = '1';
+            const d = document.createElement('div');
+            d.innerHTML = `<div class="mp-alts">
+                <img class="mp-alt" id="t-gen" data-rating="general" src="${g}" alt="">
+                <img class="mp-alt" id="t-adult" data-rating="adult" src="${g}" alt="">
+                <img class="mp-alt" id="t-none" data-rating="" src="${g}" alt=""></div>
+                <img class="mp-hero-img sfw-revealed" id="mp-hero-img" data-rating="general" src="${g}" alt="">`;
+            document.body.appendChild(d);
+        }""", _GIF)
+
+        def blurred(sel):
+            return page.evaluate("s => getComputedStyle(document.querySelector(s)).filter", sel) != "none"
+        assert not blurred("#t-gen") and blurred("#t-adult") and blurred("#t-none")
+        page.evaluate("g => Masterpieces._showVersion(g, 'adult')", _GIF)
+        assert blurred("#mp-hero-img"), "the hero kept the piece's rating, or an old peek"
+        page.evaluate("g => Masterpieces._showVersion(g, 'general')", _GIF)
+        assert not blurred("#mp-hero-img")
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()
+
+
 def test_the_top_bar_controls_move_to_the_phone_bar(browser, app_url):
     """Spec 019: on a phone the one control cluster lives in #mobile-bar, and the menu still opens."""
     tab = _Watched(browser, app_url, {"width": 390, "height": 844})
@@ -505,12 +545,13 @@ def test_the_phone_bar_covers_the_top_edge_when_scrolled(browser, app_url):
             const cs = getComputedStyle(bg), r = bg.getBoundingClientRect();
             const hit = document.elementFromPoint(200, 4);
             return {pos: cs.position, top: r.top, h: r.height, w: r.width, color: cs.backgroundColor,
-                    blur: cs.backdropFilter, hitIsBar: hit === bg || !!hit.closest('#mobile-bar, .hamburger-btn')};
+                    blur: cs.backdropFilter, hitIsBar: hit === bg || !!hit.closest('#mobile-bar, .hamburger-btn, #poll-progress-bar'),   // a poll left running by an earlier test draws its bar here: chrome, not page
+                    hit: hit.tagName + '#' + hit.id + '.' + hit.className + ' < ' + (hit.parentElement ? hit.parentElement.id + '.' + hit.parentElement.className : '')};
         }""")
         assert info["pos"] == "fixed" and info["top"] == 0 and info["h"] >= 64 and info["w"] >= 389, info
         assert info["color"].startswith("rgb(") or info["color"].endswith(", 1)"), info   # opaque
         assert info["blur"] in ("none", ""), info
-        assert info["hitIsBar"], "page content shows at the very top while scrolled"
+        assert info["hitIsBar"], f"page content shows at the very top while scrolled: {info['hit']}"
         assert not tab.errors, tab.errors
     finally:
         tab.close()

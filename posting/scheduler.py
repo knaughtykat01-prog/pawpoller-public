@@ -498,7 +498,7 @@ async def _maybe_batch_announce(item) -> None:
 
 # Spec 044: one message per piece + chapter + action, however many sites it went to. The scheduler runs queue rows
 # one at a time and doesn't know which rows belong together, so results gather here for a short window first.
-# ponytail: in-memory; a restart inside the window loses that batch's notice (never the posts themselves).
+# shortcut: in-memory; a restart inside the window loses that batch's notice (never the posts themselves).
 _NOTICE_WINDOW_S = 60
 _pending_notices: dict[tuple, dict] = {}
 

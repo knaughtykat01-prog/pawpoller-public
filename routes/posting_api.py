@@ -1074,6 +1074,8 @@ def get_posting_settings():
         # "Posted via PawPoller" credit line on story/artwork descriptions
         # (gap-wave-2 §1). Absent = ON by design.
         "pawpoller_attribution": settings.get("pawpoller_attribution", True),
+        # Spec 071: remove location / camera details from pictures before posting. Absent = ON.
+        "posting_strip_metadata": settings.get("posting_strip_metadata", True) is not False,
     }
 
 
@@ -1084,9 +1086,17 @@ def save_posting_settings(body: dict):
         "posting_enabled", "posting_story_archive_path",
         "posting_default_platforms", "posting_default_rating",
         "posting_server_url", "posting_server_api_key",
-        "pawpoller_attribution",
+        "pawpoller_attribution", "posting_strip_metadata",
     }
     filtered = {k: v for k, v in body.items() if k in allowed_keys}
+    # SEC069 (1): GET never returns the pairing, so the form sends it blank; blank = unchanged,
+    # or a Save would unpair the desktop. Unpairing has its own route (setup mode).
+    for k in ("posting_server_url", "posting_server_api_key"):
+        if k in filtered and not str(filtered[k] or "").strip():
+            filtered.pop(k)
+    # Spec 071: a privacy switch takes a real boolean only; "false" / 0 / null never turns it off.
+    if not isinstance(filtered.get("posting_strip_metadata", True), bool):
+        filtered.pop("posting_strip_metadata")
     config.save_settings(filtered)
     return {"status": "saved"}
 

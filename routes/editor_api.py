@@ -2036,6 +2036,7 @@ class ScheduleRequest(BaseModel):
     account_id: int | None = None  # which account to post AS (None = platform default)
     persona_id: int | None = None  # persona-first (4.43.1): checked now AND when the row fires
     comment: str | None = None    # spec 021: the paired comment; None = the site's default template
+    again: bool = False           # SCHEDTWICE (4.88.8): yes, schedule it though it's already waiting
 
 
 def _story_persona_check(platforms, account_ids: dict, persona_id) -> None:
@@ -2134,6 +2135,12 @@ async def schedule_publish(story_name: str, req: ScheduleRequest):
 
     conn = get_connection()
     try:
+        if req.action == "post" and not req.again:   # SCHEDTWICE (4.88.8): ask before queuing it twice
+            when = posting_queries.pending_post_at(conn, "story", canonical, req.chapter, req.platform,
+                                                   req.account_id)
+            if when is not None:
+                raise HTTPException(409, detail={"already_scheduled": [{"platform": req.platform,
+                                                                        "scheduled_at": when}]})
         queue_id = posting_queries.add_to_queue(
             conn,
             canonical,

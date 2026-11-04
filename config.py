@@ -846,6 +846,12 @@ SYNC_EXCLUDE = frozenset({
     # Whether THIS server hosts Instagram images for other installs (4.7.0) —
     # a decision about this box, never something a desktop should push here.
     "ig_relay_open",
+    # SEC069 (3): account ids are numbered per install, so a synced Never post list lands on the
+    # wrong accounts at the other end (it can lift the guard on the friend's account there).
+    "never_post_account_ids",
+    # SEC072 (1): which server THIS desktop is paired with. The server's own (blank) copy, pulled
+    # down, would unpair the desktop; a push would point the server at itself.
+    "posting_server_url", "posting_server_api_key",
 })
 
 
@@ -1381,7 +1387,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.88.7"
+APP_VERSION = "4.88.8"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).

@@ -378,6 +378,8 @@ def upsert_post_publication(conn: sqlite3.Connection, *, post_id: int, platform:
                             external_id: str = "", external_url: str = "",
                             error: str = "", now: str = "") -> int:
     """Insert or update the (post, platform, account) publication row."""
+    from posting.metadata_strip import redact_temp_paths   # a cleaned copy's path names the OS user (SEC071)
+    error = redact_temp_paths(error)
     conn.execute(
         "INSERT INTO post_publications "
         "(post_id, platform, account_id, status, external_id, external_url, error, created_at) "

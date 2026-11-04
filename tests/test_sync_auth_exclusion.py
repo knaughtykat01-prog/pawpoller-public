@@ -68,6 +68,17 @@ def test_api_key_revocation_cannot_ride_a_push():
     assert keys and keys[0]["prefix"] == "pp_keepme"
 
 
+@pytest.mark.parametrize("key", ["never_post_account_ids", "posting_server_url", "posting_server_api_key"])
+def test_per_install_guard_and_pairing_do_not_sync(key):
+    """SEC069 (3) / SEC072 (1): ids are per install, and the pairing names THIS desktop's server."""
+    assert key in config.SYNC_EXCLUDE
+    config.save_settings({key: [3] if key == "never_post_account_ids" else "mine"})
+    data, _mtime = config.get_settings_for_sync()
+    assert key not in data
+    config.merge_synced_settings({key: [] if key == "never_post_account_ids" else ""})
+    assert config.get_settings()[key] == ([3] if key == "never_post_account_ids" else "mine")
+
+
 def test_platform_credentials_still_sync():
     """Guard against over-correcting — pairing exists to move these."""
     for key in ("fa_cookie_a", "sf_api_token", "ws_api_key", "password"):
@@ -107,3 +118,15 @@ def test_an_incoming_push_cannot_relocate_this_instances_data(key):
     config.save_settings({key: "/app/data/artwork"})
     config.merge_synced_settings({key: r"C:\Users\someone\artwork"})
     assert config.get_settings()[key] == "/app/data/artwork"
+
+
+def test_publishing_save_keeps_the_pairing():
+    """SEC069 (1): the Publishing form gets the pairing back blank; saving it must not unpair."""
+    from routes.posting_api import save_posting_settings
+    config.save_settings({"posting_server_url": "https://box.example", "posting_server_api_key": "pp_keep"})
+    save_posting_settings({"posting_server_url": "", "posting_server_api_key": "  ", "posting_enabled": True})
+    s = config.get_settings()
+    assert s["posting_server_url"] == "https://box.example" and s["posting_server_api_key"] == "pp_keep"
+    assert s["posting_enabled"] is True
+    save_posting_settings({"posting_server_url": "https://new.example"})
+    assert config.get_settings()["posting_server_url"] == "https://new.example"

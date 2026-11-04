@@ -11,6 +11,7 @@ and X are recognised but return a clear "not wired yet" error until Phase 3.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -648,7 +649,7 @@ async def _publish_one(post: dict, platform: str, account_id: int | None,
                     if len(image_paths) == 1 and image_paths[0].lower().endswith(".gif"):
                         # A lone GIF goes up as a video, so it keeps moving (as a photo Facebook
                         # keeps one still frame — live proof 2026-10-09, T021).
-                        # ponytail: a GIF among several images still lands as a still; split the
+                        # shortcut: a GIF among several images still lands as a still; split the
                         # post if that ever matters.
                         r = await client.post_video(image_paths[0], "", text)
                     elif image_paths:
@@ -746,11 +747,44 @@ async def _publish_thread_parts(parts: list[dict], platform: str,
     return out
 
 
+def _cleaned_post(post: dict, run) -> tuple[dict, str | None]:
+    """Spec 071: a copy of *post* whose pictures are the run's cleaned copies, plus the kept note (if any).
+
+    New dicts all the way down: the original `post` and its `media` dicts go on, untouched, to the paired
+    comment pass, and this copy is never written back to the database (FR-SEC-008)."""
+    notes: list[str] = []
+
+    def _swap(path):
+        if not path:
+            return path
+        o = run.clean(path)
+        if o.note:
+            notes.append(o.note)
+        return o.path if o.state == "cleaned" else path
+
+    out = dict(post)
+    out["media"] = [{**m, "path": _swap(m.get("path"))} for m in (post.get("media") or [])]
+    if post.get("image_path"):                       # legacy-shaped post dict
+        out["image_path"] = _swap(post["image_path"])
+    return out, (" ".join(dict.fromkeys(notes)) or None)
+
+
 async def publish_post(post_id: int, platforms: list[str],
                        account_ids: dict[str, int] | None = None,
                        settings: dict | None = None,
                        persona_id: int | None = None,
                        announce: bool = True) -> list[dict[str, Any]]:
+    """`_publish_post` inside one CleanRun (spec 071), spanning the sites AND the Discord line."""
+    from posting import metadata_strip
+    with metadata_strip.CleanRun() as run:
+        return await _publish_post(post_id, platforms, account_ids, settings, persona_id, announce, run=run)
+
+
+async def _publish_post(post_id: int, platforms: list[str],
+                        account_ids: dict[str, int] | None = None,
+                        settings: dict | None = None,
+                        persona_id: int | None = None,
+                        announce: bool = True, *, run=None) -> list[dict[str, Any]]:
     """Publish a composed post to each platform, recording every outcome.
 
     Returns one result dict per platform. Each publication row is upserted so a
@@ -766,6 +800,8 @@ async def publish_post(post_id: int, platforms: list[str],
         conn.close()
     if not post:
         raise ValueError(f"post {post_id} not found")
+    # Spec 071: what goes out is the cleaned copy; `post` itself stays the stored one.
+    send, kept_note = (await asyncio.to_thread(_cleaned_post, post, run)) if run is not None else (post, None)
 
     from posting import activity   # spec 017: no-ops unless the caller bound a job
     from posting import journals
@@ -800,9 +836,14 @@ async def publish_post(post_id: int, platforms: list[str],
                 continue
         activity.step(platform, "Uploading")
         if is_journal:
-            res = await journals.publish_journal(post, platform, account_ids.get(platform), settings)
+            res = await journals.publish_journal(send, platform, account_ids.get(platform), settings)
         else:
-            res = await _publish_one(post, platform, account_ids.get(platform), settings)
+            res = await _publish_one(send, platform, account_ids.get(platform), settings)
+        if kept_note and res.get("success"):
+            # `note`, never `attention`: attention turns the row into a draft (below).
+            res["note"] = " ".join(x for x in (res.get("note"), kept_note) if x)
+            res["metadata_kept"] = True
+            res["metadata_note"] = kept_note
         results.append(res)
         conn = get_connection()
         try:
@@ -824,10 +865,17 @@ async def publish_post(post_id: int, platforms: list[str],
         finally:
             conn.close()
 
+    from posting.manager import KEPT_STEP
+
+    def _close(res):
+        ok = bool(res.get("success"))
+        activity.line_done(res["platform"], ok, url=res.get("external_url") or "",
+                           error=res.get("error") or "" if not ok else "",
+                           step=KEPT_STEP if ok and res.get("metadata_kept") else None)
+
     if is_journal:                      # no thread parts, paired comments or Discord line for a journal
         for res in results:
-            activity.line_done(res["platform"], bool(res.get("success")), url=res.get("external_url") or "",
-                               error=res.get("error") or "" if not res.get("success") else "")
+            _close(res)
         return results
 
     # Thread parts (gap-wave-3 §4): chain replies on bsky/mast after the parent
@@ -871,8 +919,7 @@ async def publish_post(post_id: int, platforms: list[str],
 
     # Each site's activity line closes once its thread parts are done too.
     for res in results:
-        activity.line_done(res["platform"], bool(res.get("success")), url=res.get("external_url") or "",
-                           error=res.get("error") or "" if not res.get("success") else "")
+        _close(res)
 
     # Paired comments (spec 021): one pass once every site and thread part is done. A
     # comment reports on its own line and row; it never edits the post's result (FR-006).
@@ -889,9 +936,9 @@ async def publish_post(post_id: int, platforms: list[str],
         from posting import discord
         # 4.41.0 (spec 008): the first image travels with the message, the body is
         # the description, the sites are named links. The title stays the short line.
-        media = post.get("media") or []
-        if not media and post.get("image_path"):
-            media = [{"path": post["image_path"]}]
+        media = send.get("media") or []                 # the cleaned copy (071)
+        if not media and send.get("image_path"):
+            media = [{"path": send["image_path"]}]
         first_image = next((m["path"] for m in media if m.get("path")), None)
         await discord.announce_publish(
             kind="post",
