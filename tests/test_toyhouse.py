@@ -615,6 +615,26 @@ def test_th_characters_come_from_folder_all_across_pages():
     assert not any(u.endswith("/SecondFur/characters") for u in seen)    # folder buttons only there
 
 
+def test_th_characters_follow_the_owners_page_links():
+    """Signed in as the owner, Toyhouse's page links carry another key first (`?legacy=0&amp;page=2`)."""
+    page1 = HEADER + r9_char_card("601", "Sample One") + (
+        '<a class="page-link" href="https://toyhou.se/SecondFur/characters/folder:all?legacy=0&amp;page=2">2</a>')
+    c = fake_client({
+        "https://toyhou.se/SecondFur/characters/folder:all": (200, page1, {}),
+        "https://toyhou.se/SecondFur/characters/folder:all?page=2": (200, R9_ALL_2, {}),
+    }, [])
+    assert [ch["character_id"] for ch in run(c.get_characters())] == ["601", "602"]
+
+
+def test_th_next_page_needs_that_exact_page():
+    path = "SecondFur/characters/folder:all"
+    link = '<a href="https://toyhou.se/SecondFur/characters/folder:all?legacy=0&page=2{tail}">2</a>'
+    assert thc.has_next_page(link.format(tail=""), path, 2)
+    assert thc.has_next_page(link.format(tail="&sort=name"), path, 2)
+    assert not thc.has_next_page(link.format(tail=""), path, 3)
+    assert not thc.has_next_page(link.replace("page=2", "page=20").format(tail=""), path, 2)
+
+
 def test_th_character_counts_come_from_its_page_sidebar():
     s = thc.parse_character_stats(R9_CHAR_601)
     assert s == {"favorites_count": 185, "comments_count": 24, "images_count": 12, "links_count": 3}

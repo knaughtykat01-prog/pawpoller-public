@@ -81,7 +81,9 @@ _CHAR_LINK_RE = re.compile(r'<a href="(?:https://toyhou\.se)?/(\d{1,15})\.([A-Za
 _CHAR_NAME_RE = re.compile(r'<span class="thumb-character-name"><a[^>]*>(?:<i[^>]*></i>)?\s*([^<]*?)\s*</a>')
 _CHAR_FAV_RE = re.compile(r'<span class="th-favorite-count">\s*(\d+)')
 _CHAR_STAT_RE = r'class="thumb-character-stat {kind}"[^>]*>\s*<i[^>]*></i>\s*(\d+)'
-_NEXT_PAGE_RE = r'href="(?:https://toyhou\.se)?/{path}\?page={n}"'
+# The owner's own pages add other query keys first (`folder:all?legacy=0&amp;page=2`, seen 4 Nov 2026): the picker
+# stopped at 18 characters when this matched `?page=N` only. Any key order, `&` or `&amp;`, page=N ends the value.
+_NEXT_PAGE_RE = r'href="(?:https://toyhou\.se)?/{path}\?(?:[^"#]*?&(?:amp;)?)?page={n}(?=["&])'
 _COMMENT_SPLIT_RE = re.compile(r'<a id="comment-(\d{1,15})"></a>')
 _COMMENT_AUTHOR_RE = re.compile(r'<a href="https://toyhou\.se/([A-Za-z0-9_\-]{1,40})" class="btn btn-sm btn-default user-name-badge')
 _COMMENT_TIME_RE = re.compile(r'<abbr class="tooltipster datetime"[^>]*data-original-title="([^"]{1,40})"')

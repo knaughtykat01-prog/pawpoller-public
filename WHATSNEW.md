@@ -2,6 +2,11 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.88.7] - 2026-11-04 - Toyhouse finds all your characters
+
+> - The Toyhouse character list now shows every character, not just the first 18.
+> - Posting to a Toyhouse character past the first 18 no longer fails with "not your character".
+
 ## [4.88.6] - 2026-11-03 - Toyhouse character picker, and small safety fixes
 
 > - The Toyhouse character list in the post form now has a search box and scrolls, with your picked characters on top.
@@ -217,12 +222,3 @@ Generated from the release notes: each version's plain-language summary.
 > - After an update, PawPoller now replaces the old copy saved on your phone or computer by itself, so you don't get stuck on an old version.
 > - If the app can't reach the server even though the server is fine, it clears its saved copy and reloads once.
 > - "Server unreachable" messages now offer "Refresh PawPoller on this device". It keeps you signed in.
-
-## [4.81.0] - 2026-10-19 - Twitch
-
-> - Twitch is a new site to watch: see when you're live, your past broadcasts and clips, and, once you connect Twitch, your followers, subscribers and Bits.
-> - Go-live posts: when you go live on Twitch, PawPoller can post your own words to Bluesky, Mastodon, X, Threads, Tumblr, Instagram, Telegram, Facebook and your Discord channel.
-> - "Show me first" is on to begin with. You get a Telegram message with Post and Skip buttons, plus a note in the bell, and nothing posts until you say so.
-> - A dropped stream that restarts within the cool-down counts as the same stream, so nothing posts twice.
-> - When the stream ends, PawPoller can change the Discord, Mastodon and Telegram posts to your "it's over" words.
-> - Go-live posts are new and still being tested on real streams.
