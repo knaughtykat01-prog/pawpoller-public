@@ -274,8 +274,9 @@
                 if (!picked.length) { if (msg) msg.textContent = 'Pick at least one site.'; return; }
                 if (msg) msg.textContent = 'Publishing…';
                 try {
-                    await API.publishPost(this._id, { platforms: picked });
-                    if (msg) msg.textContent = 'Done.';
+                    // The button press is the go-ahead; without confirm_live the server refuses it.
+                    const r = await API.publishPost(this._id, { platforms: picked, confirm_live: true });
+                    if (msg) msg.textContent = r && r.failures ? `${r.successes} sent, ${r.failures} failed.` : 'Done.';
                     await this.render(this._id);
                 } catch (err) {
                     if (msg) msg.textContent = 'Failed: ' + (err.message || err);

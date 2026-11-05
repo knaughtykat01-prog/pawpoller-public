@@ -246,7 +246,7 @@ def _backup_master(master_path: Path) -> Path | None:
         return None
     ts = int(time.time())
     backup = master_path.with_suffix(f".md.bak.{ts}")
-    backup.write_text(master_path.read_text(encoding="utf-8"), encoding="utf-8")
+    backup.write_bytes(master_path.read_bytes())   # MDEOL (4.88.9): an exact copy, line endings included
     # Cleanup: keep only the 10 most recent backups
     bak_dir = master_path.parent
     baks = sorted(bak_dir.glob("MASTER.md.bak.*"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -580,7 +580,7 @@ by {author or 'Author Name'}
 <!-- @story-end -->
 """
 
-    (story_dir / "Markdown" / "MASTER.md").write_text(master_content, encoding="utf-8")
+    (story_dir / "Markdown" / "MASTER.md").write_text(master_content, encoding="utf-8", newline="\n")
 
     # Generate story.json — merge genre template if one was selected
     story_json = {
@@ -715,12 +715,16 @@ async def save_content(story_name: str, req: SaveRequest):
                 detail="File has been modified externally since you loaded it. Reload and merge your changes.",
             )
 
+    # MDEOL (4.88.9): keep the file's own line endings (LF for a new one). write_text's default
+    # writes CRLF on Windows, so one save from the editor rewrote every line of an LF story.
+    nl = "\r\n" if master.is_file() and b"\r\n" in master.read_bytes() else "\n"
+
     # Backup
     _backup_master(master)
 
     # Atomic write via temp file
     tmp = master.with_suffix(".md.tmp")
-    tmp.write_text(req.content, encoding="utf-8")
+    tmp.write_text(req.content.replace("\r\n", "\n"), encoding="utf-8", newline=nl)
     os.replace(str(tmp), str(master))
 
     return {
@@ -1854,6 +1858,14 @@ def _store_comments(story: str, platforms, chapters, comments) -> None:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _check_chapter(story, chapter: int) -> None:
+    """0 = the whole story, else one of its chapters. build_package falls back to the whole story
+    for any other number, so a mistyped chapter went out as something else (BUGHUNT 3)."""
+    if not (chapter == 0 or 1 <= chapter <= story.total_chapters):
+        raise HTTPException(status_code=400, detail=(
+            f"Chapter {chapter} isn't in this story (0 = the whole story, 1-{story.total_chapters})"))
+
+
 class PublishRequest(BaseModel):
     platform: str                 # 'sf', 'ib', 'fa', etc.
     chapter: int                  # 0 = full story; 1+ = specific chapter
@@ -1901,10 +1913,15 @@ async def publish(story_name: str, req: PublishRequest):
     extras: dict = {"draft": bool(req.draft)}
     if req.action == "update_metadata":
         extras["skip_content_refresh"] = True
+    if req.action in ("post", "dry_run"):
+        try:
+            story = story_reader.load_story(canonical)
+        except Exception as e:
+            raise HTTPException(status_code=404, detail=f"Story not found: {e}")
+        _check_chapter(story, req.chapter)
 
     # --- Dry run: just rebuild the package and validate, return as JSON ---
     if req.action == "dry_run":
-        story = story_reader.load_story(canonical)
         try:
             poster = manager._get_poster(req.platform)
         except Exception as e:
@@ -1956,8 +1973,8 @@ async def publish(story_name: str, req: PublishRequest):
                 status_code=400,
                 detail=f"No posted publication for {req.platform} ch{req.chapter} — nothing to flip",
             )
-        try:
-            poster = manager._get_poster(req.platform)
+        try:    # the account it was posted as, not the site's default (BUGHUNT 3); 0 = none recorded
+            poster = manager._get_poster(req.platform, existing.get("account_id") or None)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Unknown platform: {e}")
         if not hasattr(poster, "publish_draft"):
@@ -2108,6 +2125,7 @@ async def schedule_publish(story_name: str, req: ScheduleRequest):
         story = story_reader.load_story(canonical)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Story not found: {e}")
+    _check_chapter(story, req.chapter)
 
     try:
         poster = manager._get_poster(req.platform)
@@ -2129,9 +2147,6 @@ async def schedule_publish(story_name: str, req: ScheduleRequest):
 
     # Determine runtime requirement from the poster
     requires = getattr(poster, "requires_mode", "any")
-    if req.action == "post":
-        _store_comments(canonical, [req.platform], [req.chapter],
-                        None if req.comment is None else {req.platform: req.comment})
 
     conn = get_connection()
     try:
@@ -2141,6 +2156,9 @@ async def schedule_publish(story_name: str, req: ScheduleRequest):
             if when is not None:
                 raise HTTPException(409, detail={"already_scheduled": [{"platform": req.platform,
                                                                         "scheduled_at": when}]})
+        if req.action == "post":    # after the 409: a refused repeat keeps the comment it had (BUGHUNT 3)
+            _store_comments(canonical, [req.platform], [req.chapter],
+                            None if req.comment is None else {req.platform: req.comment})
         queue_id = posting_queries.add_to_queue(
             conn,
             canonical,

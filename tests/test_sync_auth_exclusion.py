@@ -130,3 +130,24 @@ def test_publishing_save_keeps_the_pairing():
     assert s["posting_enabled"] is True
     save_posting_settings({"posting_server_url": "https://new.example"})
     assert config.get_settings()["posting_server_url"] == "https://new.example"
+
+
+@pytest.mark.parametrize("bad", ["http://box.example", "ftp://box.example", "javascript:alert(1)", "box.example"])
+def test_publishing_save_refuses_an_untrusted_server_address(bad):
+    """SEC072 (2): the key only goes over https, loopback or Tailscale, as in setup mode and Change server."""
+    from fastapi import HTTPException
+    from routes.posting_api import save_posting_settings
+    config.save_settings({"posting_server_url": "https://box.example", "posting_server_api_key": "pp_keep"})
+    with pytest.raises(HTTPException) as e:
+        save_posting_settings({"posting_server_url": bad, "posting_server_api_key": "pp_new"})
+    assert e.value.status_code == 400 and "Server URL" in e.value.detail
+    s = config.get_settings()
+    assert s["posting_server_url"] == "https://box.example" and s["posting_server_api_key"] == "pp_keep"
+
+
+@pytest.mark.parametrize("good", ["https://box.example/", "http://localhost:8420", "http://100.101.102.103:8420",
+                                  "http://box.tailnet.ts.net"])
+def test_publishing_save_takes_a_trusted_server_address(good):
+    from routes.posting_api import save_posting_settings
+    save_posting_settings({"posting_server_url": "  " + good})
+    assert config.get_settings()["posting_server_url"] == good.rstrip("/")

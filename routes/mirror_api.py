@@ -311,12 +311,17 @@ def _mirror_target(body: dict) -> tuple[str, str]:
     return server_url, api_key
 
 
+# What this desktop can handle, sent on every mirror pull (manifest + story downloads). A 5.x server holds back a
+# story carrying spec 075's scene markers from a puller without `marker_strip` (DeviantArt literature would post
+# them raw); 4.88.9 strips them (DAMARKERS). Comma-separated; older servers ignore the header.
+_PULL_SUPPORTS = {"X-PawPoller-Supports": "marker_strip"}
+
 async def _run_pull(server_url: str, api_key: str, *, dry_run: bool,
                     include_db: bool, include_media: bool, only: list[str] | None,
                     push_first: bool = True, confirm_deletes=()) -> dict:
     import httpx
 
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    headers = {**_PULL_SUPPORTS, **({"Authorization": f"Bearer {api_key}"} if api_key else {})}
     artwork_root = _artwork_root()
     artwork_root.mkdir(parents=True, exist_ok=True)
 
@@ -595,6 +600,9 @@ async def compute_drift() -> dict:
     api_key = settings.get("posting_server_api_key") or ""
     if not server_url:
         raise HTTPException(400, detail="This install is not paired with a server.")
+    ok, why = config.is_trusted_transport(server_url)    # SEC4889: never the key over plain http
+    if not ok:
+        raise HTTPException(400, detail=f"Server URL: {why}")
 
     # Imported here, matching every other network path in this module — httpx
     # is not a module-level import and assuming it was cost a 502 on the first
@@ -602,7 +610,7 @@ async def compute_drift() -> dict:
     # because they only ever exercised the not-paired refusal.
     import httpx
 
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    headers = {**_PULL_SUPPORTS, **({"Authorization": f"Bearer {api_key}"} if api_key else {})}
     try:
         async with httpx.AsyncClient(timeout=120.0, headers=headers) as client:
             r = await client.get(f"{server_url}/api/mirror/manifest",
@@ -963,7 +971,9 @@ async def handoff_pull(body: dict):
     imported, skipped, failed = [], [], []
     async with httpx.AsyncClient(timeout=60.0, headers=headers) as client:
         r = await client.get(f"{server_url}/api/mirror/handoff/jobs",
-                             params={"limit": limit})
+                             # marker_strip: this desktop strips story-file marker lines for DeviantArt
+                             # (4.88.9), so a newer server may hand it those jobs. Unknown params are ignored.
+                             params={"limit": limit, "supports": "marker_strip"})
         if r.status_code != 200:
             raise HTTPException(502, detail=f"Remote jobs returned {r.status_code}")
         jobs = r.json().get("jobs", [])

@@ -127,9 +127,9 @@ def test_no_email_change_password_and_reset_request_send_nothing(_fresh):
 
 
 def test_the_in_app_steps_match_the_setup_guide():
-    # The Forgot page and docs/SETUP.md give the same commands (T009 / T026).
+    # The Forgot page and docs/setup/AFTER_INSTALL.md give the same commands (T009 / T026; SETUPSPLIT moved them).
     app = (ROOT / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
-    guide = (ROOT / "docs" / "SETUP.md").read_text(encoding="utf-8")
+    guide = (ROOT / "docs" / "setup" / "AFTER_INSTALL.md").read_text(encoding="utf-8")
     for cmd in ("docker compose -f docker-compose.image.yml stop pawpoller",
                 "docker compose -f docker-compose.image.yml run --rm pawpoller python server.py --reset-password",
                 "docker compose -f docker-compose.image.yml start pawpoller",

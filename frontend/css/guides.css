@@ -121,6 +121,11 @@
     align-items: flex-start;
 }
 .guide-step:last-child { border-bottom: none; }
+/* Tick-off box per step; a ticked step fades so the next one stands out. */
+.guide-step-check { flex-shrink: 0; width: 18px; height: 18px; margin-top: 0.2rem; accent-color: var(--accent); cursor: pointer; }
+.guide-step:has(.guide-step-check:checked) .guide-step-body { opacity: 0.55; }
+.guide-progress { font-weight: 400; font-size: 0.8rem; color: var(--text-secondary); margin-left: 0.4rem; text-transform: none; letter-spacing: normal; }
+.guide-later summary { cursor: pointer; }
 .guide-step-n {
     flex-shrink: 0;
     width: 24px;

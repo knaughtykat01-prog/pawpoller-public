@@ -80,6 +80,7 @@ def _calls(src: str, method: str) -> list[str]:
     ("frontend/js/masterpieces.js", "publishArtwork", 1),
     ("frontend/js/masterpieces.js", "syncMasterpiece", 1),
     ("frontend/js/posts.js", "publishPost", 1),
+    ("frontend/js/post_board.js", "publishPost", 1),   # BUGHUNT 3: it had none, so the button always 400'd
 ])
 def test_every_publish_caller_sends_confirm_live(path, method, expected):
     """The guard is only as good as its callers. A call site that forgets the

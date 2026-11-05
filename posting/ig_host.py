@@ -73,6 +73,10 @@ async def upload_to_host(endpoint: str, path: str, api_key: str = "", http=None)
     answers with. Raises ``RuntimeError`` carrying the host's own sentence."""
     import httpx
     from pathlib import Path
+    if api_key:
+        ok, why = config.is_trusted_transport(endpoint)    # SEC4889: never the key over plain http
+        if not ok:
+            raise RuntimeError(f"server address refused: {why}")
     data = Path(path).read_bytes()  # noqa: ASYNC240
     headers = {"X-PawPoller-Version": config.APP_VERSION}
     if api_key:

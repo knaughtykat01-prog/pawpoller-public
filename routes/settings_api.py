@@ -318,6 +318,9 @@ async def set_setup_mode(req: SetupModeRequest):
                 status_code=400,
                 detail="paired_desktop mode requires posting_server_url and posting_server_api_key",
             )
+        ok, why = config.is_trusted_transport(url)
+        if not ok:
+            raise HTTPException(status_code=400, detail=f"Server URL: {why}")
         update["posting_server_url"] = url
         update["posting_server_api_key"] = api_key
         update["auto_sync_enabled"] = True

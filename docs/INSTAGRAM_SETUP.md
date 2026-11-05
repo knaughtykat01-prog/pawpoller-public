@@ -35,8 +35,8 @@ the whole attempt if you find them out later.
 
 ## 0. Read this first
 
-Two things decide whether this works, and both are easier to get right at the start than to
-discover at step 5.
+Three things decide whether this works, and all of them are easier to get right at the start than
+to discover at step 5.
 
 ### ⚠ Do not use Chrome
 
@@ -52,6 +52,15 @@ This is not a theory — it is the single most common way this setup fails.
 The API PawPoller uses only exists for **Business** and **Creator** accounts. If your account is
 personal, no amount of correct setup elsewhere will help. Step 1 fixes this and takes about
 thirty seconds.
+
+### ⚠ A brand-new Meta app can't use this guide yet
+
+Meta now opens **API setup with Unified login** first and calls the **API setup with Instagram login**
+tab this guide uses "legacy". Apps that already have that tab keep it, and Meta has announced no end
+date. But Meta's own migration guide (October 2026) says **newly created apps can't set up Instagram
+login**. They only get Unified login, which needs a business portfolio and gives a different kind of
+token that PawPoller can't use yet. Support for it is coming. Until then, if your app has no
+*Instagram login* tab, Instagram can't be connected.
 
 ### What you will need
 
@@ -487,7 +496,7 @@ expect adult content to be a problem with Meta specifically.
 
 - [`THREADS_SETUP.md`](THREADS_SETUP.md) — the same app, the Threads use case; ten minutes once
   Instagram is done
-- [`SETUP.md` §5](SETUP.md#platform-credentials) — credentials for all twenty platforms, and
+- [`setup/AFTER_INSTALL.md`](setup/AFTER_INSTALL.md#platform-credentials) — credentials for all twenty platforms, and
   what each needs to poll versus to post
 - [`SETUP.md` Paths B and C](SETUP.md#start-here-which-of-these-are-you) — running PawPoller on a server, which is also what gives
   you the public URL Instagram posting needs

@@ -34,6 +34,7 @@ from clients.da.client import (
 )
 from posting import tag_budget
 from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
+from posting.platforms.weasyl import strip_markers  # DAMARKERS (4.88.9): the archive's <!-- @… --> lines
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +278,7 @@ class DeviantArtPoster(PlatformPoster):
                 body = ""
                 if package.file_path:
                     with open(package.file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
-                        body = f.read()
+                        body = strip_markers(f.read()).strip()
                 if not body:
                     body = package.description
                 result = await client.oauth_create_literature(
@@ -389,7 +390,7 @@ class DeviantArtPoster(PlatformPoster):
             skip_content = bool(package.extra.get("skip_content_refresh", False))
             if package.file_path and not skip_content:
                 with open(package.file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
-                    body = f.read()
+                    body = strip_markers(f.read()).strip()
 
             is_mature, _, _ = _rating_to_da(package.rating)
 
@@ -487,7 +488,7 @@ class DeviantArtPoster(PlatformPoster):
             client, token = await self._ensure_client()
 
             with open(file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
-                body = f.read()
+                body = strip_markers(f.read()).strip()
 
             resp = await client.oauth_update_literature(
                 await client.uuid_for(external_id),

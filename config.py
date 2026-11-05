@@ -154,7 +154,7 @@ def _operator_vault_key() -> bytes | None:
     This lets a server operator hold the key OUT-OF-BAND (secrets manager,
     Docker secret, env) instead of the ``.vault_key`` dotfile that otherwise
     sits next to the ciphertext on the data volume — the only way the vault
-    gives real at-rest protection on a server (see docs/SETUP.md, "The credential vault").
+    gives real at-rest protection on a server (see docs/setup/ADVANCED.md, "The credential vault").
 
     Raises if a key is supplied but malformed, so a typo fails fast at startup
     rather than silently making the vault undecryptable.
@@ -1387,7 +1387,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.88.8"
+APP_VERSION = "4.88.9"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).
@@ -1466,7 +1466,7 @@ DASHBOARD_PORT = 8420          # Arbitrary high port unlikely to conflict
 # (dashboard.py::_client_is_loopback), and it sidesteps the per-address login
 # lockout. A named address or CIDR is safe: uvicorn walks the chain from the right
 # and returns the first untrusted host, so a prepended fake is ignored.
-# tests/test_proxy_trust.py pins all of this; docs/SETUP.md says the same.
+# tests/test_proxy_trust.py pins all of this; docs/setup/ADVANCED.md says the same.
 DASHBOARD_FORWARDED_IPS = os.environ.get("PAWPOLLER_FORWARDED_IPS", "127.0.0.1")
 
 # ── Stat offsets ──

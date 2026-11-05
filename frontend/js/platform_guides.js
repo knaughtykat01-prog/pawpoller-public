@@ -376,27 +376,45 @@
     ig: {
       kind: 'Analytics + posting', difficulty: 'Involved',
       summary: 'Track views/reach/likes/comments/saves and post photos to Instagram.',
-      need: ['A Business or Creator Instagram account', 'A free Meta developer app — the same one Threads uses, if you have that too', 'A long-lived access token'],
+      need: ['A Business or Creator Instagram account', 'A free Meta developer app — the same one Threads uses, if you have that too', 'A long-lived access token', 'About 20 minutes, on a computer'],
       steps: [
-        { t: 'Switch to a professional account', b: 'In the Instagram app: <b>Settings &rarr; Account type and tools &rarr; Switch to professional account</b> (Business or Creator). Personal accounts can\'t use the API. You can skip connecting a Facebook Page.' },
-        { t: 'Create (or open) a Meta developer app', b: 'On <b>My Apps</b> press <b>Create app</b>. Name it anything, and on the <b>Use cases</b> step tick <b>Manage messaging &amp; content on Instagram</b> (tick <i>Access the Threads API</i> too if you want Threads). No business portfolio is needed; finish the wizard. Already have the app? Open it and use <b>Add use cases</b>.',
-          link: { label: 'developers.facebook.com/apps', url: 'https://developers.facebook.com/apps' },
+        { t: 'Open Microsoft Edge or Firefox, not Chrome', b: 'Do every step on a computer, in any browser that is <b>not Chrome</b>. Chrome breaks Meta\'s token generator: the button does nothing and no error appears.' },
+        { t: 'In the Instagram phone app, open Account type and tools', b: 'Your profile &rarr; <b>&#9776; menu</b> &rarr; <b>Settings and activity</b> &rarr; <b>Account type and tools</b>. Menu names vary a little between versions.' },
+        { t: 'Tap Switch to professional account', b: 'Pick <b>Business</b> or <b>Creator</b>; either works. Skip connecting a Facebook Page. Personal accounts can\'t use the API at all. Already professional? Tick this off and go on.' },
+        { t: 'Open Meta\'s My Apps page and sign in', b: 'Sign in with your Facebook account. If Meta asks you to register as a developer first, do that (stuck on a text-message code? see <b>Good to know</b>). You\'ll see <b>My Apps</b>.',
+          link: { label: 'developers.facebook.com/apps', url: 'https://developers.facebook.com/apps' } },
+        { t: 'Press Create app', b: 'Already have an app for PawPoller? Open it, press <b>Add use cases</b>, do step 7, then carry on from step 9.' },
+        { t: 'Type any app name and press Next', b: 'Up to 30 characters, for example <i>My PawPoller</i>. The contact email is filled in for you.' },
+        { t: 'Tick Manage messaging &amp; content on Instagram, then Next', b: 'The <b>Content management</b> filter on the left shortens the list. Want Threads too? Tick <i>Access the Threads API</i> as well; one app serves both.',
           img: { src: '/img/guides/meta/create-app.png', alt: 'Create an app: the Use cases step, with Access the Threads API and Manage messaging &amp; content on Instagram' } },
-        { t: 'Open the Instagram use case &rarr; API setup with Instagram login', b: 'Dashboard &rarr; <b>Use cases</b> &rarr; <b>Customize</b> next to <i>Manage messaging &amp; content on Instagram</i> &rarr; left tab <b>API setup with Instagram login</b>. Not <i>with Facebook login</i> — that one needs a Facebook Page. Meta\'s welcome box says to switch for insights; ignore it, PawPoller\'s stats work here.',
+        { t: 'Skip the business portfolio and finish the wizard', b: 'Choose <b>I don\'t want to connect a business portfolio yet</b>, press <b>Next</b> through Requirements, then <b>Create app</b>. You\'ll land on the app\'s dashboard.' },
+        { t: 'Open Use cases &rarr; Customize next to the Instagram use case', b: 'Left sidebar <b>Use cases</b>, then <b>Customize</b> beside <i>Manage messaging &amp; content on Instagram</i>. Meta opens the <b>API setup with Unified login</b> tab first.' },
+        { t: 'Click the API setup with Instagram login tab', b: 'Not <i>Unified login</i> (PawPoller can\'t use its token yet), not <i>Facebook login</i> (needs a Facebook Page). A banner calls this tab "legacy": it still works, ignore it. You\'ll see your Instagram app name and <b>2. Generate access tokens</b>. <b>No such tab?</b> Meta no longer offers it to new apps (its guide of October 2026); see <i>Unified login</i> under Good to know.',
           img: { src: '/img/guides/meta/instagram-api-setup.png', alt: 'API setup with Instagram login: app name and id, section 1 messaging permissions, section 2 Generate access tokens with one tester account and a Generate token link' } },
-        { t: 'Add yourself as an Instagram Tester', b: '<b>App roles &rarr; Roles &rarr; Add People</b> &rarr; pick <b>Instagram Tester</b> under <i>Additional roles</i> &rarr; your Instagram username. Then accept the invite in Instagram: <b>Settings &rarr; Apps and websites &rarr; Tester invites</b>. Until you accept, the token step will not list your account.',
+        { t: 'Left sidebar: App roles &rarr; Roles, then Add People', b: 'A box called <i>Add people to your app</i> opens.' },
+        { t: 'Pick Instagram Tester, type your Instagram username, press Add', b: 'It\'s under <i>Additional roles</i>. Your username now shows as <b>Pending</b>.',
+          img: { src: '/img/guides/meta/roles-add-people.png', alt: 'Add people to your app: Instagram Tester and Threads Tester under Additional roles' } },
+        { t: 'Accept the invite in Instagram', b: 'In a new tab, signed in as <b>that same</b> Instagram account: <b>Settings &rarr; Website permissions &rarr; Apps and websites &rarr; Tester invites</b> &rarr; <b>Accept</b>. Instagram doesn\'t notify you about it.',
+          link: { label: 'instagram.com/accounts/manage_access', url: 'https://www.instagram.com/accounts/manage_access/' } },
+        { t: 'Reload the Roles page in Meta', b: '<b>Pending</b> is gone and you\'re listed as an Instagram Tester. Still pending? The invite was accepted on a different Instagram account.',
           img: { src: '/img/guides/meta/roles-testers.png', alt: 'App roles: one Administrator, one Instagram Tester and one Threads Tester, with the Add People button' } },
-        { t: 'Generate the token', b: 'Back on <b>API setup with Instagram login</b>, section <b>2. Generate access tokens</b>: press <b>Add account</b> if yours is not listed, then <b>Generate token</b>. Approve everything it asks for — the app asks for the basic, insights, publishing, comments and messages scopes in one go — and copy the whole token. Skip sections 1, 3 and 5: messaging permissions, webhooks and App Review are not needed.' },
-        { t: 'Connect in PawPoller', b: 'Settings &rarr; Platforms &rarr; Instagram: paste the token, leave the user ID blank, press <b>Connect</b>. PawPoller reads your username back from the token — check it is the account you meant.',
+        { t: 'Go back to API setup with Instagram login, section 2', b: '<b>Use cases &rarr; Customize &rarr; API setup with Instagram login</b>, then open <b>2. Generate access tokens</b>.' },
+        { t: 'Press Add account and sign in to Instagram', b: 'Skip this if your account is already listed. Afterwards your account appears in the table with a <b>Generate token</b> link.' },
+        { t: 'Press Generate token on your account\'s row', b: 'A window opens. If nothing happens, allow pop-ups for developers.facebook.com, or you are in Chrome (step 1).' },
+        { t: 'Approve everything it asks for', b: 'It asks for the basic, insights, publishing, comments and messages permissions in one go. Turn none of them off: without publishing, stats work but every post is rejected.' },
+        { t: 'Copy the whole token', b: 'It\'s several hundred characters. Meta may only show it once, so keep it somewhere safe until it\'s in PawPoller.' },
+        { t: 'In PawPoller: Settings &rarr; Platforms &rarr; Instagram, paste it into Access token', b: 'Leave <b>User ID</b> blank; PawPoller works it out from the token.',
           img: { src: '/img/guides/meta/pawpoller-instagram-card.png', alt: 'PawPoller Settings, Instagram card: access token, optional user id, Connect' } },
+        { t: 'Press Connect', b: 'The dot turns green and shows a username. Check it\'s the account you meant.' },
       ],
       paste: 'Settings → Instagram → Access token (user id optional — leave blank)',
       renew: { when: 'Long-lived tokens last ~60 days', how: 'PawPoller auto-refreshes it while polling. If it lapses, generate a fresh token in section 2 of <i>API setup with Instagram login</i> and paste it back in — the app, tester role and use case all stay valid.' },
       notes: [
-        'Do the whole setup on a <b>desktop</b> (not mobile) in <b>Microsoft Edge — or any browser that is NOT Chrome</b>. Chrome reliably breaks Meta\'s developer dashboard and token generator: the flow silently fails or the token never appears. Edge/Firefox work.',
-        'The <b>Permissions and features</b> table is about App Review. On the app this guide was written from, <code>instagram_business_manage_insights</code> and <code>instagram_business_content_publish</code> were never "added" there and stats arrive anyway: the token generator asks for all five Instagram scopes regardless. Add them if you like; it costs nothing.',
+        'You can skip Meta\'s sections <b>1</b> (messaging permissions), <b>3</b> (webhooks), <b>4</b> (business login) and <b>5</b> (App Review). The <b>Permissions and features</b> table is for App Review too: the token generator asks for all five scopes whatever it says.',
         'Every Instagram post <b>requires a photo</b> — there are no text-only posts. Instagram fetches the image from a public address, and PawPoller finds it one: your own server if you have one, otherwise the PawPoller relay (a public PawPoller server hosts the picture for 15 minutes), otherwise a temporary tunnel from your PC. Nothing to set up; see <b>Settings → Posting → Instagram image host</b> to switch either off or to download the tunnel helper.',
         'Leave the app <b>Unpublished</b>. Development mode with your own account needs no App Review, and the Publish button stays greyed out until you add a privacy policy — you do not need one. A public app for other users would need review and would likely be rejected for adult content.',
+        'Stuck registering as a Meta developer (no text-message code, or a loop)? Stop requesting codes, then confirm your phone number in ordinary Facebook settings, where the code comes by email. The full list of fixes is in <code>docs/INSTAGRAM_SETUP.md</code> §1b.',
+        '<details class="guide-later"><summary><b>Unified login — coming soon</b></summary>Meta now recommends <b>API setup with Unified login</b> and calls the Instagram-login tab "legacy". Apps that already have the Instagram-login tab keep it, with no end date announced, but <b>new apps only get Unified login</b> (Meta, October 2026). PawPoller can\'t use a Unified login token yet (it is a different kind of token, for a different Meta address), so a brand-new app can\'t connect Instagram until it does. When it lands, setup will be: connect your app to a <b>business portfolio</b> (it can stay unverified) &rarr; open <b>API setup with Unified login</b> &rarr; <b>Create new configuration</b> &rarr; <b>Create from template</b>, keeping <code>instagram_content_publish</code> &rarr; <b>Use this configuration</b> &rarr; in <b>Generate access tokens</b>, <b>Add account</b> as an Instagram Tester and accept the invite as above &rarr; <b>Generate token</b>, pick your business portfolio and only this Instagram account, keep publishing on, tick <b>I understand</b> and copy the token (shown once).</details>',
       ],
     },
 
@@ -963,6 +981,21 @@
     return '<span class="' + cls + '-emoji" aria-hidden="true">' + emoji(code) + '</span>';
   }
 
+  /* Ticked steps, saved per guide on this device only (a convenience: a failed read just shows none ticked). */
+  function _ticks(code) {
+    try { return JSON.parse(localStorage.getItem('pp.guideTicks.' + code) || '[]'); } catch (_) { return []; }
+  }
+  document.addEventListener('change', (e) => {
+    const box = e.target;
+    if (!box.classList || !box.classList.contains('guide-step-check')) return;
+    const code = box.dataset.guideCode;
+    const list = box.closest('.guide-steps');
+    const done = [...list.querySelectorAll('.guide-step-check')].filter(c => c.checked).map(c => Number(c.dataset.step));
+    try { localStorage.setItem('pp.guideTicks.' + code, JSON.stringify(done)); } catch (_) { /* private mode: ticks just don't persist */ }
+    const prog = list.parentElement.querySelector('.guide-progress[data-guide-code="' + code + '"]');
+    if (prog) prog.textContent = done.length + ' / ' + list.querySelectorAll('.guide-step-check').length + ' done';
+  });
+
   /* Render the full guide body (used by both the modal and the hub detail). */
   function renderBody(code) {
     const g = GUIDES[code];
@@ -977,8 +1010,10 @@
       return `<li class="guide-step">
           <span class="guide-step-n">${i + 1}</span>
           <div class="guide-step-body"><b>${s.t}</b><div class="guide-step-b">${s.b}${link}</div>${img}</div>
+          <input type="checkbox" class="guide-step-check" data-guide-code="${code}" data-step="${i}" aria-label="Step ${i + 1} done"${_ticks(code).includes(i) ? ' checked' : ''}>
         </li>`;
     }).join('');
+    const total = (g.steps || []).length;
     const need = (g.need || []).map(n => `<li>${n}</li>`).join('');
     const notes = (g.notes || []).map(n => `<li>${n}</li>`).join('');
     return `
@@ -992,7 +1027,7 @@
       </a>
       <h4 class="guide-h">What you'll need</h4>
       <ul class="guide-need">${need}</ul>
-      <h4 class="guide-h">Step by step</h4>
+      <h4 class="guide-h">Step by step <span class="guide-progress" data-guide-code="${code}">${_ticks(code).filter(n => n < total).length} / ${total} done</span></h4>
       <ol class="guide-steps">${steps}</ol>
       <h4 class="guide-h">Where it goes in PawPoller</h4>
       <p class="guide-paste">${g.paste}</p>

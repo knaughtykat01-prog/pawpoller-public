@@ -59,7 +59,7 @@ def test_a_proxied_visitor_is_not_loopback():
 
 
 def test_the_docker_line_in_the_guide_sees_the_real_visitor_and_no_one_else():
-    """docs/SETUP.md tells Docker users behind a tunnel to trust loopback + Docker's bridge range.
+    """docs/setup/ADVANCED.md tells Docker users behind a tunnel to trust loopback + Docker's bridge range.
 
     A host-side proxy (cloudflared, Caddy, tailscale serve) reaches the container through
     docker-proxy, so the peer is the bridge gateway (172.x.0.1), never 127.0.0.1. Cloudflare
@@ -70,7 +70,7 @@ def test_the_docker_line_in_the_guide_sees_the_real_visitor_and_no_one_else():
     from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
     line = "PAWPOLLER_FORWARDED_IPS=127.0.0.1,172.16.0.0/12"
-    guide = (Path(__file__).resolve().parent.parent / "docs" / "SETUP.md").read_text("utf-8")
+    guide = (Path(__file__).resolve().parent.parent / "docs" / "setup" / "ADVANCED.md").read_text("utf-8")
     assert line in guide
     trusted = line.split("=", 1)[1]
 
@@ -98,7 +98,7 @@ def test_nothing_in_the_repo_still_recommends_trusting_everything():
     block = src[src.index("# Trusted proxy IPs"):src.index("DASHBOARD_FORWARDED_IPS =")]
     assert "PAWPOLLER_FORWARDED_IPS=*" not in block
     assert "NEVER `*`" in block
-    assert "127.0.0.1,172.16.0.0/12" in block      # the value SETUP.md gives
+    assert "127.0.0.1,172.16.0.0/12" in block      # the value docs/setup/ADVANCED.md gives
 
 
 def test_the_ig_relay_counts_the_address_uvicorn_resolved():

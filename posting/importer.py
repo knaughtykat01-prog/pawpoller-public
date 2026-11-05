@@ -268,7 +268,7 @@ by {author or 'Unknown'}
 
 <!-- @story-end -->
 """
-    (story_dir / "Markdown" / "MASTER.md").write_text(master_content, encoding="utf-8")
+    (story_dir / "Markdown" / "MASTER.md").write_text(master_content, encoding="utf-8", newline="\n")
 
     # Generate story.json
     story_json = {

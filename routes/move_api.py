@@ -22,6 +22,7 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -103,6 +104,38 @@ def seal(creds: dict, phrase: str) -> dict:
 
 class WrongPhrase(Exception):
     pass
+
+
+_DEFAULT_SEAT_CAP_GB = 20.0
+
+
+def _seat_cap_gb() -> float | None:
+    """The seat's disk cap in GB, or None when unset (not a seat). SEC4888: a value that isn't a positive
+    finite number ("20GB", "nan", "inf", "0") keeps the default cap rather than failing every upload or
+    switching the cap off."""
+    raw = os.environ.get("PAWPOLLER_SEAT_DISK_CAP_GB", "").strip()
+    if not raw:
+        return None
+    try:
+        gb = float(raw)
+    except ValueError:
+        gb = math.nan
+    if not (math.isfinite(gb) and gb > 0):
+        logger.warning("Move: PAWPOLLER_SEAT_DISK_CAP_GB isn't a number of GB; using %g.", _DEFAULT_SEAT_CAP_GB)
+        return _DEFAULT_SEAT_CAP_GB
+    return gb
+
+
+def _used_bytes(root) -> int:
+    """Bytes under *root*. A file removed while counting (a backup rotating) is skipped, not a 500."""
+    used = 0
+    for p in root.rglob("*"):
+        try:
+            if p.is_file():
+                used += p.stat().st_size
+        except OSError:
+            continue
+    return used
 
 
 def open_sealed(blob: dict, phrase: str) -> dict:
@@ -381,12 +414,12 @@ def upload_open(body: dict):
         logger.warning("Move: refused an upload of %d bytes with %d free.", size, free)
         raise HTTPException(507, detail=f"There isn't room for this. It needs about "
                                         f"{_room_needed(size) / 1e9:.1f} GB free, and this has {free / 1e9:.1f} GB.")
-    cap_gb = os.environ.get("PAWPOLLER_SEAT_DISK_CAP_GB", "").strip()   # MOVELOWS (4): seats share one disk
-    if cap_gb:
-        used = sum(p.stat().st_size for p in _data_dir().rglob("*") if p.is_file())
-        if used + _room_needed(size) > float(cap_gb) * 1e9:
-            logger.warning("Move: refused an upload of %d bytes: %d used of a %s GB seat cap.", size, used, cap_gb)
-            raise HTTPException(507, detail=f"This seat has {cap_gb} GB of room. Bringing this in needs about "
+    cap_gb = _seat_cap_gb()                             # MOVELOWS (4): seats share one disk
+    if cap_gb is not None:
+        used = _used_bytes(_data_dir())
+        if used + _room_needed(size) > cap_gb * 1e9:
+            logger.warning("Move: refused an upload of %d bytes: %d used of a %g GB seat cap.", size, used, cap_gb)
+            raise HTTPException(507, detail=f"This seat has {cap_gb:g} GB of room. Bringing this in needs about "
                                             f"{_room_needed(size) / 1e9:.1f} GB, and {used / 1e9:.1f} GB is already used.")
     uid = secrets.token_hex(16)
     d = _in_dir() / uid

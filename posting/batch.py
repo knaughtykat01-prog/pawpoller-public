@@ -71,6 +71,28 @@ def _owner_personas(conn, art) -> set[int]:
     return owners
 
 
+def owner_mismatch(conn, art, platform: str, account_id: int | None) -> str | None:
+    """PERSONAOWN (4.88.9): why *art* must not go out on this account, or None.
+
+    The piece's owners come from the work itself (where it's live, whose artist it is), never from the
+    request, so a send that names no persona can't put one pen name's piece on another's account and
+    link the two in public. No owners yet, or an account that belongs to no persona: as before."""
+    from database import accounts as accounts_db
+    if not getattr(art, "name", None):
+        return None
+    owners = _owner_personas(conn, art)
+    if not owners:
+        return None
+    if account_id is None:
+        account_id = accounts_db.get_default_account_id(conn, platform, create=False)
+    acct = accounts_db.get_account(conn, account_id) if account_id is not None else None
+    persona = acct.get("persona_id") if acct else None
+    if persona is None or int(persona) in owners:
+        return None
+    return (f"this piece belongs to another persona, and account {account_id} on {platform} isn't theirs, "
+            f"so it wasn't sent there")
+
+
 # ── Versions (renders) — per piece, the same choices a single publish offers (4.34.0) ──
 # AUTO = the rating's pick for each site (the default, and all a piece without named
 # versions ever gets); PRIMARY = the piece's own image even where a version would be

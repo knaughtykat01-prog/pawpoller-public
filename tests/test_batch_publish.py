@@ -714,3 +714,73 @@ def test_announce_story_builds_one_message(monkeypatch, tmp_path):
     assert kw["site_links"] == [("ib", "https://x/1"), ("sf", "https://y/1")] and kw["platforms"] == ["ib", "sf"]
     assert kw["tags"] == ["fox"] and str(kw["image_path"]).endswith("thumb.jpg")
     asyncio.run(manager.announce_story("No_Such_Story", first_chapter=0, site_links=[]))   # no raise
+
+
+# ── PERSONAOWN (4.88.9): the owners come from the piece, on every send path ──────────────
+
+def _owner_setup(monkeypatch, owners_of):
+    from database import accounts as accounts_db
+    conn = get_connection()
+    try:
+        mine, theirs = _persona(conn, "Mine"), _persona(conn, "Theirs")
+        a_mine = accounts_db.create_account(conn, "ib", "mine")
+        a_theirs = accounts_db.create_account(conn, "ib", "theirs", is_default=True)
+        a_none = accounts_db.create_account(conn, "ib", "nobody's")
+        conn.execute("UPDATE accounts SET persona_id = ? WHERE account_id = ?", (mine, a_mine))
+        conn.execute("UPDATE accounts SET persona_id = ? WHERE account_id = ?", (theirs, a_theirs))
+        conn.commit()
+    finally:
+        conn.close()
+    monkeypatch.setattr(batch, "_owner_personas", lambda conn, art: owners_of(mine, theirs))
+    return mine, theirs, a_mine, a_theirs, a_none
+
+
+def test_owner_mismatch_reads_the_piece_not_the_request(arch, monkeypatch):
+    art = artwork_reader.load_artwork(_piece("A"))
+    _m, _t, a_mine, a_theirs, a_none = _owner_setup(monkeypatch, lambda mine, theirs: {mine})
+    conn = get_connection()
+    try:
+        assert "another persona" in batch.owner_mismatch(conn, art, "ib", a_theirs)
+        assert "another persona" in batch.owner_mismatch(conn, art, "ib", None)    # the default is theirs
+        assert batch.owner_mismatch(conn, art, "ib", a_mine) is None
+        assert batch.owner_mismatch(conn, art, "ib", a_none) is None              # no persona: as before
+    finally:
+        conn.close()
+
+
+def test_a_piece_with_no_owners_goes_anywhere(arch, monkeypatch):
+    art = artwork_reader.load_artwork(_piece("A"))
+    *_, a_theirs, _a_none = _owner_setup(monkeypatch, lambda mine, theirs: set())
+    conn = get_connection()
+    try:
+        assert batch.owner_mismatch(conn, art, "ib", a_theirs) is None
+    finally:
+        conn.close()
+
+
+def test_publish_refuses_another_personas_account_before_any_upload(arch, monkeypatch):
+    import asyncio
+    from posting import manager
+    name = _piece("A")
+    _m, _t, _a_mine, a_theirs, _a_none = _owner_setup(monkeypatch, lambda mine, theirs: {mine})
+
+    def no_poster(*a, **k):
+        raise AssertionError("nothing may be sent")
+    monkeypatch.setattr(manager, "_get_poster", no_poster)
+    res = asyncio.run(manager.post_artwork(name, ["ib"], account_ids={"ib": a_theirs}))
+    assert len(res) == 1 and res[0]["refused"] and "another persona" in res[0]["error"]
+
+
+def test_scheduling_without_a_persona_onto_theirs_is_refused(arch, monkeypatch):
+    from routes.artwork_api import artwork_router
+    app = FastAPI()
+    app.include_router(artwork_router)
+    name = _piece("A")
+    _m, _t, a_mine, a_theirs, _a_none = _owner_setup(monkeypatch, lambda mine, theirs: {mine})
+    c = TestClient(app)
+    body = {"artwork_name": name, "platform": "ib", "scheduled_at": "2099-01-01T00:00:00+00:00"}
+    r = c.post("/api/artwork/schedule", json={**body, "account_id": a_theirs})
+    assert r.status_code == 400 and "another persona" in r.json()["detail"]
+    with get_connection() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM posting_queue").fetchone()[0] == 0
+    assert c.post("/api/artwork/schedule", json={**body, "account_id": a_mine}).status_code == 200

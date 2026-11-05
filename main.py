@@ -421,6 +421,10 @@ def _sync_settings_on_startup():
     if not server_url or not api_key:
         logger.debug("Settings sync: no server URL or API key configured, skipping")
         return
+    ok, why = config.is_trusted_transport(server_url)    # SEC4889: never the key over plain http
+    if not ok:
+        logger.warning("Settings sync: skipped, server address refused (%s)", why)
+        return
 
     try:
         resp = httpx.post(

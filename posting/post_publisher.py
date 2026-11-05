@@ -276,6 +276,9 @@ async def _relay_stash_image(server_url: str, api_key: str, path: str) -> str:
     """
     import httpx
     from pathlib import Path
+    ok, why = config.is_trusted_transport(server_url)    # SEC4889: never the key over plain http
+    if not ok:
+        raise RuntimeError(f"image relay refused: {why}")
     data = Path(path).read_bytes()  # noqa: ASYNC240
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     url = server_url.rstrip("/") + "/api/ig/pubmedia"

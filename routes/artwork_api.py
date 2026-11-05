@@ -800,15 +800,19 @@ async def schedule_artwork(body: dict):
     variant_key = _scheduled_version(artwork, body.get("variant_key"))
 
     scheduled_str = _to_utc_sql(scheduled_at)
-    _store_comments(name, [platform], body)
 
     conn = get_connection()
     try:
+        from posting.batch import owner_mismatch
+        own = owner_mismatch(conn, artwork, platform, account_id)
+        if own:                     # PERSONAOWN (4.88.9): said now, not as a failure at 3am
+            raise HTTPException(400, detail=own[0].upper() + own[1:] + ".")
         if not body.get("again"):   # SCHEDTWICE (4.88.8): ask before queuing it twice
             when = posting_queries.pending_post_at(conn, "artwork", name, 0, platform, account_id, variant_key)
             if when is not None:
                 raise HTTPException(409, detail={"already_scheduled": [{"platform": platform,
                                                                         "scheduled_at": when}]})
+        _store_comments(name, [platform], body)   # after the refusals: a refused schedule keeps the comment (BUGHUNT 3)
         queue_id = posting_queries.add_to_queue(
             conn, name, 0, platform, action="post",
             account_id=account_id,
@@ -1030,6 +1034,9 @@ async def artwork_sync_push(body: dict):
     api_key = settings.get("posting_server_api_key", "")
     if not server_url:
         raise HTTPException(400, detail="No server URL configured (posting_server_url).")
+    ok, why = config.is_trusted_transport(server_url)    # SEC4889: checked where the key is sent
+    if not ok:
+        raise HTTPException(400, detail=f"Server URL: {why}")
 
     archive_path = artwork_reader.get_artwork_archive_path()
     if not archive_path.is_dir():

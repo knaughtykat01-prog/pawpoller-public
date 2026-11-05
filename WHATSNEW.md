@@ -2,6 +2,19 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.88.9] - 2026-11-05 - Pen names kept apart, small safety fixes
+
+> - A piece that belongs to one pen name can no longer be posted or scheduled on another pen name's account.
+> - Your server key is never sent over plain http: pairing, Settings → Publishing and the archive uploads all refuse such an address.
+> - On a hosted seat, a mistyped size limit no longer stops moving files from uploading; the normal 20 GB applies.
+> - The Publish button on a post's board now works, and says how many sites failed if any did.
+> - Publishing a story's draft now uses the account the chapter was posted on, and a chapter number past the end is refused.
+> - The setup guide is split: one short guide for each way of installing, and one for after you install.
+> - A failed post that is tried again keeps your draft choice and pen name.
+> - DeviantArt literature no longer shows the hidden marker lines from your story file.
+> - Saving a story in the editor on Windows no longer changes the line endings of the whole file.
+> - The Instagram setup guide now goes one click at a time, and every setup guide has tick boxes that remember your place.
+
 ## [4.88.8] - 2026-11-04 - Safer versions, the right chapter, small safety fixes
 
 > - In safe mode, an adult version of a piece now stays blurred, in the version strip and after you switch to it.
@@ -230,11 +243,3 @@ Generated from the release notes: each version's plain-language summary.
 
 > - Posts to FurAffinity no longer get the "Posted via PawPoller" line. FA's staff count a link to PawPoller as against their rules, so it's left off there to keep your account safe.
 > - The printable guide PDFs no longer contain links to a file on the computer that made them.
-
-## [4.82.0] - 2026-10-19 - Videos come in
-
-> - Videos and GIFs you posted on X now show up in the Library's found posts, marked Video or GIF, and import as the video itself.
-> - Instagram videos and Reels now import as the video, not just their cover picture.
-> - Bluesky video posts are now found and import as the video.
-> - GIFs play on a loop in the Library, the way you posted them.
-> - A video you imported earlier as a still picture can now bring in its video: open it and press "Bring in the video". The picture stays as its cover.

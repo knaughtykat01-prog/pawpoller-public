@@ -1094,6 +1094,14 @@ def save_posting_settings(body: dict):
     for k in ("posting_server_url", "posting_server_api_key"):
         if k in filtered and not str(filtered[k] or "").strip():
             filtered.pop(k)
+    # SEC072 (2): the same rule setup mode and Change server apply: the key only goes over https,
+    # loopback or Tailscale.
+    if "posting_server_url" in filtered:
+        url = str(filtered["posting_server_url"]).strip().rstrip("/")
+        ok, why = config.is_trusted_transport(url)
+        if not ok:
+            raise HTTPException(status_code=400, detail=f"Server URL: {why}")
+        filtered["posting_server_url"] = url
     # Spec 071: a privacy switch takes a real boolean only; "false" / 0 / null never turns it off.
     if not isinstance(filtered.get("posting_strip_metadata", True), bool):
         filtered.pop("posting_strip_metadata")
@@ -1235,6 +1243,9 @@ async def sync_push(body: dict):
 
     if not server_url:
         raise HTTPException(400, detail="No server URL configured. Set posting_server_url in settings.")
+    ok, why = config.is_trusted_transport(server_url)    # SEC4889: checked where the key is sent
+    if not ok:
+        raise HTTPException(400, detail=f"Server URL: {why}")
 
     archive_path = get_archive_path()
     if not archive_path.is_dir():

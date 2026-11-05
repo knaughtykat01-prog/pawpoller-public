@@ -595,3 +595,41 @@ def test_a_seat_cap_refuses_what_would_not_fit(two, monkeypatch):
     r = c.post("/api/move/uploads", json={"name": "a.zip", "size": 10 ** 9})
     assert r.status_code == 507 and "1 GB" in r.json()["detail"]
     assert c.post("/api/move/uploads", json={"name": "a.zip", "size": 1000}).status_code == 200
+
+
+@pytest.mark.parametrize("bad", ["20GB", "nan", "inf", "-5", "0", "lots"])
+def test_a_bad_seat_cap_keeps_the_default_cap(monkeypatch, bad):
+    """SEC4888: a typo neither switches the cap off (nan / inf / 0) nor breaks it."""
+    from routes import move_api
+    monkeypatch.setenv("PAWPOLLER_SEAT_DISK_CAP_GB", bad)
+    assert move_api._seat_cap_gb() == 20.0
+    monkeypatch.setenv("PAWPOLLER_SEAT_DISK_CAP_GB", "7.5")
+    assert move_api._seat_cap_gb() == 7.5
+    monkeypatch.delenv("PAWPOLLER_SEAT_DISK_CAP_GB")
+    assert move_api._seat_cap_gb() is None                # not a seat: no cap
+
+
+def test_a_typo_in_the_seat_cap_does_not_fail_uploads(two, monkeypatch):
+    _old, new, use, c = two
+    use(new)
+    monkeypatch.setenv("PAWPOLLER_SEAT_DISK_CAP_GB", "20GB")
+    assert c.post("/api/move/uploads", json={"name": "a.zip", "size": 1000}).status_code == 200
+
+
+def test_used_bytes_skips_a_file_removed_mid_count(tmp_path, monkeypatch):
+    from routes import move_api
+    root = tmp_path / "count"
+    root.mkdir()
+    (root / "a").write_bytes(b"x" * 10)
+    (root / "b").write_bytes(b"y" * 5)
+    real = Path.stat
+    seen = []
+
+    def flaky(self, *a, **k):              # "b" passes is_file(), then is gone when its size is read
+        if self.name == "b":
+            seen.append(1)
+            if len(seen) > 1:
+                raise FileNotFoundError(self)
+        return real(self, *a, **k)
+    monkeypatch.setattr(Path, "stat", flaky)
+    assert move_api._used_bytes(root) == 10 and len(seen) == 2

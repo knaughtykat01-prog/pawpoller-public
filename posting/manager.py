@@ -120,7 +120,8 @@ def _final_status(result: PostResult, queued_for_desktop: bool, gave_up: str) ->
 
 def _schedule_retry(story_name: str, ch_idx: int, platform: str, action: str,
                     error: str, content_type: str = "story",
-                    account_id: int | None = None, variant_key: str = "") -> bool:
+                    account_id: int | None = None, variant_key: str = "",
+                    persona_id: int | None = None, draft: bool | None = None) -> bool:
     """Queue a retry for a failed post/update if under max attempts.
 
     Returns True if a retry was queued, False if it must not be retried.
@@ -187,6 +188,9 @@ def _schedule_retry(story_name: str, ch_idx: int, platform: str, action: str,
             # A retry must re-post the SAME render (4.34.0). Without this the row comes
             # back as the rating's pick, which for an alternate render is the primary.
             variant_key=variant_key,
+            # RETRYKEEPS (4.88.9): and the same draft choice and persona, or a failed draft comes
+            # back as a live post and the persona check is skipped when the retry fires.
+            persona_id=persona_id, draft=draft,
         )
         logger.info("Retry: %s ch%d on %s queued for %s (attempt %d/%d, account %s, error: %s)",
                      story_name, ch_idx, platform, scheduled, attempt + 1, max_attempts,
@@ -433,6 +437,15 @@ async def _comment_pass(kind: str, name: str, results: list[dict[str, Any]]) -> 
         await journals.journal_pass(kind, name, results)
     except Exception:
         logger.error("Journal pass failed for %s %s", kind, name, exc_info=True)
+
+
+def _owner_error(artwork, platform: str, account_id: int | None) -> str | None:
+    from posting.batch import owner_mismatch
+    conn = get_connection()
+    try:
+        return owner_mismatch(conn, artwork, platform, account_id)
+    finally:
+        conn.close()
 
 
 def _refused(platform: str, err: Exception, **extra) -> dict[str, Any]:
@@ -776,6 +789,8 @@ async def _post_story(
             retry_queued = False
             gave_up = ""
             # Unconfirmed (055): the upload may exist — no desktop queue, no retry.
+            # The draft choice, as the scheduler stores it (None = the site's own default).
+            _retry_draft = bool(extras["draft"]) if extras and "draft" in extras else None
             if not result.success and not result.unconfirmed:
                 from posting.scheduler import _runtime_mode
                 if poster.requires_mode == "desktop" and _runtime_mode == "server":
@@ -785,6 +800,7 @@ async def _post_story(
                             conn, story_name, ch_idx, platform, "post",
                             account_id=account_id,
                             requires="desktop",
+                            persona_id=persona_id, draft=_retry_draft,   # RETRYKEEPS
                         )
                         queued_for_desktop = True
                         logger.info(
@@ -796,7 +812,7 @@ async def _post_story(
                 elif not queued_for_desktop:
                     retry_queued = _schedule_retry(
                         story_name, ch_idx, platform, "post", result.error or "unknown",
-                        account_id=account_id,
+                        account_id=account_id, persona_id=persona_id, draft=_retry_draft,
                     )
                     if not retry_queued:
                         gave_up = _gave_up(story_name, ch_idx, platform, "post", result.error,
@@ -1185,6 +1201,10 @@ async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
         except ValueError as e:
             results.append(_refused(platform, e))
             continue
+        _own = _owner_error(artwork, platform, account_id)
+        if _own:                          # PERSONAOWN: publish now and every scheduled send pass here
+            results.append(_refused(platform, ValueError(_own)))
+            continue
         poster = _get_poster(platform, account_id)
         # Which render this site gets (4.33.0). A piece whose primary is adult used to be
         # refused outright on an SFW-only site even when an SFW variant of it existed;
@@ -1267,6 +1287,7 @@ async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
                             # the same image N times and the alternates never go out.
                             # posting_queue has no UNIQUE, so nothing dedupes them.
                             variant_key=(_variant or {}).get("key") or "",
+                            persona_id=persona_id,       # RETRYKEEPS (4.88.9)
                         )
                         queued_for_desktop = True
                         logger.info(
@@ -1280,7 +1301,7 @@ async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
                     retry_queued = _schedule_retry(
                         artwork_name, 0, platform, "post", result.error or "unknown",
                         content_type="artwork", account_id=account_id,
-                        variant_key=(_variant or {}).get("key") or "",
+                        variant_key=(_variant or {}).get("key") or "", persona_id=persona_id,
                     )
                     if not retry_queued:
                         gave_up = _gave_up(artwork_name, 0, platform, "post", result.error,

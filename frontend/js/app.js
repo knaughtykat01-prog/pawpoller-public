@@ -3149,7 +3149,7 @@ const App = {
        says whether the name matched. Every signed-in session ends on success.
        Spec 058: without a confirmed email, numbered steps for the reset on the machine
        itself, per install kind (a hosted seat gets "ask the person who runs it"). The
-       commands match docs/SETUP.md (tests/test_email_optional.py pins them). */
+       commands match docs/setup/AFTER_INSTALL.md (tests/test_email_optional.py pins them). */
     _resetSteps(kind) {
         const li = (items) => '<ol class="signup-steps">' + items.map(t => `<li>${t}</li>`).join('') + '</ol>';
         const after = '<p class="signup-hint">This signs out every browser. If you think someone else got in, open '

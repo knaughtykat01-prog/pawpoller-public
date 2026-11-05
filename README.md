@@ -46,7 +46,7 @@ PawPoller is a desktop app and self-hosted server for publishing fiction and art
 
 ## Quick Start
 
-Full walkthrough: [**docs/SETUP.md**](docs/SETUP.md) — one step-by-step guide with three paths: the desktop app, always on from a computer you already own (and reachable from your phone), or a rented server.
+Full walkthrough: [**docs/SETUP.md**](docs/SETUP.md) — a start page that sends you to one step-by-step guide for each of three paths: the desktop app, always on from a computer you already own (and reachable from your phone), or a rented server.
 
 ### Option A: Download the release (Desktop)
 
@@ -90,7 +90,7 @@ python main.py
 ### Option C: Docker (headless server)
 
 **Never set up a server before?** Follow
-[docs/SETUP.md, Path C](docs/SETUP.md#path-c-a-rented-server) instead — it starts from nothing
+[docs/setup/RENTED_SERVER.md, Path C](docs/setup/RENTED_SERVER.md) instead — it starts from nothing
 and goes one step at a time.
 
 ```bash
@@ -101,7 +101,7 @@ cp .env.example .env    # Edit with your credentials — set DASHBOARD_PASSWORD!
 docker compose up -d --build
 ```
 
-The dashboard binds to `127.0.0.1:8420` by default (loopback only), reachable at `http://localhost:8420` on the host. To reach it from other devices, put it behind a reverse proxy — or set `PAWPOLLER_BIND=0.0.0.0` in `.env`, but only with `DASHBOARD_PASSWORD` set. See [docs/SETUP.md, "A public web address"](docs/SETUP.md#a-public-web-address-instead-of-tailscale).
+The dashboard binds to `127.0.0.1:8420` by default (loopback only), reachable at `http://localhost:8420` on the host. To reach it from other devices, put it behind a reverse proxy — or set `PAWPOLLER_BIND=0.0.0.0` in `.env`, but only with `DASHBOARD_PASSWORD` set. See [docs/setup/ADVANCED.md, "A public web address"](docs/setup/ADVANCED.md#a-public-web-address-instead-of-tailscale).
 
 ---
 
@@ -293,7 +293,7 @@ python -m pytest tests/ -v
 PawPoller holds your login credentials for up to 26 platforms, so credential handling is
 treated as the core of the app: secrets are **always** stored in an encrypted vault
 (AES-128 + HMAC via Fernet), never in plaintext, with the key held in your OS keystore or an
-out-of-band env var on a server ([SETUP: the credential vault](docs/SETUP.md#the-credential-vault)).
+out-of-band env var on a server ([setup: the credential vault](docs/setup/ADVANCED.md#the-credential-vault)).
 
 The app is assessed against the **[OWASP ASVS 5.0](https://owasp.org/www-project-application-security-verification-standard/) Level 2** standard.
 The full self-assessment — all 253 L1/L2 requirements adjudicated with evidence, plus an

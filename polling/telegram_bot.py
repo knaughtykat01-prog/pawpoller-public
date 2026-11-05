@@ -932,6 +932,10 @@ async def _cmd_sync(token: str, chat_id: str, args: str) -> None:
             if not server_url:
                 await _send(token, chat_id, "❌ No server URL configured (posting_server_url)")
                 return
+            ok, why = config.is_trusted_transport(server_url)    # SEC4889: never the key over plain http
+            if not ok:
+                await _send(token, chat_id, f"❌ Server URL: {why}")
+                return
 
             # Tar + push
             buf = io.BytesIO()
