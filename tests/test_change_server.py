@@ -781,6 +781,8 @@ def harness(monkeypatch, tmp_path, srv):
         return w
     fake.create_window = create_window
     fake.start = lambda **kw: None
+    fake.util = types.SimpleNamespace(js_bridge_call=lambda *a: None)   # desktop_gate.harden (074) guards it
+    fake.initialize = lambda *a, **k: None
     monkeypatch.setitem(sys.modules, "webview", fake)
     import webbrowser
     monkeypatch.setattr(webbrowser, "open", webbrowser.open)   # run_connected guards it; restore after

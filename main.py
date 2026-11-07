@@ -32,6 +32,8 @@ Usage:
     PawPoller.exe   # frozen build
 """
 
+import copy
+import functools
 import logging
 import socket
 import sys
@@ -42,6 +44,7 @@ from datetime import datetime
 import uvicorn
 
 import config
+import desktop_gate
 from database.db import init_db
 
 
@@ -523,6 +526,198 @@ def main():
     return run_standalone()
 
 
+# ── 074 STANDALONEBRIDGE: the standalone window's five desktop actions ──────────────────────────────────────
+# No js_api object: pywebview resolves any dotted name a page sends on one, private names included, so a script
+# on a dashboard page could walk from it to the app's insides (spec 074, research R1). These five are exposed by
+# name (connected mode has its own, 072). Each answers only the app's own page (R2), checks its inputs before any
+# request, window or dialog (R6), and turns any failure into a fixed refusal: no error text reaches the page.
+_sa_webview = None              # the webview module the window was opened with (a stand-in in tests)
+_sa_window = None
+_sa_url = ""
+_helper_sender = None           # desktop_agent.HelperSender, set by run_standalone
+_journal_lock = threading.Lock()
+_journal_open = False           # one FA journal window at a time
+
+_REFUSALS: dict = {
+    "open_image_dialog": [],
+    "fa_journal": {"ok": False, "message": desktop_gate.MSG_FAILED},
+    "helper_signin": {"ok": False, "message": desktop_gate.MSG_FAILED},
+    "helper_http_ok": {"ok": False},
+    "helper_status": {"pending": 0, "message": ""},
+}
+
+
+class _Refused(Exception):
+    def __init__(self, value):
+        super().__init__("refused")
+        self.value = value
+
+
+def _on_own_page() -> bool:
+    try:
+        return _sa_window is not None and desktop_gate.own_page(_sa_window.get_current_url(), _sa_url)
+    except Exception:
+        return False
+
+
+def _still_own(name: str) -> None:
+    """Re-checked right before each effect: the page can change while a dialog or picker is open."""
+    if not _on_own_page():
+        raise _Refused(copy.deepcopy(_REFUSALS[name]))
+
+
+def _action(fn):
+    name = fn.__name__
+
+    @functools.wraps(fn)              # expose() registers by __name__
+    def action(*args):
+        refusal = copy.deepcopy(_REFUSALS[name])
+        try:
+            # WebView2 and Qt are the backends the permission patches cover (R7: mshtml/gtk fallbacks get nothing).
+            if getattr(_sa_webview, "renderer", None) not in ("edgechromium", "qtwebengine") or not _on_own_page():
+                return refusal
+            return fn(*args)          # a wrong number of arguments lands in the except: a plain refusal
+        except _Refused as r:
+            return r.value
+        except Exception as e:
+            logger.warning("Desktop action %s refused: %s", name, type(e).__name__)
+            return refusal
+    return action
+
+
+@_action
+def open_image_dialog():
+    """The Artwork hub picks a local image by path; the path is remembered so add-from-file takes it (once)."""
+    result = _sa_window.create_file_dialog(
+        _sa_webview.OPEN_DIALOG, allow_multiple=False,
+        file_types=("Image files (*.png;*.jpg;*.jpeg;*.gif;*.webp)", "All files (*.*)"))
+    paths = [p for p in (result or ()) if isinstance(p, str)]
+    _still_own("open_image_dialog")
+    for p in paths:
+        desktop_gate.remember_pick(p)
+    return paths
+
+
+def _journal_closed() -> None:
+    global _journal_open
+    with _journal_lock:
+        _journal_open = False
+
+
+@_action
+def fa_journal(post_id, title, message, rating):
+    """Spec 027: FA's journal page, filled in (the person does the CAPTCHA and presses Post)."""
+    global _journal_open
+    if not ((post_id is None or (type(post_id) is int and post_id >= 1)) and isinstance(title, str) and len(title) <= 1024
+            and isinstance(message, str) and len(message) <= 65_536 and rating in ("0", "1", "2")):
+        return {"ok": False, "message": desktop_gate.MSG_FAILED}
+    with _journal_lock:
+        if _journal_open:
+            return {"ok": False, "message": desktop_gate.MSG_JOURNAL_OPEN}
+        _journal_open = True
+    opened = False
+    try:
+        from auth.fa_journal_window import open_fa_journal
+        from posting import journals
+
+        def _posted(jid, link):
+            if post_id:
+                journals.record_manual(post_id, "fa", jid, link)
+        _still_own("fa_journal")
+        res = open_fa_journal(title, message, rating, _posted, on_closed=_journal_closed)
+        opened = isinstance(res, dict) and res.get("ok") is True
+        if opened:
+            return {"ok": True}
+        msg = res.get("message") if isinstance(res, dict) else None
+        return {"ok": False, "message": msg if isinstance(msg, str) else desktop_gate.MSG_FAILED}
+    finally:
+        if not opened:
+            _journal_closed()
+
+
+def _login_via_browser(platform):
+    from auth.browser_login import login_via_browser
+    return login_via_browser(platform, account_id=None, save=False)
+
+
+class _CheckedQueue:
+    """The hand-over queue, re-checking the page before anything is queued."""
+
+    def __init__(self, q):
+        self._q = q
+
+    def add(self, kind, payload):
+        _still_own("helper_signin")
+        return self._q.add(kind, payload)
+
+
+@_action
+def helper_signin(server, code):
+    """Spec 059: sign in for a server. The yes is a desktop dialog raised here, so a script can't give it."""
+    import desktop_agent
+    s, c = desktop_agent.check_server(server), desktop_agent.check_code(code)
+    if s is None:
+        return {"ok": False, "message": desktop_gate.MSG_BAD_SERVER}
+    if c is None:
+        return {"ok": False, "message": desktop_gate.MSG_BAD_CODE}
+
+    def _confirm(title, text):
+        answer = desktop_gate.ask("signin", title, text)
+        if answer == "busy":
+            raise _Refused({"ok": False, "message": desktop_gate.MSG_BUSY})
+        return answer == "yes" and _on_own_page()
+
+    def _login(platform):
+        _still_own("helper_signin")
+        return _login_via_browser(platform)
+    return desktop_agent.helper_signin(s, c, confirm=_confirm, login_fn=_login,
+                                       queue=_CheckedQueue(_helper_sender.queue))  # pyright: ignore[reportArgumentType]  (duck-typed: only .add is used)
+
+
+@_action
+def helper_http_ok(server, yes=True):
+    """This computer's own yes to plain http for a server (SEC059). Answers only whether it worked (FR-005)."""
+    import desktop_agent
+    s = desktop_agent.check_server(server)
+    if s is None or not isinstance(yes, bool):
+        return {"ok": False}
+    if yes:
+        host = desktop_agent.clean_label(desktop_agent.ascii_host(s), 253)
+        if desktop_gate.ask("http_ok", "Allow plain http?",
+                            f"Allow sign-ins without encryption for {host}? Only say yes for a server in your "
+                            f"own home.") != "yes":
+            return {"ok": False}
+    _still_own("helper_http_ok")
+    desktop_agent.set_http_ok(s, yes)
+    return {"ok": True}
+
+
+@_action
+def helper_status():
+    return {"pending": _helper_sender.queue.pending_count(), "message": _helper_sender.last_message}
+
+
+STANDALONE_ACTIONS = (open_image_dialog, fa_journal, helper_signin, helper_http_ok, helper_status)
+
+
+def _desktop_confirm(title, text):
+    w = _sa_window
+    return w.create_confirmation_dialog(title, text) if w is not None else None
+
+
+def _open_standalone_window(webview, url):
+    """The standalone window's whole setup in one place, so the tests drive what ships (074 R1, R5)."""
+    global _sa_webview, _sa_window, _sa_url
+    desktop_gate.harden(webview)                 # before any window: transport guard + permissions
+    _sa_webview, _sa_url = webview, url
+    desktop_gate.set_confirm(_desktop_confirm)   # turns on the folder rule (FR-SEC-008)
+    w = webview.create_window("PawPoller", url=url, width=1200, height=800, min_size=(800, 500))
+    desktop_gate.mark_standalone(w, url)
+    _sa_window = w
+    w.expose(*STANDALONE_ACTIONS)
+    return w
+
+
 def run_connected(server_url: str, api_key: str):
     """A window onto the server + the local agent (SYNCTRUTH, 4.13.0).
 
@@ -534,6 +729,7 @@ def run_connected(server_url: str, api_key: str):
     import webview
     webview.settings["ALLOW_DOWNLOADS"] = True   # 4.71.0: moving files and backups save to Downloads
     _guard_external_links()
+    desktop_gate.harden(webview)                 # 074: transport guard + permissions, before any window
     import desktop_agent
 
     # A desktop that just migrated from paired mode still has the old copy on disk (4.14.0).
@@ -592,7 +788,7 @@ def run_connected(server_url: str, api_key: str):
 
 
 def run_standalone():
-    global _tray_icon, _window
+    global _tray_icon, _window, _helper_sender
 
     # --- Step 0: Update before anything loads (4.9.0) --- (now in main(); kept as a no-op marker)
     # Packaged builds only, timeboxed, fails open. When a newer release exists
@@ -763,96 +959,12 @@ def run_standalone():
     webview.settings["ALLOW_DOWNLOADS"] = True   # 4.71.0: moving files and backups save to Downloads
     _guard_external_links()
 
-    class _DesktopApi:
-        """JS bridge exposed to the dashboard as window.pywebview.api.*.
-
-        Each method is callable from the frontend and returns a Promise on the
-        JS side. The Artwork hub uses open_image_dialog so the desktop app can
-        pick a local image by path (copied into the archive server-side) instead
-        of round-tripping the bytes through a browser upload.
-        """
-        def open_image_dialog(self):
-            try:
-                win = webview.windows[0] if webview.windows else None
-                if win is None:
-                    return []
-                result = win.create_file_dialog(
-                    webview.OPEN_DIALOG,
-                    allow_multiple=False,
-                    file_types=(
-                        "Image files (*.png;*.jpg;*.jpeg;*.gif;*.webp)",
-                        "All files (*.*)",
-                    ),
-                )
-                return list(result) if result else []
-            except Exception as e:
-                logger.error("open_image_dialog failed: %s", e)
-                return []
-
-        def fa_journal(self, post_id, title, message, rating):
-            """Spec 027: FA's journal page, filled in (the person does the CAPTCHA and presses Post)."""
-            from auth.fa_journal_window import open_fa_journal
-            from posting import journals
-
-            def _posted(jid, link):
-                if post_id:
-                    journals.record_manual(int(post_id), "fa", jid, link)
-            try:
-                return open_fa_journal(str(title or ""), str(message or ""), str(rating or "0"), _posted)
-            except Exception as e:
-                return {"ok": False, "message": str(e)}
-
-        # Spec 059 — Sign in for a server. Here only, never on the connected window's AgentApi,
-        # so a server's own page can't call it; and the confirmation is a native dialog raised
-        # in Python, so a script calling this still has to get past the person (M-new-1).
-        def helper_signin(self, server, code):
-            import desktop_agent
-            from auth.browser_login import login_via_browser
-
-            def _confirm(title, message):
-                win = webview.windows[0] if webview.windows else None
-                return win.create_confirmation_dialog(title, message) if win else None
-            try:
-                return desktop_agent.helper_signin(
-                    str(server or ""), str(code or ""), confirm=_confirm, queue=_helper_sender.queue,
-                    login_fn=lambda p: login_via_browser(p, account_id=None, save=False))
-            except Exception as e:
-                logger.error("Sign in for a server failed: %s", type(e).__name__)
-                return {"ok": False, "message": "Something went wrong. Try again."}
-
-        def helper_http_ok(self, server, yes=True):
-            # The yes is asked in a native dialog, so a script in this window can't give it (SEC059).
-            import desktop_agent
-            if yes:
-                win = webview.windows[0] if webview.windows else None
-                host = desktop_agent.ascii_host(str(server or ""))
-                if not win or win.create_confirmation_dialog(
-                        "Allow plain http?",
-                        f"Allow sign-ins without encryption for {host}? Only say yes for a server in your "
-                        f"own home.") is not True:
-                    return {"ok": False, "servers": desktop_agent.http_ok_list()}
-            return {"ok": True, "servers": desktop_agent.set_http_ok(str(server or ""), bool(yes))}
-
-        def helper_http_ok_list(self):
-            import desktop_agent
-            return desktop_agent.http_ok_list()
-
-        def helper_status(self):
-            return {"pending": _helper_sender.queue.pending_count(), "message": _helper_sender.last_message}
-
     import desktop_agent as _da
     _helper_sender = _da.HelperSender()
     _helper_sender.start()
 
     logger.info("Opening native window at %s", url)
-    _window = webview.create_window(
-        "PawPoller",
-        url=url,
-        width=1200,
-        height=800,
-        min_size=(800, 500),
-        js_api=_DesktopApi(),
-    )
+    _window = _open_standalone_window(webview, url)   # 074: five named actions, no js_api object
 
     # Register the closing callback so we can intercept the close event
     # and redirect to tray instead of exiting (when that setting is on).

@@ -51,6 +51,10 @@ The page is **Story Archive Location**.
 
 - If you write stories, type the folder where they live (or where you'd like them to live), for
   example `C:\Stories`, and click **Next**.
+- A small window asks **"PawPoller: change your story folder?"** and shows the folder. Check it's the
+  right one and click **Yes**. (If you click **No**, nothing is saved and you stay on this page.)
+- Use a folder on this computer. A folder on another computer or a network drive is refused, and the
+  page says so under the box.
 - If you only post artwork, click **Skip**.
 
 **Step 7. Skip the platforms for now.**

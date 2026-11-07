@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 import config
+import desktop_gate
 
 logger = logging.getLogger(__name__)
 backup_router = APIRouter(prefix="/api/backup", tags=["backup"])
@@ -194,6 +195,37 @@ def sync_media_mirror(out_dir: Path) -> dict:
 _AUTO_DEFAULTS = {"interval_hours": 24, "keep": 7}
 
 
+# 074 (R5): a restore keeps this computer's own folders, its own yes to plain http and its own gallery-dl program;
+# a backup made elsewhere (or crafted) must not point them anywhere. All are in config.SYNC_EXCLUDE too.
+_KEEP_ON_RESTORE = ("posting_story_archive_path", "artwork_archive_path", "auto_backup_dir", "signin_helper_http_ok",
+                    "tw_gallerydl_path")       # a program PawPoller runs: never chosen by a backup
+
+
+def _keep_local_settings(live: Path, incoming: Path) -> None:
+    """Rewrite the extracted settings.json before it is copied over the live one: this computer's values of the
+    kept keys, and a key this computer lacks removed. Plain JSON keys, so the vault and auto-sync aren't touched."""
+    if not incoming.is_file():
+        return
+    try:
+        theirs = json.loads(incoming.read_text("utf-8"))
+    except ValueError:
+        theirs = None
+    if not isinstance(theirs, dict):
+        raise HTTPException(400, detail="The backup's settings are unreadable.")
+    try:
+        here = json.loads(live.read_text("utf-8")) if live.is_file() else {}
+    except ValueError:
+        here = {}
+    if not isinstance(here, dict):
+        here = {}
+    for k in _KEEP_ON_RESTORE:
+        if k in here:
+            theirs[k] = here[k]
+        else:
+            theirs.pop(k, None)
+    incoming.write_text(json.dumps(theirs, indent=2), encoding="utf-8")
+
+
 def _auto_backup_dir() -> Path:
     s = config.get_settings()
     return Path(s.get("auto_backup_dir") or str(_data_dir() / "auto-backups"))
@@ -338,7 +370,7 @@ def auto_backup_config(body: dict):
     if body.get("keep") is not None:
         updates["auto_backup_keep"] = max(1, int(body["keep"]))
     if body.get("dir"):
-        updates["auto_backup_dir"] = str(body["dir"]).strip()
+        updates["auto_backup_dir"] = str(desktop_gate.folder_or_400("auto_backup_dir", body["dir"])).strip()   # 074
     if updates:
         config.save_settings(updates)
     ran = None
@@ -438,6 +470,10 @@ async def import_backup(file: UploadFile = File(...)):
             if cur.is_file():
                 shutil.copy2(cur, safety / f)
 
+        # 074 (R5): taken from THIS computer before anything is copied, so the zip never picks the folder.
+        mirror_base = _auto_backup_dir() if manifest.get("media_mirror") == MEDIA_MIRROR else None
+        _keep_local_settings(dd / "settings.json", src_data / "settings.json")
+
         restored = []
         for f in _BACKUP_FILES:
             sp = src_data / f
@@ -448,7 +484,7 @@ async def import_backup(file: UploadFile = File(...)):
         # zips on this machine. Restore from it when the zip names one.
         # RESTOREMIRROR (4.46.2): the name comes from the uploaded file, so only OUR mirror name is
         # honoured — anything else could point the restore at same-named folders elsewhere on disk.
-        mirror = _auto_backup_dir() / MEDIA_MIRROR if manifest.get("media_mirror") == MEDIA_MIRROR else None
+        mirror = mirror_base / MEDIA_MIRROR if mirror_base is not None else None
         for d in _BACKUP_DIRS:
             sd = src_data / d
             if not sd.is_dir() and mirror is not None and (mirror / d).is_dir():

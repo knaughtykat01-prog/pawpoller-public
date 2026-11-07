@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
 
 import config
+import desktop_gate
 from database.db import get_connection
 from database import platform_metrics
 from database import posting_queries
@@ -1105,8 +1106,12 @@ def save_posting_settings(body: dict):
     # Spec 071: a privacy switch takes a real boolean only; "false" / 0 / null never turns it off.
     if not isinstance(filtered.get("posting_strip_metadata", True), bool):
         filtered.pop("posting_strip_metadata")
+    if "posting_story_archive_path" in filtered:      # last: the question comes after every other check
+        filtered["posting_story_archive_path"] = desktop_gate.folder_or_400("posting_story_archive_path",
+                                                         filtered["posting_story_archive_path"])
     config.save_settings(filtered)
     return {"status": "saved"}
+
 
 
 # ── Claim: Retroactive sync ───────────────────────────────────

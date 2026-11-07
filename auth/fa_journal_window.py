@@ -58,8 +58,9 @@ def posted_journal(url: str) -> str:
     return m.group(1) if m else ""
 
 
-def open_fa_journal(title: str, message: str, rating: str, on_posted=None) -> dict:
-    """Open FA's journal page filled in. Returns at once ({"ok": True}); the window lives on its own."""
+def open_fa_journal(title: str, message: str, rating: str, on_posted=None, on_closed=None) -> dict:
+    """Open FA's journal page filled in. Returns at once ({"ok": True}); the window lives on its own.
+    *on_closed* is called when that window closes (074: one journal window at a time)."""
     try:
         import webview
     except ImportError:
@@ -91,4 +92,6 @@ def open_fa_journal(title: str, message: str, rating: str, on_posted=None) -> di
             logger.debug("FA journal window: %s", e)
 
     win.events.loaded += _on_loaded
+    if on_closed is not None:
+        win.events.closed += on_closed
     return {"ok": True}

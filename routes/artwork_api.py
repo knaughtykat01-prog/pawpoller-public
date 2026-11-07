@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 
 import config
+import desktop_gate
 from database.db import get_connection
 from database import posting_queries
 from mirror import core as mirror_core
@@ -237,9 +238,22 @@ def create_artwork_from_path(body: dict):
     from posting.scheduler import detect_runtime_mode
     if detect_runtime_mode() != "desktop":
         raise HTTPException(403, detail="create-from-path is desktop-only; use /upload")
-    path = (body.get("path") or "").strip()
-    if not path:
+    raw = body.get("path")
+    if not isinstance(raw, str) or not raw.strip():
         raise HTTPException(400, detail="path is required")
+    path = raw.strip()
+    # 074 FR-SEC-006: only a file the desktop picker returned this run, once. Checked before anything is read,
+    # with one answer whether or not the file exists.
+    if not desktop_gate.take_pick(path):
+        raise HTTPException(400, detail=desktop_gate.MSG_NOT_PICKED)
+    try:
+        return _create_from_picked(path, body)
+    except Exception:
+        desktop_gate.remember_pick(path)   # a failed save keeps the pick, so Save can be pressed again
+        raise
+
+
+def _create_from_picked(path: str, body: dict):
     src = Path(path)
     if not src.is_file():
         raise HTTPException(404, detail=f"File not found: {path}")
@@ -254,20 +268,10 @@ def create_artwork_from_path(body: dict):
     if not isinstance(meta, dict):
         raise HTTPException(400, detail="metadata must be an object")
 
-    thumb_path = (body.get("thumbnail_path") or "").strip()
-    thumb_bytes = None
-    thumb_name = None
-    if thumb_path and Path(thumb_path).is_file():
-        _validate_image_name(Path(thumb_path).name)
-        thumb_bytes = Path(thumb_path).read_bytes()
-        if len(thumb_bytes) > _MAX_UPLOAD_BYTES:
-            raise HTTPException(413, detail="Thumbnail exceeds the 50 MB archive cap")
-        thumb_name = Path(thumb_path).name
-
     # 4.18.0: the desktop path cannot measure in the browser; a video / audio primary gets a
     # placeholder poster here and the page replaces it (POST /poster) once it has measured the file.
-    if kind != "image" and not thumb_bytes:
-        thumb_bytes, thumb_name = _PLACEHOLDER_POSTER, "poster-pending.png"
+    # (074: a second file named by path, `thumbnail_path`, is no longer read; no page sent one.)
+    thumb_bytes, thumb_name = (_PLACEHOLDER_POSTER, "poster-pending.png") if kind != "image" else (None, None)
     try:
         name = artwork_reader.create_artwork(
         title=meta.get("title", "") or src.stem.replace("_", " "),
@@ -966,8 +970,13 @@ def save_artwork_settings(body: dict):
         "artwork_watermark_enabled", "artwork_watermark_text",
         "artwork_watermark_position", "artwork_watermark_opacity",
     }
-    config.save_settings({k: v for k, v in body.items() if k in allowed_keys})
+    art_settings = {k: v for k, v in body.items() if k in allowed_keys}
+    if "artwork_archive_path" in art_settings:
+        art_settings["artwork_archive_path"] = desktop_gate.folder_or_400("artwork_archive_path",
+                                                                          art_settings["artwork_archive_path"])
+    config.save_settings(art_settings)
     return {"status": "saved"}
+
 
 
 # ── Desktop ⇄ server media sync (tar.gz) ──────────────────────

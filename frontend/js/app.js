@@ -4234,6 +4234,7 @@ const App = {
                         <label>Archive path</label>
                         <input type="text" id="setup-archive-path" class="search-input" value="${Utils.escapeHtml(archivePath)}" placeholder="e.g. C:\\Stories or /home/user/stories" style="width:100%">
                         <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Each story gets its own folder with Markdown, HTML, BBCode, and PDF files.</div>
+                        <div id="setup-archive-error" role="alert" style="font-size:12px;color:var(--danger);margin-top:6px"></div>
                     </div>
                     <div style="display:flex;gap:8px;margin-top:8px">
                         ${currentIdx > 0 ? '<button class="btn" id="setup-back" style="flex:0 0 auto;background:transparent;color:var(--text-muted);border:1px solid var(--border)">Back</button>' : ''}
@@ -4585,7 +4586,10 @@ const App = {
                             await API.savePostingSettings({ posting_story_archive_path: path });
                             archivePath = path;
                         } catch (err) {
-                            console.warn('[Setup] Failed to save archive path:', err);
+                            // 074: the desktop app asks before a folder changes; a "no" or a refused folder stays here, said plainly
+                            const box = document.getElementById('setup-archive-error');
+                            if (box) box.textContent = err.message || 'That folder could not be saved.';
+                            return;
                         }
                     }
                 }

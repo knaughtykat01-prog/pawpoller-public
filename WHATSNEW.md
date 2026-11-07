@@ -2,6 +2,15 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.88.10] - 2026-11-06 - A tighter desktop window
+
+> - The desktop app's window gives its pages only the buttons they use, and only on PawPoller's own pages.
+> - Changing your story, artwork or backup folder in the desktop app now asks you in a desktop box first.
+> - Restoring a backup keeps this computer's own folders and gallery-dl program instead of taking them from the backup.
+> - The desktop app no longer lets a page use your camera, microphone or screen.
+> - Adding art from a file in the desktop app takes only a file you picked from your computer.
+> - A link in the desktop app's window can no longer start another program on your computer.
+
 ## [4.88.9] - 2026-11-05 - Pen names kept apart, small safety fixes
 
 > - A piece that belongs to one pen name can no longer be posted or scheduled on another pen name's account.
@@ -238,8 +247,3 @@ Generated from the release notes: each version's plain-language summary.
 
 > - Instagram posts from a hosted seat work again: the seat now hosts the picture for Instagram itself.
 > - A hosted seat no longer offers its Instagram relay to other people's PawPoller apps.
-
-## [4.82.1] - 2026-10-19 - FurAffinity credit line off
-
-> - Posts to FurAffinity no longer get the "Posted via PawPoller" line. FA's staff count a link to PawPoller as against their rules, so it's left off there to keep your account safe.
-> - The printable guide PDFs no longer contain links to a file on the computer that made them.

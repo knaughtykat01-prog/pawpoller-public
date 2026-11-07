@@ -24,6 +24,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import threading
 import time
@@ -566,6 +567,48 @@ def ascii_host(server: str) -> str:
         return host.encode("ascii", "replace").decode()
 
 
+_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", re.ASCII)
+
+
+def check_server(v) -> str | None:
+    """A page's server address, checked before any request or dialog (074 R6): a ``str`` of at most 2048
+    characters, http/https, a hostname that is a DNS name after IDNA or an IP literal, no user part, a valid
+    port. Returns it stripped (no trailing slash), else None."""
+    import ipaddress
+    from urllib.parse import urlsplit
+    if not isinstance(v, str) or len(v) > 2048:
+        return None
+    s = v.strip().rstrip("/")
+    try:
+        p = urlsplit(s)
+        host, _port = p.hostname, p.port
+    except ValueError:
+        return None
+    if p.scheme not in ("http", "https") or not host or p.username is not None or p.password is not None:
+        return None
+    try:
+        ipaddress.ip_address(host)
+        return s
+    except ValueError:
+        pass
+    try:
+        a = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        return None
+    if len(a) > 253 or not all(_LABEL.fullmatch(label) for label in a.split(".")):
+        return None
+    return s
+
+
+def check_code(v) -> str | None:
+    """A sign-in code normalised as the server does it, then exactly its alphabet and length (074 R6)."""
+    from routes.signin_helper_api import CODE_ALPHABET, CODE_LEN, _norm
+    if not isinstance(v, str) or len(v) > 64:
+        return None
+    c = _norm(v)
+    return c if len(c) == CODE_LEN and all(ch in CODE_ALPHABET for ch in c) else None
+
+
 def http_ok_list(settings: dict | None = None) -> list[str]:
     s = config.get_settings() if settings is None else settings
     return [str(x) for x in (s.get("signin_helper_http_ok") or []) if isinstance(x, str)]
@@ -625,7 +668,7 @@ def helper_signin(server: str, code: str, *, confirm, login_fn, http=None, queue
             return {"ok": False, "message": "This PawPoller doesn't know that site. Update the desktop app."}
         if plain_http and info.get("allow_http") is not True:
             return {"ok": False, "message": MSG_TLS}
-        site, host, label = cfg["name"], ascii_host(server), clean_label(info.get("account_label"))
+        site, host, label = cfg["name"], clean_label(ascii_host(server), 253), clean_label(info.get("account_label"))
         if plain_http:
             title = "Sign in without encryption?"
             text = (f"Server: {host}\nThis sends your {site} sign-in to {host} without encryption. Anyone else "

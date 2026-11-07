@@ -839,6 +839,9 @@ SYNC_EXCLUDE = frozenset({
     "posting_story_archive_path",
     "artwork_archive_path",
     "auto_backup_dir",
+    # A program PawPoller runs (clients/tw/gallerydl.py). From another box (a sync, a moving file, a backup
+    # restore, 074 review) it would name a file to execute; it's set by hand on the computer it runs on.
+    "tw_gallerydl_path",
     # Public base URL used to build image links for Instagram's fetcher — it is
     # whatever THIS instance is reachable at, so a desktop's value (typically
     # localhost) would make the server hand Meta an unfetchable URL.
@@ -1387,7 +1390,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.88.9"
+APP_VERSION = "4.88.10"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).
