@@ -228,7 +228,10 @@ def _keep_local_settings(live: Path, incoming: Path) -> None:
 
 def _auto_backup_dir() -> Path:
     s = config.get_settings()
-    return Path(s.get("auto_backup_dir") or str(_data_dir() / "auto-backups"))
+    chosen = s.get("auto_backup_dir")
+    if chosen and not config.hosted_folder_ok("auto_backup_dir", chosen):     # SEATFOLDERS: one saved before 4.88.11
+        chosen = None
+    return Path(chosen or str(_data_dir() / "auto-backups"))
 
 
 def run_auto_backup() -> dict:

@@ -68,6 +68,8 @@ def open_fa_journal(title: str, message: str, rating: str, on_posted=None, on_cl
     if not getattr(webview, "windows", None):
         return {"ok": False, "message": "This only works in the PawPoller desktop app."}
     win = webview.create_window("FurAffinity journal — PawPoller", JOURNAL_PAGE, width=1000, height=820)
+    import desktop_gate
+    desktop_gate.mark_site_page(win)                # FA's page can't open a native message box (SEC4810 (1))
     state = {"filled": False, "done": False}
     script = fill_script(title, message, rating)
 

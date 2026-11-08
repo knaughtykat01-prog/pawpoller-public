@@ -381,6 +381,27 @@ def credentials_generation() -> int:
 HOSTED_INTERVALS_DEFAULT = (240, 360, 480, 720, 1440)
 
 
+def hosted_folder_ok(key: str, path) -> bool:
+    """On a hosted seat a folder setting stays inside the seat's own data folder; the backup folder may also be
+    the one the box set (PAWPOLLER_AUTO_BACKUP_DIR). Anywhere else (desktop, self-hosted): always True.
+
+    SEATFOLDERS: else a seat owner points the artwork folder at the container's root and reads it back through
+    the mirror routes, or at the turn folder every seat shares."""
+    if os.environ.get("PAWPOLLER_HOSTED") != "1" or path in (None, ""):
+        return True
+    if not isinstance(path, str):
+        return False
+    roots = [Path(DATA_DIR)]
+    box_backups = (os.environ.get("PAWPOLLER_AUTO_BACKUP_DIR") or "").strip()
+    if key == "auto_backup_dir" and box_backups:
+        roots.append(Path(box_backups))
+    try:
+        p = Path(path.strip()).resolve()
+        return any(p == r.resolve() or r.resolve() in p.parents for r in roots)
+    except (OSError, ValueError, RuntimeError):
+        return False
+
+
 def hosted_intervals() -> list[int] | None:
     """The allowed intervals on a hosted seat, or None anywhere else (desktop, self-hosted)."""
     if os.environ.get("PAWPOLLER_HOSTED") != "1":
@@ -1390,7 +1411,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.88.10"
+APP_VERSION = "4.88.11"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).

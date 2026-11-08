@@ -230,6 +230,9 @@ def import_artwork(platform: str, submission_id: str) -> dict:
         raise ValueError(f"Submission {submission_id} not found for {platform}")
 
     d = dict(row)
+    from database.accounts import NEVER_POST_IMPORT_ERROR, from_never_post
+    if from_never_post(d):
+        raise ValueError(NEVER_POST_IMPORT_ERROR)
     kind = _non_image_type_label(d)
     if kind:
         raise ValueError(

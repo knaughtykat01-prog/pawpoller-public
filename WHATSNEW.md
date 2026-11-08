@@ -2,6 +2,16 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.88.11] - 2026-11-08 - Security fixes
+
+> - Art and posts found on an account marked "Never post" are no longer offered for import into your Library or Posts.
+> - Deleting a piece or a story can no longer reach the whole archive folder by mistake.
+> - Saving the Turnstile login protection with the secret box left empty keeps your saved key instead of turning protection off.
+> - Turnstile protection now has its own Turn off button.
+> - Connecting or adding a Mastodon account only accepts a public server address starting with https.
+> - On a hosted PawPoller, the artwork, story and backup folders stay inside its own storage.
+> - FurAffinity's journal page and sign-in pages in the desktop app can no longer pop up a Windows message box.
+
 ## [4.88.10] - 2026-11-06 - A tighter desktop window
 
 > - The desktop app's window gives its pages only the buttons they use, and only on PawPoller's own pages.
@@ -242,8 +252,3 @@ Generated from the release notes: each version's plain-language summary.
 > - A newly earned medal gets a shine, result notes slide in, and buttons press down when clicked.
 > - If your computer is set to reduce motion, all of these change at once with no animation.
 > - You now get a note when PawPoller loses its connection to the server, and another when it's back.
-
-## [4.82.2] - 2026-10-20 - Instagram on hosted seats
-
-> - Instagram posts from a hosted seat work again: the seat now hosts the picture for Instagram itself.
-> - A hosted seat no longer offers its Instagram relay to other people's PawPoller apps.

@@ -17885,11 +17885,12 @@ const App = {
                     </div>
                     <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:8px">
                         <label style="font-size:13px;color:var(--text-muted)">Secret Key</label>
-                        <input type="password" id="sec-ts-secret" class="search-input" placeholder="0x..." style="max-width:400px">
+                        <input type="password" id="sec-ts-secret" class="search-input" placeholder="Leave blank to keep the saved one" style="max-width:400px">
                     </div>
                     <div style="margin-top:12px;display:flex;align-items:center;gap:12px">
                         <button class="btn btn-primary" id="sec-ts-save-btn">Save Turnstile Config</button>
-                        <span id="sec-ts-msg" style="font-size:13px"></span>
+                        <button class="btn btn-secondary" id="sec-ts-off">Turn off</button>
+                        <span id="sec-ts-msg" style="font-size:13px" role="status"></span>
                     </div>
                     </div>
                 </details>
@@ -22603,17 +22604,17 @@ const App = {
                 } catch {}
             })();
 
-            document.getElementById('sec-ts-save-btn')?.addEventListener('click', async () => {
-                const btn = document.getElementById('sec-ts-save-btn');
+            // A blank box keeps the saved key (SEC069 (2)); turning protection off is its own button.
+            const sendTurnstile = async (btn, body) => {
                 const msg = document.getElementById('sec-ts-msg');
-                const siteKey = document.getElementById('sec-ts-sitekey').value.trim();
-                const secretKey = document.getElementById('sec-ts-secret').value.trim();
                 btn.disabled = true;
                 msg.textContent = '';
                 try {
-                    const result = await API.saveTurnstileConfig({ site_key: siteKey, secret_key: secretKey });
+                    const result = await API.saveTurnstileConfig(body);
                     msg.textContent = result.message;
                     msg.style.color = 'var(--success)';
+                    document.getElementById('sec-ts-secret').value = '';
+                    if (body.off) document.getElementById('sec-ts-sitekey').value = '';
                 } catch (err) {
                     let m = err.message.replace(/^API \d+:\s*/, '');
                     try { m = JSON.parse(m).detail || m; } catch {}
@@ -22621,7 +22622,12 @@ const App = {
                     msg.style.color = 'var(--danger)';
                 }
                 btn.disabled = false;
-            });
+            };
+            document.getElementById('sec-ts-save-btn')?.addEventListener('click', (e) => sendTurnstile(e.currentTarget, {
+                site_key: document.getElementById('sec-ts-sitekey').value.trim(),
+                secret_key: document.getElementById('sec-ts-secret').value.trim(),
+            }));
+            document.getElementById('sec-ts-off')?.addEventListener('click', (e) => sendTurnstile(e.currentTarget, { off: true }));
 
             // ── Publishing tab event handlers ─────────────────────────
             // 4.25.0: the Server Sync block moved to Connection; its Save presses the one shared handler.

@@ -231,6 +231,8 @@ def _resolve_story_dir(story_name: str) -> Path:
         candidate.relative_to(archive.resolve())
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid story path")
+    if candidate == archive.resolve():      # "." is the archive itself; delete_story would rmtree it
+        raise HTTPException(status_code=400, detail="Invalid story path")
     if candidate.is_dir():
         return candidate
     raise HTTPException(status_code=404, detail=f"Story not found: {story_name}")

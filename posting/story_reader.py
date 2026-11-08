@@ -159,7 +159,7 @@ def get_archive_path() -> Path:
     """
     settings = config.get_settings()
     custom = settings.get("posting_story_archive_path", "")
-    if custom and os.path.isdir(custom):
+    if custom and os.path.isdir(custom) and config.hosted_folder_ok("posting_story_archive_path", custom):
         return Path(custom)
     # Docker: bind-mounted at /app/story-archive
     docker_mount = Path("/app/story-archive")

@@ -15,6 +15,7 @@ Design: specs/074-standalone-bridge/research.md R2-R8.
 """
 from __future__ import annotations
 
+import json
 import logging
 import ntpath
 import posixpath
@@ -39,6 +40,8 @@ MSG_FOLDER_REFUSED = "The folder wasn't changed."
 MSG_FOLDER_NETWORK = ("Choose a folder on this computer's own drive. A network folder can't be used for this "
                       "in the desktop app.")
 MSG_JOURNAL_OPEN = "FurAffinity's journal page is already open."
+MSG_FOLDER_SEAT = ("On a hosted PawPoller your folders stay in its own storage. Leave this empty to use the "
+                   "usual folder.")
 
 
 # ── own page (R2) ─────────────────────────────────────────────────────────────
@@ -148,7 +151,11 @@ def _odd_text(s: str) -> bool:
 
 def check_folder_change(key: str, old, new) -> tuple[str | None, object]:
     """``(None, value)``: save exactly *value*. ``(message, None)``: refuse, save nothing from the request.
-    Inactive (``(None, new)``) unless the standalone window set a confirm: a headless server is unchanged."""
+    Inactive (``(None, new)``) unless the standalone window set a confirm: a headless server is unchanged,
+    except a hosted seat, whose folders stay inside its own storage (SEATFOLDERS)."""
+    import config
+    if not config.hosted_folder_ok(key, new.strip() if isinstance(new, str) else new):
+        return MSG_FOLDER_SEAT, None
     if _confirm is None:
         return None, new
     if not isinstance(new, str) or len(new) > 260:
@@ -211,6 +218,12 @@ def _make_guard(original):
 def mark_standalone(window, start_url: str) -> None:
     """The standalone main window: WebView2 also checks each message's own page against *start_url*."""
     window._pp_start_url = start_url
+
+
+def mark_site_page(window) -> None:
+    """A window showing another site's pages (FA journal, a sign-in): its alerts aren't shown (SEC4810 (1)).
+    pywebview turns a page's alert() into a native Windows message box before any guard runs."""
+    window._pp_site_page = True
 
 
 def harden(webview) -> None:
@@ -310,11 +323,23 @@ def _patch_edge(ec) -> None:
                 ok = False
             if not ok:
                 return None                        # a message from another page in the standalone window
+        elif getattr(getattr(edge, "pywebview_window", None), "_pp_site_page", False) and _is_alert(args):
+            return None        # SEC4810 (1): a site's page (FA journal, sign-in) can't open a native message box
         return orig_notify(edge, sender, args)
 
     cls.on_webview_ready = on_webview_ready
     cls.on_script_notify = on_script_notify
     cls._pp_patched = True
+
+
+def _is_alert(args) -> bool:
+    """pywebview's alert message, which it shows as a native message box before any guard sees it.
+    Anything unreadable → False (pywebview handles it as before)."""
+    try:
+        msg = json.loads(args.get_WebMessageAsJson())
+        return isinstance(msg, list) and bool(msg) and msg[0] == "_pywebviewAlert"
+    except Exception:
+        return False
 
 
 def _edge_deny(sender, args):

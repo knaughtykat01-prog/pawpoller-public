@@ -822,11 +822,18 @@ def revoke_api_key(prefix: str):
 
 @dashboard_auth_router.post("/turnstile-config")
 def save_turnstile_config(body: dict):
-    """Save Cloudflare Turnstile site key and secret key."""
-    site_key = body.get("site_key", "").strip()
-    secret_key = body.get("secret_key", "").strip()
+    """Save Cloudflare Turnstile site key and secret key.
 
-    # Allow clearing by sending empty strings
+    A blank key keeps the stored one (SEC069 (2)): the secret box is never filled in, so a
+    blank meant "cleared" and changing only the site key turned login protection off.
+    Turning it off is its own request, ``{"off": true}``."""
+    if body.get("off") is True:
+        site_key = secret_key = ""
+    else:
+        current = config.get_settings()
+        site_key = str(body.get("site_key") or "").strip() or current.get("turnstile_site_key") or ""
+        secret_key = str(body.get("secret_key") or "").strip() or current.get("turnstile_secret_key") or ""
+
     config.save_settings({
         "turnstile_site_key": site_key,
         "turnstile_secret_key": secret_key,

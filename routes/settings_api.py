@@ -708,6 +708,14 @@ def _platform_fields_meta() -> dict:
     }
 
 
+async def _checked_credentials(platform: str, creds: dict | None) -> dict | None:
+    """SEC067 (1): a Mastodon address typed here gets the same public-https rule as Connect."""
+    if platform != "mast" or not creds or not creds.get("mast_instance_url"):
+        return creds
+    from routes.mast_api import _public_instance
+    return {**creds, "mast_instance_url": await _public_instance(str(creds["mast_instance_url"]).strip())}
+
+
 def _save_account_credentials(account: dict, creds: dict | None) -> None:
     """Persist provided credential fields under the account's settings keys."""
     if not creds:
@@ -889,15 +897,16 @@ async def create_account_endpoint(req: AccountCreate):
     from database import accounts as adb
     if req.platform not in adb.PLATFORMS:
         raise HTTPException(status_code=400, detail=f"Unknown platform: {req.platform}")
+    credentials = await _checked_credentials(req.platform, req.credentials)
     conn = _accounts_conn()
     try:
-        handle = req.handle or adb.derive_handle(req.platform, req.credentials or {})
+        handle = req.handle or adb.derive_handle(req.platform, credentials or {})
         aid = adb.create_account(conn, req.platform, req.label,
                                  handle=handle, enabled=req.enabled)
         account = adb.get_account(conn, aid)
     finally:
         conn.close()
-    _save_account_credentials(account, req.credentials)
+    _save_account_credentials(account, credentials)
     logger.info("Created %s account #%s (%s)", req.platform, aid, account.get("label"))
     return {"ok": True, "account": account}
 
@@ -911,13 +920,14 @@ async def update_account_endpoint(account_id: int, req: AccountUpdate):
         account = adb.get_account(conn, account_id)
         if not account:
             raise HTTPException(status_code=404, detail="Account not found")
+        credentials = await _checked_credentials(account["platform"], req.credentials)
         adb.update_account(conn, account_id, label=req.label,
                            handle=req.handle, enabled=req.enabled)
         account = adb.get_account(conn, account_id)
     finally:
         conn.close()
-    if req.credentials:
-        _save_account_credentials(account, req.credentials)
+    if credentials:
+        _save_account_credentials(account, credentials)
     if req.never_post is not None:
         never = adb.never_post_ids()
         never = never | {account_id} if req.never_post else never - {account_id}

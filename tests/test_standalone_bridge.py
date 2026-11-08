@@ -1282,6 +1282,40 @@ def test_webview2_source_must_be_own_origin(monkeypatch, source):
     assert ec.log == [("notify", ok)]
 
 
+def _msg(name, source="https://www.furaffinity.net/controls/journal/"):
+    import json as _json
+    body = _json.dumps([name, _json.dumps("hi"), "1"])
+    return types.SimpleNamespace(Source=source, get_WebMessageAsJson=lambda: body)
+
+
+def test_site_page_alert_dropped(monkeypatch):
+    """SEC4810 (1): FA's journal page or a sign-in page can't open a native Windows message box."""
+    ec, edge = _edge_window(monkeypatch, marked=False)
+    desktop_gate.mark_site_page(edge.pywebview_window)
+    edge.on_script_notify(None, _msg("_pywebviewAlert"))
+    assert ec.log == []
+    other = _msg("console")
+    edge.on_script_notify(None, other)                      # anything else goes on as before
+    assert ec.log == [("notify", other)]
+    odd = types.SimpleNamespace(Source="x", get_WebMessageAsJson=lambda: "not json")
+    edge.on_script_notify(None, odd)
+    assert ec.log[-1] == ("notify", odd)
+
+
+def test_dashboard_alerts_still_shown(monkeypatch):
+    """Connected mode's window shows a server's dashboard, which uses alert(): not a site page, so it passes."""
+    ec, edge = _edge_window(monkeypatch, marked=False)
+    alert = _msg("_pywebviewAlert", source="https://paw.example.social/")
+    edge.on_script_notify(None, alert)
+    assert ec.log == [("notify", alert)]
+
+
+def test_site_windows_are_marked():
+    for path, call in (("auth/fa_journal_window.py", "desktop_gate.mark_site_page(win)"),
+                       ("auth/browser_login.py", "desktop_gate.mark_site_page(window)")):
+        assert call in open(path, encoding="utf-8").read()
+
+
 def test_connected_windows_still_answer(monkeypatch):
     """Connected mode's windows are opened with html= and never marked: their Source isn't the dashboard."""
     ec, edge = _edge_window(monkeypatch, marked=False)

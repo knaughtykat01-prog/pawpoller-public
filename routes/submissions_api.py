@@ -801,9 +801,14 @@ def get_discovered_unlinked(conn, platform_filter: str | None = None) -> list[di
       • posts imported into the Posts module (2.157.0) — `post_publications` is a
         separate registry from `publications` (a post has no title/chapters/file),
         so without this an imported tweet would sit in the queue forever.
+    Rows polled from a Never post account are left out too: someone else's work, never offered
+    for import (SEC070 (1)).
     """
     from posting.sync import PLATFORM_TABLES
     from database import masterpiece_queries, ignored_queries
+    from database.accounts import from_never_post
+    import config
+    settings = config.get_settings()
     linked = {
         (r["platform"], str(r["external_id"]))
         for r in conn.execute(
@@ -826,6 +831,7 @@ def get_discovered_unlinked(conn, platform_filter: str | None = None) -> list[di
             rows = [dict(r) for r in conn.execute(f"SELECT * FROM {cfg['table']}").fetchall()]
         except Exception:
             continue  # table may not exist on this install
+        rows = [r for r in rows if not from_never_post(r, settings)]
         platform_rows.append((plat, cfg, rows))
     return build_discovered(platform_rows, linked)
 

@@ -281,7 +281,7 @@ def get_artwork_archive_path() -> Path:
     """
     settings = config.get_settings()
     custom = settings.get("artwork_archive_path", "")
-    if custom and os.path.isdir(custom):
+    if custom and os.path.isdir(custom) and config.hosted_folder_ok("artwork_archive_path", custom):
         return Path(custom)
     # Docker server: /app/data is the mounted persistent volume.
     data_dir = Path("/app/data")
@@ -442,8 +442,9 @@ def load_artwork(name: str) -> ArtworkInfo:
         candidate.relative_to(archive)
     except ValueError:
         raise FileNotFoundError(f"Artwork folder not found: {name}") from None
-    if not candidate.is_dir():
-        raise FileNotFoundError(f"Artwork folder not found: {candidate}")
+    # "." or "" is the archive itself, which passes the check above; DELETE would rmtree it (SEC070 (3))
+    if candidate == archive or not candidate.is_dir():
+        raise FileNotFoundError(f"Artwork folder not found: {name}")
     meta_path = _meta_path(candidate)
     if meta_path is None:
         raise FileNotFoundError(f"masterpiece.json / artwork.json not found for: {name}")

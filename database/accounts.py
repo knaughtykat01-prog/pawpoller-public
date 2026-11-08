@@ -320,6 +320,16 @@ def never_post_ids(settings: dict | None = None) -> set[int]:
 
 
 NEVER_POST_ERROR = "This account is marked \"Never post\" — PawPoller will not post to it, edit it or sync it."
+NEVER_POST_IMPORT_ERROR = ("This was found on an account marked \"Never post\" — it's someone else's work, "
+                           "so PawPoller won't bring it into your Library or Posts.")
+
+
+def from_never_post(row: dict, settings: dict | None = None) -> bool:
+    """A polled row found on a Never post account (SEC070 (1)): someone else's work, never imported."""
+    try:
+        return int(row.get("account_id") or 0) in never_post_ids(settings)
+    except (TypeError, ValueError):
+        return False
 
 
 def get_default_account_id(conn: sqlite3.Connection, platform: str,

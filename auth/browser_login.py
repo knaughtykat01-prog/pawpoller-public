@@ -449,6 +449,8 @@ def login_via_browser(
             width=900,
             height=700,
         )
+        import desktop_gate
+        desktop_gate.mark_site_page(window)
     except Exception as e:
         logger.error("Failed to open browser login window for %s: %s", platform, e)
         return None

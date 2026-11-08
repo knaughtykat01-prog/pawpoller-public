@@ -111,6 +111,9 @@ def import_post(platform: str, submission_id: str) -> dict:
         if not row:
             raise ValueError(f"No stored {platform} submission {submission_id}")
         d = dict(row)
+        from database.accounts import NEVER_POST_IMPORT_ERROR, from_never_post
+        if from_never_post(d):
+            raise ValueError(NEVER_POST_IMPORT_ERROR)
 
         # `description` is the full post text; `title` is usually the same string
         # (often truncated for display). Prefer description, fall back to title.

@@ -56,6 +56,23 @@ def mast_auth_status():
     }
 
 
+async def _public_instance(url: str) -> str:
+    """``https://host`` for a public server address, else 400 (SEC067 (1)): the token is sent to
+    whatever is typed here, so never to this machine's own network. Same rule as the PostyBirb import."""
+    import asyncio
+    from urllib.parse import urlsplit
+    from routes.posts_api import _public_host
+    try:
+        parts = urlsplit(url if "://" in url else "https://" + url)
+        ok = parts.scheme == "https" and not parts.port and not parts.username and parts.path in ("", "/")
+    except ValueError:
+        ok = False
+    host = await asyncio.to_thread(_public_host, parts.hostname or "") if ok else None
+    if not host:
+        raise HTTPException(400, "Type the server's public address, like mastodon.social or https://pawb.fun")
+    return f"https://{host}"
+
+
 @mast_router.post("/auth/connect")
 async def mast_connect(body: dict):
     """Validate Mastodon credentials and save to settings.
@@ -72,6 +89,7 @@ async def mast_connect(body: dict):
         raise HTTPException(400, "Instance URL is required (e.g. https://mastodon.social or pawb.fun)")
     if not access_token:
         raise HTTPException(400, "Access token is required (Settings → Development → New application, scope: read)")
+    instance_url = await _public_instance(instance_url)
 
     # Validate against the persistent singleton so a successful login leaves a
     # live session in place for the next poll cycle to reuse.
