@@ -1,7 +1,8 @@
 # Privacy Notice — TEMPLATE
 
 > **Fill-in template for self-hosters, not legal advice.** Because PawPoller is self-hosted, **the operator of the
-> instance is the data controller** — the PawPoller project receives nothing. Replace every **[bracketed]** field.
+> instance is the data controller**. The PawPoller project receives nothing from this instance unless someone here
+> switches on one of the opt-in sends listed under "What it does NOT do". Replace every **[bracketed]** field.
 
 **Instance:** [name], operated by **[you]**. Effective **[date]**.
 
@@ -20,8 +21,13 @@
   you connect, (b) GitHub, to check for updates, and (c) **only if you opted in**, the PawPoller Tech Centre:
   - **technical error reports** — the error and a short log excerpt, with passwords, tokens, cookies, email
     addresses, @handles, other people's names and the paths of web addresses removed before sending;
-  - **anonymous usage check-ins** — a random install ID, the app version, operating system, which platform types
-    are connected (not which accounts) and rough library sizes;
+  - **usage check-ins ("count this copy")**: a random id for this copy, the PawPoller version, whether it runs as the
+    desktop app or a server, how it's set up (on its own, or paired with a server), your operating system, the
+    processor type, how it was installed, whether the dashboard is open right now, how long it's been running, how
+    long the last check-in took to reach us, which kinds of site are connected (never which accounts) and a size range
+    for your library. The Tech Centre works out the country your connection comes from (never your address). PawPoller asks
+    after it first checks the connected sites successfully, may ask once more on a later day if the question is closed
+    without an answer, and the check-ins stay off until someone says yes;
   - **the Instagram picture relay** — the picture being posted to Instagram, held for 15 minutes so Instagram can
     fetch it, plus the uploader's IP address for 10 minutes (rate limits).
 

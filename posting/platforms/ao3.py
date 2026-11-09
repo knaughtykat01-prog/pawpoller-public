@@ -47,7 +47,7 @@ import config
 from database.db import get_connection
 from database import posting_queries
 from posting import story_reader
-from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
+from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage, naming_chapter
 from clients.otw_forms import to_otw_rating
 from clients.ao3.client import AO3Client
 
@@ -633,22 +633,16 @@ class AO3Poster(PlatformPoster):
                 # rating is raised here too, skin or not. Any failure stops the post: carrying on would
                 # add chapters to a work rated lower than the story.
                 rating = await self._resume_edit(client, work_id, rating, skin_id)
-                try:
-                    ao3_chapters = await client.get_chapter_ids(work_id)
-                    already_created_chapter_indices = {
-                        c.get("index") for c in ao3_chapters if c.get("index")
-                    }
-                    logger.info(
-                        "AO3: Work %s has %d existing chapters: %s",
-                        work_id, len(already_created_chapter_indices),
-                        sorted(already_created_chapter_indices),
-                    )
-                except Exception as nav_err:
-                    logger.warning(
-                        "AO3: Could not list chapters on work %s during resume: %s — "
-                        "will attempt to add all and rely on AO3's idempotency",
-                        work_id, nav_err,
-                    )
+                # UPDATEFAIL: not knowing what's there stops the post; adding them all would duplicate them.
+                ao3_chapters = await client.get_chapter_ids(work_id)
+                already_created_chapter_indices = {
+                    c.get("index") for c in ao3_chapters if c.get("index")
+                }
+                logger.info(
+                    "AO3: Work %s has %d existing chapters: %s",
+                    work_id, len(already_created_chapter_indices),
+                    sorted(already_created_chapter_indices),
+                )
             else:
                 create_kwargs: dict = dict(
                     title=work_title,
@@ -801,6 +795,17 @@ class AO3Poster(PlatformPoster):
                 duration_seconds=self._elapsed(_t),
             )
 
+    @staticmethod
+    async def _go_live(client, work_id: str, story_name: str) -> None:
+        """Post every draft chapter after an edit. UPDATEFAIL: one left behind fails the update."""
+        ps = await client.publish_all_draft_chapters(work_id)
+        logger.info(
+            "AO3: edit() publish-all-drafts for %s — published=%d, already_posted=%d, failed=%d (total %d)",
+            story_name, ps["published"], ps["already_posted"], len(ps["failed"]), ps["total"],
+        )
+        if ps["failed"]:
+            raise RuntimeError(f"{len(ps['failed'])} chapter(s) didn't go live: {ps['failed'][0][1]}")
+
     async def edit(self, external_id: str, package: StoryUploadPackage) -> PostResult:
         """Edit an existing AO3 work — metadata + per-chapter content refresh.
 
@@ -865,43 +870,26 @@ class AO3Poster(PlatformPoster):
             # content=None preserves the existing body on AO3.
             if package.extra.get("skip_content_refresh"):
                 if story.chapters and story.total_chapters > 1:
-                    try:
-                        ao3_chapters = await client.get_chapter_ids(external_id)
-                        local_chapters = sorted(story.chapters, key=lambda c: c.index)
-                        for ao3_ch, local_ch in zip(ao3_chapters, local_chapters):
-                            new_title = _strip_chapter_prefix(local_ch.title)
-                            if new_title and new_title != ao3_ch.get("title", ""):
+                    ao3_chapters = await client.get_chapter_ids(external_id)
+                    local_chapters = sorted(story.chapters, key=lambda c: c.index)
+                    for ao3_ch, local_ch in zip(ao3_chapters, local_chapters):
+                        new_title = _strip_chapter_prefix(local_ch.title)
+                        if new_title and new_title != ao3_ch.get("title", ""):
+                            with naming_chapter(local_ch.index):
                                 await client.edit_chapter(
                                     external_id, ao3_ch["chapter_id"],
                                     title=new_title,  # content=None preserves body
                                     publish=publish_live if publish_live else None,
                                 )
-                                logger.info(
-                                    "AO3: Retitled chapter %s -> %r (metadata-only)",
-                                    ao3_ch["chapter_id"], new_title,
-                                )
-                    except Exception as ch_err:
-                        logger.warning(
-                            "AO3: Chapter title refresh failed: %s", ch_err,
-                        )
+                            logger.info(
+                                "AO3: Retitled chapter %s -> %r (metadata-only)",
+                                ao3_ch["chapter_id"], new_title,
+                            )
                 # If publishing live, walk every chapter and post any drafts.
                 # See post()'s identical call site for the rationale (AO3
                 # chapters have independent draft state).
                 if publish_live:
-                    try:
-                        ps = await client.publish_all_draft_chapters(external_id)
-                        logger.info(
-                            "AO3: edit(metadata-only) publish-all-drafts for %s — "
-                            "published=%d, already_posted=%d, failed=%d (total %d)",
-                            story.name, ps["published"], ps["already_posted"],
-                            len(ps["failed"]), ps["total"],
-                        )
-                    except Exception as pub_err:
-                        logger.warning(
-                            "AO3: publish_all_draft_chapters failed on metadata-only "
-                            "edit of work %s: %s",
-                            external_id, pub_err,
-                        )
+                    await self._go_live(client, external_id, story.name)
                 logger.info(
                     "AO3: Metadata-only edit complete for %s (body content preserved)",
                     external_id,
@@ -917,37 +905,35 @@ class AO3Poster(PlatformPoster):
             # Update chapter content. Multi-chapter: edit each existing
             # chapter from local source; append any extras. Single-chapter:
             # fall back to the full-story Clean HTML blob (unchanged behaviour).
-            try:
-                ao3_chapters = await client.get_chapter_ids(external_id)
-                has_chapters = bool(story.chapters) and story.total_chapters > 1
+            # UPDATEFAIL: any failure here reaches the except below and fails the update.
+            ao3_chapters = await client.get_chapter_ids(external_id)
+            has_chapters = bool(story.chapters) and story.total_chapters > 1
 
-                if has_chapters:
-                    local_chapters = sorted(story.chapters, key=lambda c: c.index)
-                    for ao3_ch, local_ch in zip(ao3_chapters, local_chapters):
+            if has_chapters:
+                local_chapters = sorted(story.chapters, key=lambda c: c.index)
+                for ao3_ch, local_ch in zip(ao3_chapters, local_chapters):
+                    with naming_chapter(local_ch.index):
                         ch_content = self._read_chapter_content(story, local_ch.index)
                         if not ch_content:
-                            logger.warning(
-                                "AO3: Skipping ch%d edit for %s (no content)",
-                                local_ch.index, story.name,
-                            )
-                            continue
+                            raise RuntimeError("its file wasn't found")
                         await client.edit_chapter(
                             external_id, ao3_ch["chapter_id"],
                             title=_strip_chapter_prefix(local_ch.title),
                             content=ch_content,
                             publish=publish_live if publish_live else None,
                         )
-                        logger.info(
-                            "AO3: Updated chapter %s (local idx %d) of work %s",
-                            ao3_ch["chapter_id"], local_ch.index, external_id,
-                        )
+                    logger.info(
+                        "AO3: Updated chapter %s (local idx %d) of work %s",
+                        ao3_ch["chapter_id"], local_ch.index, external_id,
+                    )
 
-                    # Append any local chapters that aren't on AO3 yet
-                    if len(local_chapters) > len(ao3_chapters):
-                        for local_ch in local_chapters[len(ao3_chapters):]:
+                # Append any local chapters that aren't on AO3 yet
+                if len(local_chapters) > len(ao3_chapters):
+                    for local_ch in local_chapters[len(ao3_chapters):]:
+                        with naming_chapter(local_ch.index):
                             ch_content = self._read_chapter_content(story, local_ch.index)
                             if not ch_content:
-                                continue
+                                raise RuntimeError("its file wasn't found")
                             await client.create_chapter(
                                 external_id,
                                 title=_strip_chapter_prefix(local_ch.title),
@@ -955,44 +941,34 @@ class AO3Poster(PlatformPoster):
                                 position=local_ch.index,
                                 publish=False,
                             )
-                            logger.info(
-                                "AO3: Appended missing ch%d to work %s",
-                                local_ch.index, external_id,
-                            )
-                elif ao3_chapters:
-                    # Single-chapter work: push the full-story HTML blob
-                    content = self._read_full_story_html(story)
-                    if content:
-                        await client.edit_chapter(
-                            external_id, ao3_chapters[0]["chapter_id"], content=content,
-                            publish=publish_live if publish_live else None,
-                        )
                         logger.info(
-                            "AO3: Updated chapter %s content of work %s",
-                            ao3_chapters[0]["chapter_id"], external_id,
+                            "AO3: Appended missing ch%d to work %s",
+                            local_ch.index, external_id,
                         )
-            except Exception as ch_err:
-                logger.warning("AO3: Chapter content update failed: %s", ch_err)
+            else:
+                # Single-chapter work: push the full-story HTML blob
+                with naming_chapter(1):
+                    content = self._read_full_story_html(story)
+                    if not content and package.file_path:  # same fallback as post()
+                        with open(package.file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
+                            content = f.read()
+                    if not content:
+                        raise RuntimeError("its file wasn't found")
+                    await client.edit_chapter(
+                        external_id, ao3_chapters[0]["chapter_id"], content=content,
+                        publish=publish_live if publish_live else None,
+                    )
+                logger.info(
+                    "AO3: Updated chapter %s content of work %s",
+                    ao3_chapters[0]["chapter_id"], external_id,
+                )
 
             # If publishing live on an edit, walk every chapter and post
             # any drafts. Mirrors post()'s identical call site. Critical
             # for resumed/legacy works where create_work + later partial
             # runs left some chapters as drafts.
             if publish_live:
-                try:
-                    ps = await client.publish_all_draft_chapters(external_id)
-                    logger.info(
-                        "AO3: edit() publish-all-drafts for %s — "
-                        "published=%d, already_posted=%d, failed=%d (total %d)",
-                        story.name, ps["published"], ps["already_posted"],
-                        len(ps["failed"]), ps["total"],
-                    )
-                except Exception as pub_err:
-                    logger.warning(
-                        "AO3: publish_all_draft_chapters failed on edit of "
-                        "work %s: %s",
-                        external_id, pub_err,
-                    )
+                await self._go_live(client, external_id, story.name)
 
             return PostResult(
                 success=True,
@@ -1015,11 +991,6 @@ class AO3Poster(PlatformPoster):
                 content = f.read()
 
             chapters = await client.get_chapter_ids(external_id)
-            if not chapters:
-                return PostResult(
-                    success=False, error="No chapters found",
-                    duration_seconds=self._elapsed(_t),
-                )
 
             await client.edit_chapter(
                 external_id, chapters[0]["chapter_id"], content=content,

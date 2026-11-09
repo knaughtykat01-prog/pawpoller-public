@@ -124,4 +124,4 @@ def test_beacons_start_off_in_signup():
     src = (ROOT / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
     tech = src[src.index("// screen === 'tech'"):src.index("/* ── Setup Wizard")]
     assert 'id="signup-reports">' in tech and 'id="signup-usage">' in tech   # no `checked`
-    assert "API.setTechConsent(reports)" in tech and "API.setTechUsage(usage)" in tech
+    assert "API.setTechConsent(reports)" in tech     # the usage box's call: test_countask.py

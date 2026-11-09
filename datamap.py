@@ -415,6 +415,7 @@ _SETTINGS = (
         "pinned_submissions", "platform_order", "poll_interval_minutes", "polling_paused", "polling_paused_platforms",
         "setup_mode", "smtp_host", "smtp_port", "smtp_use_tls", "theme", "tours_seen", "trello",
         "update_skip_version", "watcher_notifications_enabled", "tech_reports", "tech_usage", "consent_records", "age_band",
+        "first_poll_ok_at", "usage_ask",   # when this install first polled, and the count-this-copy ask (spec 079)
         "legal_accepted", "legal_history",   # Terms + Privacy accepted, and when (4.67.0, spec 033)
         "auth_mail_log",   # when account emails were last sent, for the send limit (4.68.0)
         "signin_helper_allow_http",   # the owner allowed sign-in hand-overs over plain http at home (spec 059)

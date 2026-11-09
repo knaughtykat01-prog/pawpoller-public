@@ -13,7 +13,7 @@
 - PawPoller is software you run on your own computer or server. **What you put into it stays there.** We never
   see your art, your stories, your logins or your accounts.
 - Our website has no adverts, no trackers and no analytics scripts.
-- PawPoller only sends us anything if **you say yes**: anonymous check-ins, error reports, or the Instagram
+- PawPoller only sends us anything if **you say yes**: check-ins (no names), error reports, or the Instagram
   picture relay. Each one is off until you turn it on, and you can turn it off at any time.
 - Write to **privacy@pawpoller.com** to ask what we hold about you, or to have it deleted.
 
@@ -44,13 +44,13 @@ list of who downloaded.
 
 | What | What's sent | Why | Kept for |
 |---|---|---|---|
-| **Check-ins** ("count this copy") | A random ID for your copy of PawPoller, its version, operating system, how it was installed, which kinds of site you've connected (never which accounts), a size range for your library, and how long it's been running. We also note the country your connection comes from. ⟦confirm: the IP address itself is not stored⟧ | So we know how many people use PawPoller, and on what | 12 months, then only totals are kept |
+| **Check-ins** ("count this copy") | A random id for this copy, the PawPoller version, whether it runs as the desktop app or a server, how it's set up (on its own, or paired with a server), your operating system, the processor type, how it was installed, whether the dashboard is open right now, how long it's been running, how long the last check-in took to reach us, which kinds of site are connected (never which accounts) and a size range for your library. Our server works out the country your connection comes from (never your address). ⟦confirm: the IP address itself is not stored⟧ PawPoller asks after it first checks your sites successfully. If you close it without answering, it may ask once more on a later day, then stops. You can answer any time in Settings → Diagnostics. Leaving the box at sign-up unticked isn't taken as an answer, and nothing is sent until you say yes. | So we know how many people use PawPoller, and on what | 12 months, then only totals are kept |
 | **Error reports** | The error and a short excerpt of the log, with logins, tokens, cookies, email addresses, @handles, other people's names and web-address paths removed before it leaves your computer. Your copy's random ID. | So we can fix what breaks | 90 days |
 | **Instagram picture relay** | The picture or video you're posting to Instagram, re-encoded, and your IP address (to limit how often one address can use it) | Instagram has to fetch your picture from a public web address, which a home computer doesn't have | The picture: 15 minutes, then deleted. The IP address: ⟦the rate-limit window — 10 minutes⟧ |
 
-You can see exactly what a check-in sends under **Settings → Diagnostics** before you agree. We record **when**
-you said yes and **to which wording**, so we can show your consent was real; if the wording changes, we ask
-again.
+You can see exactly what a check-in sends under **Settings → Diagnostics** before you agree. We record each yes
+or no, **when** and **where** you gave it, and **the wording you answered**, so we can show your consent was real;
+if the wording changes, we ask again.
 
 ### When you email us
 

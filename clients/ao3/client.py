@@ -1591,16 +1591,17 @@ class AO3Client:
         return {"work_id": work_id, "chapter_id": chapter_id}
 
     async def get_chapter_ids(self, work_id: str) -> list[dict]:
-        """Get all chapter IDs and titles for a work."""
+        """Get all chapter IDs and titles for a work; raises if the list can't be read."""
         url = f"{_BASE}/works/{work_id}/navigate"
         html = await self._get_page(url)
-        if not html:
-            return []
 
         chapters = re.findall(
             r'href="/works/\d+/chapters/(\d+)"[^>]*>(\d+)\.\s*([^<]*)',
-            html,
+            html or "",
         )
+        if not chapters:
+            # UPDATEFAIL: every work has a chapter, and [] made an update add them all again.
+            raise RuntimeError(f"Couldn't read work {work_id}'s chapter list")
         return [
             {"chapter_id": ch_id, "index": int(idx), "title": title.strip()}
             for ch_id, idx, title in chapters
@@ -1675,6 +1676,10 @@ class AO3Client:
             timeout=60.0,
         )
 
+        if resp.status_code >= 400:
+            # UPDATEFAIL: this counted as "already posted", leaving the chapter a draft unnoticed.
+            raise RuntimeError(f"AO3: Post Chapter failed — status {resp.status_code}")
+
         # 302 redirect to /works/{wid}/chapters/{cid} = success.
         # 200 with "already posted" / "already published" notice = no-op.
         already = (
@@ -1682,7 +1687,7 @@ class AO3Client:
             and ("already posted" in resp.text.lower()
                  or "already published" in resp.text.lower())
         )
-        published = not already and resp.status_code < 400
+        published = not already
         return {
             "work_id": work_id,
             "chapter_id": chapter_id,

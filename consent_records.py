@@ -14,11 +14,20 @@ person answers again (a no stays a no — refusing needs no re-asking).
 """
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 
 import config
 
 _KEY = "consent_records"
+
+# Spec 079: where an answer was given. The app checks it; the page can't add to it. A no from sign-up or setup is a
+# box left unticked, not a clear no (techcentre.usage_clear); an answer without one was saved before 079 (unknown).
+WHERE = frozenset({"ask", "signup", "setup", "settings"})
+
+# record() rewrites the whole dict, so two kinds answered at once must not lose one.
+# Lock order: techcentre._lock → this lock → config._settings_lock; never the other way round.
+_lock = threading.Lock()
 
 # The version of the in-app wording each opt-in was answered to. Bump on a change of substance.
 WORDING = {
@@ -30,7 +39,7 @@ WORDING = {
 # What each opt-in is called where the app asks again.
 LABELS = {
     "tech_reports": "error reports",
-    "tech_usage": "anonymous check-ins",
+    "tech_usage": "check-ins (count this copy)",
     "ig_relay": "the Instagram picture relay",
 }
 
@@ -49,15 +58,22 @@ def get(kind: str, settings: dict | None = None) -> dict | None:
     return rec if isinstance(rec, dict) else None
 
 
-def record(kind: str, value: bool) -> dict:
-    """Store an answer now, against the current wording. Returns the record."""
+def record(kind: str, value: bool, where: str | None = None) -> dict:
+    """Store an answer now, against the current wording. Returns the record.
+
+    Spec 079: `where` (one of WHERE) says where it was given; the date, wording and app version are the app's own."""
     if kind not in WORDING:
         raise ValueError(f"unknown consent kind {kind!r}")
-    recs = dict(_all())
+    if where is not None and where not in WHERE:
+        raise ValueError(f"unknown consent place {where!r}")
     rec = {"value": bool(value), "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-           "wording": WORDING[kind]}
-    recs[kind] = rec
-    config.save_settings({_KEY: recs})
+           "wording": WORDING[kind], "app_version": config.APP_VERSION}
+    if where is not None:
+        rec["where"] = where
+    with _lock:
+        recs = dict(_all())
+        recs[kind] = rec
+        config.save_settings({_KEY: recs})
     return rec
 
 

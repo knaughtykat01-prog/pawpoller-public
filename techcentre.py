@@ -37,7 +37,7 @@ import threading
 import time
 import traceback
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import config
@@ -626,16 +626,142 @@ def usage_consent(settings: dict | None = None) -> bool | None:
     return _answer("tech_usage", "tech_usage", settings)
 
 
-def set_usage_consent(value: bool) -> None:
+class AlreadyAnswered(Exception):
+    """Spec 079: the ask was answered after a clear answer arrived (another tab, Settings) — not saved."""
+
+
+def set_usage_consent(value: bool, where: str | None = None) -> None:
+    """Save a count-this-copy answer and where it was given (spec 079).
+
+    An answer from the ask is refused (AlreadyAnswered) once a clear answer exists, so a stale tab can't overwrite
+    it; a box left unticked at sign-up or setup never replaces a clear answer. Settings always saves. Lock order:
+    _lock (an RLock) → consent_records._lock → config._settings_lock."""
     import consent_records
-    consent_records.record("tech_usage", value)
-    config.save_settings({"tech_usage": bool(value)})
-    if value:
-        with _lock:
+    with _lock:
+        if where == "ask" and usage_clear():
+            raise AlreadyAnswered()
+        if where in ("signup", "setup") and not value and usage_clear():
+            return
+        consent_records.record("tech_usage", value, where)
+        config.save_settings({"tech_usage": bool(value)})
+        if value:
             st = _state()
             st["next_checkin"] = 0            # say hello on the next tick, not in five minutes
             _save_state(st)
+    if value:
         _wake.set()
+
+
+# ── the count-this-copy ask (spec 079) ───────────────────────────────────────
+# Asked once, after the install's first successful poll, of every install without a clear answer. A clear answer
+# is one to the current wording that's a yes, or a no given in the ask or in Settings; a box left unticked at
+# sign-up or setup is not one, and a no saved before 079 (no `where`) is "unknown": asked once at most.
+
+CLEAR_NO = ("ask", "settings")
+
+
+def usage_clear(settings: dict | None = None) -> bool:
+    import consent_records
+    s = settings if settings is not None else config.get_settings()
+    v = consent_records.valid("tech_usage", s)
+    if v is None:
+        return False
+    return v or (consent_records.get("tech_usage", s) or {}).get("where") in CLEAR_NO
+
+
+def _unknown_no(s: dict) -> bool:
+    import consent_records
+    rec = consent_records.get("tech_usage", s)
+    if rec is not None:
+        return rec.get("value") is False and "where" not in rec
+    return _answer("tech_usage", "tech_usage", s) is False
+
+
+def _first_poll_ok(s: dict) -> bool:
+    """Has any account ever polled successfully? Read from the poll logs that already exist; stamped once.
+
+    shortcut: reads every %poll_log once until it finds a success; upgrade to a stamp in finish_poll_log if the
+    table count grows a lot."""
+    if s.get("first_poll_ok_at"):
+        return True
+    try:
+        import sqlite3
+        from database.db import get_connection
+        conn = get_connection()
+        try:
+            names = [r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%poll_log'").fetchall()]
+            for name in names:
+                if not re.fullmatch(r"[a-z0-9_]*poll_log", str(name)):
+                    continue                  # only our own table names reach the SQL text below
+                try:
+                    # 'partial' = the account was checked and its work found, with something missing
+                    # (a Facebook permission, an X rate limit mid-poll): that still counts.
+                    hit = conn.execute(f'SELECT 1 FROM "{name}" WHERE status IN (\'success\', \'partial\') '
+                                       'LIMIT 1').fetchone()
+                except sqlite3.Error:
+                    continue
+                if hit:
+                    config.save_settings({"first_poll_ok_at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+                    return True
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.debug("first-poll check skipped: %s", type(e).__name__)
+    return False
+
+
+def _ask_state(s: dict) -> tuple[int, str]:
+    ua = s.get("usage_ask")
+    ua = ua if isinstance(ua, dict) else {}
+    try:
+        shown = int(ua.get("shown") or 0)
+    except (TypeError, ValueError):
+        shown = 2                             # unreadable: ask no more
+    return shown, str(ua.get("last") or "")
+
+
+def usage_ask_due(settings: dict | None = None) -> bool:
+    """Show the ask now? Never before the first successful poll, under 18 or with no age, or after a clear answer;
+    twice at most, the second on a later day, and once only for an unknown no."""
+    import age_gate
+    s = settings if settings is not None else config.get_settings()
+    if not TECH_CENTRE_URL or age_gate.band(s) != age_gate.ADULT or usage_clear(s):
+        return False
+    shown, last = _ask_state(s)
+    if not (shown == 0 or (shown == 1 and last < date.today().isoformat() and not _unknown_no(s))):
+        return False
+    return _first_poll_ok(s)
+
+
+def mark_ask_shown() -> int:
+    with _lock:
+        shown, last = _ask_state(config.get_settings())
+        today = date.today().isoformat()
+        if last == today and shown:
+            return shown                      # two screens showing it the same day count once
+        state = {"shown": min(2, shown + 1), "last": today}
+        config.save_settings({"usage_ask": state})
+    return state["shown"]
+
+
+# What each check-in field is, in the words every consent text uses (FR-SEC-007). One source: the ask, sign-up,
+# setup and Diagnostics render it (status()["checkin_fields"]); the privacy texts are tested against it.
+CHECKIN_FIELDS = {
+    "install_id": "a random id for this copy",
+    "version": "the PawPoller version",
+    "runtime": "whether it runs as the desktop app or a server",
+    "mode": "how it's set up (on its own, or paired with a server)",
+    "os": "your operating system",
+    "arch": "the processor type",
+    "packaging": "how it was installed",
+    "open": "whether the dashboard is open right now",
+    "uptime_s": "how long it's been running",
+    "rtt_ms": "how long the last check-in took to reach us",
+    "platforms": "which kinds of site are connected (never which accounts)",
+    "library": "a size range for your library",
+}
+COUNTRY_NOTE = "the country your connection comes from (never your address)"   # worked out by the Tech Centre
 
 
 def note_ui() -> None:
@@ -844,10 +970,13 @@ def status() -> dict:
     import consent_records
     c = consent()
     u = usage_consent()
+    due = usage_ask_due()             # outside _lock: it may read the database and write the first-poll stamp
     return {"enabled": bool(TECH_CENTRE_URL), "url": TECH_CENTRE_URL, "consent": c, "asked": c is not None,
             "install_id": install_id() if TECH_CENTRE_URL else "", "runtime": runtime(), "pending": pending,
             "last": last, "prompt": prompt,
             "usage": u, "usage_asked": u is not None, "last_checkin": last_checkin,
+            # Spec 079: usage_asked keeps its old meaning for pages cached before it; the new ask reads these.
+            "usage_ask_due": due, "checkin_fields": [*CHECKIN_FIELDS.values(), COUNTRY_NOTE],
             # When each answer was given and to which wording (LEGALPAGES) — shown in Diagnostics.
             "records": {k: consent_records.get(k) for k in ("tech_reports", "tech_usage")}}
 

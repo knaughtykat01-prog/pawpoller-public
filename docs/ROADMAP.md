@@ -30,6 +30,7 @@ backlog itself stays private. Plain words only, no tester names, nothing that is
 
 ## Recently shipped
 
+- **4.89.0** · PawPoller asks if it can count your copy at a better moment, and it's still your choice. Updating a story on AO3, SquidgeWorld or SoFurry can't add every chapter again, and a failed update now says which chapter.
 - **4.88.0** · Sign in to FurAffinity, X, Newgrounds and Itaku on the site's own page, inside PawPoller: no cookies to copy. Bring your PostyBirb submissions into your Library any time. Email is optional when you host PawPoller yourself.
 - **4.87** · Every site says how your post went, even after you close the page. Setup remembers where you got to, and post forms list the sites you're signed in to first.
 - **4.86.0** · A Start screen that asks what you came to do, and scheduling a story's chapters in three steps with a calendar.

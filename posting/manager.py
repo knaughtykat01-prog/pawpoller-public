@@ -45,6 +45,7 @@ _PERMANENT_ERROR_MARKERS = (
                                          # can land before the check answers its redirect, so a retry double-posts
     "didn't save the work",              # AO3 validation (4.78.1): the same form fails the same way
     "couldn't read this work's rating",  # AO3/SqW RatingUnreadable (SEC4885 (4)): the same form reads the same way
+    "its file wasn't found",             # UPDATEFAIL: a chapter with no built file needs a rebuild, not a retry
 )
 
 
@@ -1590,10 +1591,12 @@ async def _update_story(
                     )
                 finally:
                     conn.close()
-            elif not queued_for_desktop:
+            # UPDATEFAIL: a retry row can't carry "details only", so a retry would resend every chapter.
+            elif not package.extra.get("skip_content_refresh"):
                 retry_queued = _schedule_retry(
                     story_name, ch_idx, plat, "update", result.error or "unknown",
                     account_id=account_id,
+                    draft=bool(extras["draft"]) if extras and "draft" in extras else None,
                 )
         elif was_deleted:
             logger.info(

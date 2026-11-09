@@ -1721,17 +1721,18 @@ class SquidgeWorldClient:
         return f"/works/{work_id}" in resp.text
 
     async def get_chapter_ids(self, work_id: str) -> list[dict]:
-        """Get all chapter IDs and titles for a work."""
+        """Get all chapter IDs and titles for a work; raises if the list can't be read."""
         url = f"{_BASE}/works/{work_id}/navigate"
         html = await self._get_page(url)
-        if not html:
-            return []
 
         # Chapter list: <li><a href="/works/{id}/chapters/{ch_id}">N. Title</a></li>
         chapters = re.findall(
             r'href="/works/\d+/chapters/(\d+)"[^>]*>(\d+)\.\s*([^<]*)',
-            html,
+            html or "",
         )
+        if not chapters:
+            # UPDATEFAIL: every work has a chapter, and [] made an update add them all again.
+            raise RuntimeError(f"Couldn't read work {work_id}'s chapter list")
         return [
             {"chapter_id": ch_id, "index": int(idx), "title": title.strip()}
             for ch_id, idx, title in chapters

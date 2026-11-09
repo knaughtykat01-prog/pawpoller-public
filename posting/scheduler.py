@@ -281,6 +281,7 @@ async def _process_queue_item_core(item: dict) -> None:
         elif action == "update":
             results = await manager.update_story(
                 story_name, [platform], [chapter_index],
+                extras=story_extras,
                 account_filter=account_id,
             )
         else:

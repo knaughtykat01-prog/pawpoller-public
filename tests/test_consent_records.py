@@ -42,7 +42,7 @@ def test_the_bell_asks_once_for_a_yes_from_before_records():
     config.save_settings({"tech_usage": True})          # an old yes, no record
     items = [i for i in api_routes.get_notifications(40)["items"] if i.get("kind") == "consent"]
     assert len(items) == 1
-    assert "anonymous check-ins" in items[0]["summary"] and "Settings → Diagnostics" in items[0]["summary"]
+    assert "check-ins (count this copy)" in items[0]["summary"] and "Settings → Diagnostics" in items[0]["summary"]
     assert items[0]["timestamp"] == ""                  # a reminder, never re-toasted as new
     techcentre.set_usage_consent(True)                  # answered: the reminder goes
     assert not [i for i in api_routes.get_notifications(40)["items"] if i.get("kind") == "consent"]

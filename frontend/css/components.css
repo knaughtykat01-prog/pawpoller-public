@@ -3082,3 +3082,12 @@ body:has(.modal-overlay.open) .tz-offer { display: none; }
 .other-sites-empty, .other-sites-note { font-size: 13px; color: var(--text-secondary); margin: 6px 0; }
 .other-sites-empty .btn { margin-left: 8px; }
 .other-sites-body details { display: none; }                 /* per-site overrides wait until it is connected */
+
+/* Spec 079: the count-this-copy ask (and the field lists beside the boxes) — two equal choices, fits a phone. */
+.usage-ask h2 { font-size: 17px; line-height: 1.4; }
+.usage-ask h2:focus { outline: none; }
+.usage-ask h2:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.usage-fields { margin: 6px 0 10px; padding-left: 18px; line-height: 1.6; color: var(--text-secondary); font-size: 13px; }
+.usage-ask-foot { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.usage-ask-foot .usage-ask-btn { flex: 1 1 140px; }
+@media (max-width: 480px) { .usage-ask-foot .usage-ask-btn { flex-basis: 100%; } }

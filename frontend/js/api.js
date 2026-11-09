@@ -641,7 +641,9 @@ const API = {
     // Tech Centre (4.10.0): consent, the first-error prompt, status for Diagnostics.
     getTechStatus() { return this.get('/api/tech/status'); },
     setTechConsent(value) { return this.post('/api/tech/consent', { value }); },
-    setTechUsage(value) { return this.post('/api/tech/usage', { value }); },
+    // Spec 079: `where` = ask | signup | setup | settings (checked by the server); opts.quiet for the ask's 409.
+    setTechUsage(value, where, opts) { return this.post('/api/tech/usage', where ? { value, where } : { value }, opts); },
+    markUsageAskShown() { return this.post('/api/tech/usage-ask/shown', {}); },
     getAge() { return this.get('/api/age'); },                                        // 4.58.0 the 18+ step
     setAge(band) { return this.post('/api/age', { band }); },           // 4.42.0 "count this copy"
     getCheckinPreview() { return this.get('/api/tech/checkin-preview'); },

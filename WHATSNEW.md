@@ -2,6 +2,17 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.89.0] - 2026-11-09 - Asked at a better moment
+
+> - PawPoller now asks if it can count this copy just after it first checks your sites successfully, not only during sign-up.
+> - It's still your choice: nothing is sent unless you say yes, and you can change your mind in Settings → Diagnostics.
+> - If you left the box unticked at sign-up you'll be asked once more. A clear yes or No thanks is never asked again.
+> - The privacy policy now lists everything a check-in sends, so you'll be asked to accept the new version once.
+> - Your choices for check-ins, error reports and the Instagram picture relay now stay on each copy instead of syncing to a paired one.
+> - Updating a story on AO3 or SoFurry can no longer add every chapter again when the site's chapter list fails to load.
+> - If part of a story update fails on AO3, SquidgeWorld or SoFurry, PawPoller now says so and names the chapter.
+> - Choosing "Post and track" in setup now switches posting on. If your scheduled posts never go out, turn on Posting in Settings under Publishing defaults.
+
 ## [4.88.11] - 2026-11-08 - Security fixes
 
 > - Art and posts found on an account marked "Never post" are no longer offered for import into your Library or Posts.
@@ -241,14 +252,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Laurels loads faster, and no longer downloads all its numbers twice after you sign in.
 > - Story covers in the Library now load as small card-sized pictures, like artwork already did.
 > - Other pages full of numbers and lists load faster from a seat too.
-
-## [4.83.0] - 2026-10-21 - Texture
-
-> - New: optional sounds, off until you turn them on in Settings → Appearance → Sounds. Each device keeps its own setting and volume.
-> - A short, quiet sound plays when a post goes up or fails, new faves or comments come in, or you earn a medal.
-> - Sounds also play when an account connects, a post is scheduled, an import finishes, or the connection drops.
-> - A post that goes up draws a check in its result note.
-> - Numbers on the dashboards count up to their new value after a check.
-> - A newly earned medal gets a shine, result notes slide in, and buttons press down when clicked.
-> - If your computer is set to reduce motion, all of these change at once with no animation.
-> - You now get a note when PawPoller loses its connection to the server, and another when it's back.

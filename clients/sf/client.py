@@ -539,12 +539,11 @@ class SoFurryClient:
         return body.get("submission") or body
 
     async def get_content_ids(self, submission_id: str) -> list[str]:
-        """The submission's content item ids, in their stored order."""
-        try:
-            sub = await self.get_submission(submission_id)
-        except SoFurryError as e:
-            logger.warning("SF: could not list content for %s: %s", submission_id, e)
-            return []
+        """The submission's content item ids, in their stored order; raises if it can't be read."""
+        sub = await self.get_submission(submission_id)
+        if not sub:
+            # UPDATEFAIL: [] made an update upload every chapter again as new content.
+            raise SoFurryError(f"SF: couldn't read submission {submission_id}'s content list")
         out = []
         for item in (sub.get("content") or []):
             cid = item.get("contentId") or item.get("id")

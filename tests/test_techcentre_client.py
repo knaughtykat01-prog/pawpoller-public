@@ -329,7 +329,7 @@ def test_samples_one_per_kind(_isolated):
 def client():
     app = FastAPI()
     app.include_router(tech_router)
-    return TestClient(app)
+    return TestClient(app, headers={"Sec-Fetch-Site": "same-origin"})     # spec 079: POSTs come from the dashboard
 
 
 def test_routes_status_consent_prompt(client, _isolated):

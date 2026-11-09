@@ -7,13 +7,39 @@ browser errors. All auth-gated like every other ``/api`` route.
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 import techcentre
 
 logger = logging.getLogger(__name__)
-tech_router = APIRouter(prefix="/api/tech", tags=["tech"])
+
+
+def _from_dashboard(request: Request) -> None:
+    """Spec 079 (FR-SEC-004): every POST here comes from the dashboard's own page, as JSON.
+
+    Before an account exists the person at the machine is let in on loopback, and seats share a parent domain, so
+    another website's form or no-cors fetch could otherwise turn check-ins or error reports on. `none` isn't
+    accepted: a POST is never a typed navigation. Same rule as dashboard._app_reset_from_here.
+    Residual: a DNS-rebinding page counts as same-origin (BACKLOG SEC079: an app-wide Host allow-list)."""
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    ctype = (request.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+    host = request.headers.get("host") or ""
+    site = request.headers.get("sec-fetch-site")
+    if site is not None:
+        ok = site == "same-origin"
+    elif request.headers.get("origin") is not None:
+        origin = request.headers["origin"]
+        ok = origin != "null" and bool(host) and urlsplit(origin).netloc == host
+    else:
+        ok = bool(host) and urlsplit(request.headers.get("referer") or "").netloc == host
+    if ctype != "application/json" or not ok:
+        raise HTTPException(403, "not_from_dashboard")
+
+
+tech_router = APIRouter(prefix="/api/tech", tags=["tech"], dependencies=[Depends(_from_dashboard)])
 
 
 @tech_router.get("/status")
@@ -31,11 +57,27 @@ def tech_consent(body: dict):
 
 @tech_router.post("/usage")
 def tech_usage(body: dict):
-    """The "count this copy" switch (4.42.0, spec 009) — separate from error reports."""
-    if "value" not in body:
-        raise HTTPException(400, "value (true/false) required")
-    techcentre.set_usage_consent(bool(body["value"]))
+    """The "count this copy" switch (4.42.0, spec 009) — separate from error reports.
+
+    Spec 079: a JSON true/false only, and where it was given (consent_records.WHERE; missing = an old page)."""
+    import consent_records
+    value = body.get("value")
+    if type(value) is not bool:
+        raise HTTPException(400, "value must be true or false")
+    where = body.get("where")
+    if where is not None and (not isinstance(where, str) or where not in consent_records.WHERE):
+        raise HTTPException(400, "bad where")
+    try:
+        techcentre.set_usage_consent(value, where)
+    except techcentre.AlreadyAnswered:
+        raise HTTPException(409, "answered")
     return techcentre.status()
+
+
+@tech_router.post("/usage-ask/shown")
+def tech_usage_ask_shown():
+    """Spec 079: the ask was shown (counted here so a reload can't reset it). Sends nothing."""
+    return {"shown": techcentre.mark_ask_shown()}
 
 
 @tech_router.get("/checkin-preview")

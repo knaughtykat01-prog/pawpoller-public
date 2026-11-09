@@ -43,7 +43,7 @@ import re
 
 import config
 from posting import story_reader
-from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
+from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage, naming_chapter
 from clients.sf.client import SoFurryClient
 
 logger = logging.getLogger(__name__)
@@ -152,6 +152,7 @@ class SoFurryPoster(PlatformPoster):
             return
 
         local_chapters = sorted(story.chapters, key=lambda c: c.index)
+        failed = []
         for cid, local_ch in zip(content_ids, local_chapters):
             title = _strip_chapter_prefix(local_ch.title)
             if not title:
@@ -161,6 +162,9 @@ class SoFurryPoster(PlatformPoster):
                 logger.info("SF: Set chapter title '%s' on content %s", title, cid)
             except Exception as e:
                 logger.warning("SF: Failed to set title on content %s: %s", cid, e)
+                failed.append(local_ch.index)
+        if failed:  # UPDATEFAIL: an update reports this; post() catches it, the work already exists
+            raise RuntimeError(f"Chapter {failed[0]} didn't update: its title wasn't saved")
 
     def _read_sf_chapter_file(self, story: story_reader.StoryInfo, ch_idx: int) -> str | None:
         """Resolve a chapter's SoFurry HTML file path."""
@@ -474,45 +478,43 @@ class SoFurryPoster(PlatformPoster):
                 # REPLACES each existing content item in place and only uploads for
                 # chapters beyond the current count. That also removes the window in
                 # which the submission held both copies.
-                try:
-                    old_ids = await client.get_content_ids(external_id)
-                    chapters = sorted(story.chapters, key=lambda c: c.index)
+                # UPDATEFAIL: any failure here reaches the except below and fails the update.
+                old_ids = await client.get_content_ids(external_id)
+                if not old_ids:     # uploading now would duplicate every chapter, and SoFurry's API can't delete
+                    raise RuntimeError("couldn't read its chapter list")
+                chapters = sorted(story.chapters, key=lambda c: c.index)
 
-                    for pos, ch in enumerate(chapters):
+                for pos, ch in enumerate(chapters):
+                    with naming_chapter(ch.index):
                         ch_path = self._read_sf_chapter_content(story, ch.index)
                         if not ch_path:
-                            continue
+                            raise RuntimeError("its file wasn't found")
                         title = _strip_chapter_prefix(ch.title) or None
-                        try:
-                            if pos < len(old_ids):
-                                with open(ch_path, "r", encoding="utf-8") as fh:  # noqa: ASYNC230
-                                    body = fh.read()
-                                await client.update_content(
-                                    external_id, old_ids[pos],
-                                    body_html=body, title=title,
-                                )
-                                logger.info("SF: Replaced chapter %d in place (%s)",
-                                            ch.index, old_ids[pos])
-                            else:
-                                new_cid = await client.upload_content(external_id, ch_path)
-                                if new_cid and title:
-                                    await client.set_content_title(external_id, new_cid, title)
-                                logger.info("SF: Added chapter %d for %s", ch.index, external_id)
-                        except Exception as up_err:
-                            logger.warning("SF: Chapter %d refresh failed: %s", ch.index, up_err)
+                        if pos < len(old_ids):
+                            with open(ch_path, "r", encoding="utf-8") as fh:  # noqa: ASYNC230
+                                body = fh.read()
+                            await client.update_content(
+                                external_id, old_ids[pos],
+                                body_html=body, title=title,
+                            )
+                            logger.info("SF: Replaced chapter %d in place (%s)",
+                                        ch.index, old_ids[pos])
+                        else:
+                            new_cid = await client.upload_content(external_id, ch_path)
+                            if new_cid and title:
+                                await client.set_content_title(external_id, new_cid, title)
+                            logger.info("SF: Added chapter %d for %s", ch.index, external_id)
 
-                    # Surplus items when a story LOSES chapters. No API call can
-                    # remove these — flag them rather than leaving stale text live.
-                    if len(old_ids) > len(chapters):
-                        logger.warning(
-                            "SF: %s now has %d chapters but %d content items remain. "
-                            "SoFurry's API cannot delete content — remove the surplus "
-                            "manually at https://sofurry.com/s/%s/edit (ids: %s)",
-                            external_id, len(chapters), len(old_ids), external_id,
-                            ", ".join(old_ids[len(chapters):]),
-                        )
-                except Exception as ch_err:
-                    logger.warning("SF: Chaptered content refresh failed: %s", ch_err)
+                # Surplus items when a story LOSES chapters. No API call can
+                # remove these — flag them rather than leaving stale text live.
+                if len(old_ids) > len(chapters):
+                    logger.warning(
+                        "SF: %s now has %d chapters but %d content items remain. "
+                        "SoFurry's API cannot delete content — remove the surplus "
+                        "manually at https://sofurry.com/s/%s/edit (ids: %s)",
+                        external_id, len(chapters), len(old_ids), external_id,
+                        ", ".join(old_ids[len(chapters):]),
+                    )
 
             elif not skip_content and package.file_path:
                 # Single-file content replacement (non-chaptered)
@@ -533,10 +535,7 @@ class SoFurryPoster(PlatformPoster):
             # Refresh chapter titles (works for both full-update and
             # metadata-only — cheap JSON POST per content item).
             if has_chapters:
-                try:
-                    await self._set_chapter_titles(client, external_id, story)
-                except Exception as title_err:
-                    logger.warning("SF: Chapter title refresh failed: %s", title_err)
+                await self._set_chapter_titles(client, external_id, story)
 
             return PostResult(
                 success=True,

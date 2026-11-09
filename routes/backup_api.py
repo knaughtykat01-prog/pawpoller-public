@@ -198,7 +198,10 @@ _AUTO_DEFAULTS = {"interval_hours": 24, "keep": 7}
 # 074 (R5): a restore keeps this computer's own folders, its own yes to plain http and its own gallery-dl program;
 # a backup made elsewhere (or crafted) must not point them anywhere. All are in config.SYNC_EXCLUDE too.
 _KEEP_ON_RESTORE = ("posting_story_archive_path", "artwork_archive_path", "auto_backup_dir", "signin_helper_http_ok",
-                    "tw_gallerydl_path")       # a program PawPoller runs: never chosen by a backup
+                    "tw_gallerydl_path",       # a program PawPoller runs: never chosen by a backup
+                    # spec 079 (FR-SEC-001): this install's own consent and ask state, never a backup's
+                    "consent_records", "tech_reports", "tech_usage", "ig_relay_enabled", "first_poll_ok_at",
+                    "usage_ask")
 
 
 def _keep_local_settings(live: Path, incoming: Path) -> None:

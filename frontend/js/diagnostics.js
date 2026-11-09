@@ -203,7 +203,9 @@
                     <p>${st.usage === true
                         ? `On — this copy says "still running" every few minutes${st.last_checkin ? ` (last: ${esc(String(st.last_checkin).replace('T', ' ').replace('Z', ' UTC'))})` : ''}.`
                         : st.usage === false ? 'Off — nothing is sent.' : 'Not decided yet.'}
-                       Anonymous: the version, operating system, how it was installed, which sites are connected (not the accounts), a size range for the library and a random id for this copy; the tech centre also notes the country the connection comes from. Never names, handles, your address or anything you made. Kept for 12 months, then only totals.</p>
+                       Each check-in carries:</p>
+                    <ul class="usage-fields">${(st.checkin_fields || []).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+                    <p>Never names, handles, your address or anything you made. Kept for up to 12 months.</p>
                     ${agreed(recs.tech_usage)}
                     <details id="tech-usage-preview"><summary>Exactly what is sent</summary><pre class="tech-pre">Loading…</pre></details>
                 </div>`;
@@ -246,7 +248,7 @@
             });
             root.querySelector('#tech-usage')?.addEventListener('change', async (e) => {
                 try {
-                    const r = await post('/api/tech/usage', { value: e.target.checked });
+                    const r = await post('/api/tech/usage', { value: e.target.checked, where: 'settings' });
                     if (!r.ok) throw new Error('HTTP ' + r.status);
                     this._tech = await r.json();
                 } catch (err) { msg('Could not save: ' + (err.message || err), true); return; }

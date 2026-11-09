@@ -39,7 +39,7 @@ import re
 
 import config
 from posting import story_reader
-from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage
+from posting.platforms.base import PlatformPoster, PostResult, StoryUploadPackage, naming_chapter
 from clients.otw_forms import to_otw_rating
 from clients.sqw.client import SquidgeWorldClient
 
@@ -509,24 +509,20 @@ class SquidgeWorldPoster(PlatformPoster):
             # content=None preserves the existing body on SqW.
             if package.extra.get("skip_content_refresh"):
                 if story.chapters and story.total_chapters > 1:
-                    try:
-                        sqw_chapters = await client.get_chapter_ids(external_id)
-                        local_chapters = sorted(story.chapters, key=lambda c: c.index)
-                        for sqw_ch, local_ch in zip(sqw_chapters, local_chapters):
-                            new_title = _strip_chapter_prefix(local_ch.title)
-                            if new_title and new_title != sqw_ch.get("title", ""):
+                    sqw_chapters = await client.get_chapter_ids(external_id)
+                    local_chapters = sorted(story.chapters, key=lambda c: c.index)
+                    for sqw_ch, local_ch in zip(sqw_chapters, local_chapters):
+                        new_title = _strip_chapter_prefix(local_ch.title)
+                        if new_title and new_title != sqw_ch.get("title", ""):
+                            with naming_chapter(local_ch.index):
                                 await client.edit_chapter(
                                     external_id, sqw_ch["chapter_id"],
                                     title=new_title,  # content=None preserves body
                                 )
-                                logger.info(
-                                    "SqW: Retitled chapter %s -> %r (metadata-only)",
-                                    sqw_ch["chapter_id"], new_title,
-                                )
-                    except Exception as ch_err:
-                        logger.warning(
-                            "SqW: Chapter title refresh failed: %s", ch_err,
-                        )
+                            logger.info(
+                                "SqW: Retitled chapter %s -> %r (metadata-only)",
+                                sqw_ch["chapter_id"], new_title,
+                            )
                 logger.info(
                     "SqW: Metadata-only edit complete for %s (body content preserved)",
                     external_id,
@@ -539,12 +535,8 @@ class SquidgeWorldPoster(PlatformPoster):
                     duration_seconds=self._elapsed(_t),
                 )
 
-            # 5. Update each chapter's content
-            try:
-                sqw_chapters = await client.get_chapter_ids(external_id)
-            except Exception as e:
-                logger.warning("SqW: Could not list chapters for %s: %s", external_id, e)
-                sqw_chapters = []
+            # 5. Update each chapter's content (UPDATEFAIL: any failure fails the update)
+            sqw_chapters = await client.get_chapter_ids(external_id)
 
             updated = 0
             for sqw_ch in sqw_chapters:
@@ -552,21 +544,20 @@ class SquidgeWorldPoster(PlatformPoster):
                 ch_id = sqw_ch.get("chapter_id", "")
                 if not ch_id:
                     continue
-                content = self._read_chapter_content(story, ch_idx)
-                if not content:
-                    logger.warning(
-                        "SqW: No archive file for chapter %d of %s",
-                        ch_idx, story.name,
-                    )
+                if ch_idx > 1 and not any(c.index == ch_idx for c in story.chapters):
+                    # On the site but not in the story any more: left alone.
+                    logger.warning("SqW: No local chapter %d for %s", ch_idx, story.name)
                     continue
-                try:
+                with naming_chapter(ch_idx):
+                    content = self._read_chapter_content(story, ch_idx)
+                    # same fallback as post(), one-chapter stories only: on a longer story this file isn't chapter 1
+                    if not content and ch_idx == 1 and story.total_chapters <= 1 and package.file_path:
+                        with open(package.file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
+                            content = f.read()
+                    if not content:
+                        raise RuntimeError("its file wasn't found")
                     await client.edit_chapter(external_id, ch_id, content=content)
-                    updated += 1
-                except Exception as ch_err:
-                    logger.error(
-                        "SqW: Chapter %d edit failed for %s: %s",
-                        ch_idx, story.name, ch_err,
-                    )
+                updated += 1
 
             logger.info("SqW: Updated %d/%d chapters of %s", updated, len(sqw_chapters), external_id)
 
@@ -650,11 +641,6 @@ class SquidgeWorldPoster(PlatformPoster):
                 content = f.read()
 
             chapters = await client.get_chapter_ids(external_id)
-            if not chapters:
-                return PostResult(
-                    success=False, error="No chapters found for this work",
-                    duration_seconds=self._elapsed(_t),
-                )
             ch = chapters[0]
             await client.edit_chapter(external_id, ch["chapter_id"], content=content)
             return PostResult(

@@ -3674,16 +3674,19 @@ const App = {
             <label class="signup-switch"><input type="checkbox" id="signup-reports">
                 <span><strong>Send error reports.</strong> When something breaks that isn't yours to fix, a short report goes to the PawPoller tech centre: the error, a scrubbed log excerpt, the app version and your operating system. Never account names, passwords, cookies, artwork or story text. Kept 90 days.</span></label>
             <label class="signup-switch"><input type="checkbox" id="signup-usage">
-                <span><strong>Count this copy.</strong> An anonymous "still running" check-in: the version, Windows or Linux, how it was installed, which kinds of site are connected (not the accounts) and a size range for your library. No names, nothing you made. Kept 12 months.</span></label>
+                <span><strong>Count this copy.</strong> A "still running" check-in every few minutes, with no names and nothing you made. Kept 12 months. Each one carries:
+                <ul class="usage-fields" id="signup-usage-fields"><li><a href="https://pawpoller.com/privacy" target="_blank" rel="noopener">What's sent, in full</a></li></ul></span></label>
             <p class="signup-hint"><a href="https://pawpoller.com/privacy" target="_blank" rel="noopener">What's sent, in full</a></p>
             <button class="btn btn-primary login-btn" type="button" id="signup-submit">Continue</button>
             <div class="login-error" id="signup-error" role="alert"></div>`));
         document.getElementById('signup-submit').addEventListener('click', async () => {
             const reports = document.getElementById('signup-reports').checked;
             const usage = document.getElementById('signup-usage').checked;
-            try { await API.setTechConsent(reports); await API.setTechUsage(usage); next(); }
+            // Spec 079: an unticked box is saved as 'signup', which is not a clear no: the ask still comes later.
+            try { await API.setTechConsent(reports); await API.setTechUsage(usage, 'signup'); next(); }
             catch (err) { showErr(fieldErr(err.message)); }
         });
+        this._fillUsageFields(document.getElementById('signup-usage-fields'));
     },
 
     /* ── Setup Wizard ─────────────────────────────────────────
@@ -4395,7 +4398,8 @@ const App = {
                     </ul>
                     <label style="display:flex;gap:8px;align-items:flex-start;text-align:left;color:var(--text-secondary);font-size:13px;margin:0 0 12px;padding:10px;border:1px solid var(--border);border-radius:8px;cursor:pointer">
                         <input type="checkbox" id="setup-usage" style="margin-top:3px;flex:0 0 auto">
-                        <span><strong style="color:var(--text-primary)">Also count this copy of PawPoller.</strong> Every few minutes it says "still running", anonymously, so the developer knows how many people use it and on what: the version, Windows or Linux, how it was installed, which sites you have connected (not the accounts), roughly how big your library is (a range, never a number), plus a random id for this copy so it is counted once and the country your connection comes from (never your address). No names, nothing you made.</span>
+                        <span><strong style="color:var(--text-primary)">Also count this copy of PawPoller.</strong> Every few minutes it says "still running", so the developer knows how many people use it and on what. No names, nothing you made. Each check-in carries:
+                        <ul class="usage-fields" id="setup-usage-fields"><li><a href="https://pawpoller.com/privacy" target="_blank" rel="noopener">What's sent, in full</a></li></ul></span>
                     </label>
                     <p style="color:var(--text-muted);font-size:12px;margin-bottom:16px">You can change both any time in Settings → Diagnostics. Reports are kept 90 days; check-ins 12 months, then only totals. <a href="https://pawpoller.com/privacy" target="_blank" rel="noopener">Privacy policy</a>.</p>
                     <div style="display:flex;gap:8px">
@@ -4575,7 +4579,7 @@ const App = {
                 }
                 if (currentStep === 'posting' && answers.posts === 'post') {
                     try {
-                        await API.savePostingSettings({ posting_default_rating: answers.rating || 'general',
+                        await API.savePostingSettings({ posting_enabled: true, posting_default_rating: answers.rating || 'general',
                             posting_default_platforms: answers.postSites });
                     } catch (err) { console.warn('[Setup] posting defaults save failed:', err); }
                 }
@@ -4669,15 +4673,16 @@ const App = {
             }
 
             /* Tech Centre consent (4.10.0) — both answers are answers: store, advance. */
+            this._fillUsageFields(document.getElementById('setup-usage-fields'));
             for (const [id, value] of [['setup-tech-yes', true], ['setup-tech-no', false]]) {
                 document.getElementById(id)?.addEventListener('click', async () => {
                     // Read the tick BEFORE the await — goNext() re-renders the step.
                     const usage = !!document.getElementById('setup-usage')?.checked;
                     try { await API.setTechConsent(value); }
                     catch (err) { console.warn('[Setup] tech consent save failed:', err); }
-                    // "Count this copy" (4.42.0) is its own answer: unticked is a no, so
-                    // this install is never asked again after the wizard.
-                    try { await API.setTechUsage(usage); }
+                    // "Count this copy" (4.42.0) is its own answer. Spec 079: an unticked box is
+                    // saved as 'setup', not a clear no, so the ask still comes after the first poll.
+                    try { await API.setTechUsage(usage, 'setup'); }
                     catch (err) { console.warn('[Setup] usage consent save failed:', err); }
                     goNext();
                 });
@@ -7066,6 +7071,10 @@ const App = {
             return;
         }
         if (current !== seen && data.entries && data.entries.length) {
+            // Spec 079: never on top of the "count this copy" ask; wait for it to close.
+            while (document.getElementById('usageprompt-ov')?.classList.contains('open')) {
+                await new Promise(r => setTimeout(r, 1000));
+            }
             this._showWhatsNewModal(data);
         }
         try { localStorage.setItem('pp_seen_version', current); } catch (e) { /* private mode */ }
@@ -7083,51 +7092,99 @@ const App = {
         let st;
         try { st = await API.getTechStatus(); } catch (e) { return; }
         if (!st || !st.enabled) return;
-        if (!st.asked && st.prompt) { this._showTechPromptModal(st.prompt); return; }
-        // "Count this copy" (4.42.0, spec 009): installs from before the question
-        // are asked once. Never on top of the What's-new popup — the next route asks.
-        if (!st.usage_asked && !this._usageSnoozed
-            && !document.getElementById('whatsnew-ov')?.classList.contains('open')) {
-            this._showUsagePromptModal();
+        if (!st.asked && st.prompt) { if (this._noOtherDialog()) this._showTechPromptModal(st.prompt); return; }
+        // "Count this copy" (spec 079): the server says when (after the first successful poll, no clear
+        // answer, twice at most). Never on top of another pop-up: the next route change asks again.
+        if (st.usage_ask_due && !this._usageAskShownThisSession && this._noOtherDialog()) {
+            this._showUsagePromptModal(st);
         }
     },
 
-    async _showUsagePromptModal() {
+    /* Spec 079: no other pop-up, dialog or sign-in/sign-up/setup screen is showing. */
+    /* Spec 079: on a sign-in, sign-up or setup route (the same list route() skips the prompts on). */
+    _atAuthGate() {
+        const route = (window.location.hash || '').replace(/^#\/?/, '').split('/')[0];
+        return ['dashboard-login', 'dashboard-setup', 'setup', 'signup', 'login', 'loading'].includes(route);
+    },
+
+    _noOtherDialog() {
+        if (document.getElementById('whatsnew-ov')?.classList.contains('open')) return false;
+        // The route, not only the screen: right after sign-in the status fetch can return before the
+        // sign-up/setup redirect has drawn its .login-screen (seen in the 079 screenshot run).
+        if (this._atAuthGate()) return false;
+        if (document.querySelector('.login-screen')) return false;
+        if (document.documentElement.classList.contains('pp-tour-active')) return false;   // a page tour is running
+        const open = [...document.querySelectorAll('[aria-modal="true"], dialog[open]')].some(el => {
+            const ov = el.closest('.wn-ov, .modal-overlay, .open');
+            return el.offsetParent !== null || (ov && ov.classList.contains('open'));
+        });
+        return !open;
+    },
+
+    /* Spec 079: the check-in field list from its one source (techcentre.CHECKIN_FIELDS → status.checkin_fields).
+     * The privacy link already in the list stays when the status can't be read. */
+    _fillUsageFields(ul) {
+        if (!ul) return;
+        API.getTechStatus().then(st => {
+            const fields = (st && st.checkin_fields) || [];
+            if (fields.length) ul.innerHTML = fields.map(f => `<li>${Utils.escapeHtml(String(f))}</li>`).join('');
+        }).catch(() => { /* the privacy link covers it */ });
+    },
+
+    async _showUsagePromptModal(st) {
         const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
+        const toast = (t, kind) => { if (window.Utils && Utils.showToast) Utils.showToast(t, kind); };
         let preview = {};
-        try { preview = await API.getCheckinPreview(); } catch (e) { /* the modal still explains it */ }
+        try { preview = await API.getCheckinPreview(); } catch (e) { /* the list still explains it */ }
+        if (!this._noOtherDialog()) return;   // something opened while the preview loaded: the next route change asks
+        const fields = (st && st.checkin_fields) || [];
+        const list = fields.length
+            ? `<ul class="usage-fields">${fields.map(f => `<li>${esc(f)}</li>`).join('')}</ul>`
+            : `<p>What's sent is listed on the <a href="https://pawpoller.com/privacy" target="_blank" rel="noopener">privacy page</a>.</p>`;
         let ov = document.getElementById('usageprompt-ov');
         if (!ov) { ov = document.createElement('div'); ov.id = 'usageprompt-ov'; ov.className = 'wn-ov'; document.body.appendChild(ov); }
         ov.innerHTML = `
-            <div class="wn-modal" role="dialog" aria-modal="true" aria-label="Count this copy of PawPoller?">
+            <div class="wn-modal usage-ask" role="dialog" aria-modal="true" aria-labelledby="usage-ask-title">
                 <div class="wn-top">
-                    <h2>📊 Count this copy of PawPoller?</h2>
+                    <h2 id="usage-ask-title" tabindex="-1">PawPoller is made by one person. Can it count that this copy is running? No names, nothing you made.</h2>
                     <button class="wn-x" type="button" aria-label="Not now">×</button>
                 </div>
                 <div class="wn-scroll">
-                    <p>Knowing how many people use PawPoller, and on what, decides what gets fixed and built next.</p>
-                    <p>If you say yes, every few minutes this copy says "still running", anonymously: the version, Windows or Linux, how it was installed, which sites you have connected (not the accounts), roughly how big your library is (a range, never a number), plus a random id for this copy so it is counted once. The tech centre also notes which country the connection comes from — never your address.</p>
-                    <p><strong>Never sent:</strong> names, account handles, passwords, your address, file names, artwork or story text.</p>
+                    <p>If you say yes, every few minutes this copy says "still running". Each check-in carries:</p>
+                    ${list}
+                    <p>Kept for up to 12 months. Change your mind any time in Settings → Diagnostics. <a href="https://pawpoller.com/privacy" target="_blank" rel="noopener">Privacy policy</a></p>
                     <details><summary>Exactly what would be sent</summary><pre class="tech-pre">${esc(JSON.stringify(preview, null, 1))}</pre></details>
-                    <p style="color:var(--text-muted);font-size:12px">Change your mind any time in Settings → Diagnostics.</p>
                 </div>
-                <div class="wn-foot" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-                    <button class="btn" type="button" data-usage="no">No thanks</button>
-                    <button class="btn btn-primary" type="button" data-usage="yes">Yes, count it</button>
+                <div class="wn-foot usage-ask-foot">
+                    <button class="btn usage-ask-btn" type="button" data-usage="no">No thanks</button>
+                    <button class="btn usage-ask-btn" type="button" data-usage="yes">Yes</button>
                 </div>
             </div>`;
         ov.classList.add('open');
         this._techPromptOpen = true;
-        const close = () => { ov.classList.remove('open'); this._techPromptOpen = false; };
-        ov.querySelector('.wn-x').addEventListener('click', () => { this._usageSnoozed = true; close(); });
+        // Counted before anything else, so a failed save can't bring it back this session (FR-011).
+        this._usageAskShownThisSession = true;
+        API.markUsageAskShown().catch(() => { /* counted next time; still not shown again this session */ });
+        const before = document.activeElement;
+        const onKey = (e) => { if (e.key === 'Escape') close(); };
+        const close = () => {
+            ov.classList.remove('open');
+            this._techPromptOpen = false;
+            document.removeEventListener('keydown', onKey);
+            if (before && typeof before.focus === 'function') before.focus();
+        };
+        document.addEventListener('keydown', onKey);
+        ov.querySelector('#usage-ask-title').focus();         // focus the question, never a choice (FR-SEC-005)
+        ov.querySelector('.wn-x').addEventListener('click', close);   // not now: no answer is saved
         ov.querySelectorAll('[data-usage]').forEach(btn => btn.addEventListener('click', async () => {
-            btn.disabled = true;
+            ov.querySelectorAll('[data-usage]').forEach(b => { b.disabled = true; });
             const yes = btn.dataset.usage === 'yes';
             try {
-                await API.setTechUsage(yes);
-                if (window.Utils && Utils.showToast) Utils.showToast(yes ? 'Thanks — this copy will be counted.' : 'Okay — nothing will be sent.');
+                await API.setTechUsage(yes, 'ask', { quiet: [409] });
+                toast(yes ? 'Thanks, this copy will be counted.' : 'Okay, nothing will be sent.');
             } catch (e) {
-                if (window.Utils && Utils.showToast) Utils.showToast('Could not save that: ' + (e.message || e), 'error');
+                if (String(e && e.message).startsWith('API 409')) toast("You've already answered this.");
+                else toast("Couldn't save that, nothing was sent.", 'error');
             }
             close();
         }));
@@ -24705,6 +24762,9 @@ const App = {
                 }
             }
         } catch { /* ignore */ }
+        // Spec 079: a dashboard left open still gets the ask once the first poll succeeds, not only on a page
+        // change (it throttles itself to one status fetch per 2 minutes).
+        if (!this._atAuthGate()) this._maybeShowTechPrompt();
     },
 
     // ── Global Sync Progress Bar ─────────────────────────────

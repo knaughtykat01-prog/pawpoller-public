@@ -71,3 +71,23 @@ def test_setup_stays_open(browser, app_url):  # noqa: F811
     finally:
         tab.close()
         config.save_settings({"setup_complete": True})
+
+
+@pytest.mark.parametrize("choice, expected", [("post", True), ("track", False)])
+def test_post_and_track_switches_posting_on(browser, app_url, choice, expected):  # noqa: F811
+    """Someone who says they'll post must not finish setup with posting off; Only track leaves it alone."""
+    config.save_settings({"posting_enabled": False})
+    _unfinished("posting")
+    tab = _Watched(browser, app_url, {"width": 1280, "height": 900})
+    try:
+        page = tab.page
+        page.evaluate("location.hash = '#/setup'")
+        page.wait_for_selector(f'.setup-posts[data-posts="{choice}"]', timeout=8000)
+        page.click(f'.setup-posts[data-posts="{choice}"]')
+        with page.expect_response(lambda r: "/api/settings/setup-progress" in r.url, timeout=8000):
+            page.click("#setup-next")
+        page.wait_for_load_state("networkidle")
+        assert config.get_settings().get("posting_enabled", False) is expected
+    finally:
+        tab.close()
+        config.save_settings({"setup_complete": True, "posting_enabled": False})
