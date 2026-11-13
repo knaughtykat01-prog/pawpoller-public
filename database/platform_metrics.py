@@ -247,6 +247,12 @@ _REGISTRY: tuple[PlatformMetrics, ...] = (
         family="views", views="views", faves="favorites_count", comments="comments_count",
         labels={"faves": "Favourites"},
     ),
+    # Patreon (spec 084): no views; likes and comments per post. Supporter totals live in supporter_snapshots.
+    PlatformMetrics(
+        code="pat", label="Patreon", table="pat_submissions", snapshots="pat_snapshots",
+        family="views", views="views", faves="favorites_count", comments="comments_count",
+        labels={"faves": "Likes"},
+    ),
     # YouTube (4.24.0): views / likes / comments from videos.list statistics.
     PlatformMetrics(
         code="yt", label="YouTube", table="yt_submissions", snapshots="yt_snapshots",

@@ -70,7 +70,8 @@ CAPPED = {"sc": "mature", "yt": "mature",   # YouTube forbids sexually explicit 
           "fb": "general",                # Facebook: no sexual content or most nudity (4.57.0)
           "tum": "mature",                # Tumblr: Mature with its label; explicit sex acts banned (4.60.0)
           "thr": "general",               # Threads: Instagram's rules, no nudity or sexual content (4.61.0)
-          "ig": "general"}                # Instagram: no nudity or sexual content (4.61.1, spec 031)
+          "ig": "general",                # Instagram: no nudity or sexual content (4.61.1, spec 031)
+          "pat": "mature"}                # Patreon: General and Mature only from PawPoller (spec 084)
 
 
 def test_every_existing_poster_still_takes_adult_work():

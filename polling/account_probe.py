@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 _LABELS = {
     "ao3": "AO3", "sqw": "SquidgeWorld", "sf": "SoFurry", "e621": "e621", "fbr": "Furbooru", "r34": "Rule34.xxx",
     "mast": "Mastodon", "tum": "Tumblr", "bsky": "Bluesky", "pix": "Pixiv", "yt": "YouTube", "pic": "Picarto", "ttv": "Twitch",
-    "ig": "Instagram", "thr": "Threads", "ng": "Newgrounds", "th": "Toyhouse", "sc": "SoundCloud", "fn": "FurryNetwork",
+    "ig": "Instagram", "thr": "Threads", "ng": "Newgrounds", "th": "Toyhouse", "pat": "Patreon", "sc": "SoundCloud", "fn": "FurryNetwork",
     "ik": "Itaku", "wp": "Wattpad", "ws": "Weasyl", "ib": "Inkbunny", "fb": "Facebook",
 }
 
@@ -174,6 +174,24 @@ def _b_th(c, pk):
     return THClient(username=c.get("th_username", ""), cookie=c.get("th_cookie", ""))
 
 
+class _PatProbe:
+    """Spec 084: the Patreon session against the account's page name, in the shared session-dict shape."""
+
+    def __init__(self, c):
+        from clients.pat.client import PatClient
+        self._page, self._client = c.get("pat_username", ""), PatClient(c.get("pat_cookie", ""))
+
+    async def validate_session(self):
+        return await self._client.validate_session(expected_page=self._page)
+
+    async def close(self):
+        await self._client.close()
+
+
+def _b_pat(c, pk):
+    return _PatProbe(c)
+
+
 def _b_sc(c, pk):
     from clients.sc.client import ScClient
     try:
@@ -241,6 +259,7 @@ PROBES = {
     "fb":   (lambda c: bool(c.get("fb_page_token") and c.get("fb_page_id")), _b_fb, "session_str", False),
     "ng":   (lambda c: bool(c.get("ng_cookie")), _b_ng, "session_dict", False),
     "th":   (lambda c: bool(c.get("th_cookie")), _b_th, "session_dict", False),
+    "pat":  (lambda c: bool(c.get("pat_cookie")), _b_pat, "session_dict", False),
     "sc":   (lambda c: bool(c.get("sc_client_id") and c.get("sc_client_secret") and c.get("sc_refresh_token")), _b_sc, "session_str", True),
     "fn":   (lambda c: bool(c.get("fn_username") and (c.get("fn_password") or c.get("fn_refresh_token"))), _b_fn, "session_str", True),
     "ik":   (lambda c: bool(c.get("ik_target_user") or c.get("ik_auth_token")), _b_ik, "ik", False),

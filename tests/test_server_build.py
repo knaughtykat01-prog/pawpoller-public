@@ -79,3 +79,13 @@ def test_server_wires_the_updater_only_when_managed():
     assert "server_updater.managed()" in src and "server_updater.loop" in src
     route = _read("routes/mirror_api.py")
     assert "server_updater.request_restart()" in route
+
+
+@pytest.mark.repo_only
+@pytest.mark.parametrize("spec_file", ["pawpoller.spec", "pawpoller-server.spec"])
+def test_both_builds_carry_patreon(spec_file):
+    """Spec 084: the Patreon client and poller ride in both builds (the poster comes with posting.platforms)."""
+    hidden = _read(spec_file).split("hiddenimports=")[1].split("]")[0]
+    for mod in ("clients.pat.client", "clients.pat.editor_json", "polling.pat_poller"):
+        assert f"'{mod}'" in hidden, mod
+    assert "collect_submodules('posting.platforms')" in _read(spec_file)

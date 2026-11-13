@@ -1028,5 +1028,17 @@ class CleanRun:
                 setattr(package, attr, o.path)
             if o.note:
                 notes.append(o.note)
+        # Spec 084: Patreon sends several pictures and its own cover from pat_files; each goes out cleaned too. The
+        # library paths stay (the poster re-checks them against the piece folder) and the copies are mapped beside.
+        pf = getattr(package, "pat_files", None) or {}
+        srcs = [p for p, _ in pf.get("pictures") or []] + ([pf["cover"][0]] if pf.get("cover") else [])
+        if srcs:
+            pf["upload"] = {}
+            for src in srcs:
+                o = self.clean(src)
+                if o.state == "cleaned":
+                    pf["upload"][src] = o.path
+                if o.note:
+                    notes.append(o.note)
         if notes:
             extra["metadata_note"] = " ".join(dict.fromkeys(notes))

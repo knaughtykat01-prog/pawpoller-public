@@ -1005,6 +1005,17 @@ const API = {
     fullNGResync() { return this.post('/api/ng/poll/full-resync'); },
     getNGPollProgress() { return this.get('/api/ng/poll/progress'); },
     // Toyhouse (spec 062): the Newgrounds set, plus the character list for the post form's picker.
+    // Patreon (spec 084): the session's page check, its tiers and collections, per-account defaults, supporter totals.
+    patTiers(accountId) { return this.get('/api/pat/tiers', { account_id: accountId }); },
+    patCollections(accountId) { return this.get('/api/pat/collections', { account_id: accountId }); },
+    patSetDefaultAudience(body) { return this.put('/api/pat/default-audience', body); },
+    patDisconnect(accountId) { return this.post(`/api/pat/auth/disconnect?account_id=${encodeURIComponent(accountId || '')}`); },
+    getPATStatus() { return this.get('/api/pat/status'); },
+    getPATPollLog(params) { return this.get('/api/pat/poll_log', params); },
+    getPATSummary(params) { return this.get('/api/pat/summary', params); },
+    getPATSubmissions(params) { return this.get('/api/pat/submissions', params); },
+    supportersSummary() { return this.get('/api/supporters/summary'); },
+    supportersHistory(accountId, days) { return this.get('/api/supporters/history', { account_id: accountId, days }); },
     getTHStatus() { return this.get('/api/th/status'); },
     getTHSummary(params) { return this.get('/api/th/summary', params); },
     getTHSubmissions(params) { return this.get('/api/th/submissions', params); },

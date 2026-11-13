@@ -7,6 +7,8 @@ endpoint is now refused to a non-loopback caller unless it presents a valid API 
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -91,3 +93,56 @@ def test_a_stranger_cannot_mint_a_key_and_walk_past_the_gate(monkeypatch):
     finally:
         # TESTKEYLEAK (4.45.4): a real key in the shared test settings; later tests must not see it.
         assert local.delete(f"/api/auth/api-keys/{minted['prefix']}").status_code == 200
+
+
+def test_patreon_and_supporter_data_locked_when_open(open_app):
+    """Spec 084: Patreon's routes and the supporter totals are refused to a remote caller on an open instance."""
+    assert "/api/pat/" in open_app._SENSITIVE_WHEN_OPEN_PREFIXES
+    assert "/api/supporters/" in open_app._SENSITIVE_WHEN_OPEN_PREFIXES
+    c = TestClient(open_app.app, raise_server_exceptions=False)
+    assert c.get("/api/supporters/summary").status_code == 403
+    assert c.get("/api/pat/summary").status_code == 403
+
+
+# SEC081: on an open instance, a remote caller without a paired desktop's key can't remove anything. Every DELETE is
+# refused (a piece, story, post, commission or promo, and the rows: personas, tags, collections, queued posts, a
+# forgotten publication, ...), and so are the two merges, which remove the absorbed piece's folder. Changing things
+# stays open: editing, junk, split. The machine itself and a paired desktop's key still delete. Ids no other test uses.
+DESTROY_PATHS = [("delete", "/api/artwork/images/Some_Piece"), ("delete", "/api/artwork/images/Series/Some_Piece"),
+                 ("post", "/api/masterpieces/merge"), ("post", "/api/masterpieces/merge-as-variant"),
+                 ("delete", "/api/editor/stories/Some_Story"), ("delete", "/api/editor/stories/Series/Some_Story"),
+                 ("delete", "/api/editor/stories/Some_Story/scheduled/999999"),
+                 ("delete", "/api/editor/stories/Some_Story/publication?platform=fa"),
+                 ("delete", "/api/posts/999999"), ("delete", "/api/commissions/999999"),
+                 ("delete", "/api/commissions/999999/files/ref.png"), ("delete", "/api/promos/999999"),
+                 ("delete", "/api/personas/999999"), ("delete", "/api/tags/999999"),
+                 ("delete", "/api/masterpieces/Some_Piece/variants/x"),
+                 ("delete", "/api/masterpieces/Some_Piece/publication?platform=fa"),
+                 ("post", "/api/posts/999999/remove-from-sites")]     # takes a journal down on its sites (4.90.0)
+STILL_OPEN = [("get", "/api/artwork/images"), ("patch", "/api/artwork/images/Some_Piece"),
+              ("post", "/api/masterpieces/Some_Piece/status"), ("post", "/api/masterpieces/Some_Piece/variants/x/split")]
+
+
+def test_removing_anything_is_refused_remote(open_app):
+    remote = TestClient(open_app.app, raise_server_exceptions=False)
+    local = TestClient(open_app.app, raise_server_exceptions=False, client=("127.0.0.1", 50000))
+    keyed = TestClient(open_app.app, raise_server_exceptions=False, headers={"Authorization": "Bearer pp_good"})
+    for method, path in DESTROY_PATHS:
+        kw = {} if method == "delete" else {"json": {}}
+        r = getattr(remote, method)(path, **kw)
+        assert r.status_code == 403 and "dashboard password" in r.text, (method, path, r.status_code)
+        assert getattr(local, method)(path, **kw).status_code != 403, (method, path)
+        assert getattr(keyed, method)(path, **kw).status_code != 403, (method, path)
+    for method, path in STILL_OPEN:
+        kw = {} if method == "get" else {"json": {}}
+        assert getattr(remote, method)(path, **kw).status_code != 403, (method, path)
+
+
+def test_every_delete_route_is_refused_remote(open_app):
+    """However a delete route is named, one added later included."""
+    remote = TestClient(open_app.app, raise_server_exceptions=False)
+    deletes = [r.path for r in open_app.app.routes if "DELETE" in (getattr(r, "methods", None) or ())]
+    assert len(deletes) > 40
+    for path in deletes:
+        r = remote.delete(re.sub(r"\{[^}]+\}", "x1", path))
+        assert r.status_code == 403 and "dashboard password" in r.text, path

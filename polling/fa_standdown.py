@@ -11,7 +11,7 @@ The state is one small file of times, so a restart can't be used to hammer FA. I
 block is on the address. Seats on one box each keep their own; none tells another to stand down (spec 040).
 Only the scheduled poller lengthens the wait, so a user pressing Test never pushes the next try further out.
 
-Toyhouse uses the same stand-down (spec 062): every function takes ``site``. FA stays the default, and FA's file
+Toyhouse (spec 062) and Patreon (spec 084) use the same stand-down: every function takes ``site``. FA stays the default, and FA's file
 keeps its old name. ``site`` becomes part of a file name, so only the sites in ``_SITES`` are accepted.
 """
 from __future__ import annotations
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 START_SECONDS = 2 * 3600     # first wait; seats poll every 4-24 h, so this usually skips just the next round
 CEILING_SECONDS = 24 * 3600
-_SITES = {"fa": "FurAffinity", "th": "Toyhouse"}
+_SITES = {"fa": "FurAffinity", "th": "Toyhouse", "pat": "Patreon"}
 
 
 def _path(site: str = "fa"):

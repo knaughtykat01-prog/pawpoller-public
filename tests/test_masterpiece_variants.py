@@ -101,7 +101,7 @@ def test_suggestions_never_offer_the_synthetic_mp_hash_rows(artwork_archive):
 def test_declare_and_delete_variant_endpoints(artwork_archive):
     _mk(artwork_archive, "DecPiece", ["image.png", "image_2.png"])
     from dashboard import app
-    c = TestClient(app)
+    c = TestClient(app, client=("127.0.0.1", 50000))    # SEC081: deleting is local-only on an open instance
     r = c.post("/api/masterpieces/DecPiece/variants",
                json={"key": "nsfw", "image": "image_2.png", "label": "NSFW", "rating": "adult"})
     assert r.status_code == 200
@@ -127,7 +127,7 @@ def test_merge_as_variant_endpoint(artwork_archive):
     conn.commit()
     conn.close()
     from dashboard import app
-    c = TestClient(app)
+    c = TestClient(app, client=("127.0.0.1", 50000))    # SEC081: merging removes a folder, a local-only write when open
     r = c.post("/api/masterpieces/merge-as-variant",
                json={"keep": "KeepE", "absorb": "AbsorbE", "key": "nsfw", "label": "NSFW"})
     assert r.status_code == 200

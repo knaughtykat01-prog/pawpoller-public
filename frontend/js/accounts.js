@@ -306,6 +306,7 @@ window.Accounts = {
                 catch (err) { cb.checked = !cb.checked; window.toast && toast.error('Could not save: ' + err.message); }
             }));
         this._wireDaAuthorise(el);
+        this._wirePatreon(el);
         this._wireTrack(el);
         el.querySelectorAll('[data-creds]').forEach(btn =>
             btn.addEventListener('click', () => this._editCredentials(
@@ -395,7 +396,7 @@ window.Accounts = {
            needed it; that is a mistake a real user made, not a hypothetical. */
         // Named "Sign in" (SIGNINVISIBLE, 4.88.1): as "Credentials" nobody found the sign-in
         // buttons inside it. On the four code sites it is the primary button on the card.
-        const creds = `<button class="btn btn-sm${['fa', 'tw', 'ng', 'ik', 'th'].includes(a.platform) ? ' btn-primary' : ''}"
+        const creds = `<button class="btn btn-sm${['fa', 'tw', 'ng', 'ik', 'th', 'pat'].includes(a.platform) ? ' btn-primary' : ''}"
                        data-creds="${a.account_id}" data-platform="${a.platform}"
                        title="Sign in to THIS account, or paste renewed cookies or tokens">🔑 Sign in</button>`;
         const test = `<button class="btn btn-sm" data-test-login="${a.account_id}" data-platform="${a.platform}"
@@ -418,6 +419,14 @@ window.Accounts = {
                        title="Follow your artist tag and your characters, not just your uploads">Track</button>
                <span class="acct-track-new" data-track-new="${a.account_id}" hidden>New: follow your artist tag and characters</span>`
             : '';
+        // Spec 084: Patreon's defaults for new pieces (who sees them, "Tell my members") and Disconnect.
+        const pat = a.platform === 'pat'
+            ? `<button class="btn btn-sm" data-pat-defaults="${a.account_id}"
+                       title="Who sees new pieces on Patreon unless a piece says otherwise">Patreon defaults</button>
+               <button class="btn btn-sm" data-pat-disconnect="${a.account_id}"
+                       title="Forget this Patreon sign-in, its page and its saved choices">Disconnect</button>
+               <div class="acct-pat-defaults" data-pat-box="${a.account_id}" hidden></div>`
+            : '';
         return `<div class="acct-card${a.enabled ? '' : ' disabled'}" style="--pc:${color || 'var(--accent)'}">
             <div class="acct-id">
                 <span class="acct-name">${this.esc(a.label || '(unnamed)')} ${badge}${(this._levels || {})[`acct:${a.account_id}`]
@@ -434,6 +443,7 @@ window.Accounts = {
                 ${test}
                 ${daAuth}
                 ${track}
+                ${pat}
                 ${del}
             </span>
         </div>`;
@@ -476,7 +486,7 @@ window.Accounts = {
         const bl = this._browserLogin || {};
         const canBrowser = !!bl.available && (bl.platforms || []).some(p => (p.code || p) === platform);
         // Spec 059: a server or seat signs in through the desktop app with a one-time code.
-        const canCode = !bl.available && ['fa', 'tw', 'ng', 'ik', 'th'].includes(platform);
+        const canCode = !bl.available && ['fa', 'tw', 'ng', 'ik', 'th', 'pat'].includes(platform);
         const otherWays = canBrowser || canCode;
         const panel = document.createElement('div');
         panel.className = 'acct-cred-editor acct-form';
@@ -765,6 +775,35 @@ window.Accounts = {
         } catch (err) {
             if (out) { out.textContent = '✗ ' + (err.message || err); out.style.color = 'var(--danger)'; }
         }
+    },
+
+    /* Patreon (spec 084): per-account defaults through the shared panel, and Disconnect (every pat_* key). */
+    _wirePatreon(el) {
+        el.querySelectorAll('[data-pat-defaults]').forEach(btn => btn.addEventListener('click', async () => {
+            const id = btn.dataset.patDefaults;
+            const box = el.querySelector(`[data-pat-box="${id}"]`);
+            if (!box || !window.PatreonRows) return;
+            if (!box.hidden) { box.hidden = true; return; }
+            let saved = {};
+            try { saved = (await API.get('/api/pat/auth/status', { account_id: id })).default_audience || {}; } catch (e) { saved = {}; }
+            box.innerHTML = window.PatreonRows.html(saved, { kind: 'defaults', rating: 'general' })
+                + '<button class="btn btn-sm btn-primary" data-pat-save>Save defaults</button> <span class="acct-pat-msg"></span>';
+            box.hidden = false;
+            window.PatreonRows.wire(box, id);
+            box.querySelector('[data-pat-save]').addEventListener('click', async () => {
+                const v = window.PatreonRows.collect(box);
+                const msg = box.querySelector('.acct-pat-msg');
+                try {
+                    await API.patSetDefaultAudience({ account_id: Number(id), audience: v.audience, tier_ids: v.tier_ids || [], notify: v.notify });
+                    msg.textContent = 'Saved. Mature pieces still go to paid tiers only.';
+                } catch (e) { msg.textContent = e.message || 'Could not save.'; }
+            });
+        }));
+        el.querySelectorAll('[data-pat-disconnect]').forEach(btn => btn.addEventListener('click', async () => {
+            if (!confirm('Disconnect this Patreon account? PawPoller forgets its sign-in, page and saved choices. Your posts on Patreon stay.')) return;
+            try { await API.patDisconnect(btn.dataset.patDisconnect); btn.textContent = 'Disconnected'; btn.disabled = true; }
+            catch (e) { alert(e.message || 'Could not disconnect.'); }
+        }));
     },
 
     _wireDaAuthorise(el) {

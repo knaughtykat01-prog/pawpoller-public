@@ -356,7 +356,7 @@ class TestPanelUI:
         # save that runs, and it carries both guarantees.
         mp = open("frontend/js/masterpieces.js", encoding="utf-8").read()
         i = mp.index("async _applyOverrides(name, overrides) {")
-        block = mp[i:i + 2500]
+        block = mp[i:mp.index("\n    async ", i + 10)]     # the whole function (spec 084 added Patreon's options)
         assert '.art-tg-opt[data-platform="${code}"]' in block
         assert "{ ...oldCats }" in block and "{ ...oldDescs }" in block
 

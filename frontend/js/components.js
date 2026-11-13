@@ -1642,13 +1642,13 @@ const Components = {
     },
 
     /* Newgrounds (4.23.0): the same list, routed to /ng/submission/. */
-    ngTopList(items, valueKey, labelKey = 'title', idKey = 'submission_id', code = 'ng') {   // Toyhouse reuses it (spec 062)
+    ngTopList(items, valueKey, labelKey = 'title', idKey = 'submission_id', code = 'ng') {   // Toyhouse reuses it (spec 062); '' = no link (Patreon)
         if (!items || items.length === 0) {
             return '<p style="color:var(--text-muted);font-size:13px">No data yet</p>';
         }
         const lis = items.map(item => `
             <li>
-                <span class="top-title" data-nav="/${code}/submission/${encodeURIComponent(item[idKey])}">${Utils.escapeHtml(Utils.truncate(item[labelKey], 30))}</span>
+                <span class="top-title"${code ? ` data-nav="/${code}/submission/${encodeURIComponent(item[idKey])}"` : ''}>${Utils.escapeHtml(Utils.truncate(item[labelKey], 30))}</span>
                 <span class="top-value">${Utils.formatCompact(item[valueKey])}</span>
             </li>
         `).join('');

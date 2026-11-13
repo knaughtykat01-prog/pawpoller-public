@@ -113,7 +113,7 @@ def test_resolve_attachment_blocks_traversal(tmp_path, monkeypatch):
 def _client():
     from fastapi.testclient import TestClient
     import dashboard
-    return TestClient(dashboard.app)
+    return TestClient(dashboard.app, client=("127.0.0.1", 50000))    # deleting is local-only when open (SEC081)
 
 
 def test_upload_list_download_delete_roundtrip(tmp_path, monkeypatch):

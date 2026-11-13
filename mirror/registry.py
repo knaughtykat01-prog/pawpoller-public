@@ -63,7 +63,7 @@ from dataclasses import dataclass, field
 # tables kept their original names.
 PLATFORM_PREFIXES = (
     "", "ao3_", "bsky_", "da_", "e621_", "fa_", "fb_", "fbr_", "fn_", "ig_", "ik_", "r34_",
-    "mast_", "ng_", "pic_", "pix_", "sc_", "sf_", "sqw_", "th_", "thr_", "ttv_", "tum_", "tw_", "wp_", "ws_", "yt_",
+    "mast_", "ng_", "pic_", "pix_", "sc_", "sf_", "sqw_", "th_", "pat_", "thr_", "ttv_", "tum_", "tw_", "wp_", "ws_", "yt_",
 )
 
 SRV = "SRV"
@@ -165,6 +165,8 @@ _RULES += [
     _srv("ttv_channel_snapshots", "Poll output (Twitch channel state + counters, spec 045)."),
     _srv("th_characters", "Poll output (Toyhouse characters' latest counts, spec 062)."),
     _srv("th_character_totals", "Poll output (Toyhouse character totals per poll, spec 062 Amendment B)."),
+    _srv("supporter_snapshots", "Poll output (supporter totals per poll, spec 084). Totals only, no person."),
+    _srv("supporter_tier_snapshots", "Poll output (per-tier totals of a supporter snapshot, spec 084)."),
     _srv("account_follower_snapshots", "Time series; same reasoning as *_snapshots."),
     # Spec 028: board posts someone else uploaded, kept out of the totals; mirrors of the main tables.
     _srv("e621_found", "Poll output (e621 posts by other uploaders, kept apart)."),

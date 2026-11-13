@@ -802,6 +802,13 @@ def build_artwork_package(
                                                     settings.get("posting_default_rating", "adult"))
     thumbnail = artwork.thumbnail_path if rating_rank(primary_rating) <= rating_rank(rating) else None
 
+    site_opts = dict(artwork.categories_by_platform.get(platform, {}))
+    pat_files: dict = {}
+    if platform == "pat":     # spec 084: only Patreon's keys (CHOICE_KEYS), and its files resolved here, never from extra
+        from posting import pat_choices
+        site_opts = pat_choices.pick(site_opts)
+        pat_files = pat_choices.for_artwork(artwork, image_path, rating, site_opts)
+
     return StoryUploadPackage(
         story_name=artwork.name,
         chapter_index=0,
@@ -821,7 +828,8 @@ def build_artwork_package(
         height=int(media_block.get("height") or 0),
         # Categories are the platform's submission params; alt_text rides along
         # for posters that support per-image alt (bluesky.py reads it, G6).
-        extra={**dict(artwork.categories_by_platform.get(platform, {})),
+        pat_files=pat_files,
+        extra={**site_opts,
                # 055 (FR-010): what this site's tag limits cut, for the result row.
                **({"tags_left_out": tags_left_out} if tags_left_out else {}),
                **({"alt_text": artwork.alt_text} if artwork.alt_text else {}),

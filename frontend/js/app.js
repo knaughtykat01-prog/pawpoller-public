@@ -1424,6 +1424,8 @@ const App = {
             this.renderTHSubmissions();
         } else if (parts[0] === 'th' && parts[1] === 'submission' && parts[2]) {
             this.renderTHDetail(parts[2]);
+        } else if (parts[0] === 'pat' && (!parts[1] || parts[1] === '')) {
+            this.renderPATDashboard();
         } else if (parts[0] === 'yt' && (!parts[1] || parts[1] === '')) {
             this.renderYTDashboard();
         } else if (parts[0] === 'yt' && parts[1] === 'submissions' && !parts[2]) {
@@ -1736,6 +1738,7 @@ const App = {
         // Picarto's "submissions" are recorded streams, with no stats to compare (4.46.0).
         // Twitch's are past broadcasts and clips (spec 045) — no compare page either.
         const isPic = code === 'pic' || code === 'ttv';
+        const dashOnly = code === 'pat';   // Patreon (spec 084): a dashboard only, no per-post pages yet
         const subsWord = code === 'ttv' ? 'Broadcasts' : 'Recordings';
         const subName = sub === 'subs' ? (isPic ? subsWord : 'Submissions')
             : sub === 'compare' ? 'Compare'
@@ -1749,8 +1752,8 @@ const App = {
             '<a href="' + route(code, sname) + '" class="' + (sub === key ? 'active' : '') + '">' + name + '</a>';
         const subtabs = '<div class="ctx-subtabs">'
             + tab('dash', 'Dashboard', '')
-            + tab('subs', isPic ? subsWord : 'Submissions', 'submissions')
-            + (isPic ? '' : tab('compare', 'Compare', 'compare'))
+            + (dashOnly ? '' : tab('subs', isPic ? subsWord : 'Submissions', 'submissions'))
+            + (isPic || dashOnly ? '' : tab('compare', 'Compare', 'compare'))
             + '</div>';
 
         const options = (window.PLATFORMS || []).map(p =>
@@ -1980,6 +1983,7 @@ const App = {
                 { key: 'sc', auth: auth.scAuth?.has_credentials, name: 'SoundCloud', statusFn: 'getSCStatus', logFn: 'getSCPollLog', tableFn: 'scPollLogTable' },
                 { key: 'ng', auth: auth.ngAuth?.has_credentials, name: 'Newgrounds', statusFn: 'getNGStatus', logFn: 'getNGPollLog', tableFn: 'ngPollLogTable' },
                 { key: 'th', auth: !!(window.PlatformHealth && (window.PlatformHealth.get('th') || {}).configured), name: 'Toyhouse', statusFn: 'getTHStatus', logFn: 'getTHPollLog', tableFn: 'ngPollLogTable' },
+                { key: 'pat', auth: !!(window.PlatformHealth && (window.PlatformHealth.get('pat') || {}).configured), name: 'Patreon', statusFn: 'getPATStatus', logFn: 'getPATPollLog', tableFn: 'ngPollLogTable' },
                 { key: 'yt', auth: auth.ytAuth?.has_credentials, name: 'YouTube', statusFn: 'getYTStatus', logFn: 'getYTPollLog', tableFn: 'ytPollLogTable' },
                 { key: 'pic', auth: auth.picAuth?.has_credentials, name: 'Picarto', statusFn: 'getPICStatus', logFn: 'getPICPollLog', tableFn: 'picPollLogTable' },
                 { key: 'ttv', auth: auth.ttvAuth?.has_credentials, name: 'Twitch', statusFn: 'getTTVStatus', logFn: 'getTTVPollLog', tableFn: 'ttvPollLogTable' },
@@ -12377,6 +12381,97 @@ const App = {
         } catch (err) {
             if (this._stale(token)) return;
             this._setContent(`<div class="empty-state"><h3>Error loading the Toyhouse dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
+        }
+    },
+
+    // ── Patreon Dashboard (spec 084): supporter totals first, then the posts' likes and comments. Totals only,
+    //    never a person. The headline money is Patreon's own figure; tier amounts are before its adjustments. ──
+
+    async renderPATDashboard() {
+        const token = this._routeToken();
+        this._loading();
+        try {
+            const [summary, sup] = await Promise.all([
+                API.getPATSummary({ account_id: this._acctId('pat') }),
+                API.supportersSummary().catch(() => ({ accounts: [] })),
+            ]);
+            const aid = this._acctId('pat');
+            const rows = (sup.accounts || []).filter(r => !aid || String(r.account_id) === String(aid));
+            const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
+            const money = (c, cur) => (c / 100).toLocaleString(undefined, { style: 'currency', currency: cur || 'USD' });
+            const change = (r, k, fmt) => (r.change && r.change[k]) ? ` (${r.change[k] > 0 ? '+' : ''}${fmt ? fmt(r.change[k]) : r.change[k]} since the last poll)` : '';
+            // How many left is opt-in, off by default (operator, 13 Nov); remembered per device like the Library view.
+            let showLeft = false;
+            try { showLeft = localStorage.getItem('pp_pat_show_left') === '1'; } catch { /* default off */ }
+            const supporters = rows.map(r => `
+                <div class="chart-container">
+                    <h3>Supporters</h3>
+                    ${r.last_error ? `<p class="muted">Last poll: ${esc(r.last_error)} The numbers below are from ${esc(Utils.formatDateTime(r.polled_at))}.</p>` : ''}
+                    <div class="stats-grid">
+                        ${Components.statCard('Paying members', r.paid_count)}
+                        ${Components.statCard('On a free trial', r.trial_count)}
+                        ${Components.statCard('Free members', r.free_count)}
+                        ${r.total_count != null ? Components.statCard('All members', r.total_count) : ''}
+                    </div>
+                    <p>${esc(r.is_monthly ? 'Each month' : 'Per paid post')}: <strong>${esc(money(r.monthly_cents, r.currency))}</strong>
+                        <span class="muted">${esc(sup.money_note || '')}${esc(change(r, 'monthly_cents', c => money(c, r.currency)))}</span></p>
+                    <p class="muted">Paying members${esc(change(r, 'paid_count'))}. New ${esc(r.new_count)}${showLeft ? `, left ${esc(r.lost_count)}` : ''} since the poll before.</p>
+                    <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" class="pat-show-left" style="width:auto"${showLeft ? ' checked' : ''}> Show how many left</label>
+                    ${(r.tiers || []).length ? `<table class="data-table"><thead><tr><th>Tier</th><th>Price</th><th>Members</th><th>Pledged</th></tr></thead>
+                        <tbody>${r.tiers.map(t => `<tr><td>${esc(t.title)}</td><td>${esc(money(t.amount_cents, r.currency))}</td>
+                            <td>${esc(t.patron_count)}${t.change ? ` <span class="muted">(${t.change > 0 ? '+' : ''}${esc(t.change)})</span>` : ''}</td><td>${esc(money(t.monthly_cents, r.currency))}</td></tr>`).join('')}</tbody></table>
+                        <p class="muted">${esc(sup.tier_note || '')}</p>` : ''}
+                    <div class="chart-wrap"><canvas id="chart-supporters-${esc(r.account_id)}"></canvas></div>
+                    ${(r.tiers || []).length ? `<div class="chart-wrap"><canvas id="chart-tiers-${esc(r.account_id)}"></canvas></div>` : ''}
+                </div>`).join('');
+            const patHealth = window.PlatformHealth && window.PlatformHealth.get('pat');
+            const isUnconfigured = patHealth && patHealth.configured === false;
+            if (isUnconfigured || ((summary.total_submissions || 0) === 0 && !rows.length)) {
+                if (this._stale(token)) return;
+                this._setContent(`
+                    ${this._refreshIndicatorHtml()}
+                    <div class="page-header"><h1>Patreon Dashboard</h1></div>
+                    ${Components.platformEmptyState('pat', isUnconfigured ? {} : { reason: 'Patreon is connected but nothing has been polled yet. The first poll may still be running.' })}
+                `);
+                return;
+            }
+            if (this._stale(token)) return;
+            this._setContent(`
+                ${this._refreshIndicatorHtml()}
+                <div class="page-header">
+                    <h1>Patreon Dashboard <span class="card-type-badge" title="Not yet proven on a real page">being tested</span></h1>
+                    <div style="display:flex;gap:8px"><button class="btn btn-primary" data-poll="pat">Poll Now</button></div>
+                </div>
+                ${supporters}
+                <div class="stats-grid">
+                    ${Components.statCard('Posts', summary.total_submissions)}
+                    ${Components.statCard('Likes', summary.total_favorites)}
+                    ${Components.statCard('Comments', summary.total_comments)}
+                </div>
+                <div class="chart-container"><h3>Most Liked Posts</h3>${Components.ngTopList(summary.top_faved, 'favorites_count', 'title', 'submission_id', '')}</div>
+                <p class="muted">Patreon shows no view counts.</p>
+            `);
+            document.querySelectorAll('.pat-show-left').forEach(cb => cb.addEventListener('change', () => {
+                try { localStorage.setItem('pp_pat_show_left', cb.checked ? '1' : '0'); } catch { /* this view only */ }
+                this.renderPATDashboard();
+            }));
+            // Paying members over the last 90 days, one line per page (money isn't charted: currencies can differ).
+            rows.forEach(async r => {
+                try {
+                    const h = await API.supportersHistory(r.account_id, 90);
+                    if (this._stale(token) || !(h.snapshots || []).length) return;
+                    Charts.aggregateLine(`chart-supporters-${r.account_id}`,
+                        h.snapshots.map(s => ({ polled_at: s.polled_at, 'Paying members': s.paid_count })), ['Paying members']);
+                    // Members in each tier over the same days (FR-031), one line per tier title.
+                    const names = [...new Set(h.snapshots.flatMap(s => (s.tiers || []).map(t => t.title || ('Tier ' + t.tier_id))))];
+                    if (names.length) Charts.aggregateLine(`chart-tiers-${r.account_id}`, h.snapshots.map(s => Object.assign(
+                        { polled_at: s.polled_at }, ...(s.tiers || []).map(t => ({ [t.title || ('Tier ' + t.tier_id)]: t.patron_count })))), names);
+                } catch (e) { /* the totals above still show */ }
+            });
+            this._startAutoRefresh(() => this.renderPATDashboard());
+        } catch (err) {
+            if (this._stale(token)) return;
+            this._setContent(`<div class="empty-state"><h3>Error loading the Patreon dashboard</h3><p>${Utils.escapeHtml(err.message)}</p></div>`);
         }
     },
 

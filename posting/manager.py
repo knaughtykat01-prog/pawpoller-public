@@ -46,6 +46,10 @@ _PERMANENT_ERROR_MARKERS = (
     "didn't save the work",              # AO3 validation (4.78.1): the same form fails the same way
     "couldn't read this work's rating",  # AO3/SqW RatingUnreadable (SEC4885 (4)): the same form reads the same way
     "its file wasn't found",             # UPDATEFAIL: a chapter with no built file needs a rebuild, not a retry
+    "asked pawpoller to slow down",      # Patreon's 429 (spec 084): its stand-down sets the next try
+    "patreon's bot check turned pawpoller away",   # spec 084: a bot check; waiting is the only cure
+    "patreon turned pawpoller away",     # spec 084: its stand-down still running
+    "left as a draft on patreon",        # a retry would make another draft (spec 084): the owner finishes or deletes it
 )
 
 
@@ -109,7 +113,7 @@ def _final_status(result: PostResult, queued_for_desktop: bool, gave_up: str) ->
     post_story and post_artwork share (055 data-model)."""
     attention = getattr(result, "needs_attention", "") or ""
     if result.success:
-        return ("needs_attention" if attention else "success"), attention or result.error
+        return ("needs_attention" if attention else "success"), attention or result.extra.get("note") or result.error
     if result.unconfirmed:
         return "unconfirmed", result.error
     if queued_for_desktop:
@@ -282,6 +286,7 @@ _POSTER_CLASSES = {
     "sc": ("posting.platforms.soundcloud", "SoundCloudPoster"),
     "ng": ("posting.platforms.newgrounds", "NewgroundsPoster"),
     "th": ("posting.platforms.toyhouse", "ToyhousePoster"),
+    "pat": ("posting.platforms.patreon", "PatreonPoster"),     # spec 084
     "yt": ("posting.platforms.youtube", "YouTubePoster"),
     "tw": ("posting.platforms.twitter", "TwitterPoster"),
     "ik": ("posting.platforms.itaku", "ItakuPoster"),
@@ -407,6 +412,11 @@ def _announcers_last(platforms: list[str]) -> list[str]:
             + [p for p in platforms if p in _ANNOUNCES_LAST])
 
 
+def _live(r: dict[str, Any]) -> bool:
+    """Posted and showing now: a post the site will publish later (spec 084's Patreon-held time) isn't announced."""
+    return bool(r.get("success")) and not r.get("scheduled_for")
+
+
 def _run_links(results: list[dict[str, Any]], chapter_index: int | None = None) -> list[tuple[str, str]]:
     """``(platform, url)`` of this publish's successes so far, for the announcer.
 
@@ -416,7 +426,7 @@ def _run_links(results: list[dict[str, Any]], chapter_index: int | None = None) 
     out: list[tuple[str, str]] = []
     for r in results:
         url = r.get("external_url") or r.get("url") or ""
-        if not r.get("success") or not url:
+        if not _live(r) or not url:
             continue
         if chapter_index and r.get("chapter_index") not in (None, 0, chapter_index):
             continue
@@ -870,6 +880,10 @@ async def _post_story(
                 # Spec 071: the picture went out with its hidden details still in it.
                 **({"note": _kept["metadata_note"], **_kept}
                    if _kept and (result.success or result.unconfirmed) else {}),
+                # The site's own note (spec 084: a Patreon-held time, a post without its collection), and that time.
+                **({"note": _join_note(result.extra["note"], (_kept or {}).get("metadata_note"))}
+                   if result.success and result.extra.get("note") else {}),
+                "scheduled_for": result.extra.get("scheduled_for") or "",
             })
 
             # Rate limit between chapters on the same platform
@@ -883,7 +897,7 @@ async def _post_story(
 
     # Discord announce for stories (4.41.0, spec 008 — stories never announced before).
     # Once per publish, only if a site succeeded.
-    ok = [r for r in results if r.get("success")]
+    ok = [r for r in results if _live(r)]
     if ok and announce_discord is not False:
         await announce_story(
             story_name, story=story, first_chapter=min((r.get("chapter_index") or 0) for r in ok),
@@ -1036,6 +1050,8 @@ def _prepare_render(artwork, platform: str, poster, variant, *, multi: bool, acc
         if _wm_tmp:
             package.file_path = _wm_path
             run.add_temp(_wm_tmp)
+            if (package.pat_files or {}).get("pictures"):    # spec 084: Patreon's main picture is the watermarked one
+                package.pat_files.setdefault("upload", {})[package.extra.get("library_path", "")] = _wm_path
 
     refusal = poster.refusal(package) if hasattr(poster, "refusal") else None   # media kind, then rating (4.21.0)
     return package, ([refusal] if refusal else poster.validate(package))
@@ -1384,6 +1400,10 @@ async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
                 # Spec 071: the picture went out with its hidden details still in it.
                 **({"note": _kept["metadata_note"], **_kept}
                    if _kept and (result.success or result.unconfirmed) else {}),
+                # The site's own note (spec 084: a Patreon-held time, a post without its collection), and that time.
+                **({"note": _join_note(result.extra["note"], (_kept or {}).get("metadata_note"))}
+                   if result.success and result.extra.get("note") else {}),
+                "scheduled_for": result.extra.get("scheduled_for") or "",
             })
 
     if _act_prev:
@@ -1395,12 +1415,12 @@ async def _post_artwork(artwork, artwork_name: str, platforms: list[str],
 
     # Discord announce (gap G4; picture + options 4.41.0, spec 008) — once per publish
     # if any platform succeeded. Best-effort; announce_publish self-gates and never raises.
-    succeeded = [r["platform"] for r in results if r.get("success")]
+    succeeded = [r["platform"] for r in results if _live(r)]
     if succeeded:
         await announce_artwork(
             artwork_name, force=announce_discord, artwork=artwork, platforms=succeeded,
             site_links=[(r["platform"], r["external_url"]) for r in results
-                        if r.get("success") and r.get("external_url")])
+                        if _live(r) and r.get("external_url")])
     return results
 
 

@@ -41,6 +41,8 @@ SITE_AGES: dict[str, dict] = {
              "note": "13–17 with a parent's permission; Adult work 18+"},
     "sc":   {"min": 13, "adult_only": False, "checked": True, "note": "13+; 16 in the EU and the UK"},
     "th":   {"min": 13, "adult_only": False, "checked": False, "note": "13+; mature content 18+ (spec 062)"},
+    # Spec 084: not yet read first-hand, so unchecked. Patreon takes General and Mature work from PawPoller.
+    "pat":  {"min": 18, "adult_only": False, "checked": False, "note": "Check Patreon's terms (creators 18+)"},
     "tg":   {"min": 16, "adult_only": False, "checked": True,
              "note": "18+ in the EU, the UK and Australia; 16 elsewhere"},
     "mast": {"min": 16, "adult_only": False, "checked": True,

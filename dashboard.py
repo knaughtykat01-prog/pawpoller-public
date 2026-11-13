@@ -44,6 +44,8 @@ from routes.fn_api import fn_router
 from routes.sc_api import sc_router
 from routes.ng_api import ng_router
 from routes.th_api import th_router
+from routes.pat_api import pat_router
+from routes.supporters_api import supporters_router
 from routes.yt_api import yt_router
 from routes.pic_api import pic_router
 from routes.ttv_api import ttv_router, ttv_hooks_router
@@ -627,7 +629,15 @@ _SENSITIVE_WHEN_OPEN_PREFIXES = (
     # secrets are set and counts everything — and the page itself promises Restricted
     # data is "locked when the dashboard has no password".
     "/api/privacy",
+    # Spec 084: the Patreon routes read and change a signed-in page; the supporter totals are confidential money.
+    "/api/pat/",
+    "/api/supporters/",
 )
+
+# SEC081: on an open instance a stranger on the network can't remove anything: every DELETE (by method, so no route
+# name can slip past), and the two merges, which remove the absorbed piece's folder. Changing things stays open
+# (editing, junk, split). 4.90.0 release review: and taking a journal down on its sites. Method + the routed path.
+_DESTROY_WHEN_OPEN = re.compile(r"^POST /api/(masterpieces/merge(-as-variant)?|posts/[^/]+/remove-from-sites)$")
 
 # 4.43.1: everything that PUBLISHES — puts the operator's work or words on a live site,
 # now or on a schedule. On an open instance any of these let a stranger on the network
@@ -656,7 +666,8 @@ _PUBLISH_WHEN_OPEN = re.compile(
 
 def _sensitive_when_open(request: Request) -> bool:
     path = request.url.path
-    if path.startswith(_SENSITIVE_WHEN_OPEN_PREFIXES):
+    if (request.method == "DELETE" or path.startswith(_SENSITIVE_WHEN_OPEN_PREFIXES)
+            or _DESTROY_WHEN_OPEN.match(f"{request.method} {request.scope.get('path', path)}")):
         return True
     return request.method not in ("GET", "HEAD", "OPTIONS") and bool(_PUBLISH_WHEN_OPEN.match(path))
 
@@ -776,6 +787,8 @@ app.include_router(fn_router)    # FurryNetwork routes (/api/fn/*)
 app.include_router(sc_router)    # SoundCloud routes (/api/sc/*), MEDIAPLATS (4.22.0)
 app.include_router(ng_router)    # Newgrounds routes (/api/ng/*), MEDIAPLATS (4.23.0)
 app.include_router(th_router)    # Toyhouse routes (/api/th/*), spec 062
+app.include_router(pat_router)   # Patreon routes (/api/pat/*), spec 084
+app.include_router(supporters_router)   # supporter totals (/api/supporters/*), spec 084
 app.include_router(yt_router)    # YouTube routes (/api/yt/*), MEDIAPLATS (4.24.0)
 app.include_router(pic_router)   # Picarto routes (/api/pic/*), spec 013 (4.46.0)
 app.include_router(ttv_router)   # Twitch routes (/api/ttv/*), spec 045

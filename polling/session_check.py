@@ -38,14 +38,14 @@ _lock = threading.Lock()
 # Platforms with a real validate_session() network check. Order = check order.
 CHECKABLE: tuple[str, ...] = ("ao3", "sf", "sqw", "bsky", "mast", "tum", "pix",
                               "thr", "ig", "e621", "fn", "fbr", "r34", "tg", "sc", "ng", "th", "yt",
-                              "pic", "ttv", "tw", "fb")
+                              "pic", "ttv", "tw", "fb", "pat")
 
 # Human labels for log/UI fallback (the frontend has its own map too).
 LABELS = {
     "ao3": "AO3", "sf": "SoFurry", "sqw": "SquidgeWorld", "bsky": "Bluesky",
     "mast": "Mastodon", "tum": "Tumblr", "pix": "Pixiv", "thr": "Threads",
     "ig": "Instagram", "e621": "e621", "fn": "FurryNetwork", "fbr": "Furbooru", "r34": "Rule34.xxx", "sc": "SoundCloud",
-    "ng": "Newgrounds", "th": "Toyhouse", "yt": "YouTube", "pic": "Picarto", "ttv": "Twitch",
+    "ng": "Newgrounds", "th": "Toyhouse", "pat": "Patreon", "yt": "YouTube", "pic": "Picarto", "ttv": "Twitch",
     "tg": "Telegram", "tw": "X/Twitter", "fb": "Facebook",
 }
 
@@ -98,6 +98,8 @@ def _configured(code: str, s: dict) -> bool:
         return bool(s.get("ng_cookie"))
     if code == "th":
         return bool(s.get("th_cookie"))
+    if code == "pat":
+        return bool(s.get("pat_cookie"))
     if code == "yt":
         return bool(s.get("yt_client_id") and s.get("yt_client_secret") and s.get("yt_refresh_token"))
     if code == "tw":
@@ -298,6 +300,14 @@ async def _validate(code: str, s: dict):
         from polling.th_poller import _get_or_create_client as _th_client
         c = _th_client({"th_username": s.get("th_username", ""), "th_cookie": s.get("th_cookie", "")})
         return bool((await c.validate_session()).get("ok"))
+    elif code == "pat":
+        # Spec 084: the session's page must be the saved one (its id); a bot check raises and lands as "error".
+        from clients.pat.client import PAUSED, PatChallenged, PatClient
+        from polling import fa_standdown
+        if fa_standdown.remaining("pat") > 0:
+            raise PatChallenged(PAUSED.format(when=fa_standdown.next_try_text('pat')))
+        async with PatClient(s.get("pat_cookie", "")) as pc:
+            return bool((await pc.validate_session(expected_campaign=str(s.get("pat_campaign_id") or ""))).get("ok"))
     else:
         raise ValueError(f"unknown platform {code}")
     return await c.validate_session()

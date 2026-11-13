@@ -22,6 +22,8 @@ production, despite passing its own tests:
   never call into config. Secrets are pushed in, not pulled.
 """
 import logging
+
+import pytest
 import threading
 
 import config
@@ -297,3 +299,21 @@ def test_the_access_log_keeps_no_visitor_address():
     other = logging.getLogRecordFactory()(
         "routes.dashboard_auth", logging.WARNING, __file__, 1, "Auth: login failed (ip=%s)", ("203.0.113.9",), None)
     assert "203.0.113.9" in other.getMessage()     # security events keep theirs on purpose
+
+
+# ── Spec 084 (Patreon): upload signatures, CSRF headers, the session cookie ──────────────────────
+
+@pytest.mark.parametrize("text, secret", [
+    ("PUT https://patreon-media.s3-accelerate.amazonaws.com/k?X-Amz-Signature=abcdef123456&x=1", "abcdef123456"),
+    ("GET https://x.example.com/?X-Amz-Credential=AKIAFAKE%2F2026&y=2", "AKIAFAKE%2F2026"),
+    ("?X-Amz-Security-Token=FAKETOKENVALUE", "FAKETOKENVALUE"),
+    ("?X-Goog-Signature=0123abcd4567", "0123abcd4567"),
+    ("params={'key': 'k', 'X-Amz-Signature': 'sigvalue9876'}", "sigvalue9876"),
+    ('{"X-Amz-Credential": "credvalue5432"}', "credvalue5432"),
+    ("X-CSRF-Signature: csrfvalue1111", "csrfvalue1111"),
+    ("headers {'x-csrf-token': 'csrfvalue2222'}", "csrfvalue2222"),
+    ("Cookie jar session_id=sessvalue3333; other=1", "sessvalue3333"),
+])
+def test_patreon_secrets_masked(text, secret):
+    out = log_redaction.scrub(text)
+    assert secret not in out and MASK in out

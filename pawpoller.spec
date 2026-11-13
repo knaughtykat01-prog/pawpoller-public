@@ -94,6 +94,10 @@ a = Analysis(
         'bcrypt',
         'pyotp',
         'itsdangerous',
+        # Patreon (spec 084): its client and poller, named so a lazy import can't drop them.
+        'clients.pat.client',
+        'clients.pat.editor_json',
+        'polling.pat_poller',
         *_platform_hidden,
     ],
     hookspath=[],

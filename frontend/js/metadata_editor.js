@@ -375,6 +375,7 @@ const MetaEditor = {
             ${this._renderPlatformTagsSection()}
             ${this._renderPlatformTogglesSection()}
             ${this._renderTelegramSection()}
+            ${this._renderPatreonSection()}
             ${this._renderChaptersSection()}
             ${this._renderCoverSection()}
             ${this._renderRawJsonSection()}
@@ -2326,6 +2327,26 @@ const MetaEditor = {
          'Off suppresses the preview card for the first link. An announcement is mostly links, so the card can dwarf the post.'],
     ],
 
+    /* Patreon (spec 084): who can see each chapter, the cover, the story's collection, "Tell my members" and the
+     * whole-story PDF / EPUB. Stored in story.json under platform_options.pat (the seven keys the server reads);
+     * the server checks the files are there when it posts. */
+    _renderPatreonSection() {
+        if (!window.PatreonRows) return '';
+        const saved = ((this.metadata && this.metadata.platform_options) || {}).pat || {};
+        return `
+            <section class="metadata-section" data-section="patreon" data-expanded="false">
+                <button type="button" class="metadata-section-header" data-section-toggle="patreon">
+                    <span class="metadata-section-chevron">&#9654;</span>
+                    <span>&#127873; Patreon</span>
+                </button>
+                <div class="metadata-section-body" id="metadata-pat-body">
+                    ${window.PatreonRows.html(saved, { kind: 'story', rating: (this.metadata || {}).rating || '',
+                        storyCover: !!this._coverFilename, files: { pdf: true, epub: true } })}
+                </div>
+            </section>
+        `;
+    },
+
     _renderTelegramSection() {
         const opts = ((this.metadata && this.metadata.platform_options) || {}).tg || {};
         const rows = this._TG_STORY_OPTS.map(([key, label, help]) => {
@@ -2665,6 +2686,23 @@ const MetaEditor = {
         document.getElementById('metadata-tag-sort-alpha')?.addEventListener('click', () => {
             this._sortTagsAlphabetically();
         });
+
+        // Patreon (spec 084): load the tiers when the section is opened; every change writes platform_options.pat.
+        const patBody = document.getElementById('metadata-pat-body');
+        if (patBody && window.PatreonRows) {
+            const header = document.querySelector('[data-section-toggle="patreon"]');
+            let wired = false;
+            header?.addEventListener('click', () => { if (!wired) { wired = true; window.PatreonRows.wire(patBody); } });
+            const store = () => {
+                const pat = window.PatreonRows.collect(patBody);
+                if (!pat) return;
+                if (!this.metadata.platform_options) this.metadata.platform_options = {};
+                this.metadata.platform_options.pat = pat;
+                this._clearStatus();
+            };
+            patBody.addEventListener('change', store);
+            patBody.addEventListener('click', (ev) => { if (ev.target.closest('.pat-all-paid')) setTimeout(store, 0); });
+        }
 
         // Telegram link picker (4.3.0) — writes platform_options.tg.link_mode /
         // link_platforms; 'auto' is stored as absence like the tri-states.

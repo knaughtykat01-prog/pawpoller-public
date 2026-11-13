@@ -83,6 +83,10 @@ class StoryUploadPackage:
     duration_s: float | None = None
     width: int = 0
     height: int = 0
+    # Spec 084: Patreon's resolved files ({piece_dir, pictures: [(path, rating)], cover: (path, rating) | None,
+    # files: [path], problems: [sentence]}). Set only by the readers (posting/pat_choices.py), never from `extra`,
+    # so a value saved on a piece can't become a path the poster uploads.
+    pat_files: dict = field(default_factory=dict)
 
 
 # The three-step rating ladder every poster maps its own vocabulary onto (4.21.0). The

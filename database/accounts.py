@@ -53,6 +53,8 @@ PLATFORMS = ["ib", "fa", "ws", "sf", "sqw", "ao3", "da", "wp", "ik", "bsky",
              "ng",
              # spec 062: Toyhouse — poll + post, browser cookie session (no API).
              "th",
+             # spec 084: Patreon — poll + post, browser cookie session (no post API).
+             "pat",
              # 4.24.0 (MEDIAPLATS): YouTube — poll + post, Google OAuth user token.
              "yt",
              # 4.46.0 (spec 013): Picarto — poll only, public API, the channel name is the credential.
@@ -90,6 +92,7 @@ PLATFORM_NAMES = {
     "sc": "SoundCloud",
     "ng": "Newgrounds",
     "th": "Toyhouse",
+    "pat": "Patreon",
     "yt": "YouTube",
     "pic": "Picarto",
     "ttv": "Twitch",
@@ -142,6 +145,7 @@ DEFAULT_CRED_CHECKS = {
     # Newgrounds: the browser session's cookie string IS the credential (4.23.0).
     "ng": lambda s: bool(s.get("ng_cookie")),
     "th": lambda s: bool(s.get("th_cookie")),
+    "pat": lambda s: bool(s.get("pat_cookie")),
     # YouTube: the browser approval's refresh token IS the credential (4.24.0).
     "yt": lambda s: bool(s.get("yt_refresh_token")),
     # Picarto: the channel name is all it needs — the public API reads it with no login (4.46.0).
@@ -190,6 +194,7 @@ _HANDLE_KEYS = {
     "sc": ["sc_username"],
     "ng": ["ng_username"],
     "th": ["th_username"],
+    "pat": ["pat_username"],
     "yt": ["yt_username"],
     "pic": ["pic_channel"],
     "ttv": ["ttv_channel", "ttv_user_id"],

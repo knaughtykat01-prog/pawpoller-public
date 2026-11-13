@@ -14,7 +14,7 @@
 window.Artwork = {
 
     /* Image-capable platforms the hub posts to (v1), shown A–Z by name (SETUPALPHA). */
-    _PLATFORMS: window.sortByPlatformName(['ib', 'fa', 'sf', 'bsky', 'tw', 'ik', 'ws', 'da', 'e621', 'fbr', 'ig', 'fn', 'tg', 'pod', 'sc', 'ng', 'yt', 'fb', 'th', 'tum', 'thr']),
+    _PLATFORMS: window.sortByPlatformName(['ib', 'fa', 'sf', 'bsky', 'tw', 'ik', 'ws', 'da', 'e621', 'fbr', 'ig', 'fn', 'tg', 'pod', 'sc', 'ng', 'yt', 'fb', 'th', 'pat', 'tum', 'thr']),
     /* The announcing platforms — a caption, links to where the piece already
      * lives, hashtags — and therefore the ones whose row carries the per-piece
      * options panel (Telegram since 4.0.10; X and Bluesky since 4.3.7). Mirrors
@@ -199,11 +199,13 @@ window.Artwork = {
                     ${ann ? this._tgOptRows(o, { ...(extras[code] || {}), code }) : ''}
                     ${code === 'tum' ? this._tumLabelRows(((extraByCode || {}).tum || {}).tum_label_categories) : ''}
                     ${code === 'th' ? this._thCharRows(((extraByCode || {}).th || {}).character_ids) : ''}
+                    ${code === 'pat' && window.PatreonRows ? window.PatreonRows.html((extraByCode || {}).pat || {}, { kind: 'art', ...(((extraByCode || {}).pat || {})._ctx || {}) }) : ''}
                 </details>
             </div>`;
         }).join('') + '<div data-discord-slot></div>';
         this._fillDiscordRow(el, opts.discord || {}, extras.discord || {});
         this._wireThChars(el);
+        if (window.PatreonRows) window.PatreonRows.wire(el, () => { const s = document.querySelector('.art-acct-select[data-platform="pat"]'); return s && s.value; });   // spec 084
     },
 
     /* The Discord row (4.41.0, spec 008). Not a platform: a tick for "announce this
@@ -251,6 +253,8 @@ window.Artwork = {
         if (tl) out.tum = { ...(out.tum || {}), tum_label_categories: tl };
         const tc = this._collectThChars();            // Toyhouse characters (spec 062)
         if (tc) out.th = { ...(out.th || {}), character_ids: tc };
+        const pat = window.PatreonRows && window.PatreonRows.collect(document);   // Patreon's seven keys (spec 084)
+        if (pat) out.pat = pat;
         return out;
     },
 

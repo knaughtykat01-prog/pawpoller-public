@@ -48,6 +48,7 @@ SNAPSHOT_PATHS = {
     "sc": "/api/sc/submissions/1/snapshots",
     "ng": "/api/ng/submissions/1/snapshots",
     "th": "/api/th/submissions/1/snapshots",
+    "pat": "/api/pat/submissions/1/snapshots",
     "yt": "/api/yt/submissions/1/snapshots",
     "pic": "/api/pic/submissions/1/snapshots",
     "ttv": "/api/ttv/submissions/1/snapshots",
@@ -59,7 +60,8 @@ SNAPSHOT_PATHS = {
 def client():
     from fastapi.testclient import TestClient
     import dashboard
-    return TestClient(dashboard.app)
+    # Loopback: this checks route order, not auth. /api/pat/ is refused to remote callers on an open app (spec 084).
+    return TestClient(dashboard.app, client=("127.0.0.1", 50000))
 
 
 @pytest.mark.parametrize("code,path", sorted(SNAPSHOT_PATHS.items()))

@@ -2,6 +2,23 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.90.0] - 2026-11-13 - Patreon
+
+> - Patreon is now a posting site: send a picture or a story chapter to Patreon and choose which tiers can see it.
+> - PawPoller posts through your own Patreon sign-in, because Patreon has no way for apps to post. Connect it in Accounts.
+> - Mature work only goes to paid tiers on Patreon, and Adult work isn't sent to Patreon at all.
+> - A locked post keeps its text and pictures for members. Its title, tags and cover are public, so the cover must be General.
+> - Bold, italics, links, lists and quotes come through, and General pictures can go in the text with a caption and alt text.
+> - A General picture post can be handed to Patreon to publish at a set time, or go to members first and turn public later.
+> - Analytics and the Patreon page show your patrons, the money coming in and each tier's numbers.
+> - How many patrons left shows only if you switch it on. New patrons always show.
+> - Comments on your Patreon posts arrive in the Inbox, and each piece shows its Patreon likes and comments.
+> - Patreon posts go out one at a time, at least 90 seconds apart.
+> - Not yet: making a new collection for a story, Mature pictures in a post's text, and Patreon's own schedule for Mature work.
+> - Patreon posting is new, so check your first few posts on Patreon itself.
+> - Hosted seats will be asked to accept their updated terms once: they now mention Patreon figures.
+> - On a copy with no password, someone else on your network can no longer delete anything.
+
 ## [4.89.0] - 2026-11-09 - Asked at a better moment
 
 > - PawPoller now asks if it can count this copy just after it first checks your sites successfully, not only during sign-up.
@@ -245,10 +262,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Rewards are only for show. They never unlock or limit anything PawPoller does.
 > - Import from PostyBirb now has a button on the Accounts page and in Settings → Data, so you can run it again any time.
 > - Fixed several pop-up boxes (signing out, the age question, PostyBirb import, uninstall) showing with no background behind their text.
-
-## [4.83.1] - 2026-10-21 - Faster Overview and Laurels on hosted seats
-
-> - The Overview loads several times faster on a hosted seat: PawPoller now compresses what it sends.
-> - Laurels loads faster, and no longer downloads all its numbers twice after you sign in.
-> - Story covers in the Library now load as small card-sized pictures, like artwork already did.
-> - Other pages full of numbers and lists load faster from a seat too.

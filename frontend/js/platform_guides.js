@@ -599,6 +599,31 @@
         'No "Posted via PawPoller" line is added on Toyhouse.',
       ],
     },
+    pat: {
+      kind: 'Analytics + posting', difficulty: 'Easy',
+      summary: 'Post General and Mature work behind the Patreon tiers you pick, and see your members, money and each tier\'s numbers.',
+      need: ['A Patreon creator page'],
+      steps: [
+        APP_FIRST('Patreon'),
+        { t: 'Add Patreon', b: 'On the <b>Accounts</b> page, add a Patreon account. Type your page name: the part after <code>patreon.com/</code> in your page\'s address.' },
+        { t: 'Sign in', b: 'Press <b>🔑 Sign in</b>. Patreon\'s own sign-in page opens. Sign in there and the window closes by itself.' },
+        { t: 'Check it\'s your page', b: 'PawPoller checks the page you signed in to has the name you typed. If it doesn\'t, nothing is saved and you are told which page it found.' },
+        { t: 'Pick who sees each piece', b: 'When you post a piece, tick Patreon, open its <b>Override</b>, and pick who can see it: your Patreon default, everyone, all paying members, or only the tiers you tick.' },
+        { t: 'Choose the rest (optional)', b: 'In the same place you can put the pictures in the gallery or in the text of the post, add a caption under the main picture, and, for General artwork, let Patreon publish it at a set time or pick a date it becomes public.' },
+      ],
+      paste: 'Accounts → Patreon → Sign in',
+      renew: { when: 'When Patreon signs you out', how: 'Press Sign in on the Accounts page again.' },
+      notes: [
+        'Patreon takes General and Mature work from PawPoller. Mature work can only go to paid tiers. Adult work is not sent to Patreon.',
+        'The title, tags and cover of a post are public on Patreon whatever the tier, so pick a cover without nudity.',
+        'Your supporters are shown as totals only: how many, per tier, and the money Patreon shows you. PawPoller never stores who they are.',
+        'Patreon shows no view counts, so PawPoller tracks likes and comments. New comments arrive in your Inbox.',
+        'Lists, quotes, links, underlining and dividers in your text keep their look on Patreon. The alt text you gave a General piece goes with each picture.',
+        'If you let Patreon publish a post at a set time, change or cancel it on Patreon: PawPoller has handed it over.',
+        'PawPoller sends Patreon posts one at a time, about a minute and a half apart, so a batch takes a while.',
+        'Patreon support is new and still being tested on real pages.',
+      ],
+    },
 
     // ── Newgrounds (4.28.1) ──────────────────────────────────
     ng: {

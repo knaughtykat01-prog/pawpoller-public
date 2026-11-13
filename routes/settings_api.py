@@ -708,8 +708,18 @@ def _platform_fields_meta() -> dict:
     }
 
 
-async def _checked_credentials(platform: str, creds: dict | None) -> dict | None:
-    """SEC067 (1): a Mastodon address typed here gets the same public-https rule as Connect."""
+async def _checked_credentials(platform: str, creds: dict | None, account: dict | None = None) -> dict | None:
+    """SEC067 (1): a Mastodon address typed here gets the same public-https rule as Connect.
+    Spec 084: a Patreon cookie is checked against the page name (the account's saved one, else the typed one)
+    before anything is written, so a refused create leaves no account row behind."""
+    if platform == "pat" and creds and creds.get("pat_cookie"):
+        from clients.pat import account as pat_account
+        from routes import signin_helper_api as sh
+        saved = sh._stored_name(account) if account else ""
+        ok, _who, why = await pat_account.check_session(str(creds["pat_cookie"]), saved or str(creds.get("pat_username") or ""))
+        if not ok:
+            raise HTTPException(status_code=409, detail=why)
+        return {**creds, "pat_username": saved} if saved and "pat_username" in creds else creds
     if platform != "mast" or not creds or not creds.get("mast_instance_url"):
         return creds
     from routes.mast_api import _public_instance
@@ -729,6 +739,9 @@ def _save_account_credentials(account: dict, creds: dict | None) -> None:
             payload[config.account_setting_key(account["account_id"], field, is_default)] = value
     if payload:
         config.save_settings(payload)
+    if platform == "pat" and creds.get("pat_cookie"):     # the checked page's id, 18+ flag and tiers (spec 084)
+        from clients.pat import account as pat_account
+        pat_account.record_checked(int(account["account_id"]), str(creds["pat_cookie"]))
 
 
 @accounts_router.get("")
@@ -920,7 +933,7 @@ async def update_account_endpoint(account_id: int, req: AccountUpdate):
         account = adb.get_account(conn, account_id)
         if not account:
             raise HTTPException(status_code=404, detail="Account not found")
-        credentials = await _checked_credentials(account["platform"], req.credentials)
+        credentials = await _checked_credentials(account["platform"], req.credentials, account)
         adb.update_account(conn, account_id, label=req.label,
                            handle=req.handle, enabled=req.enabled)
         account = adb.get_account(conn, account_id)
@@ -956,11 +969,18 @@ async def delete_account_endpoint(account_id: int):
                 detail="Cannot delete the default account for a platform.",
             )
         adb.delete_account(conn, account_id)
+        if account["platform"] == "pat":     # spec 084: its supporter totals go with it (data map)
+            from database import supporter_queries
+            supporter_queries.delete_for_account(conn, account_id)
+            conn.commit()
     finally:
         conn.close()
-    # Remove the account's namespaced credential keys.
-    keys = [config.account_setting_key(account_id, f, False)
-            for f in config.PLATFORM_CREDENTIAL_FIELDS.get(account["platform"], [])]
+    # Remove the account's namespaced credential keys (and Patreon's page values, spec 084).
+    fields = list(config.PLATFORM_CREDENTIAL_FIELDS.get(account["platform"], []))
+    if account["platform"] == "pat":
+        from clients.pat.account import ALL_KEYS
+        fields += [f for f in ALL_KEYS if f not in fields]
+    keys = [config.account_setting_key(account_id, f, False) for f in fields]
     if keys:
         config.delete_settings_keys(keys)
     logger.info("Deleted %s account #%s", account["platform"], account_id)

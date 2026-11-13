@@ -19,6 +19,7 @@ window.PlatformPicker = (function () {
         { name: 'Social', codes: ['bsky', 'tw', 'mast', 'thr', 'tum', 'ig', 'fb'] },
         { name: 'Video & audio', codes: ['yt', 'sc', 'ng', 'pic', 'pod'] },
         { name: 'Messaging', codes: ['tg'] },
+        { name: 'Supporter sites', codes: ['pat'] },
     ];
     const esc = (s) => Utils.escapeHtml(String(s == null ? '' : s));
 

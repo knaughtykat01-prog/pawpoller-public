@@ -60,7 +60,7 @@ FAIL_BUDGET = (20, 600)        # wrong tries from anyone in the window → every
 BLOCK_SECS = 900               # …and no new code for this long
 PER_ADDR = (10, 600)           # helper requests per address (IPv6 /64) per window
 BODY_CAP = 16 * 1024
-CODE_PLATFORMS = ("fa", "tw", "ng", "ik", "th")   # see the module docstring for DA and the check-only sites
+CODE_PLATFORMS = ("fa", "tw", "ng", "ik", "th", "pat")   # see the module docstring for DA and the check-only sites
 
 NOT_VALID = "That code isn't valid or has run out."
 NEEDS_TLS = "Your server needs https or Tailscale for this."
@@ -266,6 +266,9 @@ async def _who(platform: str, creds: dict, stored: str) -> tuple[bool, str, str]
         if not who:
             return False, "", "Toyhouse didn't accept that sign-in."
         return same_th_user(who, stored), who, ""
+    if platform == "pat":      # spec 084: the session's own page name against the typed one; holds the page's ids
+        from clients.pat import account as pat_account
+        return await pat_account.check_session(creds.get("pat_cookie", ""), stored)
     if platform == "ik":
         from clients.ik.client import IKClient
         client = IKClient(target_user=stored)

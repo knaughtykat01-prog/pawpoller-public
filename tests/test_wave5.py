@@ -223,7 +223,7 @@ def test_share_route_end_to_end(tmp_path, monkeypatch):
     # Open instance (no dashboard password) → middleware passes through; the
     # share endpoints and public route are what we're exercising.
     monkeypatch.setattr(dashboard.config, "is_dashboard_auth_required", lambda: False)
-    client = TestClient(dashboard.app)
+    client = TestClient(dashboard.app, client=("127.0.0.1", 50000))    # SEC081: deleting is local-only on an open instance
 
     # Bogus token → 404 (identical page whether unknown/revoked/expired).
     assert client.get("/share/not-a-real-token").status_code == 404

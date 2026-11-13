@@ -140,6 +140,11 @@ GROUPS = {g[0]: g for g in (
      "Your Trello boards, cards and comments, mirrored here.",
      "Only back to Trello.",
      "Settings → Trello → disconnect."),
+    ("Supporters and money", "confidential",
+     "How many patrons and members you have, per tier, and the money Patreon shows you. Totals only: never who "
+     "they are, their email or what one person pays.",
+     "Only your own paired desktop. Never in error reports or the check-in.",
+     "Removed with the account (Accounts → the account → Remove)."),
     ("Unpublished work", "confidential",
      "Drafts, stories, artwork, media and promo images not yet posted.",
      "Only the site you post to, when you post.",
@@ -233,7 +238,7 @@ def P(name, group, why="", backup="", obsolete=False):
 # uses the bare names. A test checks this matches what init_db actually creates.
 PLATFORM_PREFIXES = (
     "ao3", "bsky", "da", "e621", "fa", "fb", "fbr", "fn", "ig", "ik", "mast", "ng", "pix",
-    "pic", "r34", "sc", "sf", "sqw", "tg", "th", "thr", "tum", "ttv", "tw", "wp", "ws", "yt",
+    "pat", "pic", "r34", "sc", "sf", "sqw", "tg", "th", "thr", "tum", "ttv", "tw", "wp", "ws", "yt",
 )
 
 # ── Tables ────────────────────────────────────────────────────────────────────
@@ -287,6 +292,8 @@ _TABLES = (
     T("<P>_found_snapshots", "Numbers over time", "Numbers per poll for posts other people uploaded."),
     T("fa_profile_stats", "Numbers over time", "FurAffinity profile views per poll."),
     T("pic_channel_snapshots", "Numbers over time", "Picarto channel views, followers and subscribers per poll."),
+    T("supporter_snapshots", "Supporters and money", "Your patron and member totals and monthly income, once per poll."),
+    T("supporter_tier_snapshots", "Supporters and money", "Each tier's patron count and pledges, once per poll."),
     T("th_characters", "Numbers over time", "Your Toyhouse characters' latest favourites, images and comments."),
     T("th_character_totals", "Numbers over time", "Your Toyhouse characters' favourites and comments added up, once per check."),
     T("ttv_channel_snapshots", "Numbers over time", "Twitch live state, viewers, and followers / subscribers / Bits per poll."),
@@ -370,7 +377,7 @@ _SETTINGS = (
         "bsky_app_password", "tw_api_bearer_token", "tw_auth_token", "tw_ct0", "mast_access_token",
         "tum_api_key", "tum_consumer_secret", "tum_oauth_token", "tum_oauth_token_secret",
         "tum_oauth2_access_token", "tum_oauth2_refresh_token",   # the Connect sign-in (4.60.0, spec 024)
-        "pix_refresh_token", "thr_access_token", "ig_access_token", "fb_page_token", "ng_cookie", "th_cookie", "sc_access_token",
+        "pix_refresh_token", "thr_access_token", "ig_access_token", "fb_page_token", "ng_cookie", "th_cookie", "pat_cookie", "sc_access_token",
         "sc_client_secret", "sc_refresh_token", "yt_access_token", "yt_client_secret", "yt_refresh_token",
         "ttv_client_secret", "ttv_access_token", "ttv_refresh_token",   # Twitch app + Connect (spec 045)
         "ttv_eventsub_secret",   # signs Twitch's go-live webhook deliveries (spec 045)
@@ -397,6 +404,7 @@ _SETTINGS = (
     # Your handles, in the settings file.
     *(S(k, _HANDLE, identity=True) for k in (
         "fa_username", "ws_username", "e621_username", "fbr_username", "r34_username", "r34_user_id", "fn_username", "ng_username", "th_username",
+        "pat_username", "pat_campaign_id",
         "sc_username", "yt_username", "pic_channel", "ttv_channel", "ttv_user_id", "ttv_login", "ig_username", "thr_username", "sf_display_name", "mast_handle",
         "mast_instance_url", "tum_blog", "tum_oauth2_user", "ig_user_id", "fb_page_id", "fb_page_name", "pix_user_id", "thr_user_id", "tg_channel",
         "ao3_target_user", "da_target_user", "ik_target_user", "sqw_target_user", "tw_target_user",
@@ -440,6 +448,7 @@ _SETTINGS = (
         "fa_watcher_notifications_enabled", "sf_notification_comments_only", "ws_notification_comments_only",
         "mast_instance_flavour", "ig_relay_open", "ig_relay_enabled", "tw_account_stagger_seconds", "tw_gallerydl_path",
         "tw_polling_backend", "tw_roundrobin_batch", "tw_roundrobin_save_tokens", "yt_long_uploads",
+        "pat_is_nsfw", "pat_tiers", "pat_default_audience", "pat_story_collections",   # spec 084: Patreon
         "ib_use_cf_proxy", "<P>_use_cf_proxy", "<P>_notifications_enabled", "<P>_poll_interval_minutes",
     )),
     S("pod_feed_slug", "Your podcast", "The address of your public podcast feed."),
@@ -500,6 +509,8 @@ _PATHS = (
       backup="derivable"),
     P("data/tech_pending.json", "Error reports", "Error reports waiting to be sent.", backup="derivable"),
     P("data/tech_state.json", _HOUSE, "The install's id and the Tech Centre's last answers.", backup="derivable"),
+    P("data/pat_standdown.json", _HOUSE, "When Patreon last asked PawPoller to slow down, and when to try again.",
+      backup="derivable"),
     P("data/fa_standdown.json", _HOUSE, "When FurAffinity's bot check last turned PawPoller away, and when to try again.",
       backup="derivable"),
     P("data/th_standdown.json", _HOUSE, "When Toyhouse's bot check last turned PawPoller away, and when to try again.",

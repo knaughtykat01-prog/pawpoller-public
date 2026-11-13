@@ -71,6 +71,11 @@ PLATFORM_FORMAT_MAP: dict[str, list[tuple[str, str, str]]] = {
         ("Markdown", "MASTER.md", "markdown"),  # DA OAuth accepts plain text
         ("Chapters/Markdown", "*.md", "markdown"),
     ],
+    # Patreon (spec 084): the chapter's text goes in the post body, turned into Patreon's editor JSON.
+    "pat": [
+        ("Chapters/SoFurry_HTML", "*.html", "html"),
+        ("HTML", "*_SoFurry.html", "html"),
+    ],
     "ik": [],  # Itaku: images uploaded separately, text posts use description
     "bsky": [],  # Bluesky uses text from description, no file upload
 }
@@ -774,7 +779,8 @@ def build_package(
         tags = story.tags_by_platform.get(platform, [])
 
     # Rating — default to adult, overridable
-    rating = rating_override or "adult"
+    # Patreon (spec 084) refuses by rating before the network, so it needs the story's own (empty → adult there).
+    rating = rating_override or (story.rating if platform == "pat" else "") or "adult"
 
     # File path
     file_path = file_path_override
@@ -793,6 +799,14 @@ def build_package(
     if platform in _ANNOUNCERS and getattr(story, "announcement_image", None):
         thumbnail = story.announcement_image
 
+    extra = _story_extra(story, platform, chapter_index)
+    pat_files: dict = {}
+    if platform == "pat":     # spec 084: only Patreon's keys (CHOICE_KEYS), and its files resolved here, never from extra
+        from posting import pat_choices
+        extra = {**{k: v for k, v in extra.items() if k not in (story.platform_options or {}).get("pat", {})},
+                 **pat_choices.pick((story.platform_options or {}).get("pat"))}
+        pat_files = pat_choices.for_story(story, thumbnail, rating, extra)
+
     return StoryUploadPackage(
         story_name=story.name,
         chapter_index=chapter_index,
@@ -806,7 +820,8 @@ def build_package(
         file_type=file_type,
         word_count=word_count,
         thumbnail_path=thumbnail,
-        extra=_story_extra(story, platform, chapter_index),
+        extra=extra,
+        pat_files=pat_files,
     )
 
 

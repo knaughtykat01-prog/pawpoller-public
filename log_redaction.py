@@ -57,7 +57,15 @@ _PARAM_NAMES = (
     "apikey", "client_secret", "token", "key", "secret", "password", "passwd",
     "pwd", "sid", "session", "session_key", "signature", "sig", "code",
     "cookie", "auth", "credentials", "app_password",
+    # Spec 084: Patreon's session cookie, and the presigned-upload signatures storage hands back.
+    "session_id", "x-amz-signature", "x-amz-credential", "x-amz-security-token", "x-goog-signature",
+    "token-hash",      # Patreon's picture addresses: the hash opens a members-only picture (FR-SEC-019)
 )
+
+# The same names, plus the CSRF headers, as dict / JSON keys or "Header: value" (spec 084, FR-SEC-012): an upload's
+# parameters arrive as a dict, so a logged repr would otherwise carry a working signature.
+_KEYED_NAMES = ("x-amz-signature", "x-amz-credential", "x-amz-security-token", "x-goog-signature", "session_id",
+                "x-csrf-signature", "x-csrf-token")
 
 _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # ?access_token=… / &api_key=… — value runs to the next delimiter.
@@ -77,6 +85,9 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # Header-ish "Authorization: …" / "Cookie: …" in a message body.
     (re.compile(r"(?i)\b(authorization|cookie|set-cookie|x-api-key)"
                 r"(\s*[:=]\s*)[^\s,;]{8,}"), r"\1\2" + MASK),
+    # 'X-Amz-Signature': 'abc…' / "x-csrf-signature": "…" / X-CSRF-Signature: … (spec 084).
+    (re.compile(r"(?i)([\"']?(?:" + "|".join(re.escape(n) for n in _KEYED_NAMES)
+                + r")[\"']?\s*[:=]\s*[\"']?)(?!\[REDACTED\])[^\"'\s,;&}]{4,}"), r"\1" + MASK),
 ]
 
 # Credential keys that are IDENTITY, not secrets — keep them legible in logs.

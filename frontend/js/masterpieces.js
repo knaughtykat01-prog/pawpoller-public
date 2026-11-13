@@ -1622,6 +1622,9 @@ window.Masterpieces = {
                 live: _live.filter(c => c !== code) };
         });
         extraByCode.th = { character_ids: (cats.th || {}).character_ids || [] };   // spec 062: the Toyhouse picker
+        const _d = this._detail || {};      // spec 084: Patreon's saved choices + the piece's rating and renders
+        extraByCode.pat = { ...(cats.pat || {}), _ctx: { rating: _d.rating || '', renders: (_d.variants || [])
+            .filter(v => v && v.key).map(v => ({ key: v.key, label: v.label || v.key, rating: v.rating || _d.rating || '' })) } };
         window.Artwork._renderPlatformRows(host, optsByCode, extraByCode);
         if (window.Artwork._applyMediaGating) window.Artwork._applyMediaGating('#mp-detail-platforms', (this._detail || {}).image || '', (this._detail || {}).rating || '', ((this._detail || {}).media || {}).bytes || 0);   // 4.18.0 kind, 4.21.0 rating
 
@@ -1739,6 +1742,13 @@ window.Masterpieces = {
         if (thChars && JSON.stringify((oldCats.th || {}).character_ids || []) !== JSON.stringify(thChars)) {
             categories = categories || { ...oldCats };
             categories.th = { ...(categories.th || {}), character_ids: thChars };
+        }
+        // Patreon's choices (spec 084): who sees it, renders, cover, collection, the switch. Saved with the piece so
+        // a scheduled post reads them when it sends.
+        const pat = window.PatreonRows ? window.PatreonRows.collect(document) : null;
+        if (pat && JSON.stringify(oldCats.pat || {}) !== JSON.stringify(pat)) {
+            categories = categories || { ...oldCats };
+            categories.pat = pat;
         }
         // Stored per-announcer text (4.3.0) \u2014 merged into descriptions, never
         // replacing the map, and only when the record exposed it (else no box).

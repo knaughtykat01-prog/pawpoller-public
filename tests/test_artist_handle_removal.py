@@ -29,7 +29,7 @@ from database import artist_queries as aq
 @pytest.fixture()
 def client():
     from dashboard import app
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))    # SEC081: deleting is local-only on an open instance
 
 
 def test_an_edit_reaches_the_registry_but_a_blank_does_not_remove():

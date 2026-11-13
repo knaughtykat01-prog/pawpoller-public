@@ -24,6 +24,8 @@ def test_registry_has_all_platforms():
         # Newgrounds (4.23.0): audio + movie portals scraped, the profile's FANS count.
         "ng",
         "th",
+        # Patreon (spec 084): post likes / comments, supporter totals, comments to the Inbox.
+        "pat",
         # YouTube (4.24.0): the channel's uploads' views / likes / comments + subscribers.
         "yt",
         # Picarto (4.46.0, spec 013): the channel's lifetime views / followers / subscribers + recordings.

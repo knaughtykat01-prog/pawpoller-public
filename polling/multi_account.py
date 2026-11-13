@@ -80,6 +80,7 @@ def get_poll_cycles() -> dict:
     from polling.sc_poller import run_sc_poll_cycle
     from polling.ng_poller import run_ng_poll_cycle
     from polling.th_poller import run_th_poll_cycle
+    from polling.pat_poller import run_pat_poll_cycle
     from polling.yt_poller import run_yt_poll_cycle
     from polling.pic_poller import run_pic_poll_cycle
     from polling.ttv_poller import run_ttv_poll_cycle
@@ -95,6 +96,7 @@ def get_poll_cycles() -> dict:
         "tum": run_tum_poll_cycle, "pix": run_pix_poll_cycle, "thr": run_thr_poll_cycle,
         "ig": run_ig_poll_cycle, "e621": run_e621_poll_cycle, "fn": run_fn_poll_cycle,
         "sc": run_sc_poll_cycle, "ng": run_ng_poll_cycle, "yt": run_yt_poll_cycle, "th": run_th_poll_cycle,
+        "pat": run_pat_poll_cycle,
         "pic": run_pic_poll_cycle, "ttv": run_ttv_poll_cycle, "fb": run_fb_poll_cycle,
         "fbr": run_fbr_poll_cycle, "r34": run_r34_poll_cycle, "tg": run_tg_poll_cycle,
     }

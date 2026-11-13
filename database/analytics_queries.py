@@ -616,7 +616,7 @@ INSIGHT_TABLES = {
     "bsky": "bsky_submissions", "tw": "tw_submissions", "mast": "mast_submissions",
     "tum": "tum_submissions", "pix": "pix_submissions", "thr": "thr_submissions",
     "ig": "ig_submissions", "e621": "e621_submissions", "fn": "fn_submissions", "sc": "sc_submissions",
-    "ng": "ng_submissions", "yt": "yt_submissions", "th": "th_submissions",
+    "ng": "ng_submissions", "yt": "yt_submissions", "th": "th_submissions", "pat": "pat_submissions",
     "fbr": "fbr_submissions",
     "r34": "r34_submissions",
 }
@@ -625,7 +625,7 @@ INSIGHT_PRIMARY = {   # the platform's headline engagement column
     "ao3": "views", "da": "views", "wp": "reads", "ik": "likes", "bsky": "likes",
     "tw": "views", "mast": "likes", "tum": "notes", "pix": "views",
     "thr": "views", "ig": "views", "e621": "score", "fn": "views", "fbr": "score", "r34": "score", "sc": "views",
-    "ng": "views", "yt": "views", "th": "favorites_count",
+    "ng": "views", "yt": "views", "th": "favorites_count", "pat": "favorites_count",
 }
 INSIGHT_DATE_COL = {"ib": "create_datetime"}   # everything else: posted_at
 

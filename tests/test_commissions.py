@@ -100,8 +100,9 @@ def _client():
     from fastapi.testclient import TestClient
     import dashboard
     # Caller monkeypatches is_dashboard_auth_required → open instance, middleware
-    # passes through; we exercise the router directly.
-    return TestClient(dashboard.app)
+    # passes through; we exercise the router directly. From this machine: deleting a commission is a local-only
+    # write on an open instance (SEC081).
+    return TestClient(dashboard.app, client=("127.0.0.1", 50000))
 
 
 def test_api_crud_and_validation(monkeypatch):

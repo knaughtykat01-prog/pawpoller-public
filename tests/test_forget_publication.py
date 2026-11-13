@@ -34,7 +34,7 @@ from posting import artwork_reader
 @pytest.fixture()
 def client():
     from dashboard import app
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))    # SEC081: deleting is local-only on an open instance
 
 
 @pytest.fixture()

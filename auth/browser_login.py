@@ -234,6 +234,24 @@ PLATFORM_LOGIN: dict[str, dict] = {
             {"id": "th_username", "label": "Toyhouse username", "placeholder": "Your Toyhouse username", "required": True},
         ],
     },
+    # Patreon (spec 084): no post API, so the browser sign-in's patreon.com cookies (the client sends them to
+    # www.patreon.com only). The owner types their page name first; whose page it is gets checked before saving
+    # (whose_session_problem / _who), and the page's id comes from PawPoller's own read, never from here.
+    "pat": {
+        "name": "Patreon",
+        "url": "https://www.patreon.com/login",
+        "domain": "patreon.com",
+        "success_check": lambda cookies, url: (
+            bool((cookies or {}).get("session_id")) and _host_is(url, "patreon.com") and "/login" not in (url or "")
+        ),
+        "extract": lambda cookies, url: {
+            "pat_cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
+        },
+        "fields": [
+            {"id": "pat_username", "label": "Your Patreon page name", "required": True,
+             "placeholder": "As in patreon.com/<name>"},
+        ],
+    },
     # Itaku (spec 059): the API token sits in the page's Local Storage under ``token`` (the
     # Itaku guide's screenshot), not in a cookie, so ``extract_js`` reads it once the page has
     # left the sign-in screen. Anything that isn't a plain token string is refused, and the
@@ -327,17 +345,18 @@ def check_creds(platform: str, creds: dict) -> None:
 # ---------------------------------------------------------------------------
 
 async def whose_session_problem(platform: str, creds: dict, account_id: int | None = None) -> str:
-    """Why these captured credentials must not be saved, or "" (SEC062 (3)). Toyhouse only: the
-    session must belong to the account's SAVED username when it has one (SEC4885 (1): comparing with
-    the typed name let a sign-in quietly switch an account to another user), else the typed one.
-    The code sign-in checks this itself (`_who`).
+    """Why these captured credentials must not be saved, or "" (SEC062 (3)). Toyhouse and Patreon (spec 084): the
+    session must belong to the account's SAVED name when it has one (SEC4885 (1): comparing with the typed name let
+    a sign-in quietly switch an account to another user), else the typed one (Patreon: the page name the owner
+    typed). The code sign-in checks this itself (`_who`).
 
-    SEC4886: a passing check also puts the saved name back into *creds*, so a different TYPED
-    `th_username` is never what gets written; and finding the default account never creates one
-    (a refused sign-in left an empty, enabled Toyhouse account behind)."""
-    if platform != "th":
+    SEC4886: a passing check also puts the saved name back into *creds*, so a different TYPED name is never what
+    gets written; and finding the default account never creates one (a refused sign-in left an empty, enabled
+    account behind)."""
+    if platform not in ("th", "pat"):
         return ""
     from routes import signin_helper_api as sh
+    site, field = PLATFORM_LOGIN[platform]["name"], f"{platform}_username"
     stored = ""
     try:
         aid = account_id if account_id is not None else sh._default_account_id(platform, create=False)
@@ -345,18 +364,18 @@ async def whose_session_problem(platform: str, creds: dict, account_id: int | No
         if acct and acct.get("platform") == platform:
             stored = sh._stored_name(acct)
     except Exception as e:  # noqa: BLE001 — no saved name to compare with; the typed one stands
-        logger.info("Toyhouse owner check: no saved name (%s)", type(e).__name__)
+        logger.info("%s owner check: no saved name (%s)", site, type(e).__name__)
     saved = stored
-    stored = stored or creds.get("th_username", "")
+    stored = stored or creds.get(field, "")
     try:
         ok, who, why = await sh._who(platform, creds, stored)
-    except Exception as e:  # noqa: BLE001 — THChallenged/THUnavailable/network: refuse with a reason, not a 500
-        logger.warning("Toyhouse owner check failed: %s", type(e).__name__)
-        return "Toyhouse didn't answer the account check. Try again in a minute."
+    except Exception as e:  # noqa: BLE001 — a bot check / network: refuse with a reason, not a 500
+        logger.warning("%s owner check failed: %s", site, type(e).__name__)
+        return f"{site} didn't answer the account check. Try again in a minute."
     if not ok:
-        return why or f"That browser is signed in to Toyhouse as {who}, not {stored}."
-    if saved and "th_username" in creds:
-        creds["th_username"] = saved     # the name just checked, never a different typed one
+        return why or f"That browser is signed in to {site} as {who}, not {stored}."
+    if saved and field in creds:
+        creds[field] = saved     # the name just checked, never a different typed one
     return ""
 
 
@@ -371,6 +390,10 @@ def _save_browser_creds(platform: str, creds: dict, account_id: int | None) -> d
     slot is still the target, as before. Returns the keys written.
     """
     check_creds(platform, creds)   # every caller: the local window, a connected desktop, the helper (059)
+    if platform == "pat":          # spec 084: only a session whose page name was just checked is saved
+        from clients.pat import account as pat_account
+        if not pat_account.was_checked(creds.get("pat_cookie", "")):
+            raise ValueError("This Patreon sign-in wasn't checked against your page name, so it wasn't saved.")
     payload = dict(creds)
     if account_id is not None:
         from database.db import get_connection
@@ -385,6 +408,22 @@ def _save_browser_creds(platform: str, creds: dict, account_id: int | None) -> d
         payload = {config.account_setting_key(int(account_id), k, bool(acct.get("is_default"))): v
                    for k, v in creds.items()}
     config.save_settings(payload)
+    if platform == "pat":          # the page's id, 18+ flag and tiers from that check (FR-SEC-006)
+        from clients.pat import account as pat_account
+        aid = account_id
+        if aid is None:
+            from database.db import get_connection
+            from database import accounts as _accts
+            conn = get_connection()
+            try:
+                aid = _accts.get_default_account_id(conn, "pat", create=True)
+            finally:
+                conn.close()
+        if aid is None:
+            raise ValueError("There's no Patreon account to save this sign-in to.")
+        if aid is None:
+            raise ValueError("There's no Patreon account to save this sign-in to.")
+        pat_account.record_checked(int(aid), creds.get("pat_cookie", ""))
     return payload
 
 

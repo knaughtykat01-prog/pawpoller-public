@@ -241,3 +241,9 @@ def test_with_the_relay_on_a_poll_goes_through_it_despite_the_stand_down(monkeyp
             fa_poller._fa_poll_lock.release()
         fa_poller._fa_poll_running = False
     assert made["proxy_url"] == "https://relay.example.workers.dev" and made["proxy_key"] == "k"
+
+
+def test_patreon_has_its_own_standdown():
+    """Spec 084: Patreon shares the stand-down machinery under its own name and file."""
+    assert fa_standdown._SITES["pat"] == "Patreon"
+    assert fa_standdown._path("pat").name == "pat_standdown.json"

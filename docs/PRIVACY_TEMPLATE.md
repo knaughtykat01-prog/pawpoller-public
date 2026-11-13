@@ -12,6 +12,8 @@
   credential vault, used only to post and poll on the connected accounts.
 - **Content you manage** — stories, artwork, posts, tags, descriptions, and the analytics polled back from each
   platform (views, favourites, comments, etc.).
+- **Supporter figures** from a connected Patreon page: how many patrons, how many in each tier, and the money coming
+  in, as totals for each poll. No supporter's name, email or pledge is kept.
 - **Operational data** — logs (which may include IP addresses of dashboard logins), the admin password hash, 2FA
   secret, and API-key hashes.
 
@@ -45,7 +47,8 @@ instance accepts under-18 users at all.]
 ## Other people's data
 
 Polling brings in other people's information from the connected sites: the names and handles of people who comment,
-favourite or follow, and the text of their comments. That data belongs to those people too. Use it only to run the
+favourite or follow, and the text of their comments. Reading a Patreon page goes through its members to count them;
+their details are used for the count and never kept. That data belongs to those people too. Use it only to run the
 instance, don't publish or share it elsewhere, and delete it on request where you can. [Name how someone can ask.]
 
 ## Where the data lives
