@@ -52,6 +52,19 @@ def test_remote_publish_is_refused_on_an_open_instance(open_app, method, path):
 
 @pytest.mark.parametrize("path", ["/api/posting/queue", "/api/artwork/scheduled?name=x"])
 def test_reading_stays_open(open_app, path):
+    # spec 087: "Rate this piece" is locked by method and exact path; reading the Library is not.
+    assert TestClient(open_app.app, raise_server_exceptions=False).post(
+        "/api/masterpieces/rate", json={}).status_code == 403
+    assert TestClient(open_app.app, raise_server_exceptions=False).get("/api/masterpieces").status_code != 403
+    # ... and importing (a site's sign-in fetching files into the Library) and promoting a found post, by method:
+    remote = TestClient(open_app.app, raise_server_exceptions=False)
+    for locked in ("/api/artwork/import/pat/801", "/api/artwork/import/fa/12", "/api/artwork/import/bulk/pat",
+                   "/api/artwork/import/discovered-art", "/api/posts/import/discovered", "/api/posts/import/tw/9",
+                   "/api/masterpieces", "/api/masterpieces/merge", "/api/masterpieces/merge-as-variant"):
+        r = remote.post(locked, json={})
+        assert r.status_code == 403 and "dashboard password" in r.text, locked
+    assert remote.get("/api/posts/import/count").status_code != 403, "the import count stays readable"
+    assert remote.post("/api/masterpieces/Some_Piece/variants", json={}).status_code != 403, "editing stays open"
     r = TestClient(open_app.app, raise_server_exceptions=False).get(path)
     assert r.status_code != 403
 

@@ -178,6 +178,8 @@ def init_db() -> None:
         from database import th_queries
         th_queries.ensure_th_columns(conn)
         conn.executescript(_PAT_SCHEMA_PATH.read_text(encoding="utf-8"))
+        from database import pat_queries
+        pat_queries.ensure_pat_columns(conn)          # spec 087: columns a 4.90.0 database lacks
         conn.executescript(_SUPPORTER_SCHEMA_PATH.read_text(encoding="utf-8"))
         yt_schema_sql = _YT_SCHEMA_PATH.read_text(encoding="utf-8")
         conn.executescript(yt_schema_sql)

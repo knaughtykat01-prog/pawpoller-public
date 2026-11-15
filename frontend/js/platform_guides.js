@@ -614,6 +614,9 @@
       paste: 'Accounts → Patreon → Sign in',
       renew: { when: 'When Patreon signs you out', how: 'Press Sign in on the Accounts page again.' },
       notes: [
+        'Art already on your Patreon page can come into your Library. After PawPoller has read your page, open the Library, choose <b>Discovered</b>, and press <b>Import</b> on a Patreon picture post (or import them all). The row says who the post is for.',
+        'Patreon gives no rating for a post, so each imported piece says <b>Needs rating</b>. Open it and press General, Mature or Adult (or tick several in the Library and use <b>Set rating</b>). Until then it can\'t be posted or merged.',
+        'A piece imported from a paid post remembers who it was for, and PawPoller tells you it was a paid post before you send it anywhere else. Text posts, polls and video posts are not imported.',
         'Patreon takes General and Mature work from PawPoller. Mature work can only go to paid tiers. Adult work is not sent to Patreon.',
         'The title, tags and cover of a post are public on Patreon whatever the tier, so pick a cover without nudity.',
         'Your supporters are shown as totals only: how many, per tier, and the money Patreon shows you. PawPoller never stores who they are.',

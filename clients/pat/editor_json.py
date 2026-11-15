@@ -249,6 +249,40 @@ def is_empty_doc(json_string: str | None) -> bool:
     return empty(doc)
 
 
+def plain_from_doc(json_string: str | None, limit: int) -> str:
+    """The words of an editor document as plain text, one line per paragraph, capped (spec 087: an imported post's
+    description). Only ``text`` nodes are read; pictures, links' addresses, embeds and anything unknown are left
+    out, so nothing from Patreon but its words reaches the Library. Missing or unreadable → ""."""
+    try:
+        doc = json.loads(json_string or "")
+    except (TypeError, ValueError):
+        return ""
+    if not isinstance(doc, dict):
+        return ""
+    lines: list[str] = []
+
+    def walk(node, depth=0) -> str:
+        if not isinstance(node, dict) or depth > 12:
+            return ""
+        if node.get("type") == "text":
+            return str(node.get("text") or "")
+        if node.get("type") == "hardBreak":
+            return "\n"
+        return "".join(walk(n, depth + 1) for n in (node.get("content") or [])[:500])
+
+    for block in (doc.get("content") or [])[:500]:
+        if isinstance(block, dict) and block.get("type") in ("bulletList", "orderedList", "blockquote"):
+            for item in (block.get("content") or [])[:200]:
+                t = walk(item).strip()
+                if t:
+                    lines.append(t)
+            continue
+        t = walk(block).strip()
+        if t:
+            lines.append(t)
+    return "\n".join(lines)[:limit]
+
+
 def picture_node(src: str, media_id: str, post_id: str, caption: str = "", alt: str = "") -> dict:
     """An in-text picture as Patreon's editor sends it (captured 13 Nov); Patreon stores it as an ``image`` node."""
     return {"type": "customImage", "attrs": {"src": src, "caption": caption, "postId": str(post_id), "alt": alt,

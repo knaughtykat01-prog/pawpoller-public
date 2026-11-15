@@ -70,6 +70,44 @@ def list_masterpieces(limit: int | None = None, offset: int = 0):
         conn.close()
 
 
+# ── Spec 087: "Needs rating" ──────────────────────────────────────────────────────────────────────────────────
+RATE_MAX = 200
+
+
+def _refuse_unrated(*names: str) -> None:
+    """409 when any of these pieces is marked "Needs rating" (a merge takes either side's rating and files)."""
+    for n in names:
+        try:
+            artwork_reader.refuse_if_needs_rating(n)
+        except ValueError as e:
+            raise HTTPException(409, detail=str(e))
+
+
+@masterpieces_router.post("/rate")
+def rate_masterpieces(body: dict):
+    """"Rate this piece", for one or several: the only thing that clears "Needs rating" (FR-SEC-001a). Body:
+    {names: [...], rating: general | mature | adult}. Writes each piece's own file; sends nothing to any site.
+    Declared before the generic /{name} routes. Locked on an open install (dashboard.py)."""
+    rating = (body or {}).get("rating")
+    names = (body or {}).get("names")
+    if rating not in artwork_reader.RATINGS:
+        raise HTTPException(400, detail="Choose General, Mature or Adult.")
+    if not isinstance(names, list) or not names or len(names) > RATE_MAX \
+            or not all(isinstance(n, str) and n.strip() for n in names):
+        raise HTTPException(400, detail=f"Pick between 1 and {RATE_MAX} pieces.")
+    done, failed = [], []
+    for n in dict.fromkeys(x.strip() for x in names):
+        try:
+            artwork_reader.set_rating(n, rating)
+            done.append(n)
+        except FileNotFoundError:
+            failed.append({"name": n, "error": "That piece wasn't found."})
+        except Exception:
+            logger.exception("rating a piece failed")
+            failed.append({"name": n, "error": "That piece couldn't be saved."})
+    return {"rated": done, "failed": failed, "rating": rating}
+
+
 # ── De-duplication (2.144.0) ──────────────────────────────────────────────────
 # NOTE: these MUST be declared before the generic /{name} route, else Starlette
 # captures "/duplicates" as name="duplicates".
@@ -365,6 +403,7 @@ def merge_masterpieces_ep(body: dict):
     drop = (body.get("drop") or "").strip()
     if not keep or not drop or keep == drop:
         raise HTTPException(400, detail="keep and drop (distinct) are required")
+    _refuse_unrated(keep, drop)                    # spec 087: either side
     conn = get_connection()
     try:
         artwork_reader.load_artwork(keep)          # 404 if either is missing
@@ -385,6 +424,7 @@ def merge_masterpieces_ep(body: dict):
         conn.close()
     import shutil
     try:
+        artwork_reader.carry_marks(keep, drop)        # spec 087: before its folder goes
         shutil.rmtree(art_drop.path)
     except OSError:
         logger.warning("merge: could not remove folder for %s", drop)
@@ -441,6 +481,7 @@ def merge_as_variant_ep(body: dict):
         raise HTTPException(400, detail="keep and absorb (distinct) are required")
     if not _VARIANT_KEY_RE.match(key):
         raise HTTPException(400, detail="key must be a short slug (a-z0-9_-)")
+    _refuse_unrated(keep, absorb)                  # spec 087: either side
     try:
         art_keep = artwork_reader.load_artwork(keep)
         art_absorb = artwork_reader.load_artwork(absorb)
@@ -529,6 +570,7 @@ def merge_as_variant_ep(body: dict):
     finally:
         conn.close()
     try:
+        artwork_reader.carry_marks(keep, absorb)        # spec 087: before its folder goes
         shutil.rmtree(art_absorb.path)
     except OSError:
         logger.warning("merge-as-variant: could not remove folder for %s", absorb)
@@ -841,6 +883,7 @@ def split_variant(name: str, key: str, body: dict | None = None):
         rating=(target.get("rating") or raw.get("rating") or ""),
         tags=raw.get("tags") or None,
         characters=raw.get("characters") or None,
+        marks=artwork_reader.clean_marks(raw),     # spec 087: a split of a marked piece is marked too
     )
 
     # Members follow the variant, re-keyed to the new record's primary. The new
@@ -1161,6 +1204,10 @@ def get_masterpiece(name: str):
             "titles": art.titles_by_platform,
             "descriptions": art.descriptions_by_platform,
             "categories": art.categories_by_platform,
+            # spec 087: the marks a Patreon import leaves
+            "needs_rating": art.needs_rating, "pat_paid": art.pat_paid,
+            "pat_pick_needed": art.pat_pick_needed and not artwork_reader._own_pat_audience(art),
+            "pat_pick_note": art.pat_pick_note,
         }
     finally:
         conn.close()
@@ -1568,12 +1615,13 @@ def update_masterpiece(name: str, body: dict):
     if not updates:
         raise HTTPException(400, detail="no editable fields provided")
 
-    artwork_reader.save_artwork_metadata(name, updates)
+    art = artwork_reader.save_artwork_metadata(name, updates)
     try:
         _award_tidy(name, raw, updates)
     except Exception as e:   # XP must never fail a save
         logger.warning("tidy XP skipped for a work: %s", e)
-    return {"status": "updated", "name": name}
+    # Spec 087: a piece that needs rating keeps needing it through a details save (the reply says so).
+    return {"status": "updated", "name": name, "needs_rating": art.needs_rating}
 
 
 def _award_tidy(name: str, before: dict, updates: dict) -> None:
@@ -1671,6 +1719,7 @@ def rule34_kit(name: str):
         art = artwork_reader.load_artwork(name)
     except FileNotFoundError:
         raise HTTPException(404, detail="Masterpiece not found")
+    _refuse_unrated(name)                           # spec 087: no tags and rating to paste for an unrated piece
     pkg = artwork_reader.build_artwork_package(art, "r34")
     conn = get_connection()
     try:

@@ -113,6 +113,11 @@ async def announce_existing(conn, *, story_name: str, content_type: str = "story
     ⚠ Bulk operations should default to ``dry_run`` (spec 6.5): unlike a test
     gallery, a mistake in a channel is seen by real subscribers immediately.
     """
+    if content_type != "story":                     # spec 087: nothing announces a piece that needs rating
+        from posting import artwork_reader
+        from posting.platforms.base import NEEDS_RATING
+        if artwork_reader.marks_of(story_name).get("needs_rating"):
+            return {"status": "error", "error": NEEDS_RATING}
     settings = config.get_settings()
     links = find_live_links(conn, story_name=story_name, content_type=content_type,
                             chapter_index=chapter_index)

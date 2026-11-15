@@ -138,6 +138,36 @@ ALT_MAX = 1000
 MEDIA_HOST_SUFFIXES = (".patreonusercontent.com",)
 
 
+# Spec 087: what the post list asks for (an allow-list; test_patimport_read pins it). No text: a post's text is
+# asked for only when that post is imported.
+POST_LIST_FIELDS = "title,like_count,comment_count,published_at,post_type"
+POST_LIST_INCLUDE = "access_rules.tier.null,images"
+# content_json_string: seen on a real page (15 Nov), a post's words arrive in the editor's own document and
+# `content` is empty; both are asked for and whichever holds words is used.
+POST_ONE_FIELDS = "title,content,content_json_string,published_at,post_type"
+POST_ONE_INCLUDE = "access_rules.tier.null,images,campaign"
+MAX_PICTURES = 30               # per post
+TEXT_MAX = 5000                 # a post's text, as plain text, when it becomes a piece's description
+
+
+def _rel_ids(rel: dict, name: str) -> list[str]:
+    data = ((rel or {}).get(name) or {}).get("data")
+    return [str(x.get("id") or "") for x in data if isinstance(x, dict)] if isinstance(data, list) else []
+
+
+def _rules_by_id(included) -> dict:
+    """{access-rule id: {kind, tier_id}} from an answer's ``included`` list. Every kind is kept as Patreon words
+    it; a kind PawPoller doesn't offer makes the audience unknown downstream, never public."""
+    out = {}
+    for i in included or []:
+        if not isinstance(i, dict) or i.get("type") != "access-rule":
+            continue
+        tid = str((((i.get("relationships") or {}).get("tier") or {}).get("data") or {}).get("id") or "")
+        out[str(i.get("id") or "")] = {"kind": str((i.get("attributes") or {}).get("access_rule_type") or "")[:40],
+                                       "tier_id": tid if _ID_RE.match(tid) else ""}
+    return out
+
+
 def patreon_time(when) -> str:
     """A UTC time as Patreon's editor and PostyBirb send it: seconds, no milliseconds, no zone."""
     from datetime import timezone
@@ -468,23 +498,33 @@ class PatClient:
 
     async def posts(self, campaign_id: str) -> list[dict]:
         """The creator's published posts, newest first: id, title, likes, comments, when (research R6). Stops at
-        MAX_POST_PAGES, or when Patreon's cursor doesn't move."""
+        MAX_POST_PAGES, or when Patreon's cursor doesn't move.
+
+        Spec 087: also each post's kind, whether it holds pictures, and its audience rules as ``rules``
+        ([{kind, tier_id}], every kind Patreon reports, offered or not: ``posting/pat_import.audience`` decides).
+        The fields asked are the constants below: no text, no picture address, nothing about members."""
         cid = self._check_id(campaign_id, "creator page")
         out, cursor, seen = [], None, set()
         for _ in range(MAX_POST_PAGES):
             params = {"filter[campaign_id]": cid, "filter[contains_exclusive_posts]": "true",
-                      "filter[is_draft]": "false", "fields[post]": "title,like_count,comment_count,published_at,post_type",
+                      "filter[is_draft]": "false", "fields[post]": POST_LIST_FIELDS, "include": POST_LIST_INCLUDE,
+                      "fields[access_rule]": "access_rule_type", "fields[reward]": "published",
+                      "fields[media]": "media_type",
                       "sort": "-published_at", "page[count]": str(POST_PAGE), "json-api-version": "1.0"}
             if cursor:
                 params["page[cursor]"] = cursor
             d = await self._api("GET", "/api/posts", step="the post list", params=params)
+            rule_of = _rules_by_id(d.get("included"))
             for p in d.get("data") or []:
                 pid = str((p or {}).get("id") or "")
                 if not _ID_RE.match(pid) or pid in seen:
                     continue
                 seen.add(pid)
                 a = p.get("attributes") or {}
+                rel = p.get("relationships") or {}
                 out.append({"submission_id": pid, "title": plain_text(a.get("title") or "", 200),
+                            "has_pictures": str(a.get("post_type") or "") == "image_file" and bool(_rel_ids(rel, "images")),
+                            "rules": [rule_of.get(r, {"kind": "", "tier_id": ""}) for r in _rel_ids(rel, "access_rules")],
                             "favorites_count": max(int(a.get("like_count") or 0), 0),
                             "comments_count": max(int(a.get("comment_count") or 0), 0),
                             "posted_at": str(a.get("published_at") or "")[:40], "post_type": str(a.get("post_type") or "")[:40],
@@ -494,6 +534,38 @@ class PatClient:
                 break
             cursor = nxt
         return out
+
+    async def post_pictures(self, post_id: str) -> dict:
+        """One post, asked for when it is imported (spec 087): {page_id, title, text, posted_at, public, pictures,
+        rules}. ``pictures`` are the gallery pictures' addresses in order (at most MAX_PICTURES), each on Patreon's
+        picture host; they are for immediate use and are never stored or logged. ``page_id`` is the creator page
+        named in Patreon's own answer ("" when it names none): the caller compares it with the saved one."""
+        from clients.pat import editor_json
+        pid = self._check_id(post_id, "post")
+        d = await self._api("GET", f"/api/posts/{pid}", step="the post", params={
+            "include": POST_ONE_INCLUDE, "fields[post]": POST_ONE_FIELDS, "fields[access_rule]": "access_rule_type",
+            "fields[reward]": "published", "fields[media]": "download_url,image_urls,media_type",
+            "fields[campaign]": "is_nsfw", "json-api-version": "1.0"})
+        p = d.get("data") if isinstance(d.get("data"), dict) else {}
+        a, rel = p.get("attributes") or {}, p.get("relationships") or {}
+        page = str(((rel.get("campaign") or {}).get("data") or {}).get("id") or "")
+        media = {str(i.get("id") or ""): i.get("attributes") or {} for i in d.get("included") or []
+                 if isinstance(i, dict) and i.get("type") == "media"}
+        pictures = []                # "" for a picture Patreon listed with no address: the caller counts it missing
+        for mid in _rel_ids(rel, "images")[:MAX_PICTURES]:
+            m = media.get(mid) or {}
+            if str(m.get("media_type") or "image") != "image":
+                continue
+            urls = m.get("image_urls") if isinstance(m.get("image_urls"), dict) else {}
+            pictures.append(str(urls.get("original") or m.get("download_url") or urls.get("default") or ""))
+        rule_of = _rules_by_id(d.get("included"))
+        rules = [rule_of.get(r, {"kind": "", "tier_id": ""}) for r in _rel_ids(rel, "access_rules")]
+        return {"page_id": page if _ID_RE.match(page) else "", "title": plain_text(a.get("title") or "", 200),
+                "text": (plain_text(a.get("content") or "", TEXT_MAX)
+                         or editor_json.plain_from_doc(a.get("content_json_string"), TEXT_MAX)),
+                "posted_at": str(a.get("published_at") or "")[:40],
+                "post_type": str(a.get("post_type") or "")[:40], "pictures": pictures, "rules": rules,
+                "public": bool(rules) and all(r.get("kind") == "public" for r in rules)}
 
     async def comments(self, post_id: str) -> list[dict]:
         """A post's comments, replies included (research R6), in the shape ``inbox_capture`` wants. Only the

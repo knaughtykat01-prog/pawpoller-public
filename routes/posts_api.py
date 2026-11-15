@@ -1054,6 +1054,12 @@ def _parse_comment_fields(comments, linked) -> tuple[dict | None, dict | None]:
         if not (isinstance(ln, dict) and ln.get("kind") in ("artwork", "story") and ln.get("ref")):
             raise HTTPException(400, "linked must be {kind: artwork|story, ref}")
         ln = {"kind": ln["kind"], "ref": str(ln["ref"])[:300]}
+        if ln["kind"] == "artwork":                 # spec 087: a short post can't carry a piece that needs rating
+            from posting import artwork_reader
+            try:
+                artwork_reader.refuse_if_needs_rating(ln["ref"])
+            except ValueError as e:
+                raise HTTPException(409, str(e))
     return c, ln
 
 

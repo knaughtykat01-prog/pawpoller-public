@@ -162,12 +162,23 @@ window.Masterpieces = {
                 if (act === 'post') { this._openBatch(); return; }
                 this._repaintHost();
             });
+            bar.addEventListener('change', async (e) => {          // spec 087: rate the ticked pieces
+                const s = e.target.closest('[data-sel-rate]');
+                if (!s || !s.value) return;
+                await this._rate([...this._sel], s.value);
+                this._sel.clear();
+                if (window.Bookshelf && document.getElementById('shelf-grid')) await Bookshelf.render();    // re-read the list
+                this._paintSelBar();
+            });
         }
         const n = this._sel.size;
         bar.innerHTML = `
             <strong>${n} selected</strong>
             <button type="button" class="btn btn-sm" data-sel="all">Select all shown (${(this._lastList || []).length})</button>
             <button type="button" class="btn btn-sm" data-sel="none"${n ? '' : ' disabled'}>Clear</button>
+            <select class="mp-input" data-sel-rate aria-label="Set rating for the selected pieces"${n ? '' : ' disabled'}>
+                <option value="">Set rating…</option><option value="general">General</option>
+                <option value="mature">Mature</option><option value="adult">Adult</option></select>
             <button type="button" class="btn btn-sm btn-primary" data-sel="post"${n ? '' : ' disabled'}>🎨 Post these…</button>
             <button type="button" class="btn btn-sm" data-sel="done">Done</button>`;
     },
@@ -295,6 +306,7 @@ window.Masterpieces = {
             }).join('');
             $('#bp-plan').innerHTML = `
                 ${note ? `<p class="bp-warn">${esc(note)}</p>` : ''}
+                ${(p.notices || []).map(x => `<p class="bp-warn">${esc(x.title)} ${esc(x.notice)}</p>`).join('')}
                 <p class="bp-sum"><strong>${t.pieces} piece${t.pieces === 1 ? '' : 's'}, ${t.posts} post${t.posts === 1 ? '' : 's'}</strong>${p.first_slot ? ` — ${when(p.first_slot)}${p.last_slot && p.last_slot !== p.first_slot ? ` to ${when(p.last_slot)}` : ''}` : ''}${t.skipped_pieces ? ` · ${t.skipped_pieces} skipped` : ''}${p.announce ? ' · announced' : ' · not announced'}</p>
                 <table class="bp-table"><thead><tr><th>When</th><th>Piece</th><th>Sites (and skipped)</th></tr></thead><tbody>${rows}</tbody></table>`;
             $('#bp-queue').disabled = !t.posts;
@@ -1085,9 +1097,19 @@ window.Masterpieces = {
                             <span class="muted">(for screen readers; used as the Bluesky image description)</span></span>
                         <input class="mp-input" id="mp-e-alt" value="${this.esc(m.alt_text || '')}"
                             placeholder="e.g. A grey wolf in a red jacket grins at the viewer"></label>
+                    ${m.pat_paid ? `<p class="sec-note">Was a paid post on Patreon.</p>` : ''}
+                    ${m.pat_pick_needed ? `<p class="sec-note"><strong>Pick who sees this on Patreon.</strong> ${this.esc(m.pat_pick_note || '')} Choose it in this piece's Patreon options before posting it there.</p>` : ''}
                     <div class="mp-field-row">
+                        ${m.needs_rating ? `
+                        <div class="mp-field" id="mp-needs-rating"><span><strong>Needs rating</strong>
+                                <span class="muted">(it can't be posted or merged until you rate it)</span></span>
+                            <div role="group" aria-label="Rate this piece">
+                                <button class="btn btn-sm" type="button" data-mp-rate="general">General</button>
+                                <button class="btn btn-sm" type="button" data-mp-rate="mature">Mature</button>
+                                <button class="btn btn-sm" type="button" data-mp-rate="adult">Adult</button>
+                            </div></div>` : `
                         <label class="mp-field"><span>Rating</span>
-                            <select class="mp-input" id="mp-e-rating">${ratingOpts}</select></label>
+                            <select class="mp-input" id="mp-e-rating">${ratingOpts}</select></label>`}
                         <div class="mp-field"><span>Characters
                                 <button class="btn btn-sm btn-browse" data-mp-charbrowse type="button"
                                     title="Pick from your cast">&#128100; Browse cast</button></span>
@@ -1166,6 +1188,7 @@ window.Masterpieces = {
                         <button class="btn btn-primary btn-sm" data-mp-publish type="button">Publish now</button>
                     </span></div>
                 <p class="sec-note">Sites this piece isn't on yet.</p>
+                ${m.pat_paid ? `<p class="bp-warn" id="mp-paid-notice">This was a paid post on Patreon. Posting it elsewhere shows it to everyone there.</p>` : ''}
                 <div id="mp-detail-platforms"></div>
                 ${this._r34RowHtml(m)}
                 <div class="mp-edit-actions"><span class="mp-edit-msg muted" id="mp-pub-msg"></span></div>
@@ -2015,6 +2038,8 @@ window.Masterpieces = {
             if (bre) { e.preventDefault(); this._loadTagBudget(); return; }
             const save = e.target.closest('[data-mp-save]');
             if (save) { e.preventDefault(); this._saveCanonical(); return; }
+            const rate = e.target.closest('[data-mp-rate]');
+            if (rate) { e.preventDefault(); this._rate([this._current], rate.dataset.mpRate).then(() => this.renderDetail(this._current)); return; }
             const sync = e.target.closest('[data-mp-sync]');
             if (sync) { e.preventDefault(); this._syncAll(sync); return; }
             const tb = e.target.closest('[data-mp-tagbrowse]');
@@ -2373,7 +2398,8 @@ window.Masterpieces = {
         return {
             title: val('mp-e-title').trim(),
             description: val('mp-e-desc'),
-            rating: val('mp-e-rating'),
+            // Spec 087: a piece that needs rating has no rating box; a details save never sends one for it.
+            ...(document.getElementById('mp-e-rating') ? { rating: val('mp-e-rating') } : {}),
             characters: list(val('mp-e-chars')),
             tags: list(val('mp-e-tags')),
             alt_text: val('mp-e-alt').trim(),
@@ -2383,6 +2409,19 @@ window.Masterpieces = {
     _msg(text, isErr) {
         const el = document.getElementById('mp-edit-msg');
         if (el) { el.textContent = text; el.className = 'mp-edit-msg ' + (isErr ? 'mp-err' : 'muted'); }
+    },
+
+    /* Spec 087: "Rate this piece" (one, or the ticked ones). The only thing that clears "Needs rating". */
+    async _rate(names, rating) {
+        names = (names || []).filter(Boolean);
+        if (!names.length) return;
+        try {
+            const r = await API.rateMasterpieces(names, rating);
+            const n = (r.rated || []).length, bad = (r.failed || []).length;
+            this._toast(bad ? 'error' : 'success', `Rated ${n} piece${n === 1 ? '' : 's'} ${rating}` + (bad ? `; ${bad} couldn't be saved` : ''));
+        } catch (err) {
+            this._toast('error', 'Rating failed: ' + (err.message || err));
+        }
     },
 
     async _saveCanonical() {

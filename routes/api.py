@@ -74,6 +74,7 @@ async def health_check():
 # can hold it for a while (a large video upload), so only a long silence counts.
 _SCHEDULER_STALL_S = 45 * 60
 _DISK_LOW_PCT = 5.0
+_DISK_LOW_BYTES = 5 * 1024 ** 3   # both must hold: 5% of a 1 TB drive is 50 GB, plenty of room (4.91.0)
 
 
 @router.get("/health/ready")
@@ -113,7 +114,7 @@ def health_ready():
     try:
         du = shutil.disk_usage(config.DATA_DIR)
         out["disk_free_pct"] = round(100 * du.free / du.total, 1)
-        if out["disk_free_pct"] < _DISK_LOW_PCT:
+        if out["disk_free_pct"] < _DISK_LOW_PCT and du.free < _DISK_LOW_BYTES:
             problems.append("disk nearly full")
     except OSError:
         pass

@@ -90,9 +90,13 @@ async def run_pat_poll_cycle(account_id: int | None = None, force_full: bool = F
             stats["submissions_found"] = len(posts)
             poll_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             activity = []
+            # Spec 087: who each post is for, matched against the tiers just read (unknown is "other").
+            from posting import pat_import
+            tier_ids = {str(t.get("tier_id")) for t in pat_account.values(aid).get("tiers") or [] if t.get("tier_id")}
             for p in posts:
                 prev = pat_queries.get_pat_submission(conn, p["submission_id"])
-                pat_queries.upsert_pat_submission(conn, {**p, "username": camp["vanity"]}, aid)
+                pat_queries.upsert_pat_submission(
+                    conn, {**p, "username": camp["vanity"], **pat_import.stored(p.get("rules"), tier_ids)}, aid)
                 pat_queries.insert_pat_snapshot(conn, aid, p["submission_id"], p["favorites_count"],
                                                 p["comments_count"], polled_at=poll_ts)
                 stats["snapshots_inserted"] += 1

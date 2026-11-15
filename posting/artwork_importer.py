@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -210,6 +211,8 @@ def import_artwork(platform: str, submission_id: str) -> dict:
     cfg = PLATFORM_TABLES.get(platform)
     if not cfg:
         raise ValueError(f"Unknown platform: {platform}")
+    if platform == "pat" and not _PAT_ID.match(str(submission_id)):       # spec 087: digits only, a stored post
+        raise ValueError("That isn't a Patreon post PawPoller has read.")
 
     existing = find_existing(platform, submission_id)
     if existing:
@@ -233,6 +236,8 @@ def import_artwork(platform: str, submission_id: str) -> dict:
     from database.accounts import NEVER_POST_IMPORT_ERROR, from_never_post
     if from_never_post(d):
         raise ValueError(NEVER_POST_IMPORT_ERROR)
+    if platform == "pat":           # spec 087: after the Never-post check, before any request to Patreon
+        return _import_pat(d, str(submission_id), cfg)
     kind = _non_image_type_label(d)
     if kind:
         raise ValueError(
@@ -361,6 +366,66 @@ def import_artwork(platform: str, submission_id: str) -> dict:
     return {"status": "imported", "name": created[0], "platform": platform,
             "images": len(created), "names": created, "failed_images": len(errors),
             "videos": len(videos), "errors": errors}
+
+
+# -- Patreon (spec 087) --------------------------------------------------------
+
+_PAT_ID = re.compile(r"^\d{1,20}$")
+
+
+def _import_pat(d: dict, submission_id: str, cfg: dict) -> dict:
+    """A creator's own Patreon picture post → one piece per picture.
+
+    The pictures are asked for now, through the account's own sign-in (``pat_import.resolve``); no address is
+    stored, returned or logged. Each piece comes in with NO rating and the "Needs rating" mark (Patreon gives no
+    rating for a post), remembers a paid post as paid, and saves the post's audience only when it matches one
+    PawPoller offers exactly; otherwise the piece waits for the person to pick one. Errors are fixed sentences."""
+    from posting import pat_import
+    if not d.get("has_pictures"):
+        raise ValueError(pat_import.NO_PICTURES)
+    got = asyncio.run(pat_import.resolve(d))            # PatImportError (a ValueError) carries the fixed sentence
+    aud = got["audience"]
+    marks: dict[str, object] = {"needs_rating": True, "pat_paid": not got["public"]}
+    if aud is None:
+        marks.update(pat_pick_needed=True, pat_pick_note=pat_import.PICK_NOTE)
+    # The saved choice: audience and tier ids, nothing else (FR-SEC-015).
+    categories = {"pat": {"audience": aud[0], "tier_ids": list(aud[1])}} if aud else None
+    title = d.get(cfg["title_col"]) or got["title"] or f"pat_{submission_id}"
+    external_url = d.get("link") or cfg["url_template"].format(id=submission_id)
+    pictures = got["pictures"]
+    # A picture that didn't arrive was already asked for a second time (pat_import.resolve). One that still fails
+    # is named in the result and the rest come in (FR-006). When none came, nothing is made and the post stays in
+    # the found list to try again.
+    multi = len(pictures) > 1
+    created, errors = [], []
+    for i, pic in enumerate(pictures):
+        if isinstance(pic, str):                        # a fixed sentence: this picture didn't come
+            errors.append({"picture": i + 1, "error": pic})
+            continue
+        data, ext = pic
+        try:
+            created.append(artwork_reader.create_artwork(
+                title=f"{title} ({i + 1}/{len(pictures)})" if multi else title,
+                image_filename=f"image{ext}", image_bytes=data, description=got["text"], rating="",
+                categories=categories, platforms=["pat"], marks=marks,
+                original_posted_at=platform_metrics.normalize_posted(d.get("posted_at") or got["posted_at"] or ""),
+                source={"platform": "pat", "submission_id": submission_id, "url": external_url, "image_index": i}))
+        except Exception:
+            logger.warning("Patreon picture %d of post %s could not be saved", i + 1, submission_id)
+            errors.append({"picture": i + 1, "error": "That picture couldn't be saved to the Library."})
+    if not created:
+        raise ValueError(errors[0]["error"] if errors else pat_import.NO_PICTURES)
+    conn = get_connection()
+    try:
+        posting_queries.upsert_publication(
+            conn, story_name=created[0], chapter_index=0, platform="pat", account_id=d.get("account_id") or None,
+            content_type="artwork", external_id=submission_id, external_url=external_url, title_used=title,
+            status="posted")
+    finally:
+        conn.close()
+    logger.info("Imported %d picture(s) as artwork from pat/%s", len(created), submission_id)
+    return {"status": "imported", "name": created[0], "platform": "pat", "images": len(created), "names": created,
+            "failed_images": len(errors), "videos": 0, "errors": errors}
 
 
 # -- Videos and GIFs (spec 047) ------------------------------------------------

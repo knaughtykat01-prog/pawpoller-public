@@ -136,6 +136,15 @@ PLATFORM_TABLES = {
         "title_col": "title",
         "url_template": "https://e621.net/posts/{id}",
     },
+    # Spec 087: a creator's existing Patreon picture posts reach the found list and the artwork importer. The
+    # story title scan skips it (no_title_link): a members-only post is never tied to a story by its title.
+    "pat": {
+        "table": "pat_submissions",
+        "id_col": "submission_id",
+        "title_col": "title",
+        "url_template": "https://www.patreon.com/posts/{id}",
+        "no_title_link": True,
+    },
 }
 
 # Word-to-number mapping for "Part One", "Part Two" etc.
@@ -214,7 +223,7 @@ def claim_existing_submissions(
 
         for platform in scan_platforms:
             cfg = PLATFORM_TABLES.get(platform)
-            if not cfg:
+            if not cfg or cfg.get("no_title_link"):     # spec 087: Patreon posts are never linked by title
                 continue
 
             try:

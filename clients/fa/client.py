@@ -952,7 +952,18 @@ class FAClient:
 
         final_url = str(resp.url)
         if "upload-successful" not in final_url and "/view/" not in final_url:
-            raise RuntimeError(f"FA: Finalize may have failed — final URL: {final_url}")
+            # Neither is retried (posting/manager._PERMANENT_ERROR_MARKERS): a form FA turned down fails the same
+            # way again, and a landing we can't read may have posted, so a retry could post it twice.
+            if "/submit/finalize" in final_url:
+                said = _fa_notice(resp.text)
+                raise RuntimeError(
+                    "FurAffinity turned the post down"
+                    + (f": {said}" if said else " at its last step and didn't say why. Check the title, "
+                       "description, tags, rating and category, then post it again"))
+            raise RuntimeError(
+                "FurAffinity's last step ended on an unexpected page "
+                f"({final_url.split('?')[0][:120]}). Check your FurAffinity gallery before posting again, "
+                "in case it went through")
 
         # Extract submission ID from URL
         clean_url = final_url.split("?")[0]
@@ -996,10 +1007,8 @@ class FAClient:
             # bot check (constitution VII), so this is the end of the road, said plainly.
             raise RuntimeError("FurAffinity asks for a CAPTCHA on journals, so PawPoller can't post them for you")
         if not m:
-            note = re.search(r'class="(?:notice-message|redirect-message|section-body alignleft)"[^>]*>(.*?)</',
-                             resp.text, re.S)
-            words = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", note.group(1))).strip() if note else ""
-            raise RuntimeError(f"FA didn't save the journal{': ' + words[:200] if words else ''}")
+            words = _fa_notice(resp.text)
+            raise RuntimeError(f"FA didn't save the journal{': ' + words if words else ''}")
         logger.info("FA: journal %s — id=%s", "edited" if journal_id not in ("", "0") else "posted", m.group(1))
         return {"id": m.group(1), "url": f"{config.FA_BASE}/journal/{m.group(1)}/"}
 
@@ -1167,6 +1176,20 @@ class FAClient:
         form_html = form_match.group(1)
         m = re.search(r'<input[^>]*name="scrap"[^>]*>', form_html)
         return bool(m and re.search(r'\bchecked\b', m.group(0)))
+
+
+def _fa_notice(page: str) -> str:
+    """FA's own message on a page it sent back instead of saving (a refused journal or submission form), as plain
+    words capped at 200 characters; "" when the page carries none. The classes are the ones FA's system messages
+    use (journal refusal, live 2026-10-10)."""
+    for m in re.finditer(r'class="(?:redirect-message|notice-message|section-body alignleft)"[^>]*>', page or ""):
+        # the message runs to the end of its section (or the re-shown form), past any <b> or heading inside it
+        chunk = re.split(r"</section>|<form", page[m.end():m.end() + 3000], maxsplit=1)[0]
+        words = re.sub(r"\s+", " ", _strip_tags(re.sub(r"<[^>]+>", " ", chunk))).strip()
+        words = re.sub(r"^System Message\s*", "", words)
+        if words:
+            return words[:200]
+    return ""
 
 
 def _strip_tags(text: str) -> str:

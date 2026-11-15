@@ -132,13 +132,22 @@ window.Submissions = {
         if (bp) bp.addEventListener('click', () => this._importAllPosts());
     },
 
+    /* Spec 087: when Patreon's part of an import run stopped early or hit its cap, say so (plain text). */
+    _patRunNote(res) {
+        const bits = [];
+        if (res.pat_stopped) bits.push(`Patreon stopped the run: ${res.pat_stopped}` + (res.pat_not_tried ? ` ${res.pat_not_tried} Patreon posts were not tried.` : ''));
+        if (res.pat_left) bits.push(`${res.pat_left} Patreon posts are left: press Import all again.`);
+        return bits.length ? ' ' + bits.join(' ') : '';
+    },
+
     async _importAll(platform) {
         const btns = [...document.querySelectorAll(`#disc-list [data-bulk="${platform}"]`)];
         btns.forEach(b => { b.disabled = true; b.textContent = 'Importing…'; });
         try {
             const res = await API.importBulk(platform);
             this._toast('success',
-                `${platform.toUpperCase()}: imported ${res.imported}, skipped ${res.skipped}, failed ${res.failed}`);
+                `${platform.toUpperCase()}: imported ${res.imported}, skipped ${res.skipped}, failed ${res.failed}`
+                + this._patRunNote(res));
             if (res.imported && window.Sound) Sound.play('batch_done');
             const disc = await API.getDiscovered();
             this._discItems = (disc && disc.discovered) || [];
@@ -157,7 +166,8 @@ window.Submissions = {
             const res = await API.importArtwork(d.platform, d.submission_id);
             this._toast('success', res.status === 'already_imported'
                 ? `Already imported as ${res.name}${res.video_available ? '. Open it to bring in the video.' : ''}`
-                : `Imported as ${res.name}`);
+                : `Imported as ${res.name}` + (res.failed_images
+                    ? `. ${res.failed_images} picture${res.failed_images === 1 ? '' : 's'} couldn't be brought in: ${((res.errors || [])[0] || {}).error || ''}` : ''));
             if (res.status !== 'already_imported' && window.Sound) Sound.play('job_done');
             this._discItems.splice(i, 1);
             this._paintDiscovered();
@@ -175,10 +185,15 @@ window.Submissions = {
     },
 
     _discRow(d, i) {
+        const plat = this._plat(d.platform);
+        // Spec 087: a Patreon row has no stored picture (its picture addresses expire), so it shows the site instead.
         const thumb = d.thumbnail_url
             ? `<img src="${this.esc(d.thumbnail_url)}" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:8px;flex-shrink:0;">`
-            : `<div style="width:56px;height:56px;border-radius:8px;background:var(--bg-elev);flex-shrink:0;"></div>`;
-        const plat = this._plat(d.platform);
+            : `<div style="width:56px;height:56px;border-radius:8px;background:var(--bg-elev);flex-shrink:0;display:grid;place-items:center;" aria-hidden="true">${d.has_pictures ? this.esc(plat.emoji || '') : ''}</div>`;
+        const aud = d.platform === 'pat' && d.audience_label
+            ? ` &middot; <span title="Who this post is for on Patreon">for ${this.esc(d.audience_label)}</span>` : '';
+        const page18 = d.platform === 'pat' && d.page_18 && d.has_pictures
+            ? `<div class="muted" style="font-size:.8rem;">This page is marked 18+: rate what you import.</div>` : '';
         return `
             <div class="card" style="display:flex;gap:1rem;align-items:center;padding:.85rem 1rem;margin-bottom:.6rem;flex-wrap:wrap;">
                 ${thumb}
@@ -186,8 +201,10 @@ window.Submissions = {
                     <div style="font-weight:600;">${this.esc(d.title)}</div>
                     <div class="muted" style="font-size:.8rem;">
                         <span title="${this.esc(plat.label)}">${plat.emoji || ''} ${this.esc(plat.label)}</span>${d.type ? ` &middot; ${this.esc(d.type)}` : ''}${this._mediaBadge(d)}
+                        ${aud}
                         &middot; <a href="${this.esc(Utils.safeUrl(d.url) || '#')}" target="_blank" rel="noopener">view &#8599;</a>
                     </div>
+                    ${page18}
                 </div>
                 <button class="btn btn-primary" id="disc-link-btn-${i}"
                     title="Link this to one of your works — opens the visual picker">🔗 Link to work…</button>
@@ -203,7 +220,7 @@ window.Submissions = {
      * text tweets, where there was nothing to download and the button could only
      * fail. Image → artwork; text → post (below); neither → Link or Ignore. */
     _canImportArt(d) {
-        return !!d && !!d.thumbnail_url;
+        return !!d && (!!d.thumbnail_url || !!d.has_pictures);     // has_pictures: Patreon stores no picture (spec 087)
     },
 
     /* A tweet is a POST, not an artwork. Microblog platforms only: a SquidgeWorld
@@ -270,7 +287,7 @@ window.Submissions = {
      * hid the Ignore buttons until 2.143.0 — this is the surface where discovered
      * items actually get reviewed, and tweet art is a real source of Masterpieces. */
     _canMaster(d) {
-        return !!d && !!d.thumbnail_url && d.kind !== 'text';
+        return !!d && (!!d.thumbnail_url || !!d.has_pictures) && d.kind !== 'text';
     },
 
     /* ★ Master — ported from the retired Artwork hub (2.155.0). It lived ONLY on
@@ -429,7 +446,7 @@ window.Submissions = {
      * (SF/DA/AO3/WS text), not art. Surfaces the "link, don't import as art" hint
      * the backlog called for. */
     _looksLikeWriting(d) {
-        return !!d && !d.thumbnail_url && !this._MICROBLOG.includes(d.platform);
+        return !!d && !d.thumbnail_url && !d.has_pictures && !this._MICROBLOG.includes(d.platform);
     },
 
     _paintTriage() {

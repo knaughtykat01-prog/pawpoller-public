@@ -503,6 +503,8 @@ const API = {
     getUnfiledPosts() { return this.get('/api/masterpieces/unfiled-posts'); },
     // Canonical edit (writes masterpiece.json) + Sync-all (push to editable members).
     patchMasterpiece(name, body) { return this.patch(`/api/masterpieces/${encodeURIComponent(name)}`, body); },
+    // Spec 087: "Rate this piece", one or several. The only thing that clears "Needs rating".
+    rateMasterpieces(names, rating) { return this.post('/api/masterpieces/rate', { names, rating }); },
     syncMasterpiece(name, body = {}) { return this.post(`/api/masterpieces/${encodeURIComponent(name)}/sync`, body); },
 
     /* ── IB (Inkbunny) convenience methods ─────────────────────

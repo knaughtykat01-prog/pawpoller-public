@@ -343,6 +343,9 @@ _TABLES = (
     # public
     T("submissions", "Your published works", "Your Inkbunny submissions."),
     T("<P>_submissions", "Your published works", "Your submissions on that site."),
+    # Spec 087: Patreon's rows also say who each post is for (everyone, members, which tiers). No post text and no
+    # picture address is kept; the text of a members-only post is read only when you import that post.
+    T("pat_submissions", "Your published works", "Your Patreon posts, with who each one is for."),
     T("<P>_found", "Your published works", "Posts other people uploaded with your artist tag or characters, kept out of your totals."),
     T("podcast_feeds", "Your podcast", "Your podcast feeds."),
     T("podcast_episodes", "Your podcast", "Your podcast episodes."),

@@ -252,7 +252,7 @@ window.Bookshelf = {
             const disc = await API.getDiscovered();
             const all = (disc && disc.discovered) || [];
             this._discCount = all.length;
-            art = all.filter(d => d.kind === 'art' && d.thumbnail_url);
+            art = all.filter(d => d.kind === 'art' && (d.thumbnail_url || d.has_pictures));   // has_pictures: Patreon (spec 087)
         } catch { return; }
         // Patch just the badge, not the whole control bar: _renderControls()
         // rebuilds the search input, which would steal focus and drop the caret
@@ -283,7 +283,7 @@ window.Bookshelf = {
             const bits = [`imported ${res.imported}`];
             if (res.failed) bits.push(`${res.failed} failed`);
             this._toast(res.imported ? 'success' : (res.failed ? 'warn' : 'info'),
-                `Discovered art: ${bits.join(', ')}`);
+                `Discovered art: ${bits.join(', ')}` + (window.Submissions ? Submissions._patRunNote(res) : ''));
             if (res.imported && window.Sound) Sound.play('batch_done');
             await this.render();   // refresh shelf + banner
         } catch (err) {
@@ -347,6 +347,7 @@ window.Bookshelf = {
                     <option value="posted">Posted</option>
                     <option value="drafts">Drafts</option>
                     <option value="unattributed">Missing artist</option>
+                    <option value="needs_rating">Needs rating</option>
                     ${junkOpt}
                 </select>
                 <select id="shelf-platform" class="shelf-input shelf-sort" title="Filter by the site a work is live on">
@@ -460,6 +461,8 @@ window.Bookshelf = {
         else if (this._status === 'unattributed') {
             list = list.filter(w => w.content_type !== 'story' && w.needs_artist);
         }
+        // Spec 087: pieces an import couldn't rate. Nothing posts or merges them until "Rate this piece".
+        else if (this._status === 'needs_rating') list = list.filter(w => w.needs_rating);
         // Field-scoped search (3.14.0): `tag:`, `-tag:`/`tag_exclude:`, `artist:`,
         // `platform:`, `persona:`, `rating:`, `type:`, `series:`, `status:`, with
         // bare words still meaning title/name. Falls back to the old substring
@@ -832,9 +835,12 @@ window.Bookshelf = {
         // always present, so a piece with no artist recorded is a problem to
         // surface, not a neutral state — most of all before it posts. Stories
         // are exempt: they have an author, not an artist.
-        const noArtist = (!isStory && w.needs_artist)
+        const noArtist = ((!isStory && w.needs_artist)
             ? `<span class="book-noartist" title="No artist recorded — add one before posting">no artist</span>`
-            : '';
+            : '')
+            // Spec 087: an import couldn't rate this piece; it can't be posted or merged until it is rated.
+            + ((!isStory && w.needs_rating)
+                ? ` <span class="book-noartist" title="Rate this piece before posting or merging it">needs rating</span>` : '');
         const initials = this.esc((w.title || w.name || '?').trim().charAt(0).toUpperCase());
         // data-rating drives the SFW/safe-mode blur (safe_mode.css). Lower-cased
         // so "General" matches; missing/unknown → blurred by default in safe mode.

@@ -360,6 +360,11 @@ class ArtworkInfo:
     # commissioned it, whose character it is, who worked on it. Keys point at
     # registry rows; the package resolves them and renders the featuring line.
     people: list = field(default_factory=list)
+    # Spec 087: marks a Patreon import leaves (MARK_KEYS). Read from the piece's own file only.
+    needs_rating: bool = False
+    pat_paid: bool = False
+    pat_pick_needed: bool = False
+    pat_pick_note: str = ""
 
     # Both anchored inside the piece's folder (4.43.1): every posting path reads these,
     # and the names are stored strings.
@@ -402,6 +407,7 @@ def list_artworks() -> list[dict]:
             "title": data.get("title", entry.name.replace("_", " ")),
             "description": data.get("description", ""),
             "rating": data.get("rating", ""),
+            **clean_marks(data),                    # spec 087: needs_rating / pat_paid / pat_pick_needed
             "image": data.get("image", ""),
             "thumbnail": data.get("thumbnail", ""),
             "tags": data.get("tags", {}),
@@ -510,6 +516,10 @@ def load_artwork(name: str) -> ArtworkInfo:
         artist=_clean_artist(data.get("artist")),
         artist_status=_clean_artist_status(data.get("artist_status")),
         people=_clean_people(data.get("people")),
+        needs_rating=data.get("needs_rating") is True,
+        pat_paid=data.get("pat_paid") is True,
+        pat_pick_needed=data.get("pat_pick_needed") is True,
+        pat_pick_note=str(data.get("pat_pick_note") or "")[:300],
     )
 
 
@@ -829,6 +839,10 @@ def build_artwork_package(
         # Categories are the platform's submission params; alt_text rides along
         # for posters that support per-image alt (bluesky.py reads it, G6).
         pat_files=pat_files,
+        # Spec 087: straight from the piece, after the rating above is worked out, so no per-send rating, rated
+        # variant or default hides them. The audience mark stands only while the piece has no audience of its own.
+        needs_rating=artwork.needs_rating,
+        pat_pick_needed=artwork.pat_pick_needed and not _own_pat_audience(artwork),
         extra={**site_opts,
                # 055 (FR-010): what this site's tag limits cut, for the result row.
                **({"tags_left_out": tags_left_out} if tags_left_out else {}),
@@ -1060,6 +1074,7 @@ def create_artwork(
     artist: dict | None = None,
     original_posted_at: str = "",
     media: dict | None = None,
+    marks: dict | None = None,
 ) -> str:
     """Create a new artwork folder (image + masterpiece.json). Returns its name.
 
@@ -1121,6 +1136,7 @@ def create_artwork(
     cleaned_artist = _clean_artist(artist)
     if cleaned_artist:
         meta["artist"] = cleaned_artist
+    meta.update(clean_marks(marks))                 # spec 087: only an importer or a split passes these
     (folder / _META_FILE).write_text(
         json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     logger.info("Created masterpiece %s (%s)", folder.name, image_name)
@@ -1154,6 +1170,79 @@ def attach_video(name: str, video_bytes: bytes, ext: str, media: dict | None = N
     return vname
 
 
+# ── Spec 087: the marks a Patreon import leaves on a piece ─────────────────────────────────────────────────────
+# needs_rating     no rating could be learned; every send, announce and merge is refused until set_rating()
+# pat_paid         the post was not public when imported (a notice wherever the piece is about to go out)
+# pat_pick_needed  its Patreon audience couldn't be matched exactly; Patreon waits for one saved on the piece
+# No details-save route accepts these (they are not among its allowed keys); merge and split carry them.
+MARK_KEYS = ("needs_rating", "pat_paid", "pat_pick_needed", "pat_pick_note")
+RATINGS = ("general", "mature", "adult")
+
+
+def clean_marks(marks) -> dict:
+    """The marks worth writing, from an importer's or a split's dict: True flags and a capped note only."""
+    m = marks if isinstance(marks, dict) else {}
+    out: dict[str, object] = {k: True for k in ("needs_rating", "pat_paid", "pat_pick_needed") if m.get(k) is True}
+    if out.get("pat_pick_needed") and m.get("pat_pick_note"):
+        out["pat_pick_note"] = str(m["pat_pick_note"])[:300]
+    return out
+
+
+def marks_of(name: str) -> dict:
+    """The piece's marks as stored ({} when it has none or can't be read)."""
+    try:
+        return clean_marks(read_raw_metadata(name))
+    except Exception:
+        return {}
+
+
+def carry_marks(keep: str, absorbed: str) -> None:
+    """A merge folds *absorbed* into *keep*: the kept piece takes its "paid post" and "pick who sees this" marks,
+    so a members-only picture doesn't lose its notice by being merged. (Neither side can need rating: both merges
+    refuse that.) Written directly: save_artwork_metadata drops marks on purpose."""
+    add = {k: v for k, v in marks_of(absorbed).items() if k != "needs_rating"}
+    if not add:
+        return
+    artwork = load_artwork(keep)
+    src_path = _meta_path(artwork.path)
+    data = json.loads(src_path.read_text(encoding="utf-8")) if src_path else {}
+    if all(data.get(k) == v for k, v in add.items()):
+        return
+    data.update(add)
+    (artwork.path / _META_FILE).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _own_pat_audience(artwork) -> bool:
+    """True when the piece has a Patreon audience saved on it (spec 084's `pat` options)."""
+    opts = (artwork.categories_by_platform or {}).get("pat")
+    if not isinstance(opts, dict):
+        return False
+    aud = str(opts.get("audience") or "").strip()
+    return aud in ("public", "patrons") or (aud == "tiers" and bool(opts.get("tier_ids")))
+
+
+def refuse_if_needs_rating(name: str) -> None:
+    """Raise for a piece marked "Needs rating": the guard every announce, journal and merge point calls. A piece
+    that can't be read is left to the caller's own not-found handling."""
+    from posting.platforms.base import NEEDS_RATING
+    if marks_of(name).get("needs_rating"):
+        raise ValueError(NEEDS_RATING)
+
+
+def set_rating(name: str, rating: str) -> ArtworkInfo:
+    """Rate a piece and clear "Needs rating". The ONLY thing that clears the mark (spec 087 FR-SEC-001a): the
+    rating must be one of the three words exactly."""
+    if rating not in RATINGS:
+        raise ValueError("Choose General, Mature or Adult.")
+    artwork = load_artwork(name)
+    src_path = _meta_path(artwork.path)
+    data = json.loads(src_path.read_text(encoding="utf-8")) if src_path else {}
+    data["rating"] = rating
+    data.pop("needs_rating", None)
+    (artwork.path / _META_FILE).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return load_artwork(name)
+
+
 def read_raw_metadata(name: str) -> dict:
     """The raw parsed ``masterpiece.json`` for a folder — no tag cascade applied.
 
@@ -1181,6 +1270,10 @@ def save_artwork_metadata(name: str, updates: dict) -> ArtworkInfo:
     artwork = load_artwork(name)
     src_path = _meta_path(artwork.path)
     data = json.loads(src_path.read_text(encoding="utf-8")) if src_path else {}
+    # Spec 087 (FR-SEC-001a): no save sets or clears a mark, and a save can't rate a piece that needs rating (the
+    # details form shows General selected for a piece with no rating and sends it every time). Only set_rating().
+    updates = {k: v for k, v in (updates or {}).items()
+               if k not in MARK_KEYS and not (k == "rating" and data.get("needs_rating") is True)}
     data.update(updates)
     new_path = artwork.path / _META_FILE
     new_path.write_text(

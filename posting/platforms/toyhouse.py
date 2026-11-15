@@ -100,6 +100,9 @@ class ToyhousePoster(PlatformPoster):
     requires_mode = "any"
 
     def refusal(self, package: StoryUploadPackage) -> str | None:
+        from posting.platforms.base import NEEDS_RATING
+        if package.needs_rating:            # spec 087: before this site's own sentence
+            return NEEDS_RATING
         return underage_refusal(package.rating, package.tags) or super().refusal(package)
 
     def validate(self, package: StoryUploadPackage) -> list[str]:

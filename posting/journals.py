@@ -359,6 +359,9 @@ def store_piece_journal(kind: str, name: str, journal, rating: str = "general",
     Raises ValueError with a plain reason (no sites, no text, an unknown placeholder)."""
     if not journal:
         return None
+    if kind == "artwork":                           # spec 087: a journal can't carry a piece that needs rating
+        from posting import artwork_reader
+        artwork_reader.refuse_if_needs_rating(name)
     if not isinstance(journal, dict):
         raise ValueError("journal must be {sites, title, text, featured}")
     sites = [s for s in (journal.get("sites") or []) if s in JOURNAL_SITES]

@@ -87,6 +87,17 @@ class StoryUploadPackage:
     # files: [path], problems: [sentence]}). Set only by the readers (posting/pat_choices.py), never from `extra`,
     # so a value saved on a piece can't become a path the poster uploads.
     pat_files: dict = field(default_factory=dict)
+    # Spec 087: marks on the piece itself, set only by the readers (never from `extra`, a per-send option or a
+    # default). needs_rating: no rating could be learned at import, so nothing may send this piece until the person
+    # rates it. pat_pick_needed: its Patreon audience couldn't be matched, so Patreon waits for one saved on it.
+    needs_rating: bool = False
+    pat_pick_needed: bool = False
+
+
+# Spec 087: said by every send, announce and merge of a piece marked "Needs rating". One constant: the manager's
+# no-retry list and the tests import it.
+NEEDS_RATING = "Rate this piece first: it has no rating yet."
+PAT_PICK_NEEDED = "Pick who sees this on Patreon first."
 
 
 # The three-step rating ladder every poster maps its own vocabulary onto (4.21.0). The
@@ -358,6 +369,8 @@ class PlatformPoster(ABC):
         """The pre-network gate the manager runs (4.21.0): the under-18 lock (LEGALPAGES, 4.58.0),
         else the media-kind refusal, else the rating refusal, else None."""
         import age_gate
+        if package.needs_rating:            # spec 087: before anything else, whatever rating this send carries
+            return NEEDS_RATING
         return (age_gate.refusal(self.platform_id, package.rating,
                                  site_name=self.platform_name or self.platform_id)
                 or self.media_refusal(package) or self.rating_refusal(package))

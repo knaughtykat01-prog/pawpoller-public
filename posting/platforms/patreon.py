@@ -253,6 +253,11 @@ class PatreonPoster(PlatformPoster):
 
     def refusal(self, package: StoryUploadPackage, vals: dict | None = None) -> str | None:
         import age_gate
+        from posting.platforms.base import NEEDS_RATING, PAT_PICK_NEEDED
+        if package.needs_rating:            # spec 087: this override doesn't call the base, so it checks first too
+            return NEEDS_RATING
+        if package.pat_pick_needed:         # before `extra`: the account default and per-send options can't fill in
+            return PAT_PICK_NEEDED
         rating = effective_rating(package.rating)
         vals = vals if vals is not None else self._values()
         if age_gate.is_under_18() and vals.get("is_nsfw"):

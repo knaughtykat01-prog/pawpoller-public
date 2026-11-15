@@ -35,6 +35,19 @@ def test_a_stalled_scheduler_or_full_disk_is_503(monkeypatch):
     assert r.status_code == 503 and r.json()["problems"] == ["disk nearly full"]
 
 
+def test_a_big_drive_with_room_left_is_not_full(monkeypatch):
+    """4.91.0: 4% free of a 1 TB drive is 40 GB. Calling it full showed a seat as down."""
+    from posting import scheduler
+    monkeypatch.setattr(scheduler, "LAST_TICK", time.monotonic())
+    gb = 1024 ** 3
+    Usage = namedtuple("Usage", "total used free")
+    monkeypatch.setattr("shutil.disk_usage", lambda p: Usage(1000 * gb, 960 * gb, 40 * gb))
+    r = _client().get("/api/health/ready")
+    assert r.status_code == 200 and r.json()["problems"] == [], r.text
+    monkeypatch.setattr("shutil.disk_usage", lambda p: Usage(1000 * gb, 996 * gb, 4 * gb))
+    assert _client().get("/api/health/ready").json()["problems"] == ["disk nearly full"]
+
+
 def test_backup_zip_carries_the_new_folders(tmp_path, monkeypatch):
     import zipfile
     from routes import backup_api

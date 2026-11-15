@@ -2,6 +2,22 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.91.0] - 2026-11-15 - Bring in the art already on your Patreon page
+
+> - Art already on your Patreon page can now come into your Library. Open the Library, choose Discovered, and press Import.
+> - Each Patreon post in that list says who it is for: everyone, all paying members, or the tier's name.
+> - Imported Patreon art says "Needs rating" until you rate it. It can't be posted or merged before that.
+> - Rate one piece on its page, or tick several in the Library and use Set rating.
+> - A piece from a paid post remembers who it was for, and you are told it was a paid post before you send it elsewhere.
+> - If a paid post's tier no longer exists, pick who sees the piece before posting it to Patreon again.
+> - Patreon text posts, polls and video posts are not imported.
+> - On a copy with no password, importing from any site now needs the computer itself or a paired device.
+> - If you use a paired desktop, update it too, so it knows which pieces still need a rating.
+> - When FurAffinity turns a post down, you now see FurAffinity's own reason instead of a web address.
+> - PawPoller no longer re-sends a post FurAffinity turned down, since it would fail the same way.
+> - Posting a chaptered story from Telegram no longer puts a copy of the whole story on SquidgeWorld or SoFurry for each chapter.
+> - A large drive with plenty of room left is no longer reported as nearly full, which could show a hosted seat as down.
+
 ## [4.90.0] - 2026-11-13 - Patreon
 
 > - Patreon is now a posting site: send a picture or a story chapter to Patreon and choose which tiers can see it.
@@ -242,23 +258,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Medals are now worked out from every site, not just Inkbunny, and each shows when you earned it.
 > - The Overview has a Progress card, and the overnight summary has a Your progress section.
 > - Laurels now sits second in the menu and on the phone bar; Analytics moved into More on phones.
-
-## [4.84.0] - 2026-10-21 - Levels
-
-> - New: experience points and levels. Posting, writing, replying to comments and tidying your work all earn points.
-> - A bar beside the clock shows your level, and a post's result note shows the points it earned.
-> - Levelling up takes over the screen for a moment: your new level slams in with a burst of colour, and every fifth level is gold.
-> - The account menu shows your level and your XP toward the next one under your name.
-> - Settings → Logs & diagnostics has a Replay level-up button, so you can see the moment again any time.
-> - Phones now pick up a fixed app straight away, even when the version number hasn't changed.
-> - Points count what you do, never views or faves, so every artist levels up at the same pace.
-> - Posting the same piece again earns nothing extra, and each site has a daily limit, so spamming never pays.
-> - If you've used PawPoller for a while, you start at the level your history has already earned.
-> - Laurels shows your level, the points still needed for the next level, and this week's points. Turn the bar off in Settings → Appearance → Levels.
-> - Levels come with rewards: a new title every five levels, and a theme, an avatar ring or a level-up style on every fifth level.
-> - New rewards flip in during the level-up, with a Use it now button. A few hidden surprise rewards turn up for things like a four-week streak.
-> - Laurels has a Rewards shelf with everything you've earned and what's still to come, plus a history of when you reached each level.
-> - You can use a picture as your avatar: pick a piece from your Library or upload one, then crop it to the circle.
-> - Rewards are only for show. They never unlock or limit anything PawPoller does.
-> - Import from PostyBirb now has a button on the Accounts page and in Settings → Data, so you can run it again any time.
-> - Fixed several pop-up boxes (signing out, the age question, PostyBirb import, uninstall) showing with no background behind their text.

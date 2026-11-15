@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS pat_submissions (
     thumbnail_url   TEXT DEFAULT '',
     posted_at       TEXT,
     audience        TEXT NOT NULL DEFAULT '',
+    post_type       TEXT NOT NULL DEFAULT '',     -- spec 087: Patreon's own word for the kind of post
+    has_pictures    INTEGER NOT NULL DEFAULT 0,   -- spec 087: a picture post holding at least one picture
+    tier_ids        TEXT NOT NULL DEFAULT '[]',   -- spec 087: JSON list of tier ids when audience = 'tiers'
     views           INTEGER DEFAULT 0,
     favorites_count INTEGER DEFAULT 0,
     comments_count  INTEGER DEFAULT 0,

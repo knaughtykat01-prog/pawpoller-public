@@ -94,6 +94,9 @@ async def discord_announce(body: dict):
             art = artwork_reader.load_artwork(name)
         except Exception:
             raise HTTPException(404, "No such artwork.")
+        if getattr(art, "needs_rating", False):     # spec 087
+            from posting.platforms.base import NEEDS_RATING
+            raise HTTPException(409, NEEDS_RATING)
         image_path = _discord_preview_source(art)
         piece = (art.categories_by_platform or {}).get("discord")
         # The blur follows the PIECE's rating, never the caller's: a request that

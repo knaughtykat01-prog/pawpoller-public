@@ -502,6 +502,8 @@ def assemble_works(
                 # Stories are never flagged — the author wrote them.
                 "artist_name": ((a.get("artist") or {}).get("name") or ""),
                 "needs_artist": not (a.get("artist") or {}).get("name"),
+                # Spec 087: the marks a Patreon import leaves (the Library filters and badges on needs_rating).
+                "needs_rating": a.get("needs_rating") is True, "pat_paid": a.get("pat_paid") is True,
                 # Junk (3.13.1) — 'kept-but-hidden'. The status lives in the
                 # `masterpieces` table, NOT in masterpiece.json, so it has to be
                 # joined in here; `list_artworks()` reads only the folder and
@@ -743,6 +745,28 @@ def classify_kind(platform: str, type_str: str, has_image: bool | None = None) -
     return "unknown"
 
 
+def _label_pat_rows(rows: list[dict], settings: dict) -> None:
+    """Spec 087: who each Patreon post is for, in words, from the page's saved tier list. No request to Patreon."""
+    import json as _json
+
+    from clients.pat import account as pat_account
+    from posting import pat_import
+    pages: dict = {}
+    for r in rows:
+        aid = int(r.get("account_id") or 0)
+        if aid not in pages:
+            try:
+                pages[aid] = pat_account.values(aid, settings)
+            except Exception:
+                pages[aid] = {}
+        try:
+            ids = _json.loads(r.get("tier_ids") or "[]")
+        except (ValueError, TypeError):
+            ids = []
+        r["_audience_label"] = pat_import.label(r.get("audience") or "", ids, pages[aid].get("tiers"))
+        r["_page_18"] = bool(pages[aid].get("is_nsfw"))
+
+
 def build_discovered(platform_rows: list[tuple], linked: set) -> list[dict]:
     """Normalize per-platform submission rows into the discovered-unlinked list.
 
@@ -768,13 +792,18 @@ def build_discovered(platform_rows: list[tuple], linked: set) -> list[dict]:
                 continue
             thumb = (d.get("thumbnail_url") or d.get("thumb_url") or d.get("download_url")
                      or d.get("media_url") or d.get("file_url") or "")
+            # Spec 087: Patreon stores no picture address (they expire); "holds pictures" is its own column.
+            pics = bool(d.get("has_pictures")) if platform == "pat" else None
             out.append({
+                **({"has_pictures": pics, "audience": d.get("audience") or "",
+                    "audience_label": d.get("_audience_label") or "", "page_18": bool(d.get("_page_18"))}
+                   if platform == "pat" else {}),
                 "platform": platform,
                 "submission_id": sid,
                 "title": d.get(title_col) or f"#{sid}",
                 "thumbnail_url": d.get("thumbnail_url") or d.get("thumb_url") or "",
                 "type": stype,
-                "kind": classify_kind(platform, stype, has_image=bool(thumb)),
+                "kind": classify_kind(platform, stype, has_image=bool(thumb) if pics is None else pics),
                 # Spec 047: "video" / "gif" when the post carries one (the found list badges it).
                 "media": video_media.summary_kind(d.get("video_media")),
                 # Prefer the poller-stored permalink; the url_template is only a
@@ -832,6 +861,8 @@ def get_discovered_unlinked(conn, platform_filter: str | None = None) -> list[di
         except Exception:
             continue  # table may not exist on this install
         rows = [r for r in rows if not from_never_post(r, settings)]
+        if plat == "pat":
+            _label_pat_rows(rows, settings)
         platform_rows.append((plat, cfg, rows))
     return build_discovered(platform_rows, linked)
 

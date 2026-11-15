@@ -30,6 +30,7 @@ backlog itself stays private. Plain words only, no tester names, nothing that is
 
 ## Recently shipped
 
+- **4.91.0** · Bring the art already on your Patreon page into your Library, marked "Needs rating" until you rate it. When FurAffinity turns a post down, you see its own reason, and it isn't sent again.
 - **4.90.0** · Patreon: post General and Mature work to the tiers you pick, and see your supporter totals and comments. On an install open to the internet, a stranger can no longer delete records or take posts down.
 - **4.89.0** · PawPoller asks if it can count your copy at a better moment, and it's still your choice. Updating a story on AO3, SquidgeWorld or SoFurry can't add every chapter again, and a failed update now says which chapter.
 - **4.88.0** · Sign in to FurAffinity, X, Newgrounds and Itaku on the site's own page, inside PawPoller: no cookies to copy. Bring your PostyBirb submissions into your Library any time. Email is optional when you host PawPoller yourself.

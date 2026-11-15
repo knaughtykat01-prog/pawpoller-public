@@ -17,7 +17,7 @@ from typing import Any
 from database.db import get_connection
 from database import posting_queries
 from posting import activity, story_reader
-from posting.platforms.base import PlatformPoster, PostResult
+from posting.platforms.base import NEEDS_RATING, PAT_PICK_NEEDED, PlatformPoster, PostResult
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +46,14 @@ _PERMANENT_ERROR_MARKERS = (
     "didn't save the work",              # AO3 validation (4.78.1): the same form fails the same way
     "couldn't read this work's rating",  # AO3/SqW RatingUnreadable (SEC4885 (4)): the same form reads the same way
     "its file wasn't found",             # UPDATEFAIL: a chapter with no built file needs a rebuild, not a retry
+    NEEDS_RATING.lower(),                # spec 087: only the person rating the piece fixes it
+    PAT_PICK_NEEDED.lower(),             # spec 087: only an audience saved on the piece fixes it
     "asked pawpoller to slow down",      # Patreon's 429 (spec 084): its stand-down sets the next try
     "patreon's bot check turned pawpoller away",   # spec 084: a bot check; waiting is the only cure
     "patreon turned pawpoller away",     # spec 084: its stand-down still running
     "left as a draft on patreon",        # a retry would make another draft (spec 084): the owner finishes or deletes it
+    "furaffinity turned the post down",  # FAFINALIZE: FA refused the form, and the same form fails the same way
+    "check your furaffinity gallery before posting again",   # FAFINALIZE: it may have posted; a retry could double it
 )
 
 
@@ -688,6 +692,11 @@ async def post_story(
                                  description_overrides, announce_discord, run=run)
 
 
+# Sites that post a whole work at once: their poster creates every chapter itself, so a lone chapter isn't a thing
+# there (the publish grid offers only the Full story row; routes/editor_api.publish_check).
+WORK_ORIENTED = frozenset({"ao3", "sqw", "sf"})
+
+
 async def _post_story(
     story_name: str,
     platforms: list[str],
@@ -746,13 +755,15 @@ async def _post_story(
             break
         _act_prev = platform
         activity.step(platform, "Preparing")
+        # TGAO3DUP: "all chapters" on a whole-work site is the work, once; its poster makes the chapters itself.
+        plat_chapters = [0] if chapters is None and platform in WORK_ORIENTED else chapter_list
         try:
             account_id = _resolve_account_id(platform, account_ids.get(platform), persona_id)
         except ValueError as e:
             results.append(_refused(platform, e, chapter=None))
             continue
         poster = _get_poster(platform, account_id)
-        for ch_idx in chapter_list:
+        for ch_idx in plat_chapters:
             package = story_reader.build_package(
                 story, ch_idx, platform,
                 description_override=(description_overrides or {}).get(platform))
@@ -785,7 +796,7 @@ async def _post_story(
                 continue
 
             # Post
-            activity.step(platform, "Uploading", _ch_label(ch_idx, chapter_list))
+            activity.step(platform, "Uploading", _ch_label(ch_idx, plat_chapters))
             result = _confirmed(await poster.post(package), poster)
 
             # Compute file hash for change detection (the library file, never a temp copy; 071)
@@ -887,7 +898,7 @@ async def _post_story(
             })
 
             # Rate limit between chapters on the same platform
-            if ch_idx != chapter_list[-1]:
+            if ch_idx != plat_chapters[-1]:
                 await poster._rate_limit()
 
     if _act_prev:
@@ -1436,6 +1447,8 @@ async def announce_artwork(artwork_name: str, *, force: bool | None = None, artw
         artwork = artwork or artwork_reader.load_artwork(artwork_name)
     except Exception as e:  # noqa: BLE001 — a moved piece is not worth a scheduler error
         logger.debug("announce_artwork: %s not loadable (%s)", artwork_name, type(e).__name__)
+        return
+    if getattr(artwork, "needs_rating", False):     # spec 087: nothing announces a piece that needs rating
         return
     if site_links is None:
         conn = get_connection()

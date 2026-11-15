@@ -67,6 +67,8 @@ def _piece(name: str) -> dict | None:
     except Exception:
         return None
     path = art.image_path
+    if art.needs_rating:                            # spec 087: never on the public feed until rated
+        return None
     if not path or not os.path.isfile(path) or media_kinds.kind_of(path) != "audio":
         return None
     media = art.media or {}
@@ -458,6 +460,8 @@ def public_feed_item(slug: str, name: str):
                 try:
                     from posting import artwork_reader as ar
                     art = ar.load_artwork(feed["artwork_name"])
+                    if art.needs_rating:            # spec 087: never on the public feed until rated
+                        raise ValueError("needs rating")
                     from posting import media_kinds
                     source = art.thumbnail_path or (art.image_path if media_kinds.kind_of(art.image_path or "") == "image" else None)
                 except Exception:

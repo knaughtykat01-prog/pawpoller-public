@@ -637,7 +637,10 @@ _SENSITIVE_WHEN_OPEN_PREFIXES = (
 # SEC081: on an open instance a stranger on the network can't remove anything: every DELETE (by method, so no route
 # name can slip past), and the two merges, which remove the absorbed piece's folder. Changing things stays open
 # (editing, junk, split). 4.90.0 release review: and taking a journal down on its sites. Method + the routed path.
-_DESTROY_WHEN_OPEN = re.compile(r"^POST /api/(masterpieces/merge(-as-variant)?|posts/[^/]+/remove-from-sites)$")
+# Spec 087: and "Rate this piece", which lifts the hold on a piece that needs rating. Method + exact path, so
+# reading the Library stays open.
+# ... and promoting a found post (POST /api/masterpieces exactly), which runs the same importer.
+_DESTROY_WHEN_OPEN = re.compile(r"^POST /api/(masterpieces(/merge(-as-variant)?|/rate)?|posts/[^/]+/remove-from-sites)$")
 
 # 4.43.1: everything that PUBLISHES — puts the operator's work or words on a live site,
 # now or on a schedule. On an open instance any of these let a stranger on the network
@@ -661,7 +664,10 @@ _PUBLISH_WHEN_OPEN = re.compile(
     # stranger who read a job id off /api/activity could otherwise post another live copy.
     # 4.56.0 (spec 021): Retry comment posts a live reply. 4.56.2 (CMTTPLOPEN): a site's
     # default template rides every later publish that doesn't say otherwise, as a live reply.
-    r"|masterpieces/.+/sync|podcasts|activity/[^/]+/retry|comments/[^/]+/retry|comments/templates)(/|$)")
+    # Spec 087: importing makes a site's sign-in fetch files into the Library (for Patreon, members-only ones).
+    # Only the requests that change something, so the import count stays readable.
+    r"|masterpieces/.+/sync|podcasts|activity/[^/]+/retry|comments/[^/]+/retry|comments/templates"
+    r"|artwork/import|posts/import)(/|$)")
 
 
 def _sensitive_when_open(request: Request) -> bool:

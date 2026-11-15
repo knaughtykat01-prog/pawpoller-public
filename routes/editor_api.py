@@ -1462,7 +1462,7 @@ async def publish_check(story_name: str):
     # platforms isn't a concept — you post the work. Per-chapter rows for
     # these get marked not_supported; the full-story row is the actionable
     # one (and internally handles multi-chapter creation).
-    WORK_ORIENTED = {"ao3", "sqw", "sf"}
+    WORK_ORIENTED = manager.WORK_ORIENTED
 
     # Required credentials per platform. Value is one of:
     #   ("a", "b")      — all keys must be non-empty (AND)

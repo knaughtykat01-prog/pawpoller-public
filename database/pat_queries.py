@@ -12,20 +12,38 @@ from typing import Any
 from database.scope import account_clause
 
 
+# Spec 087: what the found list and the importer need. No picture address and no post text is ever stored.
+_087_COLUMNS = (("post_type", "TEXT NOT NULL DEFAULT ''"), ("has_pictures", "INTEGER NOT NULL DEFAULT 0"),
+                ("tier_ids", "TEXT NOT NULL DEFAULT '[]'"))
+
+
+def ensure_pat_columns(conn: sqlite3.Connection) -> None:
+    """Add spec 087's columns to a database made by 4.90.0 (idempotent)."""
+    have = {r[1] for r in conn.execute("PRAGMA table_info(pat_submissions)")}
+    for name, decl in _087_COLUMNS:
+        if name not in have:
+            conn.execute(f"ALTER TABLE pat_submissions ADD COLUMN {name} {decl}")
+
+
 def upsert_pat_submission(conn: sqlite3.Connection, sub: dict, account_id: int) -> None:
+    import json
+    tiers = json.dumps([str(t) for t in sub.get("tier_ids") or []])
     conn.execute(
         """INSERT INTO pat_submissions
-           (submission_id, account_id, title, username, link, posted_at, audience,
+           (submission_id, account_id, title, username, link, posted_at, audience, post_type, has_pictures, tier_ids,
             views, favorites_count, comments_count, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, datetime('now'))
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, datetime('now'))
            ON CONFLICT(submission_id) DO UPDATE SET
             title=excluded.title, username=excluded.username, link=excluded.link,
             posted_at=COALESCE(NULLIF(excluded.posted_at, ''), pat_submissions.posted_at),
+            audience=excluded.audience, post_type=excluded.post_type, has_pictures=excluded.has_pictures,
+            tier_ids=excluded.tier_ids,
             favorites_count=excluded.favorites_count, comments_count=excluded.comments_count,
             updated_at=datetime('now')
         """,
         (sub["submission_id"], account_id, sub.get("title", ""), sub.get("username", ""), sub.get("link", ""),
-         sub.get("posted_at") or None, sub.get("audience", ""), int(sub.get("favorites_count") or 0),
+         sub.get("posted_at") or None, sub.get("audience", ""), str(sub.get("post_type") or "")[:40],
+         1 if sub.get("has_pictures") else 0, tiers, int(sub.get("favorites_count") or 0),
          int(sub.get("comments_count") or 0)),
     )
 

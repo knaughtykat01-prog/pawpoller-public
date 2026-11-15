@@ -18,6 +18,7 @@ import logging
 import os
 import shutil
 import tarfile
+import threading
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
@@ -382,10 +383,11 @@ def update_artwork(name: str, body: dict):
                "titles", "descriptions", "categories", "platforms", "alt_text"}
     updates = {k: v for k, v in (body or {}).items() if k in allowed}
     try:
-        artwork_reader.save_artwork_metadata(name, updates)
+        art = artwork_reader.save_artwork_metadata(name, updates)
     except FileNotFoundError:
         raise HTTPException(404, detail=f"Artwork not found: {name}")
-    return {"status": "saved", "name": name}
+    # Spec 087: a piece that needs rating keeps needing it through a details save (the reply says so).
+    return {"status": "saved", "name": name, "needs_rating": art.needs_rating}
 
 
 # ── Import (gallery → local artwork; Phase 3) ─────────────────
@@ -394,6 +396,51 @@ def update_artwork(name: str, body: dict):
 # specific `/import/bulk/{platform}` MUST be declared before the generic
 # `/import/{platform}/{submission_id}` — otherwise `/import/bulk/bsky` is
 # captured by the generic route as platform="bulk" (→ "Unknown platform: bulk").
+# Spec 087 (FR-SEC-005): one import run at a time in this process. A second answers 409 instead of doubling the
+# requests a site sees.
+_IMPORT_RUN = threading.Lock()
+
+
+def _import_many(items: list[dict]) -> tuple[list, list, list, dict]:
+    """Import each found item; one bad item never aborts the run. Patreon (spec 087): at most
+    ``pat_import.RUN_CAP`` posts a run, and once Patreon turns PawPoller away (a bot check, a rate limit, signed
+    out, a read in progress) its remaining posts are not tried while other sites carry on."""
+    from posting import artwork_importer, pat_import
+    if not _IMPORT_RUN.acquire(blocking=False):
+        raise HTTPException(409, detail="An import is already running. Wait for it to finish.")
+    imported, skipped, failed = [], [], []
+    pat_done = not_tried = left = 0
+    pat_stopped = False
+    try:
+        for it in items:
+            plat, sid = it["platform"], it["submission_id"]
+            if plat == "pat":
+                if pat_stopped:
+                    not_tried += 1
+                    continue
+                if pat_done >= pat_import.RUN_CAP:
+                    left += 1
+                    continue
+                pat_done += 1
+            try:
+                res = artwork_importer.import_artwork(plat, sid)
+                (imported if res.get("status") == "imported" else skipped).append(
+                    {"platform": plat, "submission_id": sid, "name": res.get("name"), "status": res.get("status")})
+            except Exception as e:  # one bad item must not abort the batch
+                failed.append({"platform": plat, "submission_id": sid, "title": it.get("title"),
+                               "error": str(e)[:160]})
+                if plat == "pat" and getattr(e, "stop", False):
+                    pat_stopped = str(e)[:200]
+    finally:
+        _IMPORT_RUN.release()
+    pat: dict[str, object] = {}
+    if not_tried or left:
+        pat = {"pat_not_tried": not_tried, "pat_left": left}
+    if pat_stopped:
+        pat["pat_stopped"] = pat_stopped        # the fixed sentence, for the screen to show
+    return imported, skipped, failed, pat
+
+
 @artwork_router.post("/import/bulk/{platform}")
 def import_all_for_platform(platform: str):
     """Import every discovered (unlinked) submission for one platform.
@@ -410,22 +457,16 @@ def import_all_for_platform(platform: str):
     finally:
         conn.close()
 
-    imported, skipped, failed = [], [], []
-    for it in items:
-        sid = it["submission_id"]
-        try:
-            res = artwork_importer.import_artwork(platform, sid)
-            (imported if res.get("status") == "imported" else skipped).append(
-                {"submission_id": sid, "name": res.get("name"), "status": res.get("status")})
-        except Exception as e:
-            failed.append({"submission_id": sid, "title": it.get("title"), "error": str(e)[:160]})
-
+    imported, skipped, failed, pat = _import_many(items)
     return {
         "platform": platform,
         "imported": len(imported),
         "skipped": len(skipped),
         "failed": len(failed),
-        "results": {"imported": imported, "skipped": skipped, "failed": failed},
+        **pat,
+        "results": {"imported": [{k: v for k, v in r.items() if k != "platform"} for r in imported],
+                    "skipped": [{k: v for k, v in r.items() if k != "platform"} for r in skipped],
+                    "failed": [{k: v for k, v in r.items() if k != "platform"} for r in failed]},
     }
 
 
@@ -446,25 +487,17 @@ def import_all_discovered_art():
     conn = get_connection()
     try:
         items = [it for it in get_discovered_unlinked(conn)
-                 if it.get("kind") == "art" and it.get("thumbnail_url")]
+                 if it.get("kind") == "art" and (it.get("thumbnail_url") or it.get("has_pictures"))]
     finally:
         conn.close()
 
-    imported, skipped, failed = [], [], []
-    for it in items:
-        plat, sid = it["platform"], it["submission_id"]
-        try:
-            res = artwork_importer.import_artwork(plat, sid)
-            (imported if res.get("status") == "imported" else skipped).append(
-                {"platform": plat, "submission_id": sid, "name": res.get("name")})
-        except Exception as e:  # one bad item must not abort the batch
-            failed.append({"platform": plat, "submission_id": sid,
-                           "title": it.get("title"), "error": str(e)[:160]})
+    imported, skipped, failed, pat = _import_many(items)
     return {
         "total_art": len(items),
         "imported": len(imported),
         "skipped": len(skipped),
         "failed": len(failed),
+        **pat,
         "failures": failed[:25],
     }
 
@@ -676,9 +709,29 @@ def batch_plan(body: dict):
     version key, …]} — per piece, which versions to post, each as its own submission}."""
     from posting import batch
     try:
-        return batch.plan(body.get("names") or [], **_batch_args(body))
+        out = batch.plan(body.get("names") or [], **_batch_args(body))
     except batch.BatchError as e:
         raise HTTPException(400, detail=str(e))
+    if isinstance(out, dict):
+        out["notices"] = _paid_notices(body.get("names") or [])
+    return out
+
+
+PAID_NOTICE = "was a paid post on Patreon."
+
+
+def _paid_notices(names) -> list[dict]:
+    """Spec 087 (FR-SEC-007): one line per piece that was a paid post on Patreon when it was imported, shown where
+    many pieces are about to go out at once. A notice never blocks and never changes the plan."""
+    out = []
+    for n in dict.fromkeys(x for x in names if isinstance(x, str) and x):
+        try:
+            raw = artwork_reader.read_raw_metadata(n)
+        except Exception:
+            continue
+        if raw.get("pat_paid") is True:
+            out.append({"name": n, "title": str(raw.get("title") or n)[:200], "notice": PAID_NOTICE})
+    return out
 
 
 @artwork_router.post("/batch")
