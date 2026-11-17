@@ -37,7 +37,7 @@ but it is still a measurement script⟧. Because there are no optional cookies, 
 
 ### When you download PawPoller or it checks for updates
 
-Downloads and update checks come from GitHub, which receives your IP address to deliver the file. We don't get a
+Downloads, update checks and announcements come from GitHub, which receives your IP address to deliver the file. We don't get a
 list of who downloaded.
 
 ### Only if you say yes

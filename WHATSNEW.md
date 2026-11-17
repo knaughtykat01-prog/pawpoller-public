@@ -2,6 +2,18 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.92.0] - 2026-11-17 - Announcements, and alerts you can close
+
+> - PawPoller can now show you a short announcement from us, as one line under the top bar. Press Details to read it and ✕ to close it.
+> - Announcements are for things like a site breaking for everyone, a security fix, or an outage. They are plain words only, never a link.
+> - PawPoller never asks you to download anything from an address in an announcement.
+> - They are fetched from GitHub, which sees your internet address as it does for updates. Nothing else about your copy is sent.
+> - You can switch announcements off in Settings, under Announcements.
+> - Each alert under Needs attention on the Platforms page now has a ✕. Closed ones fold into one line with Show.
+> - A closed alert comes back by itself if the problem changes or happens again. The site's tile still says what is wrong.
+> - Fixed Schedule on an artwork's page seeming to do nothing on a phone. The date and time now open right under the button.
+> - Messages such as "Tick at least one site" now show next to Publish now and Schedule, not at the bottom of the list.
+
 ## [4.91.0] - 2026-11-15 - Bring in the art already on your Patreon page
 
 > - Art already on your Patreon page can now come into your Library. Open the Library, choose Discovered, and press Import.
@@ -245,16 +257,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Oversized or broken uploads are now turned away straight away, with a clear message instead of an error.
 > - Servers that host Instagram pictures for other installs now host pictures only, with tighter limits.
 > - Playing a sound no longer leaves an error in the browser console.
-
-## [4.85.0] - 2026-10-22 - Progress everywhere
-
-> - Levels, medals and rewards are now your choice, and off unless you turn them on. PawPoller asks once, when you set up or on your next visit.
-> - Turn them on or off any time from the menu under your picture, or in Settings → Appearance. Off hides all of it, Laurels included; nothing you earn is lost.
-> - New: every piece in your Library has its own level, shown on its cover. More views, faves and comments raise it.
-> - Each story and artwork page has a Laurels card: its level, what the next level needs, and how it compares with your usual pieces.
-> - Pieces earn medals of their own, like First comment, On 3 sites and 100 views, and a level-up for a piece earns you XP.
-> - Pieces you posted before this update are paid their XP once, in one catch-up note.
-> - Each account on the Accounts page shows its level too.
-> - Medals are now worked out from every site, not just Inkbunny, and each shows when you earned it.
-> - The Overview has a Progress card, and the overnight summary has a Your progress section.
-> - Laurels now sits second in the menu and on the phone bar; Analytics moved into More on phones.

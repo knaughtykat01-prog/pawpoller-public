@@ -1122,6 +1122,9 @@ const App = {
         if (bottomNav) bottomNav.style.display = isFullScreen ? 'none' : '';
         const mobileBar = document.getElementById('mobile-bar');
         if (mobileBar) mobileBar.style.display = isFullScreen ? 'none' : '';
+        const announceBar = document.getElementById('pp-announce');   // spec 089: not on sign-in or setup
+        if (announceBar) announceBar.style.display = isFullScreen ? 'none' : '';
+        if (!isFullScreen) window.AnnounceBar?.ensure();
         this._renderSetupStrip(parts, isFullScreen);     // 056
         this._setupReturnWatch(parts);
 
@@ -17918,6 +17921,15 @@ const App = {
                     </div>
                 </div>`}
 
+                <!-- Spec 089. Hidden until its state arrives; a hosted seat never sees it (always on there). -->
+                <div class="settings-section" id="pref-announcements-section" hidden>
+                    <h3>Announcements</h3>
+                    <div class="settings-row">
+                        <div><label class="settings-label" for="pref-announcements">Show announcements from PawPoller</label><div style="font-size:11px;color:var(--text-muted);margin-top:2px">Fetched from GitHub, which sees this copy's internet address. Nothing else about this copy is sent.</div></div>
+                        <label class="toggle-switch"><input type="checkbox" id="pref-announcements"><span class="toggle-slider"></span></label>
+                    </div>
+                </div>
+
                 <div class="settings-section">
                     <h3>Credits</h3>
                     <p style="font-size:11px;color:var(--text-muted);margin:-4px 0 10px">The people who helped —
@@ -22581,6 +22593,16 @@ const App = {
                 try { await API.savePreferences({ auto_update: e.target.checked }); }
                 catch (err) { e.target.checked = !e.target.checked; alert('Could not save: ' + err.message); }
             });
+            // Announcements (spec 089): its own request, not a preference (see routes/api.py).
+            API.getAnnouncements().then(st => {
+                const sec = document.getElementById('pref-announcements-section'), box = document.getElementById('pref-announcements');
+                if (!sec || !box || st.hosted) return;
+                box.checked = st.enabled; sec.hidden = false;
+                box.addEventListener('change', async e => {
+                    try { window.AnnounceBar?.paint((await API.setAnnouncementsEnabled(e.target.checked)).items); }
+                    catch (err) { e.target.checked = !e.target.checked; alert('Could not save: ' + err.message); }
+                });
+            }).catch(() => {});
             document.getElementById('skip-update-btn')?.addEventListener('click', async e => {
                 const latest = (updateInfo && updateInfo.latest) || '';
                 if (!latest) return;

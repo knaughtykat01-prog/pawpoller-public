@@ -160,7 +160,22 @@ window.PlatformsHub = (function () {
         else if (a.action === 'wait') actions = `<span class="muted">Resumes at ${esc(Utils.time.fmt.time(a.until))}</span>`;
         return `<div class="ph-alert ph-alert--${esc(a.level)}" style="--pc:${esc(P.color)}">
             ${logo(a.code)}<div class="ph-alert-text"><b>${esc(a.title)}</b><span>${esc(a.detail)}</span></div>
-            <div class="ph-alert-act">${actions}</div></div>`;
+            <div class="ph-alert-act">${actions}</div>
+            <button type="button" class="ph-alert-x" data-act="close-alert" data-code="${esc(a.code)}" data-kind="${esc(a.kind)}"
+                aria-label="Close: ${esc(a.title)}">✕</button></div>`;
+    }
+
+    /* Needs attention (spec 089): a closed alert is hidden, not gone. The summary line above still
+       counts it, and it comes back by itself when its problem changes (the server decides that). */
+    function attentionSection(attention) {
+        if (!attention.length) return '';
+        const open = attention.filter(a => !a.closed), closed = attention.length - open.length;
+        return `<section class="ph-sec" aria-labelledby="ph-att-h">
+            <h2 class="ph-h" id="ph-att-h">Needs attention <span class="ph-count">${open.length}</span>
+                ${open.length > 1 ? '<button type="button" class="pk-link ph-h-act" data-act="close-alerts">Close all</button>' : ''}</h2>
+            ${open.length ? `<div class="ph-alerts">${open.map(attentionRow).join('')}</div>` : ''}
+            ${closed ? `<p class="ph-closed-line">${closed} closed · <button type="button" class="pk-link" data-act="show-alerts">Show</button></p>` : ''}
+        </section>`;
     }
 
     function paint(app) {
@@ -226,9 +241,7 @@ window.PlatformsHub = (function () {
                         <button type="button" class="btn btn-primary" data-act="choose">Choose platforms</button>
                     </div>
                 </div>
-                ${attention.length ? `<section class="ph-sec" aria-labelledby="ph-att-h">
-                    <h2 class="ph-h" id="ph-att-h">Needs attention <span class="ph-count">${attention.length}</span></h2>
-                    <div class="ph-alerts">${attention.map(attentionRow).join('')}</div></section>` : ''}
+                ${attentionSection(attention)}
                 ${mine.length ? `<section class="ph-sec" aria-labelledby="ph-mine-h">
                     <h2 class="ph-h" id="ph-mine-h">Your platforms <span class="ph-count">${mine.length}</span></h2>${body}</section>` : body}
                 ${chips}
@@ -318,6 +331,15 @@ window.PlatformsHub = (function () {
                 catch (err) { window.toast?.error('Could not pause: ' + (err.message || err)); }
             } else if (act.dataset.act === 'up' || act.dataset.act === 'down') {
                 move(code, act.dataset.act === 'up' ? -1 : 1, app);
+            } else if (act.dataset.act === 'close-alert' || act.dataset.act === 'close-alerts' || act.dataset.act === 'show-alerts') {
+                // Spec 089. Close all means the alerts on screen, so a hidden site's alert isn't closed unseen.
+                const which = act.dataset.act === 'close-alert' ? [act] : [...root.querySelectorAll('[data-act="close-alert"]')];
+                try {
+                    if (act.dataset.act === 'show-alerts') await API.showAlerts();
+                    else await API.closeAlerts({ items: which.map(b => ({ code: b.dataset.code, kind: b.dataset.kind })) });
+                    await reload();
+                    document.querySelector('.ph-closed-line button, .ph-alert-x')?.focus();   // the repaint dropped the focused button
+                } catch (err) { window.toast?.error('Could not save that: ' + (err.message || err)); }
             }
         });
         root.addEventListener('keydown', (/** @type {KeyboardEvent} */ e) => {

@@ -13,7 +13,8 @@ name: Tests
 on:
   pull_request:
   push:
-    branches: [master, main]
+    # alpha too: v5 work otherwise only ever runs the suite on the dev PC (the 3.17.4 gap again)
+    branches: [master, main, alpha]
 
 # Read-only by default. build.yml needs `contents: write` to attach release
 # assets; this workflow only ever reads the tree, so it says so rather than
@@ -67,7 +68,34 @@ jobs:
         # test job. `-q` comes from pytest.ini's addopts, which also pins
         # `python_files = test_*.py` — tests/ contains live-posting operator
         # scripts that must never be collected, least of all from CI.
-        run: python -m pytest tests/
+        # -n auto: one worker per runner core (pytest-xdist is in requirements-server.txt); the suite
+        # already runs at -n 8 on the dev PC, so it is safe in parallel.
+        run: python -m pytest tests/ -n auto
 
       - name: Syntax check
         run: python -m py_compile config.py server.py main.py dashboard.py
+
+  # The same suite in a new random order each run, to catch a test that only passes because an earlier one
+  # left state behind. The step prints its seed (-q hides pytest-randomly's own line): re-run that order locally
+  # with pytest-randomly installed and `--randomly-seed=N`. Linux only: an order leak isn't platform-specific.
+  # No retries and no allowed-failure: a red here is a real leak to fix.
+  random-order:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        # pytest-randomly here only: installed, it reorders every run, and the main job stays in file order
+        run: pip install -r requirements-server.txt hypothesis==6.170.12 schemathesis==4.32.5 pytest-randomly==5.1.0
+
+      - name: Run tests in random order
+        run: |
+          SEED=$RANDOM
+          echo "Order seed: $SEED (re-run with --randomly-seed=$SEED)"
+          python -m pytest tests/ -n auto --randomly-seed=$SEED

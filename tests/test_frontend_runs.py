@@ -763,3 +763,204 @@ def test_the_sheet_takes_a_short_gap_and_moves_one_chapter(browser, app_url, tmp
     finally:
         tab.close()
         config.delete_settings_keys(["posting_story_archive_path"])
+
+
+# ── Spec 089: the announcement bar, and closing a Needs attention alert ────────
+
+_HOSTILE = '<img src=x onerror="window.__pwned=1">Sign in again'
+_FIXED_LINE = "PawPoller never asks you to download anything from an address in an announcement."
+
+
+@pytest.fixture
+def announcement(monkeypatch, tmp_path):
+    """A signed set this copy trusts, whose words are as hostile as words can be."""
+    import base64
+    import json
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    import announce
+    key = Ed25519PrivateKey.generate()
+    public = key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    monkeypatch.setattr(announce, "PUBLIC_KEYS", {"t1": base64.b64encode(public).decode()})
+    monkeypatch.setattr(announce, "_state_path", lambda: tmp_path / "announce_state.json")
+    now, fmt = datetime.now(timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
+    payload = json.dumps({"kind": "pawpoller-announcements", "issued_at": now.strftime(fmt), "items": [{
+        "id": "sample-notice", "level": "urgent", "title": _HOSTILE,
+        "body": "First line.\n<b>bold?</b> https://example.com/fix",
+        "starts": (now - timedelta(days=1)).strftime(fmt), "ends": (now + timedelta(days=3)).strftime(fmt)}]}).encode()
+    raw = json.dumps({"v": 1, "key": "t1", "payload": base64.b64encode(payload).decode(),
+                      "sig": base64.b64encode(key.sign(announce.PREFIX + payload)).decode()}).encode()
+    announce._save(raw, now.strftime(fmt))
+    config.save_settings({"announcements_enabled": True, "announce_closed": []})
+    yield
+    config.delete_settings_keys(["announcements_enabled", "announce_closed"])
+
+
+def test_bar_text_is_never_markup(browser, app_url, announcement):
+    """The bar is on every page, says its level in a word, and an announcement's text stays text."""
+    tab = _Watched(browser, app_url, {"width": 1400, "height": 900})
+    page = tab.page
+    try:
+        for h in ("#/platforms", "#/library", "#/settings"):
+            tab.open(h)
+            page.wait_for_selector("#pp-announce:not([hidden])", timeout=4000)
+        bar = page.locator("#pp-announce")
+        assert bar.locator(".pp-announce-level").inner_text() == "Urgent"
+        assert bar.locator(".pp-announce-title").inner_text() == _HOSTILE
+        assert page.evaluate("window.__pwned") is None, "the announcement's text ran as script"
+        assert bar.locator("img, a, b, script, iframe").count() == 0
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()
+
+
+def test_details_ends_with_the_fixed_line(browser, app_url, announcement):
+    tab = _Watched(browser, app_url, {"width": 1400, "height": 900})
+    page = tab.page
+    try:
+        tab.open("#/platforms")
+        details = page.locator(".pp-announce-details")
+        assert details.get_attribute("aria-expanded") == "false" and not page.locator("#pp-announce-more").is_visible()
+        details.click()
+        assert details.get_attribute("aria-expanded") == "true"
+        lines = page.locator("#pp-announce-more p").all_inner_texts()
+        assert lines == ["First line.\n<b>bold?</b> https://example.com/fix", _FIXED_LINE]
+        assert page.locator("#pp-announce a").count() == 0, "an address in an announcement is never a link"
+        details.click()
+        assert not page.locator("#pp-announce-more").is_visible()
+    finally:
+        tab.close()
+
+
+def test_closing_the_bar_sticks_after_reload(browser, app_url, announcement):
+    tab = _Watched(browser, app_url, {"width": 1400, "height": 900})
+    page = tab.page
+    try:
+        tab.open("#/platforms")
+        page.get_by_role("button", name="Close this announcement").click()
+        page.wait_for_selector("#pp-announce", state="hidden", timeout=3000)
+        page.reload(wait_until="networkidle")
+        tab.open("#/library")
+        assert not page.locator("#pp-announce").is_visible(), "a closed announcement came back"
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()
+
+
+def test_the_bar_fits_on_a_phone(browser, app_url, announcement):
+    tab = _Watched(browser, app_url, {"width": 390, "height": 844})
+    page = tab.page
+    try:
+        tab.open("#/platforms")
+        page.wait_for_selector("#pp-announce:not([hidden])", timeout=4000)
+        page.locator(".pp-announce-details").click()
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "the bar scrolls sideways"
+        box = page.locator(".pp-announce-x").bounding_box()
+        assert box["width"] >= 24 and box["height"] >= 24 and box["x"] + box["width"] <= 390
+    finally:
+        tab.close()
+
+
+@pytest.mark.parametrize("viewport", [{"width": 1400, "height": 900}, {"width": 390, "height": 844}],
+                         ids=["computer", "phone"])
+def test_closing_an_alert_folds_it_and_show_brings_it_back(browser, app_url, monkeypatch, viewport):
+    from routes import api
+    ok = {"configured": True, "session": {}, "last_poll_status": "ok", "last_poll_error": None,
+          "last_poll_at": None, "next_poll_at": None, "throttled_until": None}
+    health = {"fa": dict(ok), "ws": dict(ok, last_poll_status="error", last_poll_error="HTTP 500 from the site")}
+    monkeypatch.setattr(api, "_health_snapshot", lambda settings=None: health)
+    monkeypatch.setattr(config, "credential_age_report",
+                        lambda settings=None: [{"code": "fa", "age_days": 50, "ttl_days": 45}])
+    config.save_settings({"alerts_closed": {}, "hidden_platforms": []})
+    tab = _Watched(browser, app_url, viewport)
+    page = tab.page
+    try:
+        tab.open("#/platforms")
+        page.wait_for_selector(".ph-alert", timeout=5000)
+        assert page.locator(".ph-alert").count() == 2
+        page.get_by_role("button", name="Close: FurAffinity: login has probably expired").click()
+        page.wait_for_selector(".ph-closed-line", timeout=3000)
+        assert page.locator(".ph-alert").count() == 1
+        assert page.locator(".ph-closed-line").inner_text().startswith("1 closed")
+        assert "2 need you" in " ".join(page.locator(".ph-summary").inner_text().split()), \
+            "closing must not hide that a site needs you"
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        page.reload(wait_until="networkidle")
+        page.wait_for_selector(".ph-closed-line", timeout=5000)
+        assert page.locator(".ph-alert").count() == 1, "after a reload the closed alert is back"
+        page.locator("[data-act=show-alerts]").click()
+        page.wait_for_selector(".ph-closed-line", state="detached", timeout=3000)
+        assert page.locator(".ph-alert").count() == 2
+        page.locator("[data-act=close-alerts]").click()
+        page.wait_for_selector(".ph-closed-line", timeout=3000)
+        assert page.locator(".ph-alert").count() == 0 and page.locator("#ph-att-h").count() == 1, \
+            "with everything closed the heading and the way back must stay"
+        assert page.locator(".ph-closed-line").inner_text().startswith("2 closed")
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()
+        config.delete_settings_keys(["alerts_closed"])
+
+
+_CONTRAST_JS = """
+() => {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 1;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  const rgb = (css) => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = '#000'; ctx.fillStyle = css; ctx.fillRect(0, 0, 1, 1);
+                         return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+  const lum = (c) => { const [r, g, b] = c.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+                       return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ratio = (a, b) => { const x = lum(rgb(a)), y = lum(rgb(b)); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  const bar = document.getElementById('pp-announce');
+  const bg = getComputedStyle(bar).backgroundColor;
+  const out = {};
+  for (const sel of ['.pp-announce-level', '.pp-announce-title', '.pp-announce-details', '.pp-announce-x',
+                     '.pp-announce-body', '.pp-announce-fixed'])
+    out[sel] = ratio(getComputedStyle(bar.querySelector(sel)).color, bg);
+  return out;
+}
+"""
+
+
+def test_the_bar_is_readable_in_every_theme_at_every_level(browser, app_url, announcement):
+    """Gap check (FR-007): coloured words on a tint of the same colour fell below 4.5:1 in most themes."""
+    themes = sorted(set(re.findall(r'^\[data-theme="([a-z0-9_]+)"\] \{', (ROOT / "frontend/css/tokens.css").read_text(encoding="utf-8"), re.M)))
+    assert len(themes) >= 14, themes
+    tab = _Watched(browser, app_url, {"width": 1400, "height": 900})
+    page = tab.page
+    try:
+        tab.open("#/platforms")
+        page.wait_for_selector(".pp-announce-details", timeout=4000)
+        page.locator(".pp-announce-details").click()
+        low = []
+        for theme in ["", *themes]:
+            page.evaluate("t => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }", theme)
+            for level in ("info", "heads-up", "urgent"):
+                page.evaluate("l => { document.getElementById('pp-announce').className = 'pp-announce pp-announce--' + l; }", level)
+                for sel, r in page.evaluate(_CONTRAST_JS).items():
+                    if r < 4.5:
+                        low.append(f"{theme or 'default'} / {level} / {sel}: {r:.2f}")
+        assert not low, low
+    finally:
+        tab.close()
+
+
+def test_an_unchanged_refresh_leaves_the_bar_and_the_focus_alone(browser, app_url, announcement):
+    """The half-hourly refresh must not make a screen reader read the bar again or drop the keyboard focus."""
+    tab = _Watched(browser, app_url, {"width": 1400, "height": 900})
+    page = tab.page
+    try:
+        tab.open("#/platforms")
+        page.wait_for_selector(".pp-announce-details", timeout=4000)
+        page.locator(".pp-announce-details").focus()
+        page.evaluate("document.querySelector('.pp-announce-title').dataset.same = '1'")
+        page.evaluate("window.AnnounceBar.refresh()")
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(200)
+        assert page.evaluate("document.querySelector('.pp-announce-title').dataset.same") == "1", "the bar was redrawn"
+        assert page.evaluate("document.activeElement.className") == "pp-announce-details"
+        assert page.locator("#pp-announce").get_attribute("role") == "status"
+    finally:
+        tab.close()

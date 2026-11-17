@@ -552,6 +552,12 @@ const API = {
     /* Everything the Platforms page needs in one call (spec 020): role, headline, works,
        30-day series, health, attention items, summary, hidden list, order. */
     getPlatformsOverview() { return this.get('/api/platforms/overview'); },
+    // Spec 089: closing a Needs attention alert, and the operator's announcements.
+    closeAlerts(body) { return this.post('/api/platforms/attention/close', body); },
+    showAlerts() { return this.post('/api/platforms/attention/show', {}); },
+    getAnnouncements() { return this.get('/api/announcements'); },
+    closeAnnouncement(id) { return this.post('/api/announcements/close', { id }); },
+    setAnnouncementsEnabled(enabled) { return this.post('/api/announcements/enabled', { enabled }); },
     getPlatformSessions() { return this.get('/api/platforms/sessions'); },
     triggerSessionCheck() { return this.post('/api/platforms/sessions/check', {}); },
     getCredentialAge() { return this.get('/api/platforms/credential-age'); },

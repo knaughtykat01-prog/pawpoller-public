@@ -804,6 +804,10 @@ SYNC_EXCLUDE = frozenset({
     # consent_records, turning check-ins on there; the old flat answers and the ask's own state stay put too.
     # Move's KEEP_HERE is built from this set, so a move keeps them as well.
     "consent_records", "tech_reports", "tech_usage", "ig_relay_enabled", "first_poll_ok_at", "usage_ask",
+    # Spec 089: which Platforms alerts were closed is about THIS install's own sites and checks. Each
+    # side forgets a record when its own alert goes, so a synced copy would be pruned against the
+    # wrong list. (Closed announcements and the announcements switch do travel: they are choices.)
+    "alerts_closed",
     # Which instance this is, for the Trello board claim (spec 005). The `trello`
     # block itself DOES sync -- both sides must agree which board and who owns it
     # -- but the tag naming *this* box must not, or every instance would read as
@@ -1419,7 +1423,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.91.0"
+APP_VERSION = "4.92.0"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).

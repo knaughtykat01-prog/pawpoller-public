@@ -36,6 +36,8 @@ config.SETTINGS_PATH.write_text("{}", encoding="utf-8")
 # belongs at module level and before any PawPoller import that could reach the client.
 os.environ.setdefault("PAWPOLLER_TECH_CENTRE_URL", "")
 os.environ.setdefault("PAWPOLLER_TECH_CENTRE_THREAD", "0")
+# Spec 089: dashboard.py's lifespan must not start the announcements fetch loop under test.
+os.environ.setdefault("PAWPOLLER_ANNOUNCE_LOOP", "0")
 
 # Property tests (tests/test_properties_*.py, PROPTESTS): the same generated cases every run,
 # so a failure reproduces and CI never flakes; no example database written into the repo.
@@ -113,6 +115,10 @@ def _isolated_db(tmp_path, monkeypatch, _db_template):
     monkeypatch.setattr(config, "SETTINGS_PATH", tmp_path / "test_settings.json")
     monkeypatch.setattr(config, "VAULT_PATH", tmp_path / "test_settings.vault.json")
     config.SETTINGS_PATH.write_text("{}", encoding="utf-8")
+    # turn_skips' in-memory twin: a test that polls can record a skip, and a later test on the same worker then
+    # read it (found by the random-order run, test_health_details).
+    from polling import last_check
+    monkeypatch.setattr(last_check, "_skips", {})
     yield
 
 

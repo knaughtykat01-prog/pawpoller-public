@@ -7,6 +7,7 @@ certifi>=2026.10.19   # eMudhra/emSign CA keys compromised (Oct 2026): this rele
 curl_cffi==0.16.3          # AO3 connects as current Chrome (spec 041); MIT. Exact: AO3 logins pass through it
 httpx-curl-cffi==0.1.5     # httpx transport over curl_cffi (spec 041); BSD-3. Exact (review 4.78.0)
 apscheduler>=3.10.4
+tzdata>=2026.5   # zoneinfo's zone list on Windows. Came in only through apscheduler's tzlocal before; zoneinfo is used directly
 python-dotenv>=1.0.0
 pywebview>=5.0
 pystray>=0.17

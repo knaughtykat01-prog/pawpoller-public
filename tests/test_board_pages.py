@@ -128,6 +128,14 @@ class TestIdsSurvive:
     def test_action_is_emitted(self, action):
         assert re.search(rf"\s{re.escape(action)}(\s|=|>)", JS), f"{action} has no element to fire from"
 
+    def test_schedule_form_and_message_open_beside_their_buttons(self):
+        """SCHEDHIDDEN: below the site list they opened a screen under the tap on a
+        phone, so Schedule (and a "tick a site" refusal) looked like nothing happened."""
+        block = _fn("_publishHtml", 3500)
+        sites = block.index('id="mp-detail-platforms"')
+        assert block.index('id="mp-schedule-form"') < sites
+        assert block.index('id="mp-pub-msg"') < sites
+
     def test_read_canonical_still_finds_its_six_inputs(self):
         block = _fn("_readCanonical", 900)
         for id_ in ("mp-e-title", "mp-e-desc", "mp-e-rating", "mp-e-chars", "mp-e-tags", "mp-e-alt"):

@@ -144,7 +144,15 @@ async def lifespan(app: FastAPI):
     if _migrated:
         logger.info("Credential vault: migrated %d plaintext field(s)", _migrated)
     logger.info("Dashboard started at http://%s:%d", config.DASHBOARD_HOST, config.DASHBOARD_PORT)
+    # Operator announcements (spec 089): fetched here, never by a page request. Off in the test suite.
+    _announce_task = None
+    if os.environ.get("PAWPOLLER_ANNOUNCE_LOOP") != "0":
+        import asyncio
+        import announce
+        _announce_task = asyncio.create_task(announce.loop())
     yield
+    if _announce_task:
+        _announce_task.cancel()
     logger.info("Dashboard shutting down")
 
 
@@ -640,7 +648,10 @@ _SENSITIVE_WHEN_OPEN_PREFIXES = (
 # Spec 087: and "Rate this piece", which lifts the hold on a piece that needs rating. Method + exact path, so
 # reading the Library stays open.
 # ... and promoting a found post (POST /api/masterpieces exactly), which runs the same importer.
-_DESTROY_WHEN_OPEN = re.compile(r"^POST /api/(masterpieces(/merge(-as-variant)?|/rate)?|posts/[^/]+/remove-from-sites)$")
+# Spec 089: and hiding things the owner should see: closing an announcement or a Platforms alert, showing
+# alerts again, and the announcements switch. Reading them stays open.
+_DESTROY_WHEN_OPEN = re.compile(r"^POST /api/(masterpieces(/merge(-as-variant)?|/rate)?|posts/[^/]+/remove-from-sites"
+                                r"|announcements/(close|enabled)|platforms/attention/(close|show))$")
 
 # 4.43.1: everything that PUBLISHES — puts the operator's work or words on a live site,
 # now or on a schedule. On an open instance any of these let a stranger on the network

@@ -424,8 +424,8 @@ jobs:
         # pytest (not unittest discover): two pytest-style modules
         # (test_integration_posting, test_platform_posters) get silently
         # skipped by unittest discovery. pytest picks up everything —
-        # 91 tests vs unittest's 30.
-        run: python -m pytest tests/ -v
+        # 91 tests vs unittest's 30. -n auto: one worker per core, as in tests.yml.
+        run: python -m pytest tests/ -n auto
 
       - name: Syntax check
         run: python -m py_compile config.py server.py main.py dashboard.py

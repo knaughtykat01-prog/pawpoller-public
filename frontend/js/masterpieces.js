@@ -1188,10 +1188,8 @@ window.Masterpieces = {
                         <button class="btn btn-primary btn-sm" data-mp-publish type="button">Publish now</button>
                     </span></div>
                 <p class="sec-note">Sites this piece isn't on yet.</p>
-                ${m.pat_paid ? `<p class="bp-warn" id="mp-paid-notice">This was a paid post on Patreon. Posting it elsewhere shows it to everyone there.</p>` : ''}
-                <div id="mp-detail-platforms"></div>
-                ${this._r34RowHtml(m)}
-                <div class="mp-edit-actions"><span class="mp-edit-msg muted" id="mp-pub-msg"></span></div>
+                <!-- Directly under its button: at the foot of the card it opened a screen
+                     below the tap on a phone, so Schedule looked dead (SCHEDHIDDEN). -->
                 <div class="schedule-form" id="mp-schedule-form" style="display:none">
                     <div class="schedule-form-inner">
                         <label class="schedule-label" for="mp-schedule-datetime">Publish the ticked platforms at:</label>
@@ -1203,6 +1201,10 @@ window.Masterpieces = {
                         </div>
                     </div>
                 </div>
+                <div class="mp-edit-actions"><span class="mp-edit-msg muted" id="mp-pub-msg" role="status"></span></div>
+                ${m.pat_paid ? `<p class="bp-warn" id="mp-paid-notice">This was a paid post on Patreon. Posting it elsewhere shows it to everyone there.</p>` : ''}
+                <div id="mp-detail-platforms"></div>
+                ${this._r34RowHtml(m)}
                 <div class="schedule-pending" id="mp-scheduled-list"></div>
             </section>`;
     },

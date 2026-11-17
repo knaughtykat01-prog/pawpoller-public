@@ -20,7 +20,7 @@
 ## What it does NOT do
 
 - **Nothing goes to the PawPoller project unless you say yes.** PawPoller makes network calls to (a) the platforms
-  you connect, (b) GitHub, to check for updates, and (c) **only if you opted in**, the PawPoller Tech Centre:
+  you connect, (b) GitHub, to check for updates and announcements, and (c) **only if you opted in**, the PawPoller Tech Centre:
   - **technical error reports** — the error and a short log excerpt, with passwords, tokens, cookies, email
     addresses, @handles, other people's names and the paths of web addresses removed before sending;
   - **usage check-ins ("count this copy")**: a random id for this copy, the PawPoller version, whether it runs as the

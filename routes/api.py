@@ -785,30 +785,31 @@ def _attention_for(code: str, label: str, h: dict | None, cred: dict | None) -> 
         return []
     items = []
 
-    def item(level, title, detail, action, **extra):
+    def item(level, title, detail, action, kind, **extra):
+        # kind (spec 089): which problem this is, so a closed alert can tell a changed one apart.
         items.append({"code": code, "level": level, "title": title, "detail": detail,
-                      "action": action, **extra})
+                      "action": action, "kind": kind, **extra})
 
     session = h.get("session") or {}
     if session.get("status") == "expired":
         item("error", f"{label}: signed out", session.get("detail") or
              "The site no longer accepts the saved login. Sign in again so posting and checking keep working.",
-             "reconnect")
+             "reconnect", "signed_out")
     elif cred and cred.get("age_days") is not None and cred.get("ttl_days"):
         left = int(cred["ttl_days"]) - int(cred["age_days"])
         if left <= 0:
             item("error", f"{label}: login has probably expired",
                  "These logins last about {} days. Paste fresh cookies before posting fails.".format(cred["ttl_days"]),
-                 "reconnect")
+                 "reconnect", "login_expired")
         elif left <= 3:
             item("warn", f"{label}: login expires in {left} day{'' if left == 1 else 's'}",
-                 "Paste fresh cookies before then so posting and checking keep working.", "reconnect")
+                 "Paste fresh cookies before then so posting and checking keep working.", "reconnect", "login_expiring")
     until = h.get("throttled_until")
     if until:
         try:
             if datetime.fromisoformat(str(until).replace("Z", "+00:00")) > datetime.now(timezone.utc):
                 item("info", f"{label}: the site asked PawPoller to slow down",
-                     "Checking pauses until then and carries on by itself.", "wait", until=until)
+                     "Checking pauses until then and carries on by itself.", "wait", "slow_down", until=until)
         except ValueError:
             pass
     if h.get("last_poll_status") in ("error", "partial"):
@@ -816,10 +817,153 @@ def _attention_for(code: str, label: str, h: dict | None, cred: dict | None) -> 
         if _UNREACHABLE_RE.search(err):
             item("error", f"{label}: can't reach the site",
                  "The site is blocking or not answering requests. Nothing to fix on your side; "
-                 "checking carries on by itself, or you can pause it.", "pause", error=err[:300])
+                 "checking carries on by itself, or you can pause it.", "pause", "unreachable", error=err[:300])
         else:
-            item("warn", f"{label}: the last check failed", err[:300] or "No reason was given.", "poll")
+            item("warn", f"{label}: the last check failed", err[:300] or "No reason was given.", "poll", "check_failed")
     return items
+
+
+# ── Closing an alert (spec 089) ──────────────────────────────────────────────
+# settings["alerts_closed"] = {site: {kind: {"r": reason, "at": time}}}. An alert stays closed only
+# while its kind and reason are the ones that were closed, so a changed or returning problem shows again.
+_SIGNIN_KINDS = ("signed_out", "login_expired", "login_expiring")
+
+
+def _alert_reason(item: dict) -> str:
+    """What makes two alerts of one kind different problems: a hash of the failure text, never the text."""
+    import hashlib
+    if item.get("kind") == "unreachable":
+        text = item.get("error")
+    elif item.get("kind") == "check_failed":
+        text = item.get("detail")
+    else:
+        return ""   # the day countdown in a sign-in alert's title is not a change
+    return hashlib.sha256(str(text or "").encode("utf-8")).hexdigest()[:12]
+
+
+def _mark_closed(attention: list[dict], settings: dict, conn, health: dict | None = None) -> None:
+    """Set `closed` on each alert and forget records for alerts that are gone (so a problem that
+    clears and comes back shows again). A closed sign-in alert also returns after a failed post to
+    that site: nothing tells a sign-in failure from another kind, and showing it again is the safe side.
+
+    A check that is still running lists no alert yet, which is not the problem going away: its
+    record is kept, or opening Platforms mid-check would bring the same unchanged card back.
+
+    shortcut: "gone" is only noticed when this runs (a Platforms page load). A problem that clears
+    and returns with the same failure text while nobody looked stays closed; only each site's
+    latest check is kept, so the gap can't be seen. Record a last-good-check time per site, or run
+    this after each poll, if that ever matters."""
+    closed = settings.get("alerts_closed")
+    closed = closed if isinstance(closed, dict) else {}
+    failed = {}
+    if closed:
+        try:
+            # Every place a failed post is written: scheduled rows, the posting log (immediate posts
+            # of work), journals. shortcut: the log's time is when the post started, so one begun
+            # before the close and failed after it is missed; and a journal keeps the time of its
+            # FIRST attempt (upsert_post_publication doesn't touch created_at), so a retry that fails
+            # again is missed too. Use a finish / last-attempt time for both if one is ever stored.
+            failed = dict(conn.execute(
+                "SELECT platform, MAX(t) FROM ("
+                " SELECT platform, completed_at AS t FROM posting_queue WHERE status = 'failed'"
+                " UNION ALL SELECT platform, created_at FROM posting_log WHERE status = 'failed'"
+                " UNION ALL SELECT platform, replace(substr(created_at, 1, 19), 'T', ' ')"
+                "  FROM post_publications WHERE status = 'failed') GROUP BY platform").fetchall())
+        except sqlite3.Error:
+            failed = {}
+    keep: dict = {}
+    for a in attention:
+        by_kind = closed.get(a["code"])
+        rec = by_kind.get(a["kind"]) if isinstance(by_kind, dict) else None
+        ok = isinstance(rec, dict) and rec.get("r") == _alert_reason(a)
+        if ok and a["kind"] in _SIGNIN_KINDS and str(failed.get(a["code"]) or "") > str(rec.get("at") or ""):
+            ok = False
+        a["closed"] = ok
+        if ok:
+            keep.setdefault(a["code"], {})[a["kind"]] = rec
+    for code, by_kind in closed.items():
+        if isinstance(by_kind, dict) and ((health or {}).get(code) or {}).get("last_poll_status") == "running":
+            for kind in ("unreachable", "check_failed"):
+                if isinstance(by_kind.get(kind), dict):
+                    keep.setdefault(code, {}).setdefault(kind, by_kind[kind])
+    if keep != closed:
+        config.save_settings({"alerts_closed": keep})
+
+
+@router.post("/platforms/attention/close")
+def close_attention(body: dict):
+    """Close alerts the install lists right now. The caller names them (site + kind) or says all;
+    what state each was in is recorded here, never taken from the request."""
+    items = body.get("items")
+    if not isinstance(items, list):
+        items = []
+    if len(items) > 200:
+        raise HTTPException(400, "Too many alerts in one request")
+    wanted = {(str(i.get("code")), str(i.get("kind"))) for i in items if isinstance(i, dict)}
+    everything = body.get("all") is True
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")   # the form posting_queue.completed_at uses
+    current = platforms_overview()["attention"]            # which also dropped records for alerts that are gone
+    stored = config.get_settings().get("alerts_closed")
+    closed = {code: dict(kinds) for code, kinds in stored.items()} if isinstance(stored, dict) else {}
+    for a in current:
+        if not a["closed"] and (everything or (a["code"], a["kind"]) in wanted):
+            closed.setdefault(a["code"], {})[a["kind"]] = {"r": _alert_reason(a), "at": now}
+    config.save_settings({"alerts_closed": closed})
+    return {"closed": sum(len(v) for v in closed.values())}
+
+
+@router.post("/platforms/attention/show")
+def show_attention():
+    """Bring every closed alert back."""
+    config.save_settings({"alerts_closed": {}})
+    return {"closed": 0}
+
+
+# ── Operator announcements (spec 089; what is trusted is decided in announce.py) ──
+
+def _announcements() -> dict:
+    import announce
+    import legal
+    settings = config.get_settings()
+    return {"enabled": announce.enabled(settings), "hosted": legal.hosted(), "items": announce.current(settings)}
+
+
+@router.get("/announcements")
+def get_announcements():
+    """The announcements to show. Reads what this copy already holds; never asks the network."""
+    return _announcements()
+
+
+@router.post("/announcements/close")
+def close_announcement(body: dict):
+    """Remember that an announcement was read. Only one this copy currently holds can be closed."""
+    import announce
+    ann_id = body.get("id")
+    if not isinstance(ann_id, str) or not 1 <= len(ann_id) <= 40:
+        raise HTTPException(400, "Which announcement?")
+    known = {a["id"] for a in announce.load()}
+    if ann_id not in known:
+        raise HTTPException(404, "That announcement isn't current")
+    closed = config.get_settings().get("announce_closed")
+    closed = [c for c in closed if c in known] if isinstance(closed, list) else []   # pruned, so it stays small
+    if ann_id not in closed:
+        closed.append(ann_id)
+    config.save_settings({"announce_closed": closed})
+    return _announcements()
+
+
+@router.post("/announcements/enabled")
+def set_announcements_enabled(body: dict):
+    """The Settings switch. Its own path, not a preference: preferences stay open on a copy with no
+    password, and off hides every notice at once. A hosted seat stays on."""
+    import legal
+    import announce
+    if not legal.hosted() and isinstance(body.get("enabled"), bool):
+        was = announce.enabled()
+        config.save_settings({"announcements_enabled": body["enabled"]})
+        if body["enabled"] and not was:
+            announce.fetch_soon()      # switched back on: don't wait up to an hour for the next check
+    return _announcements()
 
 
 @router.get("/platforms/overview")
@@ -866,6 +1010,7 @@ def platforms_overview():
             entry["attention"] = items
             attention += items
             platforms.append(entry)
+        _mark_closed(attention, settings, conn, health)   # the summary below still counts closed ones (FR-026)
     finally:
         conn.close()
     live = [p for p in platforms if p["configured"] and p["can_poll"]]

@@ -430,6 +430,7 @@ _SETTINGS = (
         "legal_accepted", "legal_history",   # Terms + Privacy accepted, and when (4.67.0, spec 033)
         "auth_mail_log",   # when account emails were last sent, for the send limit (4.68.0)
         "signin_helper_allow_http",   # the owner allowed sign-in hand-overs over plain http at home (spec 059)
+        "announcements_enabled", "announce_closed", "alerts_closed",   # the switch, and what was closed (spec 089)
         "signin_helper_http_ok",   # this desktop's own yes to plain http, per server address (spec 059)
         "levels_enabled",   # gamification on/off; absent = never asked = off (spec 050, NOFUN 4.85.0)
         "home_screen",   # what the app opens on: "start" (absent) or "overview" (spec 053)
@@ -512,6 +513,8 @@ _PATHS = (
       backup="derivable"),
     P("data/tech_pending.json", "Error reports", "Error reports waiting to be sent.", backup="derivable"),
     P("data/tech_state.json", _HOUSE, "The install's id and the Tech Centre's last answers.", backup="derivable"),
+    P("data/announce_state.json", _HOUSE, "The last announcements PawPoller accepted, fetched again by itself.",
+      backup="derivable"),
     P("data/pat_standdown.json", _HOUSE, "When Patreon last asked PawPoller to slow down, and when to try again.",
       backup="derivable"),
     P("data/fa_standdown.json", _HOUSE, "When FurAffinity's bot check last turned PawPoller away, and when to try again.",
