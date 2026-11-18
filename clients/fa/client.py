@@ -590,7 +590,7 @@ class FAClient:
     # residential IP (the desktop instance), not the GCP server. Output dicts
     # match _normalize_submission so the poller is agnostic to the source.
 
-    _GALLERY_SID_RE = re.compile(r'id="sid-(\d+)"')
+    _GALLERY_SID_RE = re.compile(r'id="sid-(\d{1,15})"')   # bounded: an over-long id never matches (spec 092)
 
     async def get_all_gallery_ids_direct(self, max_pages: int = 50) -> list[dict]:
         """Scrape the user's gallery submission IDs directly from FA.

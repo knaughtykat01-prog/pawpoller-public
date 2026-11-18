@@ -86,6 +86,8 @@
                 title: kind === 'story' ? 'Which story?' : 'Which piece?',
                 filters: [kind], multi: false, pickOnClick: true,
                 confirmLabel: schedule ? 'Schedule this' : 'Post this',
+                // PICKUPLOAD: the piece they came for may not be in the Library yet.
+                more: kind === 'artwork' ? { href: '#/artwork/new', label: 'Upload new artwork' } : null,
                 onConfirm: (items) => {
                     const ref = (items[0] || {}).member_ref || '';
                     const name = ref.slice(ref.indexOf(':') + 1);

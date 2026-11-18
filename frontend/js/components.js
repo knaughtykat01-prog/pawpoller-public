@@ -2403,7 +2403,7 @@ const Components = {
                         if (missing) {
                             if (cb.checked) dropped.push(siteName(code));
                             cb.checked = false; cb.disabled = true; cb.dataset.personaDisabled = '1';
-                        } else if (cb.dataset.personaDisabled) { cb.disabled = false; delete cb.dataset.personaDisabled; }
+                        } else if (cb.dataset.personaDisabled) { cb.disabled = !!cb.dataset.mediaDisabled; delete cb.dataset.personaDisabled; }   // 4.92.1: a site that refuses the file stays off
                     }
                 }
             }

@@ -129,8 +129,6 @@ window.Artwork = {
                     </div>
                     <div class="card">
                         <h3>Publish to</h3>
-                        <p class="muted" style="margin:.2rem 0 .6rem;">Tick a platform to publish, pick the account,
-                        and optionally override its tags.</p>
                         <div id="art-platforms"></div>
                     </div>
                     <div class="artwork-actions">
@@ -177,7 +175,8 @@ window.Artwork = {
         const extras = this._byCode(extraByCode);
         // The persona chips render into this host (4.2.0); the rows' slots
         // then carry the resolved account per platform.
-        el.innerHTML = '<div class="persona-picker" data-persona-picker hidden></div>' + this._PLATFORMS.map(code => {
+        el.innerHTML = '<p class="muted artwork-plat-hint">Tick the sites to post to. A faded site can\'t take this piece: the reason is written under it. Sites under "Other sites" aren\'t connected yet.</p>'
+            + '<div class="persona-picker" data-persona-picker hidden></div>' + this._PLATFORMS.map(code => {
             const p = this._plat(code);
             const ann = this._ANNOUNCERS.includes(code);
             const o = opts[code] || {};
@@ -466,8 +465,25 @@ window.Artwork = {
     _gateRow(row, ok, reason) {
         row.classList.toggle('is-media-refused', !ok);
         const cb = row.querySelector('.art-plat-check');
-        if (cb) { cb.disabled = !ok; if (!ok) cb.checked = false; }
+        if (cb) {
+            // PUBLISHTO (4.92.1): this used to set `disabled = !ok`, which re-enabled a box somebody else had
+            // disabled (no account for the persona, a hidden site, already posted). Only undo our own disable.
+            if (!ok) {
+                cb.checked = false;
+                if (!cb.disabled || cb.dataset.personaDisabled) cb.dataset.mediaDisabled = '1';
+                cb.disabled = true;
+            } else if (cb.dataset.mediaDisabled) {
+                delete cb.dataset.mediaDisabled;
+                if (!cb.dataset.personaDisabled) cb.disabled = false;
+            }
+        }
         row.title = ok ? '' : reason;
+        // The reason as words under the row: a phone never shows a tooltip.
+        let why = row.querySelector('.artwork-plat-why');
+        if (!ok && reason) {
+            if (!why) { why = document.createElement('p'); why.className = 'artwork-plat-why'; row.appendChild(why); }
+            why.textContent = reason;
+        } else if (why) why.remove();
     },
 
     async _pickDesktopFile() {

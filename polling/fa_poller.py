@@ -23,7 +23,7 @@ import asyncio
 import logging
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html import escape as _esc
 
 import httpx
@@ -237,6 +237,36 @@ async def _send_fa_telegram(new_comment_details: list[dict],
     )
 
 
+# Spec 092: a direct poll reads every piece's page, so it reads only what is likely to have changed.
+FA_DIRECT_FRESH_COUNT = 48    # the newest pieces (one FA gallery page), read every poll
+FA_DIRECT_STALE_HOURS = 20    # an older piece is due this long after its last real read (20, not 24: a poll
+                              # that runs a few minutes early still finds its slice due)
+FA_DIRECT_SLICES = 6          # at most this fraction of the older pieces per poll: one sweep a day at 4 h
+
+
+def _direct_ids_to_read(gallery_ids: list[int], stored: dict[int, tuple], now: datetime,
+                        force_full: bool) -> list[int]:
+    """Which gallery pieces a direct poll reads (spec 092), in gallery order.
+
+    *stored* maps a piece this account has stored to ``(updated_at, views, ...)``. Always: pieces not stored (or
+    stored with no views, so never read successfully) and the newest ``FA_DIRECT_FRESH_COUNT`` by id. Of the
+    rest, those last read ``FA_DIRECT_STALE_HOURS`` or more ago, longest ago first, at most one
+    ``FA_DIRECT_SLICES``-th per poll. Worked out from stored times alone: no rotation position to keep.
+    """
+    if force_full:
+        return list(gallery_ids)
+    fresh = set(sorted(gallery_ids, reverse=True)[:FA_DIRECT_FRESH_COUNT])
+    read = {i for i in gallery_ids if i in fresh or i not in stored or not stored[i][1]}
+    older = [i for i in gallery_ids if i not in read]
+    cutoff = (now - timedelta(hours=FA_DIRECT_STALE_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
+    # shortcut: a piece whose page never reads keeps its old time and its place at the front, so a sixth or more
+    # of the older pieces failing on every poll would take the whole slice. The sign is the "read N of M (K asked
+    # for)" warning repeating; upgrade to taking part of the slice from the other end of `due` if that is seen.
+    due = sorted((stored[i][0] or "", i) for i in older if (stored[i][0] or "") <= cutoff)
+    read.update(i for _, i in due[:-(-len(older) // FA_DIRECT_SLICES)])
+    return [i for i in gallery_ids if i in read]
+
+
 @site_turn("fa")
 async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = False) -> dict:
     """Execute one complete FurAffinity poll cycle for a single account.
@@ -376,9 +406,20 @@ async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = Fa
             return stats
 
         # ── Step 2: Fetch details for each submission ──────────
-        _update_fa_progress("fetching_details", message=f"Fetching details for {len(submission_ids)} submissions...")
+        read_ids = submission_ids
         if use_direct:
-            details = await client.get_submission_details_batch_direct(submission_ids)
+            # Spec 092: only what is likely to have changed. The rest are carried forward after the loop.
+            read_times = fa_queries.get_fa_read_times(conn)
+            elsewhere = sum(1 for i in submission_ids if i in read_times and read_times[i][2] != account_id)
+            if elsewhere:
+                logger.warning("FA direct: %d gallery pieces are stored under another account, so they are read "
+                               "every poll (an account removed and added again?)", elsewhere)
+            read_ids = _direct_ids_to_read(
+                submission_ids, {i: t for i, t in read_times.items() if t[2] == account_id},
+                datetime.now(timezone.utc), force_full)
+        _update_fa_progress("fetching_details", message=f"Fetching details for {len(read_ids)} submissions...")
+        if use_direct:
+            details = await client.get_submission_details_batch_direct(read_ids)
         else:
             details = await client.get_submission_details_batch(submission_ids)
         logger.info("FA: Fetched details for %d submissions", len(details))
@@ -476,6 +517,26 @@ async def run_fa_poll_cycle(account_id: int | None = None, force_full: bool = Fa
                 logger.warning("Error processing FA submission %s: %s", detail.get("submission_id"), e, exc_info=True)
 
         conn.commit()
+
+        if use_direct:
+            # Spec 092: every gallery piece without a row at this poll's time repeats its last real numbers, so
+            # per-poll totals stay whole. No await between the insert and its commit (2.26.3). On an error, roll
+            # back here: the handler below commits on this connection and would save a half-written set.
+            carried = 0
+            try:
+                if account_id is not None:      # no account, no stored pieces to carry
+                    carried = fa_queries.carry_forward_fa_snapshots(conn, account_id, submission_ids, poll_timestamp)
+                    conn.commit()
+            except Exception as ce:  # noqa: BLE001 — a missing carry-forward must not fail the poll
+                conn.rollback()
+                carried = 0
+                logger.warning("FA direct: carry-forward failed, this poll's totals cover only the pieces read: %s",
+                               ce, exc_info=True)
+            read = stats["snapshots_inserted"]
+            stats["snapshots_inserted"] += carried     # rows written: the summary's "342 snapshots" stays true
+            logger.log(logging.WARNING if read < len(read_ids) else logging.INFO,
+                       "FA direct: read %d of %d pieces (%d asked for), carried %d forward",
+                       read, len(submission_ids), len(read_ids), carried)
 
         # ── Step 5: Fetch watchers (confirmation delay + spam protection) ──
         #

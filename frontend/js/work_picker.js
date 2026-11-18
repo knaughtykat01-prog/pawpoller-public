@@ -16,6 +16,7 @@
  *     confirmLabel: 'Add selected',
  *     multi: true,                              // default true
  *     pickOnClick: false,                       // single mode: a card click confirms at once
+ *     more: { href: '#/artwork/new', label: 'Upload new artwork' },   // a way out when it isn't listed
  *     onConfirm: async (items) => { ... },      // items: [{member_type, member_ref, title, badge, thumb}]
  *   });
  */
@@ -137,6 +138,7 @@
                 </div>
                 <div class="tag-browser-footer">
                     <div class="tag-browser-count" id="wp-count">0 selected</div>
+                    ${opts.more ? `<a class="btn btn-secondary wp-more" data-wp-more href="${esc(opts.more.href)}">${esc(opts.more.label)}</a>` : ''}
                     <button type="button" class="btn btn-primary" id="wp-confirm" disabled>${esc(confirmLabel)}</button>
                 </div>
             </div>`;
@@ -158,6 +160,7 @@
         document.addEventListener('keydown', onKey);
         root.querySelector('[data-wp-backdrop]').addEventListener('click', close);
         root.querySelector('[data-wp-close]').addEventListener('click', close);
+        root.querySelector('[data-wp-more]')?.addEventListener('click', close);   // the link itself goes to its page
 
         const renderSelected = () => {
             if (!selected.size) { selectedEl.innerHTML = '<span class="tag-browser-selected-empty">Nothing selected yet</span>'; return; }

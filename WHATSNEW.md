@@ -2,6 +2,16 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.92.1] - 2026-11-18 - The Publish to list says what it means
+
+> - Scheduling or posting artwork from Start: the piece picker has an Upload new artwork button for when the piece isn't in your Library yet.
+> - When a site can't take a piece, the reason is now written under that site in the Publish to list. Before, it only showed on hover, so never on a phone.
+> - The Publish to list now starts with a line saying what the ticks, the faded sites and Other sites mean.
+> - FurAffinity checks now ask FurAffinity for about a third as many pages, so its bot check should turn PawPoller away much less often.
+> - New pieces and your newest 48 are still read at every check. Older FurAffinity pieces now update about once a day.
+> - Totals and charts stay steady between checks: a piece that wasn't read keeps its last numbers.
+> - Full resync on the FurAffinity page still reads every piece.
+
 ## [4.92.0] - 2026-11-17 - Announcements, and alerts you can close
 
 > - PawPoller can now show you a short announcement from us, as one line under the top bar. Press Details to read it and ✕ to close it.
@@ -248,12 +258,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Prefer the old first page? Settings → Appearance → Home screen switches back to the Overview.
 > - Links everywhere now use your theme's colour instead of the browser's blue. Start has Library and Settings cards, and its extra links are buttons.
 > - Security: PawPoller now requires the certificate update that stops a compromised certificate authority being trusted.
-
-## [4.85.1] - 2026-10-23 - Quick fixes
-
-> - The Promo Maker now has a megaphone icon instead of sparkles, which many people read as "AI".
-> - The DeviantArt guide now walks you through copying the cookie for description changes, one step at a time.
-> - A link on another website can no longer wipe your saved app and editor drafts through the "Refresh PawPoller" page.
-> - Oversized or broken uploads are now turned away straight away, with a clear message instead of an error.
-> - Servers that host Instagram pictures for other installs now host pictures only, with tighter limits.
-> - Playing a sound no longer leaves an error in the browser console.

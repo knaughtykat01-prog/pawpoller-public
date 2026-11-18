@@ -155,9 +155,11 @@ def _schedule_retry(story_name: str, ch_idx: int, platform: str, action: str,
     _err_l = (error or "").lower()
     _permanent = next((m for m in _PERMANENT_ERROR_MARKERS if m in _err_l), None)
     if _permanent:
-        logger.warning("Retry: %s ch%d on %s — permanent credential/config error, "
-                       "NOT retrying (fix it in Settings, then re-queue): %s",
-                       story_name, ch_idx, platform, error[:160])
+        # A bot check is the site turning PawPoller away, not something to fix in Settings (spec 092).
+        why = ("the site's bot check turned PawPoller away, NOT retrying (only waiting clears it)"
+               if "bot check" in _permanent else
+               "permanent credential/config error, NOT retrying (fix it in Settings, then re-queue)")
+        logger.warning("Retry: %s ch%d on %s — %s: %s", story_name, ch_idx, platform, why, error[:160])
         return False
 
     # The upload half already succeeded and only the metadata step failed, so

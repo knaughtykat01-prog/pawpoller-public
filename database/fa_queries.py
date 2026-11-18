@@ -136,6 +136,41 @@ def insert_fa_snapshot(conn: sqlite3.Connection, account_id: int, submission_id:
     )
 
 
+def get_fa_read_times(conn: sqlite3.Connection) -> dict[int, tuple[str | None, int, int]]:
+    """``submission_id -> (updated_at, views, account_id)`` for every stored FA piece (spec 092).
+
+    ``updated_at`` is when the piece was last really read: only the upsert writes it, and that runs only after a
+    page parsed. Every account's rows, so the poller can also count gallery pieces stored under another account.
+    """
+    return {r["submission_id"]: (r["updated_at"], r["views"] or 0, r["account_id"])
+            for r in conn.execute("SELECT submission_id, updated_at, views, account_id FROM fa_submissions")}
+
+
+def carry_forward_fa_snapshots(conn: sqlite3.Connection, account_id: int, submission_ids: list[int],
+                               polled_at: str) -> int:
+    """Give each of *submission_ids* that has no snapshot at *polled_at* one with its last real numbers (spec 092).
+
+    A direct poll reads only some pieces; per-poll totals add up every piece's row, so the rest repeat what they
+    had. Only pieces stored under *account_id* (FR-SEC-001). Never touches fa_submissions, so a piece's last-read
+    time is unchanged. Does NOT commit: the caller commits once, or rolls the whole set back (FR-SEC-003).
+    Returns the number of rows written.
+    """
+    written = 0
+    for i in range(0, len(submission_ids), 500):      # SQLite's bound-variable limit is 999 on older builds
+        chunk = submission_ids[i:i + 500]
+        cur = conn.execute(
+            "INSERT INTO fa_snapshots (account_id, submission_id, polled_at, views, favorites_count, comments_count) "
+            "SELECT s.account_id, s.submission_id, ?, s.views, s.favorites_count, s.comments_count "
+            "FROM fa_submissions s "
+            f"WHERE s.account_id = ? AND s.submission_id IN ({','.join('?' * len(chunk))}) "
+            "AND NOT EXISTS (SELECT 1 FROM fa_snapshots x "
+            "                WHERE x.submission_id = s.submission_id AND x.polled_at = ?)",
+            [polled_at, account_id, *chunk, polled_at],
+        )
+        written += cur.rowcount
+    return written
+
+
 def get_fa_snapshots(conn: sqlite3.Connection, submission_id: int, start: str | None = None, end: str | None = None) -> list[dict]:
     """Per-submission time-series with optional date range filtering.
     Mirrors queries.get_snapshots for the fa_snapshots table."""

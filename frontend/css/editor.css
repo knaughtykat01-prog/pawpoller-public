@@ -1862,6 +1862,7 @@ html:not([data-mobile="1"]) .editor-actions {
    (work_picker.js). Reuses .tag-browser-* for the frame; these style the
    thumbnail cards that replace tag chips in the grid.
    ======================================================================= */
+.wp-more { margin-left: auto; }   /* beside the confirm button, not floating mid-footer */
 .wp-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

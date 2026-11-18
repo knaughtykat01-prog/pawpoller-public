@@ -964,3 +964,71 @@ def test_an_unchanged_refresh_leaves_the_bar_and_the_focus_alone(browser, app_ur
         assert page.locator("#pp-announce").get_attribute("role") == "status"
     finally:
         tab.close()
+
+
+@pytest.mark.parametrize("mode", ["schedule", "post"])
+@pytest.mark.parametrize("width", [1400, 390], ids=["computer", "phone"])
+def test_the_piece_picker_offers_upload(browser, app_url, mode, width):
+    """PICKUPLOAD: when the piece to schedule or post isn't in the Library yet, the picker has a way to add it."""
+    tab = _Watched(browser, app_url, {"width": width, "height": 844})
+    page = tab.page
+    try:
+        tab.open(f"#/start/{mode}")
+        page.locator('[data-start-pick="artwork"]').click()
+        more = page.locator(".wp-root [data-wp-more]")
+        more.wait_for()
+        assert more.inner_text() == "Upload new artwork"
+        box = more.bounding_box()
+        assert box["x"] >= 0 and box["x"] + box["width"] <= width, box
+        more.click()
+        page.wait_for_selector(".wp-root", state="detached")
+        assert page.evaluate("location.hash") == "#/artwork/new"
+        page.goto(f"{app_url}/#/start/{mode}")
+        page.locator('[data-start-pick="story"]').click()
+        page.wait_for_selector(".wp-root .wp-grid")
+        assert page.locator(".wp-root [data-wp-more]").count() == 0      # only the artwork picker has it
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()
+
+
+@pytest.mark.parametrize("width", [1400, 390], ids=["computer", "phone"])
+def test_a_refused_site_says_why_on_the_row(browser, app_url, width):
+    """PUBLISHTO: the site list says what it is, a refused site's reason is words under the row (a phone has
+    no tooltip), and gating a row never re-enables the box of a site with no account."""
+    tab = _Watched(browser, app_url, {"width": width, "height": 844})
+    page = tab.page
+    try:
+        tab.open("#/artwork/new")
+        page.wait_for_selector("#art-platforms .other-sites")
+        assert "Tick the sites to post to" in page.locator("#art-platforms .artwork-plat-hint").inner_text()
+        got = page.evaluate("""() => {
+            const q = s => document.querySelector('#art-platforms ' + s);
+            const on = q('.artwork-plat-row[data-platform]:not(.is-unavailable):not([hidden])');
+            const off = q('.other-sites .artwork-plat-row[data-platform]');
+            const box = r => r.querySelector('.art-plat-check');
+            const out = { offBefore: box(off).disabled };
+            Artwork._gateRow(off, true, '');
+            out.offAfterOk = box(off).disabled;
+            Artwork._gateRow(off, false, 'No');
+            Artwork._gateRow(off, true, '');
+            out.offAfterRefusedThenOk = box(off).disabled;
+            box(on).checked = true;
+            Artwork._gateRow(on, false, '<b>Adult work</b> is not allowed');
+            const why = on.querySelector('.artwork-plat-why');
+            const r = why.getBoundingClientRect();
+            Object.assign(out, { refusedDisabled: box(on).disabled, refusedChecked: box(on).checked,
+                why: why.textContent, markup: why.children.length, left: r.left, right: r.right,
+                seen: getComputedStyle(why).opacity });
+            Artwork._gateRow(on, true, '');
+            out.backOn = !box(on).disabled && !on.querySelector('.artwork-plat-why');
+            return out;
+        }""")
+        assert got["offBefore"] and got["offAfterOk"] and got["offAfterRefusedThenOk"], got
+        assert got["refusedDisabled"] and not got["refusedChecked"], got
+        assert got["why"] == "<b>Adult work</b> is not allowed" and got["markup"] == 0, got
+        assert got["left"] >= 0 and got["right"] <= width and got["seen"] == "1", got
+        assert got["backOn"], got
+        assert not tab.errors, tab.errors
+    finally:
+        tab.close()

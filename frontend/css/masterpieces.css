@@ -462,7 +462,10 @@ html[data-mobile="1"] #shelf-view-btn { display: none; }
 .mp-media-badge { font-size: .55em; font-weight: 600; vertical-align: middle; padding: 2px 8px; border-radius: 999px;
                   background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap; }
 .mp-lightbox-video { max-width: 92vw; max-height: 88vh; background: #000; border-radius: 10px; }
-.artwork-plat-row.is-media-refused { opacity: .45; }
+/* 4.92.1: the row's parts fade, the reason under it stays readable. */
+.artwork-plat-row.is-media-refused > :not(.artwork-plat-why) { opacity: .45; }
+.artwork-plat-why { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--text-muted); }
+.artwork-plat-hint { margin: .2rem 0 .6rem; }
 .artwork-plat-row.is-media-refused .artwork-plat-toggle { cursor: not-allowed; }
 .qp-plat-chip.is-media-refused { cursor: not-allowed !important; }
 
