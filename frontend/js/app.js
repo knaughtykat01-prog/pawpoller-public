@@ -2775,6 +2775,7 @@ const App = {
                     <div class="login-field">
                         <label>2FA Code</label>
                         <input type="text" id="dash-login-totp" class="search-input" placeholder="6-digit code or a backup code" style="width:100%" autocomplete="one-time-code" maxlength="20">
+                        <p class="signup-hint">Lost your authenticator app? Type one of your backup codes. No codes either? Press <b>Forgot your password?</b> below.</p>
                     </div>` : ''}
                     <div id="dash-turnstile-container"></div>
                     <label class="login-remember">
@@ -3161,7 +3162,8 @@ const App = {
         const li = (items) => '<ol class="signup-steps">' + items.map(t => `<li>${t}</li>`).join('') + '</ol>';
         const after = '<p class="signup-hint">This signs out every browser. If you think someone else got in, open '
             + '<b>Settings → Security → API keys</b> afterwards and remove any you don\'t recognise.</p>'
-            + '<p class="signup-hint">Lost your two-step app and backup codes as well? This doesn\'t turn two-step off, so it can\'t get you back in.</p>';
+            + '<p class="signup-hint">Lost your two-step app and backup codes? Do the same steps. After the password, it asks whether to '
+            + 'turn two-step sign-in off: type <b>y</b> and press Enter. If you still know your password, you can type it again as the new one.</p>';
         if (kind === 'hosted') return '<p class="signup-lead">Ask the person who runs your PawPoller seat to reset it for you.</p>';
         if (kind === 'docker') return li([
             'Log in to the server and go into PawPoller\'s folder (<code>cd pawpoller-public</code>).',

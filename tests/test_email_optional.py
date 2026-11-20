@@ -211,6 +211,58 @@ def test_console_reset_ends_every_sign_in(monkeypatch, capsys):
     assert "API keys" in capsys.readouterr().out
 
 
+def _with_2fa():
+    config.save_settings({"auth_totp_secret": "JBSWY3DPEHPK3PXP", "auth_totp_enabled": True,
+                          "auth_totp_backup_codes": ["x"], "auth_totp_pending_secret": "KRSXG5CTMVRXEZLU"})
+
+
+def test_console_reset_can_turn_two_step_off(monkeypatch, capsys):
+    """A desktop install that lost its authenticator app and its backup codes had no way back in: the reset kept
+    2FA on. It now asks, and y turns it off (every 2FA key goes); the password changes either way."""
+    import server
+    _signed_up()
+    _with_2fa()
+    asked = []
+    monkeypatch.setattr(server, "_ask_yes", lambda prompt: asked.append(prompt) or True)
+    assert _console_reset(monkeypatch) == 0
+    s = config.get_settings()
+    assert len(asked) == 1 and "Two-step sign-in is on" in asked[0]
+    assert not any(s.get(k) for k in ("auth_totp_secret", "auth_totp_enabled", "auth_totp_pending_secret", "auth_totp_backup_codes"))
+    assert config.verify_password("a fresh password", s["auth_password_hash"])
+    assert "Two-step sign-in is off" in capsys.readouterr().out
+
+
+def test_console_reset_keeps_two_step_unless_asked(monkeypatch, capsys):
+    import server
+    _signed_up()
+    _with_2fa()
+    monkeypatch.setattr(server, "_ask_yes", lambda prompt: False)
+    assert _console_reset(monkeypatch) == 0
+    s = config.get_settings()
+    assert s.get("auth_totp_enabled") and s.get("auth_totp_secret") == "JBSWY3DPEHPK3PXP"
+    assert "stays on" in capsys.readouterr().out
+
+
+def test_console_reset_only_asks_about_two_step_when_it_is_on(monkeypatch):
+    import server
+    _signed_up()
+    monkeypatch.setattr(server, "_ask_yes", lambda prompt: pytest.fail("asked with 2FA off"))
+    assert _console_reset(monkeypatch) == 0
+
+
+def test_the_yes_no_question_reads_the_windows_console_itself(monkeypatch, capsys):
+    """The Windows build is a windowed program: no stdin, so input() would fail. It reads keys as getpass does,
+    and only y or yes is yes (Ctrl+C is no; a backspace takes the last key back)."""
+    import sys
+    import types
+    import server
+    for keys, want in (("y\r", True), ("YES\r", True), ("\r", False), ("n\r", False), ("x\by\r", True), ("y\x03", False)):
+        monkeypatch.setitem(sys.modules, "msvcrt", types.SimpleNamespace(getwche=iter(keys).__next__))
+        monkeypatch.setattr(server.sys, "platform", "win32")
+        monkeypatch.setattr("builtins.input", lambda *a: pytest.fail("input() on Windows"))
+        assert server._ask_yes("? ") is want, keys
+
+
 def test_console_reset_refuses_while_pawpoller_is_open(monkeypatch, capsys):
     _signed_up()
     before = config.get_settings()["auth_password_hash"]

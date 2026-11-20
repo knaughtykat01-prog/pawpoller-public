@@ -631,6 +631,10 @@ def _reset_password(port: int | None = None) -> int:
 
     The password is read from a prompt, never an argument, so it does not land in shell
     history or in the process list where any local user could read it.
+
+    4.92.3 (TOTPRESET): with two-step sign-in on, it then asks whether to turn that off too. A desktop install that
+    lost its authenticator app and its backup codes had no way back in: this reset left 2FA on. Same reasoning as the
+    password: it needs this machine's console, and that already has the vault holding the 2FA key.
     """
     import getpass
 
@@ -668,9 +672,44 @@ def _reset_password(port: int | None = None) -> int:
     except Exception as e:
         print(f"Could not save the new password: {e}")
         return 1
-    print("Password changed. Start PawPoller again and sign in with it.")
+    print("Password changed.")
+    if config.get_settings().get("auth_totp_enabled"):
+        if _ask_yes("Two-step sign-in is on. Turn it off too? Only if you've lost your authenticator app and your "
+                    "backup codes. Type y and press Enter to turn it off, or just press Enter to keep it: "):
+            config.delete_settings_keys(["auth_totp_secret", "auth_totp_enabled",
+                                         "auth_totp_pending_secret", "auth_totp_backup_codes"])
+            logger.info("TOTP 2FA disabled by the console reset")
+            print("Two-step sign-in is off. Once you're in, turn it on again in Settings, then Security, with a new key.")
+        else:
+            print("Two-step sign-in stays on.")
+    print("Start PawPoller again and sign in.")
     print("If someone else may have got in, open Settings, then Security, then API keys, and remove any you don't recognise.")
     return 0
+
+
+def _ask_yes(prompt: str) -> bool:
+    """A yes/no question in the reset's console; anything but y or yes is no. The Windows build is a windowed
+    program with no stdin, so there it reads the console itself, as getpass does."""
+    print(prompt, end="", flush=True)
+    if sys.platform == "win32":
+        import msvcrt
+        typed: list[str] = []
+        while (ch := msvcrt.getwche()) not in ("\r", "\n"):
+            if ch == "\x03":   # Ctrl+C
+                print("", flush=True)
+                return False
+            if ch == "\b":
+                typed = typed[:-1]
+            else:
+                typed.append(ch)
+        print("", flush=True)
+        answer = "".join(typed)
+    else:
+        try:
+            answer = input()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+    return answer.strip().lower() in ("y", "yes")
 
 
 def _app_running(*ports: int) -> bool:

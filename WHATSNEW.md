@@ -2,6 +2,11 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.92.3] - 2026-11-21 - A way back in after losing your two-step app
+
+> - Lost your authenticator app and your backup codes? The password reset on your computer now offers to turn two-step sign-in off.
+> - The sign-in page now says what to do if you've lost your authenticator app.
+
 ## [4.92.2] - 2026-11-20 - Two-step sign-in works with more authenticator apps
 
 > - Two-step sign-in codes now work when they're pasted with a space in the middle, the way many authenticator apps show them ("123 456").
@@ -241,13 +246,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Post forms list the sites you can post to first. The rest sit under "Other sites", each with a Connect link.
 > - Sites you've switched off in Settings no longer appear on post forms or Quick publish.
 > - When Inkbunny says "slow down" while PawPoller reads comments, it stops for that check instead of signing in again and again.
-
-## [4.87.0] - 2026-10-24 - Every site reports back
-
-> - Every site you post to now says how it went, in the results and in the bell, even if you closed the page.
-> - If a site takes the upload but sends back no link, PawPoller says so and asks you to check the site before posting again. It won't post it twice.
-> - When PawPoller gives up retrying a site, the bell says so, with the last reason.
-> - A post cut off by PawPoller restarting shows as "not sent" in the bell. Nothing is re-posted on its own.
-> - Tags sent to e621 are now written the way e621 wants them: lower case, underscores for spaces.
-> - Tags a site won't accept (an accent on e621, a very long tag on Itaku) are named on the result, with the reason.
-> - Before you press Publish, the confirmation lists each site that would refuse the piece, and why.

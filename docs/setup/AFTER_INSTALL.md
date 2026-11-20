@@ -293,6 +293,19 @@ Every way of resetting signs out every browser that was signed in. You have to b
 If you think someone else got in, open **Settings → Security → API keys** afterwards and remove any
 you don't recognise.
 
+**I lost my authenticator app (two-step sign-in).**
+
+1. On the sign-in page, type one of your backup codes in the code box, for example `1a2b-3c4d`.
+   You were shown ten when you turned two-step sign-in on. Each one works once.
+2. Once you're in, open **Settings → Security** and turn two-step sign-in off.
+3. In your authenticator app, delete the old PawPoller entry. Then turn two-step sign-in on again
+   in **Settings → Security** and add the new key it shows.
+
+No backup codes either? Follow **I forgot my password** above, on the machine PawPoller runs on.
+After the new password, it asks whether to turn two-step sign-in off: type `y` and press Enter.
+If you still know your password, you can type the same one again as the new one. On a hosted
+seat, ask the person who runs it.
+
 **The phone can't open my address (Paths B and C).**
 Open the Tailscale app on the phone and check it says **Connected**, and that it's signed in to the
 same account as the computer or server.
