@@ -2774,7 +2774,7 @@ const App = {
                     ${totpEnabled ? `
                     <div class="login-field">
                         <label>2FA Code</label>
-                        <input type="text" id="dash-login-totp" class="search-input" placeholder="6-digit code" style="width:100%" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+                        <input type="text" id="dash-login-totp" class="search-input" placeholder="6-digit code or a backup code" style="width:100%" autocomplete="one-time-code" maxlength="20">
                     </div>` : ''}
                     <div id="dash-turnstile-container"></div>
                     <label class="login-remember">
@@ -3626,11 +3626,11 @@ const App = {
                 <p class="signup-lead">An app on your phone gives you a 6-digit code to type after your password, so a stolen password alone can't get in.
                     ${server ? '<strong>Recommended</strong>: this PawPoller is on a server, reachable from the internet.' : 'Optional on a computer only you use.'}</p>
                 <div id="totp-setup-area" hidden>
-                    <p class="signup-hint">Scan this with your authenticator app (Google Authenticator, Authy, 1Password…), or type the key in.</p>
+                    <p class="signup-hint">Scan this with your authenticator app (Google Authenticator, Authy, 1Password…), or type the key in. If the app asks, pick 6 digits.</p>
                     <div id="totp-qr" style="margin:12px 0;text-align:center"></div>
                     <code id="totp-secret" style="display:block;word-break:break-all;margin-bottom:12px"></code>
                     <div class="login-field"><label for="signup-totp">6-digit code from the app</label>
-                        <input type="text" id="signup-totp" class="search-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" style="width:100%"></div>
+                        <input type="text" id="signup-totp" class="search-input" inputmode="numeric" autocomplete="one-time-code" maxlength="20" style="width:100%"></div>
                     <div class="login-field"><label for="signup-totp-pw">Your PawPoller password</label>
                         <input type="password" id="signup-totp-pw" class="search-input" autocomplete="current-password" style="width:100%"></div>
                     <button class="btn btn-primary login-btn" type="button" id="signup-totp-enable">Turn it on</button>
@@ -23348,14 +23348,14 @@ const App = {
                     <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Add an extra layer of security with a TOTP authenticator app (Google Authenticator, Authy, etc).</p>
                     <button class="btn btn-primary" id="totp-setup-btn">Set Up 2FA</button>
                     <div id="totp-setup-area" style="display:none;margin-top:16px">
-                        <p style="color:var(--text-muted);font-size:13px">Scan this QR code with your authenticator app, then enter the 6-digit code to verify:</p>
+                        <p style="color:var(--text-muted);font-size:13px">Scan this QR code with your authenticator app, then enter the 6-digit code to verify. If you type the key in and the app asks, pick 6 digits.</p>
                         <div id="totp-qr" style="margin:16px 0;text-align:center"></div>
                         <div style="margin:8px 0">
                             <label style="font-size:12px;color:var(--text-muted)">Manual entry key:</label>
                             <code id="totp-secret" style="display:block;margin-top:4px;font-size:13px;word-break:break-all;color:var(--text-primary)"></code>
                         </div>
                         <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px;margin-top:12px">
-                            <input type="text" id="totp-verify-code" class="search-input" placeholder="6-digit code" style="max-width:200px" inputmode="numeric" maxlength="6">
+                            <input type="text" id="totp-verify-code" class="search-input" placeholder="6-digit code" style="max-width:200px" inputmode="numeric" maxlength="20">
                             <input type="password" id="totp-verify-pw" class="search-input" placeholder="Your account password" style="max-width:280px">
                         </div>
                         <div style="margin-top:12px;display:flex;align-items:center;gap:12px">

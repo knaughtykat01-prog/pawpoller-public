@@ -15,6 +15,9 @@ def _app(monkeypatch):
     monkeypatch.setattr(config, "is_dashboard_auth_required", lambda: False)
     import dashboard
     app = dashboard.app
+    # The throwaway routes go on a copy of the route list that is put back when the test ends: left on the shared
+    # app, they showed up in every later route check on the same worker (test_routes_snapshot failed by order).
+    monkeypatch.setattr(app.router, "routes", list(app.router.routes))
     # Register throwaway routes that raise the two shapes we care about.
     if not any(r.path == "/api/_test_500" for r in app.routes):
         @app.get("/api/_test_500")

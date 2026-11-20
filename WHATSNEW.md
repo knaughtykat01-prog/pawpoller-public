@@ -2,6 +2,13 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.92.2] - 2026-11-20 - Two-step sign-in works with more authenticator apps
+
+> - Two-step sign-in codes now work when they're pasted with a space in the middle, the way many authenticator apps show them ("123 456").
+> - Backup codes now fit in the sign-in box. Before, the box cut them short, so a backup code could never sign you in.
+> - Turning two-step sign-in on or off now tells you when a code is refused because a clock is wrong, and by roughly how much.
+> - Authenticator apps set to show 7- or 8-digit codes, which Authy offers, now work too. Before, the box kept the wrong six digits.
+
 ## [4.92.1] - 2026-11-18 - The Publish to list says what it means
 
 > - Scheduling or posting artwork from Start: the piece picker has an Upload new artwork button for when the piece isn't in your Library yet.
@@ -244,17 +251,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Tags sent to e621 are now written the way e621 wants them: lower case, underscores for spaces.
 > - Tags a site won't accept (an accent on e621, a very long tag on Itaku) are named on the result, with the reason.
 > - Before you press Publish, the confirmation lists each site that would refuse the piece, and why.
-
-## [4.86.0] - 2026-10-23 - Start here
-
-> - PawPoller now opens on a Start screen that asks what you came to do: post, schedule, write, see your numbers or set up a site.
-> - Scheduling a story's chapters is one button on the story's page, in three steps: where, when, then a calendar to check before anything is booked.
-> - Chapters can go out every few minutes, hours or days, up to every 28 days. Drag a chapter on the calendar to move just that one.
-> - If a site would refuse a chapter (too few tags, say), the first step says so and links to the fix.
-> - Each chapter on a story's page has its own Schedule button and shows when it's lined up, with a Cancel.
-> - Schedule something works for every kind of posting: a story, its chapters, artwork, a short post or a journal.
-> - The menu is regrouped: Post & schedule, Make, Organise and Insights. "Queue & Schedule" is now called Scheduled.
-> - Scheduled story posts now keep your "Save as draft" choice. Before, AO3 always saved a draft and Inkbunny and SoFurry always posted publicly.
-> - Prefer the old first page? Settings → Appearance → Home screen switches back to the Overview.
-> - Links everywhere now use your theme's colour instead of the browser's blue. Start has Library and Settings cards, and its extra links are buttons.
-> - Security: PawPoller now requires the certificate update that stops a compromised certificate authority being trusted.

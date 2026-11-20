@@ -57,8 +57,54 @@ def _sanitize_for_log(value: str, limit: int = 64) -> str:
 _BACKUP_CODE_COUNT = 10
 
 
+def _clean_code(code) -> str:
+    """A code as typed or pasted. Authenticator apps show a code as "123 456" (some copy it that way, some with a
+    no-break space) and backup codes read "1a2b-3c4d", so every kind of space and the dashes are dropped first."""
+    return re.sub(r"[\s-]", "", str(code or ""))
+
+
 def _hash_backup_code(code: str) -> str:
-    return hashlib.sha256(code.strip().replace("-", "").lower().encode("utf-8")).hexdigest()
+    return hashlib.sha256(_clean_code(code).lower().encode("utf-8")).hexdigest()
+
+
+def _six(code) -> str:
+    """The six-digit code in what was typed. Authy lets an account be saved with 7- or 8-digit codes, and a longer code
+    from the same key and moment always ENDS in the six-digit one (both are the same number cut to length), so it's
+    no easier to guess. The old six-character box kept the first six digits instead, which never matched."""
+    c = _clean_code(code)
+    return c[-6:] if re.fullmatch(r"[0-9]{7,8}", c) else c
+
+
+def _totp_ok(secret: str, code: str) -> bool:
+    """A live authenticator code, allowing one 30-second step of clock drift either way."""
+    import pyotp
+    c = _six(code)
+    return bool(c) and pyotp.TOTP(secret).verify(c, valid_window=1)
+
+
+def _clock_offset(secret: str, code: str) -> int | None:
+    """For a refused code only: the minutes from this machine's clock at which it WOULD be right, when that looks like a
+    clock problem rather than a wrong code; None otherwise. Looks 15 minutes either side, then whole hours up to 14
+    either way (a wrong time zone with the clock then set by hand), each give or take a step: about 140 times, so a
+    random wrong code lands on one about once in 7,000 tries. It never accepts anything; it only explains a refusal."""
+    import pyotp
+    c = _six(code)
+    if not re.fullmatch(r"[0-9]{6}", c):   # ASCII only: compare_digest refuses other digits
+        return None
+    totp, now = pyotp.TOTP(secret), int(time.time())
+    offsets = [n * 30 for n in range(-30, 31) if abs(n) > 1] + [h * 3600 + n * 30 for h in range(-14, 15) if h for n in (-1, 0, 1)]
+    # Every time is tried, not stopping at the first match, so how long a refusal takes says nothing.
+    hits = [off for off in offsets if hmac.compare_digest(totp.at(now + off), c)]
+    return round(min(hits, key=abs) / 60) if hits else None
+
+
+def _clock_words(minutes: int) -> str:
+    """Why a right-looking code was refused, for the owner turning 2FA on or off (they've given the password)."""
+    n = abs(minutes)
+    span = f"about {round(n / 60)} hour{'s' if round(n / 60) != 1 else ''}" if n >= 55 else f"about {n} minute{'s' if n != 1 else ''}"
+    return (f"That code would be right {span} {'ahead of' if minutes > 0 else 'behind'} the clock on the computer running "
+            "PawPoller, so one of the clocks is wrong. Set that computer and your phone to set the time (and time zone) "
+            "automatically, then try a new code.")
 
 
 def _generate_backup_codes() -> tuple[list[str], list[str]]:
@@ -201,16 +247,17 @@ async def dashboard_login(request: Request, body: dict):
     # Check TOTP if enabled — accept a valid TOTP code OR an unused backup code
     # (gap-wave-4), so a lost authenticator can't lock the owner out.
     if settings.get("auth_totp_secret") and settings.get("auth_totp_enabled"):
-        import pyotp
-        totp = pyotp.TOTP(settings["auth_totp_secret"])
-        totp_ok = bool(totp_code) and totp.verify(totp_code, valid_window=1)
+        totp_ok = _totp_ok(settings["auth_totp_secret"], totp_code)
         if not totp_ok and totp_code and _consume_backup_code(totp_code, settings):
             totp_ok = True
             remaining = len(config.get_settings().get("auth_totp_backup_codes") or [])
             logger.info("Auth: login via 2FA backup code (ip=%s, %d left)", client_ip, remaining)
         if not totp_ok:
             _record_auth_failure(client_ip)
-            logger.warning("Auth: login failed — bad 2FA code (ip=%s user=%s)", client_ip, _log_user)
+            off = _clock_offset(settings["auth_totp_secret"], totp_code)
+            # The person signing in may not be the owner, so the clock hint goes in the owner's log, not the reply.
+            logger.warning("Auth: login failed — bad 2FA code (ip=%s user=%s)%s", client_ip, _log_user,
+                           "" if off is None else f"; it would be right {off:+d} min from this machine's clock: check the clock")
             raise HTTPException(401, "Invalid or missing 2FA code.")
 
     # Success — clear rate limit history and create session
@@ -658,7 +705,9 @@ def totp_setup():
     settings = config.get_settings()
     username = settings.get("auth_username", "admin")
     totp = pyotp.TOTP(secret)
-    uri = totp.provisioning_uri(name=username, issuer_name="PawPoller")
+    # Said outright (pyotp leaves out the defaults): an app that picks its own code length when it isn't told, such as
+    # Authy, then makes the six-digit, 30-second, SHA-1 codes this checks.
+    uri = totp.provisioning_uri(name=username, issuer_name="PawPoller") + "&algorithm=SHA1&digits=6&period=30"
 
     # Store pending secret (not yet active)
     config.save_settings({"auth_totp_pending_secret": secret})
@@ -674,7 +723,6 @@ def totp_enable(body: dict):
     session hijack from binding an attacker's authenticator and locking the
     owner out). Returns one-time backup codes to store — shown ONCE.
     """
-    import pyotp
     code = body.get("code", "").strip()
     password = body.get("password", "")
     if not code:
@@ -689,9 +737,9 @@ def totp_enable(body: dict):
     if not pending:
         raise HTTPException(400, "No pending TOTP setup. Call /totp-setup first.")
 
-    totp = pyotp.TOTP(pending)
-    if not totp.verify(code, valid_window=1):
-        raise HTTPException(400, "Invalid code. Check your authenticator app and try again.")
+    if not _totp_ok(pending, code):
+        off = _clock_offset(pending, code)
+        raise HTTPException(400, _clock_words(off) if off is not None else "Invalid code. Check your authenticator app and try again.")
 
     # Activate: move pending secret to active + issue recovery codes.
     plain_codes, hashes = _generate_backup_codes()
@@ -729,7 +777,6 @@ def totp_regenerate_backup_codes(body: dict):
 @dashboard_auth_router.post("/totp-disable")
 def totp_disable(body: dict):
     """Disable 2FA.  Requires password and a valid TOTP code for safety."""
-    import pyotp
     password = body.get("password", "")
     code = body.get("code", "").strip()
 
@@ -744,9 +791,9 @@ def totp_disable(body: dict):
 
     # Accept a live TOTP code OR an unused backup code (gap-wave-4) so a lost
     # authenticator can still be turned off from the UI (with the password).
-    totp = pyotp.TOTP(totp_secret)
-    if not ((code and totp.verify(code, valid_window=1)) or _consume_backup_code(code, settings)):
-        raise HTTPException(400, "Invalid 2FA code (use an authenticator code or a backup code).")
+    if not (_totp_ok(totp_secret, code) or _consume_backup_code(code, settings)):
+        off = _clock_offset(totp_secret, code)
+        raise HTTPException(400, _clock_words(off) if off is not None else "Invalid 2FA code (use an authenticator code or a backup code).")
 
     config.delete_settings_keys(["auth_totp_secret", "auth_totp_enabled",
                                  "auth_totp_pending_secret", "auth_totp_backup_codes"])

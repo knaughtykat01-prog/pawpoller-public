@@ -141,3 +141,116 @@ def test_a_revoked_api_key_stops_working_at_once():
     assert c.delete(f"/api/auth/api-keys/{made['prefix']}").status_code == 200
     assert not config.validate_api_key(made["key"])
     assert c.delete(f"/api/auth/api-keys/{made['prefix']}").status_code == 404
+
+
+def test_a_code_with_a_space_or_dash_in_it_still_works():
+    """Authenticator apps show a code as "123 456", and some copy it that way (or with a no-break space): the gap
+    isn't part of the code. Turning 2FA on and signing in both take it; a code that's still wrong is still refused."""
+    _configure()
+    import pyotp
+    c = _client()
+    secret = c.post("/api/auth/totp-setup").json()["secret"]
+    code = pyotp.TOTP(secret).now()
+    r = c.post("/api/auth/totp-enable", json={"code": f"{code[:3]} {code[3:]}", "password": "pw12345678"})
+    assert r.status_code == 200, r.text
+    code = pyotp.TOTP(secret).now()
+    for typed in (f"{code[:3]} {code[3:]}", f"{code[:3]}-{code[3:]}", f" {code} "):
+        ok = c.post("/api/auth/dashboard-login", json={"username": "admin", "password": "pw12345678", "totp_code": typed})
+        assert ok.status_code == 200, repr(typed)
+    wrong = str((int(code) + 500000) % 1000000).zfill(6)
+    bad = c.post("/api/auth/dashboard-login", json={"username": "admin", "password": "pw12345678", "totp_code": f"{wrong[:3]} {wrong[3:]}"})
+    assert bad.status_code == 401
+
+
+def test_a_backup_code_typed_with_a_space_still_works():
+    plain, hashes = da._generate_backup_codes()
+    config.save_settings({"auth_totp_backup_codes": hashes})
+    assert da._consume_backup_code(plain[0].replace("-", " "), config.get_settings())
+
+
+def test_the_code_boxes_fit_a_backup_code():
+    """A backup code is nine characters ("1a2b-3c4d"). A six-character box cut it to "1a2b-3", so it could never sign
+    in, and cut a pasted "123 456" to "123 45". The sign-in box also takes letters, which a backup code has."""
+    import re
+    from pathlib import Path
+    js = (Path(__file__).resolve().parent.parent / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
+    tag = lambda box: re.search(r'<input[^>]*id="' + box + r'"[^>]*>', js).group(0)
+    for box in ("dash-login-totp", "signup-totp", "totp-verify-code"):
+        n = re.search(r'maxlength="(\d+)"', tag(box))
+        assert not n or int(n.group(1)) >= 11, box
+    assert 'inputmode="numeric"' not in tag("dash-login-totp")
+
+
+def _wrong_everywhere(secret):
+    """A six-digit code that isn't right at any time the clock check looks at."""
+    for n in range(1000000):
+        c = str((n * 7919) % 1000000).zfill(6)
+        if not da._totp_ok(secret, c) and da._clock_offset(secret, c) is None:
+            return c
+
+
+def test_a_code_right_for_another_time_says_the_clock_is_out():
+    """Running PawPoller on your own computer, its clock is the one codes are checked against. A code that's right a
+    few minutes or a few hours (a wrong time zone, the time then set by hand) from that clock is refused, and turning
+    2FA on says which way the clocks disagree; a code that's simply wrong says so plainly. Nothing is accepted."""
+    import time
+    import pyotp
+    _configure()
+    c = _client()
+    secret = c.post("/api/auth/totp-setup").json()["secret"]
+    totp = pyotp.TOTP(secret)
+    for shift, words in ((600, "about 10 minutes ahead of"), (-3 * 3600, "about 3 hours behind")):
+        r = c.post("/api/auth/totp-enable", json={"code": totp.at(time.time() + shift), "password": "pw12345678"})
+        assert r.status_code == 400 and words in r.json()["detail"], r.text
+    r = c.post("/api/auth/totp-enable", json={"code": _wrong_everywhere(secret), "password": "pw12345678"})
+    assert r.status_code == 400 and "clock" not in r.json()["detail"]
+    assert not config.get_settings().get("auth_totp_enabled")
+
+
+def test_signing_in_with_a_code_for_another_time_logs_the_clock_not_the_reply(caplog):
+    import logging
+    import time
+    import pyotp
+    _configure()
+    c = _client()
+    _enable_2fa(c)
+    secret = config.get_settings()["auth_totp_secret"]
+    with caplog.at_level(logging.WARNING):
+        r = c.post("/api/auth/dashboard-login", json={"username": "admin", "password": "pw12345678",
+                                                      "totp_code": pyotp.TOTP(secret).at(time.time() - 600)})
+    assert r.status_code == 401 and "clock" not in r.text, "the person signing in may not be the owner"
+    assert "would be right -10 min from this machine's clock" in caplog.text
+
+
+def test_a_seven_or_eight_digit_code_from_the_same_key_works():
+    """Authy lets an account be saved with 7- or 8-digit codes. A longer code from the same key and moment ends in the
+    six-digit one, so it's taken by its last six digits (no easier to guess); its first six never match. And the
+    QR code now says six digits, 30 seconds and SHA-1 outright, so an app doesn't have to guess."""
+    import time
+    import pyotp
+    _configure()
+    c = _client()
+    r = c.post("/api/auth/totp-setup").json()
+    assert r["uri"].endswith("&algorithm=SHA1&digits=6&period=30")
+    assert pyotp.parse_uri(r["uri"]).digits == 6
+    secret = r["secret"]
+    seven = pyotp.TOTP(secret, digits=7).now()
+    assert c.post("/api/auth/totp-enable", json={"code": seven, "password": "pw12345678"}).status_code == 200
+    eight = pyotp.TOTP(secret, digits=8).now()
+    ok = c.post("/api/auth/dashboard-login", json={"username": "admin", "password": "pw12345678", "totp_code": eight})
+    assert ok.status_code == 200
+    wrong7 = "9" + _wrong_everywhere(secret)
+    assert c.post("/api/auth/dashboard-login", json={"username": "admin", "password": "pw12345678", "totp_code": wrong7}).status_code == 401
+    later = pyotp.TOTP(secret, digits=7).at(time.time() + 600)
+    assert c.post("/api/auth/totp-disable", json={"password": "pw12345678", "code": later}).json()["detail"].startswith("That code would be right about 10 minutes ahead")
+
+
+def test_a_code_in_other_digits_is_refused_and_logged(caplog):
+    """Fullwidth or other non-ASCII digits: refused with the usual 401 and the usual log line, never a crash."""
+    import logging
+    _configure()
+    c = _client()
+    _enable_2fa(c)
+    with caplog.at_level(logging.WARNING):
+        r = c.post("/api/auth/dashboard-login", json={"username": "admin", "password": "pw12345678", "totp_code": "０" * 6})
+    assert r.status_code == 401 and "bad 2FA code" in caplog.text
