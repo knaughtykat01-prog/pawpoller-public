@@ -1335,6 +1335,7 @@ const API = {
      */
     getDashboardStatus() { return this.get('/api/auth/dashboard-status'); },
     dashboardLogin(data) { return this.post('/api/auth/dashboard-login', data); },
+    setRememberDays(days, password) { return this.post('/api/auth/remember-days', { days, password }); },
     dashboardSetup(data) { return this.post('/api/auth/dashboard-setup', data, { quiet: [400, 403] }); },
     dashboardClaimCheck(claim) { return this.post('/api/auth/dashboard-claim-check', { claim }, { quiet: [429] }); },
     // First sign-up (4.67.0, spec 033)

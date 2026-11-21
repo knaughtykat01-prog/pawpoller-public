@@ -135,7 +135,8 @@ def test_the_in_app_steps_match_the_setup_guide():
                 "docker compose -f docker-compose.image.yml start pawpoller",
                 "Reset PawPoller password", "--reset-password",
                 'schtasks /end /tn "PawPoller Server"', "sudo systemctl stop pawpoller-server",
-                "set PAWPOLLER_APPDATA_DIR=C:\\ProgramData\\PawPoller-Server\\data"):
+                "set PAWPOLLER_APPDATA_DIR=C:\\ProgramData\\PawPoller-Server\\data",
+                '"%LOCALAPPDATA%\\Programs\\PawPoller\\PawPoller.exe" --reset-password'):
         assert cmd in app.replace("\\\\", "\\").replace("\\'", "'").replace("&amp;", "&") and cmd in guide, cmd
     assert "API keys" in app and "API keys" in guide
 
@@ -263,6 +264,18 @@ def test_the_yes_no_question_reads_the_windows_console_itself(monkeypatch, capsy
         assert server._ask_yes("? ") is want, keys
 
 
+def test_the_desktop_build_makes_no_console_log_handler_without_a_console():
+    """The windowed build starts with sys.stdout None. A StreamHandler made on it failed on every record, and once
+    --reset-password opened a console, Python printed each failure there: the real 4.92.3 window showed a
+    "Logging error" traceback when the reset turned two-step sign-in off."""
+    import ast
+    src = (ROOT / "main.py").read_text(encoding="utf-8")
+    call = next(n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "basicConfig")
+    handlers = next(k.value for k in call.keywords if k.arg == "handlers")
+    stream = [e for e in handlers.elts if "StreamHandler" in ast.unparse(e)]
+    assert stream and all(isinstance(e, ast.Starred) and "if sys.stdout" in ast.unparse(e) for e in stream), ast.unparse(handlers)
+
+
 def test_console_reset_refuses_while_pawpoller_is_open(monkeypatch, capsys):
     _signed_up()
     before = config.get_settings()["auth_password_hash"]
@@ -307,6 +320,72 @@ def test_the_installer_adds_the_reset_shortcut():
     iss = (ROOT / "installer" / "PawPoller.iss").read_text(encoding="utf-8", errors="replace")
     line = next(l for l in iss.splitlines() if "Reset {#MyAppName} password" in l)
     assert re.search(r'Parameters:\s*"--reset-password"', line) and '{app}\\{#MyAppExeName}' in line
+    import main
+    assert main.RESET_SHORTCUT == "Reset {#MyAppName} password.lnk".replace("{#MyAppName}", "PawPoller")
+
+
+def _setup_install(tmp_path, uninstaller=True):
+    app = tmp_path / "app"
+    app.mkdir(parents=True)
+    (app / "PawPoller.exe").write_bytes(b"")
+    if uninstaller:
+        (app / "unins000.exe").write_bytes(b"")
+    menu = tmp_path / "menu"
+    menu.mkdir(parents=True)
+    (menu / "PawPoller.lnk").write_bytes(b"")
+    return app / "PawPoller.exe", menu
+
+
+def test_a_setup_install_that_updated_itself_gets_the_reset_item_back(tmp_path):
+    """Updates inside the app never re-run the installer, so a copy installed before 4.88.0 had no
+    "Reset PawPoller password" in its Start menu, and the sign-in page's steps pointed at nothing."""
+    import main
+    calls = []
+
+    def run(cmd, env):
+        calls.append((cmd, env))
+
+    exe, menu = _setup_install(tmp_path)
+    made = main._repair_start_menu(exe, [tmp_path / "no-such-menu", menu], run)
+    assert made == str(menu / "Reset PawPoller password.lnk")
+    cmd, env = calls[0]
+    assert env["PP_LNK"] == made and env["PP_EXE"] == str(exe) and "'--reset-password'" in cmd[-1]
+    assert str(tmp_path) not in " ".join(cmd), "paths reach PowerShell as variables, never as command text"
+    assert cmd[0].lower().endswith("\\system32\\windowspowershell\\v1.0\\powershell.exe"), cmd[0]   # never a bare name
+    (menu / "Reset PawPoller password.lnk").write_bytes(b"")
+    assert main._repair_start_menu(exe, [menu], run) is None and len(calls) == 1      # already there
+
+
+def test_the_reset_item_is_only_added_beside_the_installers_own_item(tmp_path):
+    import main
+    calls = []
+    exe, menu = _setup_install(tmp_path / "portable", uninstaller=False)
+    assert main._repair_start_menu(exe, [menu], lambda cmd, env: calls.append(cmd)) is None   # a portable copy
+    exe, menu = _setup_install(tmp_path / "setup")
+    (menu / "PawPoller.lnk").unlink()                                                          # they removed it
+    assert main._repair_start_menu(exe, [menu], lambda cmd, env: calls.append(cmd)) is None
+    assert calls == []
+
+
+@pytest.mark.skipif(sys.platform != "win32" or not shutil.which("powershell.exe"), reason="Windows shortcuts")
+def test_the_reset_item_really_is_made_on_windows(tmp_path):
+    import main
+    exe, menu = _setup_install(tmp_path / "Program Files (x86) & 'quotes'")
+    made = main._repair_start_menu(exe, [menu])
+    out = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+                          "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:PP_LNK); "
+                          "$s.TargetPath + '|' + $s.Arguments"], env={**__import__("os").environ, "PP_LNK": made},
+                         capture_output=True, text=True, timeout=60, check=True).stdout.strip()
+    assert out == f"{exe}|--reset-password", out
+
+
+def test_the_in_app_uninstall_removes_the_reset_item_the_app_added(tmp_path):
+    import uninstall
+    plan = uninstall.UninstallPlan(uninstall.InstallType.WINDOWS_INSTALLER, str(tmp_path), str(tmp_path / "data"),
+                                   "", False)
+    bat = uninstall._build_windows_script(plan, tmp_path, remove_data=False, remove_app=True).read_text(encoding="utf-8")
+    for base in ("%APPDATA%", "%ProgramData%"):
+        assert f'del "{base}\\Microsoft\\Windows\\Start Menu\\Programs\\Reset PawPoller password.lnk"' in bat
 
 
 # ── implement-stage security review (High): the server's own email gate ──────

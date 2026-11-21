@@ -852,6 +852,9 @@ SYNC_EXCLUDE = frozenset({
     "auth_code_confirm",
     "auth_code_reset",
     "auth_mail_log",
+    # 4.92.4 (STAYSIGNEDIN, release review Medium): how long a remembered sign-in lasts is set here with
+    # this install's password; a paired device's push (or a stolen session's) must not stretch it.
+    "auth_remember_days",
     # 059: "allow sign-in over plain http on my home network" is the owner's own risk choice,
     # made with their password; a paired desktop's push must never switch it on.
     "signin_helper_allow_http",
@@ -1423,7 +1426,7 @@ def merge_synced_settings(incoming: dict, client_timestamp: float | None = None)
 
 
 # ── App metadata ──
-APP_VERSION = "4.92.3"
+APP_VERSION = "4.92.4"
 # Shown after the version wherever people read it ("4.76.0 Beta"): screens, installer, release title,
 # site, Discord. Never part of APP_VERSION: the updater compares plain numbers, and GitHub's
 # releases/latest skips anything marked pre-release. "" at 5.0, the launch (release conventions, 4.76.0).
@@ -1576,7 +1579,35 @@ def rotate_session_secret() -> None:
 
 
 _SESSION_MAX_AGE_SHORT = 86400        # 24 hours (default)
-_SESSION_MAX_AGE_LONG = 30 * 86400   # 30 days ("remember me")
+# How long "Remember me" lasts, picked in Settings → Security (4.92.4, STAYSIGNEDIN); 30 days unless chosen.
+# A year is the most: browsers drop a cookie after 400 days whatever it asks for.
+REMEMBER_DAYS = (30, 90, 365)
+_remember_cache: tuple[tuple, int] | None = None   # ((settings path, mtime_ns), days)
+
+
+def remember_days() -> int:
+    """The chosen "Remember me" length in days; anything not on the list reads as 30.
+
+    Cached against settings.json's mtime: the session check runs on every request and get_settings()
+    decrypts the vault, while a change from anywhere (the endpoint, a restore, the console) still shows.
+    """
+    global _remember_cache
+    try:
+        stamp = (str(SETTINGS_PATH), SETTINGS_PATH.stat().st_mtime_ns)
+    except OSError:
+        stamp = (str(SETTINGS_PATH), 0)
+    if _remember_cache is None or _remember_cache[0] != stamp:
+        d = get_settings().get("auth_remember_days")
+        _remember_cache = (stamp, d if type(d) is int and d in REMEMBER_DAYS else REMEMBER_DAYS[0])
+    return _remember_cache[1]
+
+
+def set_remember_days(days: int) -> None:
+    global _remember_cache
+    if type(days) is not int or days not in REMEMBER_DAYS:
+        raise ValueError(f"not one of {REMEMBER_DAYS}: {days!r}")
+    save_settings({"auth_remember_days": days})
+    _remember_cache = None
 
 
 def sign_session(payload: dict) -> str:
@@ -1596,22 +1627,28 @@ def verify_session(cookie: str) -> dict | None:
     Tries the short max_age first, then the long max_age.  The ``"r"``
     (remember) flag in the payload determines which expiry applies:
     sessions without ``"r": True`` expire after 24 hours; sessions with
-    it expire after 30 days.
+    it after ``remember_days()``, measured from sign-in. The server decides,
+    not the cookie, so shortening it signs older remembered sessions out at once.
     """
     from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
     s = URLSafeTimedSerializer(get_or_create_session_secret())
     # First try with the long max_age (universal upper bound)
     try:
-        payload = s.loads(cookie, max_age=_SESSION_MAX_AGE_LONG)
+        payload = s.loads(cookie, max_age=remember_days() * 86400)
     except (BadSignature, SignatureExpired):
         return None
-    # If not a "remember me" session, enforce the short max_age
-    if not payload.get("r"):
+    # A remembered sign-in lasts the shorter of its own length (4.92.4; `True` is an older cookie, 30 days)
+    # and today's setting, so raising the setting can't bring back one that had already run out.
+    r = payload.get("r")
+    if r:
+        own = r if type(r) is int and r in REMEMBER_DAYS else REMEMBER_DAYS[0]
+        limit = min(own, remember_days()) * 86400
+    else:
+        limit = _SESSION_MAX_AGE_SHORT
+    if limit < remember_days() * 86400:
         try:
-            s.loads(cookie, max_age=_SESSION_MAX_AGE_SHORT)
-        except SignatureExpired:
-            return None
-        except BadSignature:
+            s.loads(cookie, max_age=limit)
+        except (BadSignature, SignatureExpired):
             return None
     return payload
 

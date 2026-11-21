@@ -58,7 +58,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.StreamHandler(sys.stdout),
+        # The windowed build starts with no stdout. A handler made on None fails on every record, and once
+        # --reset-password opens a console, Python prints each failure into it (4.92.4, RESETLOGERR).
+        *([logging.StreamHandler(sys.stdout)] if sys.stdout else []),
         RotatingFileHandler(
             str(config.LOGS_DIR / "app.log"),
             maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8",
@@ -477,6 +479,58 @@ def _open_reset_console(kernel32=None, frozen_windows=None) -> bool:
     return True
 
 
+RESET_SHORTCUT = "Reset PawPoller password.lnk"   # installer/PawPoller.iss [Icons] makes the same one
+
+
+def _repair_start_menu(exe, start_menus, run=None):
+    """Put back the Start menu's "Reset PawPoller password" on a Setup install that lacks it (4.92.4, RESETSHORTCUT).
+
+    Updates inside the app replace the program files and never re-run the installer, so a copy installed
+    before 4.88.0 never got that item, and the sign-in page's steps pointed at nothing. Made only beside
+    the installer's own PawPoller shortcut, so a portable copy or someone who removed every item is left
+    alone. The paths reach PowerShell as environment variables, never as command text.
+    shortcut: makes it again if the person deletes just that one; add a one-time flag if anyone minds.
+    Returns the shortcut made, or None.
+    """
+    from pathlib import Path
+    exe = Path(exe)
+    if not (exe.parent / "unins000.exe").exists():
+        return None
+    for folder in start_menus:
+        folder = Path(folder)
+        lnk = folder / RESET_SHORTCUT
+        if not (folder / "PawPoller.lnk").exists() or lnk.exists():
+            continue
+        import os
+        if run is None:
+            import subprocess
+            run = functools.partial(subprocess.run, creationflags=subprocess.CREATE_NO_WINDOW, cwd=str(exe.parent),
+                                    capture_output=True, timeout=60, check=True)
+        # By full path: a bare name is looked up in the current folder before System32. ntpath: always a
+        # Windows path, so the test reads the same on the Linux image.
+        import ntpath
+        ps = ntpath.join(os.environ.get("SystemRoot") or r"C:\Windows", "System32", "WindowsPowerShell", "v1.0",
+                         "powershell.exe")
+        run([ps, "-NoProfile", "-NonInteractive", "-Command",
+             "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:PP_LNK); $s.TargetPath = $env:PP_EXE; "
+             "$s.Arguments = '--reset-password'; $s.WorkingDirectory = $env:PP_DIR; $s.Save()"],
+            env={**os.environ, "PP_LNK": str(lnk), "PP_EXE": str(exe), "PP_DIR": str(exe.parent)})
+        return str(lnk)
+    return None
+
+
+def _repair_start_menu_quietly() -> None:
+    import os
+    try:
+        made = _repair_start_menu(sys.executable, [os.path.join(os.environ.get(v, ""), "Microsoft", "Windows",
+                                                                "Start Menu", "Programs")
+                                                   for v in ("APPDATA", "PROGRAMDATA") if os.environ.get(v)])
+        if made:
+            logger.info("Start menu: added the Reset PawPoller password item")
+    except Exception as e:
+        logger.warning("Start menu: couldn't add the Reset PawPoller password item: %s", e)
+
+
 def _wait_for_enter() -> None:
     """Keep the reset's window open until it has been read."""
     import msvcrt
@@ -511,6 +565,8 @@ def main():
             techcentre.report("update", "update_gate.run", "UpdateFailed", str(_gate))
     except Exception as e:
         logger.warning("Startup update gate skipped: %s", e)
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        threading.Thread(target=_repair_start_menu_quietly, daemon=True, name="Start menu repair").start()
     from desktop_agent import connect_target, decide_mode
     settings = config.get_settings()
     if decide_mode(sys.argv[1:], settings) == "connected":

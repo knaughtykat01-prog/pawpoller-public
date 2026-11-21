@@ -247,11 +247,14 @@ The sign-in page shows the same steps.
   4. Type it again and press Enter. You'll see *Password changed.* Press Enter to close the window.
   5. Open PawPoller and sign in with the new password.
 
-  No shortcut (a portable copy)? Open a Command Prompt and run the app with `--reset-password`:
+  Not in your Start menu? (A copy installed before October 2026 that has only updated itself may not have
+  it until you start 4.92.4 or later once.) Press the Windows key and R together, paste this and press Enter:
 
   ```
-  "C:\Program Files\PawPoller\PawPoller.exe" --reset-password
+  "%LOCALAPPDATA%\Programs\PawPoller\PawPoller.exe" --reset-password
   ```
+
+  A portable copy: use the folder you unzipped it to instead.
 
 - **Path B (your own computer as a server):**
   - **Windows:** open the Start menu, type `cmd`, right-click **Command Prompt** and choose

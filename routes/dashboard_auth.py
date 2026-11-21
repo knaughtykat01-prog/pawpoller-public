@@ -165,6 +165,7 @@ def dashboard_status(request: Request):
         "reset_email": reset_email,
         "reset_available": reset_email,   # the 4.68.0 name, for older frontends
         "install_kind": _install_kind(),
+        "remember_days": config.remember_days(),   # 4.92.4: the sign-in page's "Remember me (N days)"
         # Remaining 2FA backup codes (gap-wave-4) — only meaningful to an
         # authenticated caller; drives the "regenerate" nudge in Settings.
         "backup_codes_remaining": (
@@ -270,10 +271,10 @@ async def dashboard_login(request: Request, body: dict):
 
 def _session_response(request: Request, username: str, remember: bool, message: str) -> JSONResponse:
     """A JSON success with the signed ``pp_session`` cookie (login, and sign-up since 4.67.0)."""
-    max_age = 30 * 86400 if remember else 86400
-    payload = {"u": username}
+    max_age = config.remember_days() * 86400 if remember else 86400
+    payload: dict[str, str | int] = {"u": username}
     if remember:
-        payload["r"] = True
+        payload["r"] = config.remember_days()   # its own length: raising the setting later can't revive it
     cookie_value = config.sign_session(payload)
 
     response = JSONResponse({"status": "success", "message": message})
@@ -689,6 +690,30 @@ def dashboard_change_password(request: Request, body: dict):
     import account_mail
     account_mail.notice("password_changed", settings.get("auth_email") or "")
     return {"status": "success", "message": "Password updated. Please log in again."}
+
+
+@dashboard_auth_router.post("/remember-days")
+def set_remember_days(request: Request, body: dict):
+    """How long "Remember me" keeps you signed in: 30, 90 or 365 days (4.92.4, STAYSIGNEDIN).
+
+    Needs the password because the server enforces the length, not the cookie: without it a stolen
+    session could stretch itself, and every other remembered one, to a year. Shortening it signs out
+    remembered sessions older than the new length straight away. A remembered session making the
+    change gets a fresh cookie with the new length, so it applies here now rather than from next sign-in.
+    """
+    days = body.get("days")
+    if type(days) is not int or days not in config.REMEMBER_DAYS:
+        raise HTTPException(400, "Choose 30, 90 or 365 days.")
+    stored_hash = config.get_settings().get("auth_password_hash", "")
+    if not stored_hash or not config.verify_password(str(body.get("password") or ""), stored_hash):
+        _wrong_password(request)
+        raise HTTPException(401, "Your account password is required to change this.")
+    config.set_remember_days(days)
+    logger.info("Remember me now lasts %d days", days)
+    session = config.verify_session(request.cookies.get("pp_session") or "")
+    if session and session.get("r") and session.get("u"):
+        return _session_response(request, session["u"], True, f"Saved: {days} days.")
+    return {"status": "success", "message": f"Saved: {days} days."}
 
 
 # -- TOTP 2FA ---------------------------------------------------------------

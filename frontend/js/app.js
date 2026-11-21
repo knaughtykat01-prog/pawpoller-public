@@ -2750,11 +2750,12 @@ const App = {
         }
 
         // Use cached dashboard status from init(), fall back to fresh fetch
-        let totpEnabled = false, turnstileSiteKey = '';
+        let totpEnabled = false, turnstileSiteKey = '', rememberDays = 30;
         try {
             const status = this._dashboardStatus || await API.getDashboardStatus();
             totpEnabled = status.totp_enabled;
             turnstileSiteKey = status.turnstile_site_key || '';
+            rememberDays = status.remember_days || 30;
         } catch { /* proceed with defaults */ }
 
         if (this._stale(_rt)) return;
@@ -2780,7 +2781,7 @@ const App = {
                     <div id="dash-turnstile-container"></div>
                     <label class="login-remember">
                         <input type="checkbox" id="dash-login-remember" checked>
-                        <span>Remember me (30 days)</span>
+                        <span>Remember me (${this._rememberLabel(rememberDays)})</span>
                     </label>
                     <button class="btn btn-primary login-btn" id="dash-login-submit">Sign In</button>
                     <div class="login-error" id="dash-login-error"></div>
@@ -3178,7 +3179,9 @@ const App = {
             'Type your new password and press Enter. Nothing shows while you type; that\'s on purpose.',
             'Type it again and press Enter, then press Enter to close the window.',
             'Open PawPoller and sign in with the new password.'])
-            + '<p class="signup-hint">No shortcut (a portable copy)? Run <code>PawPoller.exe --reset-password</code> from a Command Prompt.</p>' + after;
+            + '<p class="signup-hint">Not in your Start menu? Press the Windows key and R together, paste '
+            + '<code>"%LOCALAPPDATA%\\Programs\\PawPoller\\PawPoller.exe" --reset-password</code> and press Enter. '
+            + 'A portable copy: use the folder you unzipped it to instead.</p>' + after;
         const code = (c) => `<code>${c}</code>`;
         if (kind === 'service' && /Windows/.test(navigator.userAgent)) return li([
             'Open the Start menu, type <b>cmd</b>, right-click <b>Command Prompt</b> and choose <b>Run as administrator</b>.',
@@ -18016,6 +18019,23 @@ const App = {
                 </details>
 
                 <details class="settings-accordion">
+                    <summary>Staying signed in <span id="sec-remember-badge" class="summary-meta"></span></summary>
+                    <div class="accordion-body" id="sec-remember-body">
+                        <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">How long <b>Remember me</b> keeps you signed in before PawPoller asks for your password again.</p>
+                        <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:8px">
+                            <select id="remember-days" class="filter-select" style="max-width:200px" aria-label="Stay signed in for">
+                                ${[30, 90, 365].map(d => `<option value="${d}">${this._rememberLabel(d)}</option>`).join('')}
+                            </select>
+                            <input type="password" id="remember-pw" class="search-input" placeholder="Your account password" style="max-width:280px" autocomplete="current-password">
+                        </div>
+                        <div style="margin-top:12px;display:flex;align-items:center;gap:12px">
+                            <button class="btn btn-primary" id="remember-save">Save</button>
+                            <span id="remember-msg" style="font-size:13px" role="status"></span>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="settings-accordion">
                     <summary>API Keys</summary>
                     <div class="accordion-body" id="sec-apikeys-body">
                         <p style="color:var(--text-muted);font-size:13px">Loading API keys...</p>
@@ -22764,6 +22784,7 @@ const App = {
 
             // TOTP 2FA — load status and render appropriate UI
             this._loadTotpSection();
+            this._loadRememberSection();
 
             // API Keys — load and render
             this._loadApiKeysSection();
@@ -23270,6 +23291,41 @@ const App = {
         document.getElementById('totp-copy-codes')?.addEventListener('click', (e) => {
             navigator.clipboard?.writeText(codes.join('\n'));
             e.currentTarget.textContent = 'Copied ✓';
+        });
+    },
+
+    _rememberLabel(days) { return days === 365 ? '1 year' : `${days} days`; },
+
+    /* Settings → Security → Staying signed in (4.92.4, STAYSIGNEDIN). The password is asked because the
+       server enforces the length: a stolen session could otherwise stretch itself to a year. */
+    async _loadRememberSection() {
+        const sel = document.getElementById('remember-days');
+        const badge = document.getElementById('sec-remember-badge');
+        if (!sel) return;
+        const show = (d) => { sel.value = String(d); if (badge) badge.textContent = '-- ' + this._rememberLabel(d); };
+        try { show((await API.getDashboardStatus()).remember_days || 30); } catch { show(30); }
+        document.getElementById('remember-save')?.addEventListener('click', async () => {
+            const btn = document.getElementById('remember-save');
+            const msg = document.getElementById('remember-msg');
+            const pw = document.getElementById('remember-pw');
+            btn.disabled = true;
+            msg.style.color = '';
+            msg.textContent = '';
+            try {
+                const days = Number(sel.value);
+                await API.setRememberDays(days, pw.value);
+                pw.value = '';
+                show(days);
+                if (this._dashboardStatus) this._dashboardStatus.remember_days = days;
+                msg.style.color = 'var(--success)';
+                msg.textContent = `Saved. Remember me now lasts ${this._rememberLabel(days)}.`;
+            } catch (err) {
+                let m = err.message.replace(/^API \d+:\s*/, '');
+                try { m = JSON.parse(m).detail || m; } catch {}
+                msg.style.color = 'var(--danger)';
+                msg.textContent = m;
+            }
+            btn.disabled = false;
         });
     },
 

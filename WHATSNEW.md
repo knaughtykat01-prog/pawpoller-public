@@ -2,6 +2,13 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.92.4] - 2026-11-21 - A password reset you can find, and staying signed in longer
+
+> - New in Settings → Security → Staying signed in: choose how long Remember me keeps you signed in, 30 days, 90 days or a year.
+> - Copies that update themselves now get "Reset PawPoller password" in the Start menu. Copies installed before late October were missing it.
+> - If it still isn't there, the sign-in page now gives a line to paste into the Windows Run box instead.
+> - The Windows password reset no longer shows a wall of error text when it turns two-step sign-in off. It always worked; it just looked broken.
+
 ## [4.92.3] - 2026-11-21 - A way back in after losing your two-step app
 
 > - Lost your authenticator app and your backup codes? The password reset on your computer now offers to turn two-step sign-in off.
@@ -235,14 +242,3 @@ Generated from the release notes: each version's plain-language summary.
 > - With two YouTube accounts, the second one no longer picks up the first one's videos and subscriber count.
 > - "Publish draft" on a site without drafts now says so instead of showing an error page.
 > - Uploading or posting big images and videos no longer pauses the rest of the app while the file loads.
-
-## [4.87.1] - 2026-10-24 - Setup stays open
-
-> - Leaving setup part-way no longer looks like finishing it: a strip at the top says setup isn't done, with a button back.
-> - Connecting a site from setup brings you back to setup by itself once the site is connected.
-> - Setup now remembers where you got to, even in another tab or after signing in to a site in a new window.
-> - "Finish later" on the later setup steps lists what stays as it is; Settings → General asks just those questions later.
-> - Every site's setup guide is one tap away: on the setup cards, at the top of the site's settings and in Add account.
-> - Post forms list the sites you can post to first. The rest sit under "Other sites", each with a Connect link.
-> - Sites you've switched off in Settings no longer appear on post forms or Quick publish.
-> - When Inkbunny says "slow down" while PawPoller reads comments, it stops for that check instead of signing in again and again.

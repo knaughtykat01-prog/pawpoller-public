@@ -433,6 +433,7 @@ _SETTINGS = (
         "announcements_enabled", "announce_closed", "alerts_closed",   # the switch, and what was closed (spec 089)
         "signin_helper_http_ok",   # this desktop's own yes to plain http, per server address (spec 059)
         "levels_enabled",   # gamification on/off; absent = never asked = off (spec 050, NOFUN 4.85.0)
+        "auth_remember_days",   # how long Remember me lasts: 30 (absent), 90 or 365 days (4.92.4, STAYSIGNEDIN)
         "home_screen",   # what the app opens on: "start" (absent) or "overview" (spec 053)
         "rewards_equipped",   # the ring + level-up style in use (spec 051)
         "pb_import_asked", "twofa_offered", "announce_defaults_asked",   # sign-up's once-only offers (4.69.0)

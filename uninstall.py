@@ -242,6 +242,10 @@ def _build_windows_script(plan: UninstallPlan, tempdir: Path, remove_data: bool,
             # to keep behaviour consistent with the in-app checkboxes.
             unins = install_dir / "unins000.exe"
             lines.append(f'"{unins}" /SILENT')
+            # The app itself adds this item to copies installed before 4.88.0 (main._repair_start_menu), and
+            # their older uninstaller doesn't know about it.
+            for base in ("%APPDATA%", "%ProgramData%"):
+                lines.append(rf'del "{base}\Microsoft\Windows\Start Menu\Programs\Reset PawPoller password.lnk" > nul 2>&1')
         elif plan.install_type == InstallType.WINDOWS_PORTABLE:
             # Self-delete the install dir. Have to be careful — the .bat is
             # presumably NOT inside the install dir (it's in a temp dir), so

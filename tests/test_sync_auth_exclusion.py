@@ -34,7 +34,16 @@ ACCESS_KEYS = [
     "auth_email",
     "auth_email_pending",
     "legal_accepted",
+    "auth_remember_days",
 ]
+
+
+def test_every_sign_in_setting_in_the_data_map_is_sync_excluded():
+    """4.92.4's release review: auth_remember_days was classified but not excluded, so a sync push set it
+    with no password. Every auth_* setting is about who may sign in here, so none may cross."""
+    import datamap
+    keys = {e.name for e in datamap.ENTRIES if e.kind == "setting" and e.name.startswith("auth_")}
+    assert keys and not keys - config.SYNC_EXCLUDE, sorted(keys - config.SYNC_EXCLUDE)
 
 
 @pytest.mark.parametrize("key", ACCESS_KEYS)
