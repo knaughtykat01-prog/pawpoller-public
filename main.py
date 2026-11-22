@@ -487,19 +487,19 @@ def _repair_start_menu(exe, start_menus, run=None):
 
     Updates inside the app replace the program files and never re-run the installer, so a copy installed
     before 4.88.0 never got that item, and the sign-in page's steps pointed at nothing. Made only beside
-    the installer's own PawPoller shortcut, so a portable copy or someone who removed every item is left
-    alone. The paths reach PowerShell as environment variables, never as command text.
+    the installer's own PawPoller shortcut, and only when that shortcut opens this copy (PowerShell reads
+    its target), so a portable copy or someone who removed every item is left alone. Not keyed on Inno's
+    unins000.exe: until 4.92.5 every update deleted it (UPDUNINS), so the copies this is for had none.
+    The paths reach PowerShell as environment variables, never as command text.
     shortcut: makes it again if the person deletes just that one; add a one-time flag if anyone minds.
     Returns the shortcut made, or None.
     """
     from pathlib import Path
     exe = Path(exe)
-    if not (exe.parent / "unins000.exe").exists():
-        return None
     for folder in start_menus:
         folder = Path(folder)
-        lnk = folder / RESET_SHORTCUT
-        if not (folder / "PawPoller.lnk").exists() or lnk.exists():
+        main_lnk, lnk = folder / "PawPoller.lnk", folder / RESET_SHORTCUT
+        if not main_lnk.exists() or lnk.exists():
             continue
         import os
         if run is None:
@@ -512,10 +512,13 @@ def _repair_start_menu(exe, start_menus, run=None):
         ps = ntpath.join(os.environ.get("SystemRoot") or r"C:\Windows", "System32", "WindowsPowerShell", "v1.0",
                          "powershell.exe")
         run([ps, "-NoProfile", "-NonInteractive", "-Command",
-             "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:PP_LNK); $s.TargetPath = $env:PP_EXE; "
-             "$s.Arguments = '--reset-password'; $s.WorkingDirectory = $env:PP_DIR; $s.Save()"],
-            env={**os.environ, "PP_LNK": str(lnk), "PP_EXE": str(exe), "PP_DIR": str(exe.parent)})
-        return str(lnk)
+             "$w = New-Object -ComObject WScript.Shell; if ($w.CreateShortcut($env:PP_MAIN).TargetPath -eq $env:PP_EXE) { "
+             "$s = $w.CreateShortcut($env:PP_LNK); $s.TargetPath = $env:PP_EXE; "
+             "$s.Arguments = '--reset-password'; $s.WorkingDirectory = $env:PP_DIR; $s.Save() }"],
+            env={**os.environ, "PP_MAIN": str(main_lnk), "PP_LNK": str(lnk), "PP_EXE": str(exe),
+                 "PP_DIR": str(exe.parent)})
+        if lnk.exists():
+            return str(lnk)
     return None
 
 

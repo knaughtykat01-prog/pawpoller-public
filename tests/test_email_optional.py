@@ -324,12 +324,11 @@ def test_the_installer_adds_the_reset_shortcut():
     assert main.RESET_SHORTCUT == "Reset {#MyAppName} password.lnk".replace("{#MyAppName}", "PawPoller")
 
 
-def _setup_install(tmp_path, uninstaller=True):
+def _setup_install(tmp_path):
+    """A Setup copy after an update: no unins000.exe (updates deleted it until 4.92.5), PawPoller.lnk in the menu."""
     app = tmp_path / "app"
     app.mkdir(parents=True)
     (app / "PawPoller.exe").write_bytes(b"")
-    if uninstaller:
-        (app / "unins000.exe").write_bytes(b"")
     menu = tmp_path / "menu"
     menu.mkdir(parents=True)
     (menu / "PawPoller.lnk").write_bytes(b"")
@@ -338,45 +337,67 @@ def _setup_install(tmp_path, uninstaller=True):
 
 def test_a_setup_install_that_updated_itself_gets_the_reset_item_back(tmp_path):
     """Updates inside the app never re-run the installer, so a copy installed before 4.88.0 had no
-    "Reset PawPoller password" in its Start menu, and the sign-in page's steps pointed at nothing."""
+    "Reset PawPoller password" in its Start menu, and the sign-in page's steps pointed at nothing.
+    4.92.4 looked for Inno's unins000.exe first, which those updates had deleted, so it never ran (4.92.5)."""
     import main
     calls = []
 
     def run(cmd, env):
         calls.append((cmd, env))
+        Path(env["PP_LNK"]).write_bytes(b"")          # what PowerShell does when PawPoller.lnk opens this copy
 
     exe, menu = _setup_install(tmp_path)
     made = main._repair_start_menu(exe, [tmp_path / "no-such-menu", menu], run)
     assert made == str(menu / "Reset PawPoller password.lnk")
     cmd, env = calls[0]
     assert env["PP_LNK"] == made and env["PP_EXE"] == str(exe) and "'--reset-password'" in cmd[-1]
+    assert env["PP_MAIN"] == str(menu / "PawPoller.lnk") and "($env:PP_MAIN).TargetPath -eq $env:PP_EXE" in cmd[-1]
     assert str(tmp_path) not in " ".join(cmd), "paths reach PowerShell as variables, never as command text"
     assert cmd[0].lower().endswith("\\system32\\windowspowershell\\v1.0\\powershell.exe"), cmd[0]   # never a bare name
-    (menu / "Reset PawPoller password.lnk").write_bytes(b"")
     assert main._repair_start_menu(exe, [menu], run) is None and len(calls) == 1      # already there
 
 
 def test_the_reset_item_is_only_added_beside_the_installers_own_item(tmp_path):
     import main
     calls = []
-    exe, menu = _setup_install(tmp_path / "portable", uninstaller=False)
-    assert main._repair_start_menu(exe, [menu], lambda cmd, env: calls.append(cmd)) is None   # a portable copy
-    exe, menu = _setup_install(tmp_path / "setup")
+    exe, menu = _setup_install(tmp_path / "removed")
     (menu / "PawPoller.lnk").unlink()                                                          # they removed it
     assert main._repair_start_menu(exe, [menu], lambda cmd, env: calls.append(cmd)) is None
     assert calls == []
+    exe, menu = _setup_install(tmp_path / "other")
+    # PowerShell made nothing: the menu's PawPoller item opens another copy (this one is portable)
+    assert main._repair_start_menu(exe, [menu], lambda cmd, env: calls.append(cmd)) is None and len(calls) == 1
+
+
+def _shortcut(lnk, target):
+    subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+                    "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:PP_LNK); $s.TargetPath = $env:PP_T; $s.Save()"],
+                   env={**__import__("os").environ, "PP_LNK": str(lnk), "PP_T": str(target)}, timeout=60, check=True)
 
 
 @pytest.mark.skipif(sys.platform != "win32" or not shutil.which("powershell.exe"), reason="Windows shortcuts")
 def test_the_reset_item_really_is_made_on_windows(tmp_path):
     import main
     exe, menu = _setup_install(tmp_path / "Program Files (x86) & 'quotes'")
+    _shortcut(menu / "PawPoller.lnk", exe)
     made = main._repair_start_menu(exe, [menu])
     out = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
                           "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:PP_LNK); "
                           "$s.TargetPath + '|' + $s.Arguments"], env={**__import__("os").environ, "PP_LNK": made},
                          capture_output=True, text=True, timeout=60, check=True).stdout.strip()
     assert out == f"{exe}|--reset-password", out
+
+
+@pytest.mark.skipif(sys.platform != "win32" or not shutil.which("powershell.exe"), reason="Windows shortcuts")
+def test_a_portable_copy_beside_a_setup_copy_adds_nothing_on_windows(tmp_path):
+    import main
+    setup_exe, menu = _setup_install(tmp_path / "setup")
+    _shortcut(menu / "PawPoller.lnk", setup_exe)
+    portable = tmp_path / "unzipped" / "PawPoller.exe"
+    portable.parent.mkdir()
+    portable.write_bytes(b"")
+    assert main._repair_start_menu(portable, [menu]) is None
+    assert not (menu / "Reset PawPoller password.lnk").exists()
 
 
 def test_the_in_app_uninstall_removes_the_reset_item_the_app_added(tmp_path):
@@ -386,6 +407,14 @@ def test_the_in_app_uninstall_removes_the_reset_item_the_app_added(tmp_path):
     bat = uninstall._build_windows_script(plan, tmp_path, remove_data=False, remove_app=True).read_text(encoding="utf-8")
     for base in ("%APPDATA%", "%ProgramData%"):
         assert f'del "{base}\\Microsoft\\Windows\\Start Menu\\Programs\\Reset PawPoller password.lnk"' in bat
+
+
+def test_an_emailed_reset_still_shows_the_way_past_two_step():
+    """With an email, the reset page leads with the emailed code, which changes only the password. The way to turn
+    two-step off sat in a closed section whose label never said so, and the sign-in hint sent people there (4.92.5)."""
+    js = (ROOT / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
+    label = "Locked out by two-step sign-in"
+    assert f"<summary>{label}" in js and f"then <b>{label}</b>" in js
 
 
 # ── implement-stage security review (High): the server's own email gate ──────

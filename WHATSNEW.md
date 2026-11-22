@@ -2,6 +2,14 @@
 
 Generated from the release notes: each version's plain-language summary.
 
+## [4.92.5] - 2026-11-22 - The Start menu reset item, for real this time
+
+> - "Reset PawPoller password" now really appears in the Start menu on copies that update themselves. 4.92.4 meant to add it but skipped exactly those copies.
+> - Updating inside the app no longer deletes PawPoller's uninstaller.
+> - If Windows can't uninstall your copy, run the latest Setup once over the top. It puts the uninstaller back and keeps your data.
+> - Locked out by two-step sign-in? The password reset page now says where to go: an emailed code only changes the password.
+> - The reset steps now say to type "reset" in the Start menu. The item is listed under R, not next to PawPoller.
+
 ## [4.92.4] - 2026-11-21 - A password reset you can find, and staying signed in longer
 
 > - New in Settings → Security → Staying signed in: choose how long Remember me keeps you signed in, 30 days, 90 days or a year.
@@ -212,33 +220,3 @@ Generated from the release notes: each version's plain-language summary.
 > - Each account's sign-in button is now called Sign in (it was Credentials), and on FurAffinity, X, Newgrounds and Itaku it stands out.
 > - On a server or hosted seat, the Accounts page now says how to sign in to those four sites with the desktop app.
 > - If the desktop app is still connected to an old server address that now only runs the Instagram relay, it says so instead of showing a blank "Not Found" page.
-
-## [4.88.0] - 2026-10-25 - Sign in without copying, and bring in PostyBirb
-
-> - On the desktop app, press Sign in for FurAffinity, X, Newgrounds or Itaku and sign in on the site's own page. Nothing to copy.
-> - On a server or hosted seat, press Sign in with the PawPoller app: type the code it shows into the desktop app and sign in there.
-> - PawPoller checks the sign-in belongs to the right account before saving it, so a mix-up can't connect the wrong one.
-> - Copying cookies is still there under Other ways to connect, and the guides now have the Firefox steps too.
-> - Bring your PostyBirb submissions into your Library any time: Settings → Data → Bring in from PostyBirb.
-> - Each one keeps its picture, title, description, tags and rating. Anything already in your Library is skipped.
-> - On a server or hosted seat, upload a zip of your PostyBirb folder. It is deleted as soon as you finish.
-> - Logins from PostyBirb are never ticked for you: tick only the accounts that are yours.
-> - New: saved descriptions and tag groups. Drop one into any piece from the description or tags box; manage them in Settings → Saved text.
-> - PostyBirb's description templates and tag groups come in too, and PostyBirb descriptions now arrive as plain text, not web code.
-> - When you run PawPoller yourself, your account no longer needs an email. Leave it blank and nothing is sent anywhere.
-> - Forgot your password with no email? The sign-in page now shows the exact steps to set a new one on the machine PawPoller runs on.
-> - On Windows, a new Start menu item, Reset PawPoller password, does it without typing a command.
-> - You can add or remove your account email in Settings → Security. Hosted seats still need one.
-> - Instagram posts from the desktop app work again for people who use the PawPoller relay. Nothing to change or update.
-> - When the relay is down, the error now says so in one plain sentence instead of showing a web page's code.
-> - The Overview's charts load faster on a hosted seat: each one now draws about 300 points instead of thousands.
-> - When X sends back nothing on two checks in a row, PawPoller now says so plainly and tells you to sign in to X again.
-> - Taking your email off a self-hosted PawPoller sends a clear "email removed" message, with how to get back in.
-> - The password reset in a terminal refuses to run if it can't hide what you type, and now notices PawPoller open on any port.
-> - Small security tidy-ups: plainer error messages, and the Instagram relay counts IPv6 callers fairly.
-> - Fixed importing a story from SquidgeWorld, which failed every time.
-> - Story imports keep their chapter headings, and a stray "<" in the text no longer swallows the words after it.
-> - Podcast alerts in Telegram now show a name and an icon.
-> - With two YouTube accounts, the second one no longer picks up the first one's videos and subscriber count.
-> - "Publish draft" on a site without drafts now says so instead of showing an error page.
-> - Uploading or posting big images and videos no longer pauses the rest of the app while the file loads.

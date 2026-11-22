@@ -238,17 +238,19 @@ Your key can read but not post. Check that site's row in [Platform credentials](
 
 If your account has a confirmed email, press **Forgot your password?** on the sign-in page and
 PawPoller emails you a code. Without an email, set a new password on the machine PawPoller runs on.
-The sign-in page shows the same steps.
+The sign-in page shows the same steps. Locked out by two-step sign-in (no authenticator app, no backup
+codes)? An emailed code only changes the password, so use the steps on the machine below: they also offer
+to turn two-step sign-in off.
 
 - **Path A (the app on your computer, Windows):**
   1. Close PawPoller: right-click its icon by the clock and choose **Quit**.
-  2. Open the **Start** menu and click **Reset PawPoller password**. A small window opens.
+  2. Open the **Start** menu, type **reset** and click **Reset PawPoller password**. A small window opens.
   3. Type your new password and press Enter. Nothing shows while you type; that's on purpose.
   4. Type it again and press Enter. You'll see *Password changed.* Press Enter to close the window.
   5. Open PawPoller and sign in with the new password.
 
   Not in your Start menu? (A copy installed before October 2026 that has only updated itself may not have
-  it until you start 4.92.4 or later once.) Press the Windows key and R together, paste this and press Enter:
+  it until you start 4.92.5 or later once.) Press the Windows key and R together, paste this and press Enter:
 
   ```
   "%LOCALAPPDATA%\Programs\PawPoller\PawPoller.exe" --reset-password

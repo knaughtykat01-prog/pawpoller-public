@@ -275,13 +275,15 @@ def _build_update_bat(source_dir, app_dir, exe_name: str) -> str:
       2. `robocopy /MIR` — mirrors the extracted update onto the install dir,
          replacing all files (and purging removed ones).
       3. `/XD data logs` — SAFETY: never touches the user's database/config/logs.
+         `/XF unins000.*` — keeps a Setup copy's Inno uninstaller, which the zip doesn't carry: before
+         4.92.5 /MIR purged it on the first update, breaking Apps & features → Uninstall (UPDUNINS).
       4. `start` — relaunches the updated .exe.
       5. `del "%~f0"` — the script deletes itself.
     /R:2 /W:2 bounds robocopy's retries (its default is /R:1000000 /W:30, which
     would hang the updater forever on a single AV-locked file)."""
     return f"""@echo off
 timeout /t {_UPDATE_EXIT_GRACE_SECONDS} /nobreak > nul
-robocopy "{source_dir}" "{app_dir}" /MIR /XD data logs /R:2 /W:2 /NP
+robocopy "{source_dir}" "{app_dir}" /MIR /XD data logs /XF unins000.* /R:2 /W:2 /NP
 start "" "{app_dir}\\{exe_name}"
 del "%~f0"
 """

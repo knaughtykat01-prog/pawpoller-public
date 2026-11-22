@@ -2776,7 +2776,7 @@ const App = {
                     <div class="login-field">
                         <label>2FA Code</label>
                         <input type="text" id="dash-login-totp" class="search-input" placeholder="6-digit code or a backup code" style="width:100%" autocomplete="one-time-code" maxlength="20">
-                        <p class="signup-hint">Lost your authenticator app? Type one of your backup codes. No codes either? Press <b>Forgot your password?</b> below.</p>
+                        <p class="signup-hint">Lost your authenticator app? Type one of your backup codes. No codes either? Press <b>Forgot your password?</b> below, then <b>Locked out by two-step sign-in</b>: an emailed code alone won't get you past this step.</p>
                     </div>` : ''}
                     <div id="dash-turnstile-container"></div>
                     <label class="login-remember">
@@ -3175,7 +3175,7 @@ const App = {
             'Sign in with the new password.']) + after;
         if (kind === 'desktop' && /Windows/.test(navigator.userAgent)) return li([
             'Close PawPoller: right-click its icon by the clock and choose <b>Quit</b>.',
-            'Open the <b>Start</b> menu and click <b>Reset PawPoller password</b>. A small window opens.',
+            'Open the <b>Start</b> menu, type <b>reset</b> and click <b>Reset PawPoller password</b>. A small window opens.',
             'Type your new password and press Enter. Nothing shows while you type; that\'s on purpose.',
             'Type it again and press Enter, then press Enter to close the window.',
             'Open PawPoller and sign in with the new password.'])
@@ -3275,7 +3275,7 @@ const App = {
                     <button class="btn btn-primary login-btn" type="submit">Change password</button>
                 </form>
                 <div class="login-error" id="reset-error" role="alert"></div>
-                ${byEmail && st.install_kind !== 'hosted' ? `<details><summary>Or set a new one on the machine PawPoller runs on</summary>${steps}</details>` : ''}
+                ${byEmail && st.install_kind !== 'hosted' ? `<details><summary>Locked out by two-step sign-in, or no email? Reset it on the machine PawPoller runs on</summary>${steps}</details>` : ''}
                 <p class="signup-hint"><a href="#" id="reset-back">Back to sign in</a></p>
             </div></div>`);
         const errEl = document.getElementById('reset-error');

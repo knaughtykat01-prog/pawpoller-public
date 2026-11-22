@@ -7,6 +7,10 @@ onto the install dir — nesting the new build AND purging the real `_internal`.
 `_resolve_source_dir` descends into a lone wrapper so the mirror lands correctly,
 and refuses a payload with no executable rather than purge a working install.
 """
+import shutil
+import subprocess
+import sys
+
 import pytest
 
 from updater import _resolve_source_dir, _build_update_bat, _UPDATE_EXIT_GRACE_SECONDS
@@ -25,6 +29,23 @@ def test_update_bat_waits_for_exit_relaunches_and_spares_user_data():
     assert 'robocopy "C:\\src" "C:\\app" /MIR /XD data logs' in bat   # never the user's DB/logs
     assert 'start "" "C:\\app\\PawPoller.exe"' in bat                  # relaunch the updated exe
     assert 'del "%~f0"' in bat                                          # script cleans itself up
+
+
+@pytest.mark.skipif(sys.platform != "win32" or not shutil.which("robocopy"), reason="robocopy is Windows-only")
+def test_an_update_keeps_a_setup_copys_uninstaller(tmp_path):
+    """The zip carries no Inno uninstaller, so /MIR deleted it on a Setup copy's first update: Apps & features
+    could no longer uninstall it, and the Start menu repair (keyed on it then) skipped it (4.92.5, UPDUNINS)."""
+    src, app = tmp_path / "new", tmp_path / "Program Files & co"
+    for d, body in ((src, b"new build"), (app, b"old")):   # sizes differ: robocopy skips same size + time
+        d.mkdir()
+        (d / EXE).write_bytes(body)
+    for name in ("unins000.exe", "unins000.dat", "data/db"):
+        (app / name).parent.mkdir(exist_ok=True)
+        (app / name).write_bytes(b"keep")
+    line = next(l for l in _build_update_bat(str(src), str(app), EXE).splitlines() if l.startswith("robocopy"))
+    assert subprocess.run(line, shell=True, capture_output=True, timeout=60).returncode < 8   # robocopy: <8 = ok
+    assert (app / EXE).read_bytes() == b"new build"
+    assert all((app / n).read_bytes() == b"keep" for n in ("unins000.exe", "unins000.dat", "data/db"))
 
 
 def _extract(tmp_path, layout):
